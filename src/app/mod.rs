@@ -104,7 +104,21 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
                 agent_id.as_account_id().clone(),
             )),
         )
-        .map_err(|err| format_err!("Error subscribing to everyone's output messages: {}", err))?;
+        .map_err(|err| format_err!("Error subscribing to multicast requests: {}", err))?;
+
+    // Subscribe to events
+    // TODO: This is for testing only. Remove it when not needed.
+    agent
+        .subscribe(
+            &Subscription::broadcast_events(
+                &svc_agent::AccountId::new("fey", "dev.svc.example.org"),
+                "v1",
+                "dummy",
+            ),
+            QoS::AtMostOnce,
+            None,
+        )
+        .map_err(|err| format_err!("Error subscribing to broadcast events: {}", err))?;
 
     // Message handler
     let context = Context::new(agent.address().to_owned(), config, authz, db.clone());

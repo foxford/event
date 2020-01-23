@@ -1,9 +1,9 @@
 use chrono::{DateTime, Utc};
 use failure::{format_err, Error};
-use log::{error, info};
+use log::{error, info, warn};
 use svc_agent::mqtt::{
-    compat, Agent, IncomingRequestProperties, IntoPublishableDump, OutgoingResponse,
-    ResponseStatus, ShortTermTimingProperties,
+    compat, Agent, IncomingEventProperties, IncomingRequestProperties, IntoPublishableDump,
+    OutgoingResponse, ResponseStatus, ShortTermTimingProperties,
 };
 
 use crate::app::{endpoint, Context, API_VERSION};
@@ -46,9 +46,9 @@ impl MessageHandler {
                 // TOOD: svc_agent::request::Dispatcher::response
                 Ok(())
             }
-            compat::IncomingEnvelopeProperties::Event(_) => {
-                // TODO: event router similar to request router
-                Ok(())
+            compat::IncomingEnvelopeProperties::Event(ref evp) => {
+                let evp = evp.to_owned();
+                self.handle_event(envelope, evp, start_timestamp)
             }
         }
     }
@@ -73,6 +73,30 @@ impl MessageHandler {
                 });
 
         self.publish_outgoing_messages(outgoing_messages)
+    }
+
+    fn handle_event(
+        &self,
+        envelope: compat::IncomingEnvelope,
+        evp: IncomingEventProperties,
+        start_timestamp: DateTime<Utc>,
+    ) -> Result<(), Error> {
+        match evp.label() {
+            Some(label) => {
+                let outgoing_messages =
+                    endpoint::route_event(&self.context, envelope, &evp, start_timestamp)
+                        .unwrap_or_else(|| {
+                            warn!("Unexpected event with label = '{}'", label);
+                            vec![]
+                        });
+
+                self.publish_outgoing_messages(outgoing_messages)
+            }
+            None => {
+                warn!("Got event with missing label");
+                Ok(())
+            }
+        }
     }
 
     fn publish_outgoing_messages(
@@ -161,6 +185,43 @@ impl<H: endpoint::RequestHandler> RequestEnvelopeHandler for H {
                 reqp,
                 start_timestamp,
             ),
+        }
+    }
+}
+
+pub(crate) trait EventEnvelopeHandler {
+    fn handle_envelope(
+        context: &Context,
+        envelope: compat::IncomingEnvelope,
+        evp: &IncomingEventProperties,
+        start_timestamp: DateTime<Utc>,
+    ) -> Vec<Box<dyn IntoPublishableDump>>;
+}
+
+impl<H: endpoint::EventHandler> EventEnvelopeHandler for H {
+    fn handle_envelope(
+        context: &Context,
+        envelope: compat::IncomingEnvelope,
+        evp: &IncomingEventProperties,
+        start_timestamp: DateTime<Utc>,
+    ) -> Vec<Box<dyn IntoPublishableDump>> {
+        match envelope.payload::<H::Payload>() {
+            Ok(payload) => {
+                Self::handle(context, payload, evp, start_timestamp).unwrap_or_else(|err| {
+                    if let Some(label) = evp.label() {
+                        error!("Failed to handle event with label = '{}': {}", label, err);
+                    }
+
+                    vec![]
+                })
+            }
+            Err(err) => {
+                if let Some(label) = evp.label() {
+                    error!("Failed to parse event with label = '{}': {}", label, err);
+                }
+
+                vec![]
+            }
         }
     }
 }

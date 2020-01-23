@@ -1,9 +1,15 @@
 use chrono::{DateTime, Utc};
 use failure::Error;
 use serde::de::DeserializeOwned;
-use svc_agent::mqtt::{compat::IncomingEnvelope, IncomingRequestProperties, IntoPublishableDump};
+use svc_agent::mqtt::{
+    compat::IncomingEnvelope, IncomingEventProperties, IncomingRequestProperties,
+    IntoPublishableDump,
+};
 
-use crate::app::{message_handler::RequestEnvelopeHandler, Context};
+use crate::app::{
+    message_handler::{EventEnvelopeHandler, RequestEnvelopeHandler},
+    Context,
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -44,4 +50,41 @@ request_routes!(
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) mod system;
+pub(crate) trait EventHandler {
+    type Payload: DeserializeOwned;
+
+    fn handle(
+        context: &Context,
+        payload: Self::Payload,
+        evp: &IncomingEventProperties,
+        start_timestamp: DateTime<Utc>,
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error>;
+}
+
+macro_rules! event_routes {
+    ($($l: pat => $h: ty),*) => {
+        pub(crate) fn route_event(
+            context: &Context,
+            envelope: IncomingEnvelope,
+            evp: &IncomingEventProperties,
+            start_timestamp: DateTime<Utc>,
+        ) -> Option<Vec<Box<dyn IntoPublishableDump>>> {
+            match evp.label() {
+                $(
+                    Some($l) => Some(<$h>::handle_envelope(context, envelope, evp, start_timestamp)),
+                )*
+                _ => None,
+            }
+        }
+    }
+}
+
+// Event routes configuration: label => EventHandler
+event_routes!(
+    "dummy.say" => dummy::SayHandler
+);
+
+///////////////////////////////////////////////////////////////////////////////
+
+mod dummy;
+mod system;
