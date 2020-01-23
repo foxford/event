@@ -1,0 +1,24 @@
+[package]
+name = "event"
+version = "0.1.0"
+authors = ["Timofey Martynov <t.martinov@netology-group.ru>"]
+edition = "2018"
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+config = "0.10"
+diesel = { version = "1.4", features = ["postgres", "uuid", "chrono", "serde_json", "r2d2"] }
+dotenv = "0.15"
+env_logger = "0.7"
+failure = "0.1"
+futures = { version = "0.3", features = ["thread-pool"] }
+futures-channel = "0.3"
+log = "0.4"
+serde = "1.0"
+serde_derive = "1.0"
+serde_json = "1.0"
+svc-agent = { version = "0.11", features = ["diesel"] }
+svc-authn = { version = "0.5", features = ["jose", "diesel"] }
+svc-authz = "0.9"
+svc-error = { version = "0.1", features = ["diesel", "r2d2", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
+uuid = { version = "0.8", features = ["v4", "serde"] }

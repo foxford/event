@@ -1,0 +1,17 @@
+id = "event.dev.svc.example.org"
+agent_label = "alpha"
+broker_id = "mqtt-gateway.dev.svc.example.org"
+
+[id_token]
+algorithm = "ES256"
+key = "data/keys/svc.private_key.p8.der.sample"
+
+[authz."example.net"]
+type = "http"
+uri = "https://iam.example.net/authz"
+algorithm = "ES256"
+key = "data/keys/svc.private_key.p8.der.sample"
+
+[mqtt]
+uri = "mqtt://0.0.0.0:1883"
+clean_session = false
