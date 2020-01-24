@@ -1,0 +1,23 @@
+apiVersion: skaffold/v1beta11
+kind: Config
+build:
+  artifacts:
+    - image: netologygroup/event-migration
+      docker:
+        dockerfile: docker/migration.dockerfile
+    - image: netologygroup/event
+      docker:
+        dockerfile: docker/Dockerfile
+  tagPolicy:
+    envTemplate:
+      template: '{{.IMAGE_NAME}}:{{.IMAGE_TAG}}'
+  local:
+    push: true
+    useDockerCLI: true
+deploy:
+  kubectl:
+    manifests:
+      - deploy/k8s/event.yaml
+      - deploy/k8s/event-config.yaml
+      - deploy/k8s/event-environment.yaml
+      - deploy/k8s/event-headless.yaml
