@@ -1,0 +1,9 @@
+[authn."iam.internal"]
+audience = ["internal"]
+key = "conf.d/org.usr.example.iam.key"
+
+[authn."iam.dev.usr.example.org"]
+audience = ["dev.usr.example.org"]
+key = "conf.d/org.usr.example.iam.key"
+
+[authz."dev.usr.example.org"]

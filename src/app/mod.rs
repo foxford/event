@@ -4,50 +4,18 @@ use std::thread;
 use failure::{format_err, Error};
 use futures::{executor::ThreadPoolBuilder, task::SpawnExt, StreamExt};
 use log::{error, info};
-use serde_derive::Deserialize;
-use svc_agent::mqtt::{Address, AgentBuilder, ConnectionMode, Notification, QoS};
+use svc_agent::mqtt::{AgentBuilder, ConnectionMode, Notification, QoS};
 use svc_agent::{AgentId, Authenticable, SharedGroup, Subscription};
-use svc_authn::{jose::Algorithm, token::jws_compact};
+use svc_authn::token::jws_compact;
 
-use self::config::Config;
+use crate::config;
 use crate::db::ConnectionPool;
+use context::Context;
 use message_handler::MessageHandler;
 
 pub(crate) const API_VERSION: &str = "v1";
 
 ////////////////////////////////////////////////////////////////////////////////
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct IdTokenConfig {
-    #[serde(deserialize_with = "svc_authn::serde::algorithm")]
-    algorithm: Algorithm,
-    #[serde(deserialize_with = "svc_authn::serde::file")]
-    key: Vec<u8>,
-}
-
-#[derive(Clone)]
-pub(crate) struct Context {
-    address: Address,
-    config: Arc<Config>,
-    authz: svc_authz::ClientMap,
-    db: ConnectionPool,
-}
-
-impl Context {
-    fn new(
-        address: Address,
-        config: Config,
-        authz: svc_authz::ClientMap,
-        db: ConnectionPool,
-    ) -> Self {
-        Self {
-            address,
-            config: Arc::new(config),
-            authz,
-            db,
-        }
-    }
-}
 
 pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
     // Config
@@ -142,6 +110,6 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
     Ok(())
 }
 
-mod config;
+mod context;
 mod endpoint;
 mod message_handler;

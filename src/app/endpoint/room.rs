@@ -8,39 +8,42 @@ use svc_agent::mqtt::{
 };
 
 use crate::app::{endpoint::RequestHandler, Context, API_VERSION};
+use crate::backend::types::Room;
 
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct PingRequest {
-    message: String,
+pub(crate) struct CreateRequest {
+    audience: String,
+    description: String,
 }
 
 #[derive(Debug, Serialize)]
-pub(crate) struct PingResponse {
-    message: String,
+pub(crate) struct CreateResponse {
+    room: Room,
 }
 
-pub(crate) struct PingHandler;
+pub(crate) struct CreateHandler;
 
 #[async_trait]
-impl RequestHandler for PingHandler {
-    type Payload = PingRequest;
-    const ERROR_TITLE: &'static str = "Failed to ping";
+impl RequestHandler for CreateHandler {
+    type Payload = CreateRequest;
+    const ERROR_TITLE: &'static str = "Failed to create room";
 
     async fn handle(
-        _context: &Context,
-        _payload: Self::Payload,
+        context: &Context,
+        payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error> {
-        let resp_payload = PingResponse {
-            message: String::from("pong"),
-        };
+        let room = context
+            .backend()
+            .create_room(&payload.audience, &payload.description)
+            .await?;
 
         let timing = ShortTermTimingProperties::until_now(start_timestamp);
-        let props = reqp.to_response(ResponseStatus::OK, timing);
-        let resp = OutgoingResponse::unicast(resp_payload, props, reqp, API_VERSION);
+        let props = reqp.to_response(ResponseStatus::CREATED, timing);
+        let resp = OutgoingResponse::unicast(CreateResponse { room }, props, reqp, API_VERSION);
         Ok(vec![Box::new(resp) as Box<dyn IntoPublishableDump>])
     }
 }

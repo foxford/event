@@ -1,3 +1,4 @@
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use failure::Error;
 use log::info;
@@ -15,10 +16,11 @@ pub(crate) struct SayEvent {
 
 pub(crate) struct SayHandler;
 
+#[async_trait]
 impl EventHandler for SayHandler {
     type Payload = SayEvent;
 
-    fn handle(
+    async fn handle(
         _context: &Context,
         payload: Self::Payload,
         _evp: &IncomingEventProperties,

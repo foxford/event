@@ -1,3 +1,6 @@
+use std::future::Future;
+use std::pin::Pin;
+
 use chrono::{DateTime, Utc};
 use failure::{format_err, Error};
 use log::{error, info, warn};
@@ -40,7 +43,7 @@ impl MessageHandler {
         match envelope.properties() {
             compat::IncomingEnvelopeProperties::Request(ref reqp) => {
                 let reqp = reqp.to_owned();
-                self.handle_request(envelope, reqp, start_timestamp)
+                self.handle_request(envelope, reqp, start_timestamp).await
             }
             compat::IncomingEnvelopeProperties::Response(_) => {
                 // TOOD: svc_agent::request::Dispatcher::response
@@ -48,12 +51,12 @@ impl MessageHandler {
             }
             compat::IncomingEnvelopeProperties::Event(ref evp) => {
                 let evp = evp.to_owned();
-                self.handle_event(envelope, evp, start_timestamp)
+                self.handle_event(envelope, evp, start_timestamp).await
             }
         }
     }
 
-    fn handle_request(
+    async fn handle_request(
         &self,
         envelope: compat::IncomingEnvelope,
         reqp: IncomingRequestProperties,
@@ -61,6 +64,7 @@ impl MessageHandler {
     ) -> Result<(), Error> {
         let outgoing_messages =
             endpoint::route_request(&self.context, envelope, &reqp, start_timestamp)
+                .await
                 .unwrap_or_else(|| {
                     Self::error_response(
                         ResponseStatus::METHOD_NOT_ALLOWED,
@@ -75,7 +79,7 @@ impl MessageHandler {
         self.publish_outgoing_messages(outgoing_messages)
     }
 
-    fn handle_event(
+    async fn handle_event(
         &self,
         envelope: compat::IncomingEnvelope,
         evp: IncomingEventProperties,
@@ -85,6 +89,7 @@ impl MessageHandler {
             Some(label) => {
                 let outgoing_messages =
                     endpoint::route_event(&self.context, envelope, &evp, start_timestamp)
+                        .await
                         .unwrap_or_else(|| {
                             warn!("Unexpected event with label = '{}'", label);
                             vec![]
@@ -148,80 +153,135 @@ impl MessageHandler {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) trait RequestEnvelopeHandler {
+// These auto-traits are being defined on all request/event handlers.
+// They do parsing of the envelope and payload, call the handler and perform error handling.
+// So we don't implement these generic things in each handler.
+// We just need to specify the payload type and specific logic.
+
+pub(crate) trait RequestEnvelopeHandler<'async_trait> {
     fn handle_envelope(
-        context: &Context,
+        context: &'async_trait Context,
         envelope: compat::IncomingEnvelope,
-        reqp: &IncomingRequestProperties,
+        reqp: &'async_trait IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Vec<Box<dyn IntoPublishableDump>>;
+    ) -> Pin<Box<dyn Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'async_trait>>;
 }
 
-impl<H: endpoint::RequestHandler> RequestEnvelopeHandler for H {
+// Can't use `#[async_trait]` macro here because it's not smart enough to add `'async_trait`
+// lifetime to `H` type parameter. The creepy stuff around the actual implementation is what
+// this macro expands to based on https://github.com/dtolnay/async-trait#explanation.
+impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
+    RequestEnvelopeHandler<'async_trait> for H
+{
     fn handle_envelope(
-        context: &Context,
+        context: &'async_trait Context,
         envelope: compat::IncomingEnvelope,
-        reqp: &IncomingRequestProperties,
+        reqp: &'async_trait IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Vec<Box<dyn IntoPublishableDump>> {
-        match envelope.payload::<H::Payload>() {
-            Ok(payload) => {
-                Self::handle(context, payload, reqp, start_timestamp).unwrap_or_else(|err| {
-                    MessageHandler::error_response(
-                        ResponseStatus::UNPROCESSABLE_ENTITY,
-                        reqp.method(),
-                        Self::ERROR_TITLE,
-                        &err.to_string(),
-                        &reqp,
-                        start_timestamp,
-                    )
-                })
+    ) -> Pin<Box<dyn Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'async_trait>>
+    where
+        Self: Sync + 'async_trait,
+    {
+        // The actual implementation.
+        async fn handle_envelope<H: endpoint::RequestHandler>(
+            context: &Context,
+            envelope: compat::IncomingEnvelope,
+            reqp: &IncomingRequestProperties,
+            start_timestamp: DateTime<Utc>,
+        ) -> Vec<Box<dyn IntoPublishableDump>> {
+            // Parse the envelope with the payload type specified in the handler.
+            match envelope.payload::<H::Payload>() {
+                // Call handler.
+                Ok(payload) => H::handle(context, payload, reqp, start_timestamp)
+                    .await
+                    .unwrap_or_else(|err| {
+                        // Handler returned an error => 422.
+                        MessageHandler::error_response(
+                            ResponseStatus::UNPROCESSABLE_ENTITY,
+                            reqp.method(),
+                            H::ERROR_TITLE,
+                            &err.to_string(),
+                            &reqp,
+                            start_timestamp,
+                        )
+                    }),
+                // Bad envelope or payload format => 400.
+                Err(err) => MessageHandler::error_response(
+                    ResponseStatus::BAD_REQUEST,
+                    reqp.method(),
+                    H::ERROR_TITLE,
+                    &err.to_string(),
+                    reqp,
+                    start_timestamp,
+                ),
             }
-            Err(err) => MessageHandler::error_response(
-                ResponseStatus::BAD_REQUEST,
-                reqp.method(),
-                Self::ERROR_TITLE,
-                &err.to_string(),
-                reqp,
-                start_timestamp,
-            ),
         }
+
+        Box::pin(handle_envelope::<H>(
+            context,
+            envelope,
+            reqp,
+            start_timestamp,
+        ))
     }
 }
 
-pub(crate) trait EventEnvelopeHandler {
+pub(crate) trait EventEnvelopeHandler<'async_trait> {
     fn handle_envelope(
-        context: &Context,
+        context: &'async_trait Context,
         envelope: compat::IncomingEnvelope,
-        evp: &IncomingEventProperties,
+        evp: &'async_trait IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Vec<Box<dyn IntoPublishableDump>>;
+    ) -> Pin<Box<dyn Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'async_trait>>;
 }
 
-impl<H: endpoint::EventHandler> EventEnvelopeHandler for H {
+// This is the same as with the above.
+impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandler<'async_trait>
+    for H
+{
     fn handle_envelope(
-        context: &Context,
+        context: &'async_trait Context,
         envelope: compat::IncomingEnvelope,
-        evp: &IncomingEventProperties,
+        evp: &'async_trait IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Vec<Box<dyn IntoPublishableDump>> {
-        match envelope.payload::<H::Payload>() {
-            Ok(payload) => {
-                Self::handle(context, payload, evp, start_timestamp).unwrap_or_else(|err| {
+    ) -> Pin<Box<dyn Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'async_trait>>
+    {
+        // The actual implementation.
+        async fn handle_envelope<H: endpoint::EventHandler>(
+            context: &Context,
+            envelope: compat::IncomingEnvelope,
+            evp: &IncomingEventProperties,
+            start_timestamp: DateTime<Utc>,
+        ) -> Vec<Box<dyn IntoPublishableDump>> {
+            // Parse event envelope with the payload from the handler.
+            match envelope.payload::<H::Payload>() {
+                // Call handler.
+                Ok(payload) => H::handle(context, payload, evp, start_timestamp)
+                    .await
+                    .unwrap_or_else(|err| {
+                        // Handler returned an error.
+                        if let Some(label) = evp.label() {
+                            error!("Failed to handle event with label = '{}': {}", label, err);
+                        }
+
+                        vec![]
+                    }),
+                Err(err) => {
+                    // Bad envelope or payload format.
                     if let Some(label) = evp.label() {
-                        error!("Failed to handle event with label = '{}': {}", label, err);
+                        error!("Failed to parse event with label = '{}': {}", label, err);
                     }
 
                     vec![]
-                })
-            }
-            Err(err) => {
-                if let Some(label) = evp.label() {
-                    error!("Failed to parse event with label = '{}': {}", label, err);
                 }
-
-                vec![]
             }
         }
+
+        Box::pin(handle_envelope::<H>(
+            context,
+            envelope,
+            evp,
+            start_timestamp,
+        ))
     }
 }

@@ -31,5 +31,7 @@ fn main() {
 }
 
 mod app;
+mod backend;
+mod config;
 mod db;
 mod schema;

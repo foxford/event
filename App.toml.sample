@@ -15,3 +15,8 @@ key = "data/keys/svc.private_key.p8.der.sample"
 [mqtt]
 uri = "mqtt://0.0.0.0:1883"
 clean_session = false
+
+[backend]
+base_url = "http://0.0.0.0:8000/api/v2"
+algorithm = "ES256"
+key = "data/keys/svc.private_key.p8.der.sample"

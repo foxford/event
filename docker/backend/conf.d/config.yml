@@ -1,0 +1,6 @@
+authConfigFile: conf.d/auth.toml
+tenantsConfigFile: conf.d/tenants.toml
+cors:
+db:
+  driverName: postgres
+  dataSourceName: host=backend_db dbname=events_api_dev sslmode=disable user=postgres
