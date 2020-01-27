@@ -46,7 +46,9 @@ impl MessageHandler {
                 self.handle_request(envelope, reqp, start_timestamp).await
             }
             compat::IncomingEnvelopeProperties::Response(_) => {
-                // TOOD: svc_agent::request::Dispatcher::response
+                // This service doesn't send any requests to other services so we don't
+                // expect any responses.
+                warn!("Unexpected incoming response message");
                 Ok(())
             }
             compat::IncomingEnvelopeProperties::Event(ref evp) => {
