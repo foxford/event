@@ -1,22 +1,21 @@
 use config;
 use serde_derive::Deserialize;
 use svc_agent::{mqtt::AgentConfig, AccountId};
-use svc_authn::jose::Algorithm;
+use svc_authn::jose::{Algorithm, ConfigMap as Authn};
 use svc_authz::ConfigMap as Authz;
 use svc_error::extension::sentry::Config as SentryConfig;
 
-use crate::backend::Config as BackendConfig;
-
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Config {
     pub(crate) id: AccountId,
     pub(crate) id_token: JwtConfig,
     pub(crate) agent_label: String,
     pub(crate) broker_id: AccountId,
+    pub(crate) authn: Authn,
     pub(crate) authz: Authz,
     pub(crate) mqtt: AgentConfig,
     pub(crate) sentry: Option<SentryConfig>,
-    pub(crate) backend: BackendConfig,
+    pub(crate) backend_url: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

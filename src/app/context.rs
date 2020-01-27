@@ -16,9 +16,10 @@ pub(crate) struct Context {
     backend: Arc<BackendClient>,
 }
 
+#[allow(dead_code)]
 impl Context {
     pub(crate) fn new(address: Address, config: Config, authz: Authz, db: Db) -> Self {
-        let backend = BackendClient::new(config.backend.to_owned(), address.id().to_owned());
+        let backend = BackendClient::new(config.to_owned());
 
         Self {
             address,
@@ -35,10 +36,6 @@ impl Context {
 
     pub(crate) fn config(&self) -> &Config {
         &self.config
-    }
-
-    pub(crate) fn authz(&self) -> &Authz {
-        &self.authz
     }
 
     pub(crate) fn db(&self) -> &Db {

@@ -1,7 +1,9 @@
 ## -----------------------------------------------------------------------------
 ## Build
 ## -----------------------------------------------------------------------------
-FROM rust:1.40-buster as build-stage
+# Using beta 1.41.0 because of this bugfix https://github.com/rust-lang/rust/pull/64856.
+# Stable release is scheduled on January 30, 2020.
+FROM instrumentisto/rust:1.41.0-beta-buster-slim as build-stage
 
 WORKDIR "/build"
 

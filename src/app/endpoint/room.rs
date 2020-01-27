@@ -38,7 +38,7 @@ impl RequestHandler for CreateHandler {
     ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error> {
         let room = context
             .backend()
-            .create_room(&payload.audience, &payload.description)
+            .create_room(reqp, &payload.audience, &payload.description)
             .await?;
 
         let timing = ShortTermTimingProperties::until_now(start_timestamp);

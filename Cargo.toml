@@ -14,13 +14,15 @@ env_logger = "0.7"
 failure = "0.1"
 futures = { version = "0.3", features = ["thread-pool"] }
 futures-channel = "0.3"
+http = "0.1"
 log = "0.4"
-reqwest = { version = "0.10", features = ["json"] }
 serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
+surf = "1.0"
 svc-agent = { version = "0.11", features = ["diesel"] }
 svc-authn = { version = "0.5", features = ["jose", "diesel"] }
 svc-authz = "0.9"
 svc-error = { version = "0.1", features = ["diesel", "r2d2", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
+url = "2.1"
 uuid = { version = "0.8", features = ["v4", "serde"] }
