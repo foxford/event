@@ -20,14 +20,13 @@ impl Client {
         &self,
         account: &impl Authenticable,
         audience: &str,
-        description: &str,
     ) -> Result<Room, Error> {
         self.make_request::<_, _, CreateRoomResponse>(
             account,
             Method::POST,
             audience,
             "rooms",
-            &CreateRoomRequest { description },
+            &CreateRoomRequest {},
         )
         .await
         .map(|payload| payload.room)

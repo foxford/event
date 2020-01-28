@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate diesel;
+
 use std::env::var;
 
 use dotenv::dotenv;
@@ -35,3 +38,4 @@ mod backend;
 mod config;
 mod db;
 mod schema;
+mod serde;
