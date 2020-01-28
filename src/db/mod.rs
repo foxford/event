@@ -18,6 +18,8 @@ pub(crate) fn create_pool(url: &str, size: u32, timeout: u64) -> ConnectionPool 
     Arc::new(pool)
 }
 
-pub mod sql {
+pub(crate) mod sql {
     pub use svc_agent::sql::{Account_id, Agent_id};
 }
+
+pub(crate) mod room;

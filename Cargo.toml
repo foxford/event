@@ -25,4 +25,4 @@ svc-authn = { version = "0.5", features = ["jose", "diesel"] }
 svc-authz = "0.9"
 svc-error = { version = "0.1", features = ["diesel", "r2d2", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
 url = "2.1"
-uuid = { version = "0.8", features = ["v4", "serde"] }
+uuid = { version = "0.6", features = ["v4", "serde"] }

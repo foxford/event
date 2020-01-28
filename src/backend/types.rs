@@ -1,25 +1,15 @@
 use std::fmt;
 
-use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct Room {
     pub(crate) id: Uuid,
-    pub(crate) opened_at: Option<DateTime<Utc>>,
-    pub(crate) closed_at: Option<DateTime<Utc>>,
-    pub(crate) description: String,
-    pub(crate) stream: Stream,
 }
-
-#[derive(Debug, Deserialize, Serialize)]
-pub(crate) struct Stream {}
 
 #[derive(Debug, Serialize)]
-pub(super) struct CreateRoomRequest<'a> {
-    pub(super) description: &'a str,
-}
+pub(super) struct CreateRoomRequest {}
 
 #[derive(Debug, Deserialize)]
 pub(super) struct CreateRoomResponse {

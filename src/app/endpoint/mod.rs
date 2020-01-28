@@ -7,6 +7,7 @@ use svc_agent::mqtt::{
     IntoPublishableDump,
 };
 
+#[allow(unused_imports)]
 use crate::app::{
     message_handler::{EventEnvelopeHandler, RequestEnvelopeHandler},
     Context,
@@ -50,7 +51,7 @@ macro_rules! request_routes {
 // Request routes configuration: method => RequestHandler
 request_routes!(
     "room.create" => room::CreateHandler,
-    "system.ping" => system::PingHandler
+    "room.read" => room::ReadHandler
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -69,6 +70,7 @@ pub(crate) trait EventHandler {
 
 macro_rules! event_routes {
     ($($l: pat => $h: ty),*) => {
+        #[allow(unused_variables)]
         pub(crate) async fn route_event(
             context: &Context,
             envelope: IncomingEnvelope,
@@ -88,12 +90,9 @@ macro_rules! event_routes {
 }
 
 // Event routes configuration: label => EventHandler
-event_routes!(
-    "dummy.say" => dummy::SayHandler
-);
+event_routes!();
 
 ///////////////////////////////////////////////////////////////////////////////
 
-mod dummy;
+mod helpers;
 mod room;
-mod system;
