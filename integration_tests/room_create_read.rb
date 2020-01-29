@@ -7,12 +7,14 @@ conn = connect host: 'localhost', port: 1883, agent: me, mode: 'service'
 
 response = conn.make_request 'room.create', to: event, payload: {
   audience: 'dev.usr.example.org',
-  time: [1580173002, 1580174002]
+  time: [1580173002, 1580174002],
+  tags: { webinar_id: '123' }
 }
 
 assert response.properties['status'] == '201'
 assert response.payload['audience'] = 'dev.usr.example.org'
 assert response.payload['time'] == [1580173002, 1580174002]
+assert response.payload['tags']['webinar_id'] == '123'
 puts response.payload
 
 response = conn.make_request 'room.read', to: event, payload: {
@@ -22,4 +24,5 @@ response = conn.make_request 'room.read', to: event, payload: {
 assert response.properties['status'] == '200'
 assert response.payload['audience'] = 'dev.usr.example.org'
 assert response.payload['time'] == [1580173002, 1580174002]
+assert response.payload['tags']['webinar_id'] == '123'
 puts response.payload

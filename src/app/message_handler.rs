@@ -8,6 +8,7 @@ use svc_agent::mqtt::{
     compat, Agent, IncomingEventProperties, IncomingRequestProperties, IntoPublishableDump,
     OutgoingResponse, ResponseStatus, ShortTermTimingProperties,
 };
+use svc_error::{extension::sentry, Error as SvcError};
 
 use crate::app::{endpoint, Context, API_VERSION};
 
@@ -110,23 +111,10 @@ impl MessageHandler {
         &self,
         messages: Vec<Box<dyn IntoPublishableDump>>,
     ) -> Result<(), Error> {
-        let address = self.agent.address();
         let mut agent = self.agent.clone();
 
         for message in messages {
-            let dump = message
-                .into_dump(address)
-                .map_err(|err| format_err!("Failed to dump message: {}", err))?;
-
-            info!(
-                "Outgoing message = '{}' sending to the topic = '{}'",
-                dump.payload(),
-                dump.topic(),
-            );
-
-            agent
-                .publish_dump(dump)
-                .map_err(|err| format_err!("Failed to publish message: {}", err))?;
+            publish_message(&mut agent, message)?;
         }
 
         Ok(())
@@ -151,6 +139,25 @@ impl MessageHandler {
         let resp = OutgoingResponse::unicast(err, props, reqp, API_VERSION);
         vec![Box::new(resp) as Box<dyn IntoPublishableDump>]
     }
+}
+
+pub(crate) fn publish_message(
+    agent: &mut Agent,
+    message: Box<dyn IntoPublishableDump>,
+) -> Result<(), Error> {
+    let dump = message
+        .into_dump(agent.address())
+        .map_err(|err| format_err!("Failed to dump message: {}", err))?;
+
+    info!(
+        "Outgoing message = '{}' sending to the topic = '{}'",
+        dump.payload(),
+        dump.topic(),
+    );
+
+    agent
+        .publish_dump(dump)
+        .map_err(|err| format_err!("Failed to publish message: {}", err))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -197,6 +204,15 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                 Ok(payload) => H::handle(context, payload, reqp, start_timestamp)
                     .await
                     .unwrap_or_else(|err| {
+                        let svc_error = SvcError::builder()
+                            .status(ResponseStatus::UNPROCESSABLE_ENTITY)
+                            .kind(reqp.method(), H::ERROR_TITLE)
+                            .detail(&err.to_string())
+                            .build();
+
+                        sentry::send(svc_error)
+                            .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
+
                         // Handler returned an error => 422.
                         MessageHandler::error_response(
                             ResponseStatus::UNPROCESSABLE_ENTITY,
@@ -264,6 +280,16 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                         // Handler returned an error.
                         if let Some(label) = evp.label() {
                             error!("Failed to handle event with label = '{}': {}", label, err);
+
+                            let svc_error = SvcError::builder()
+                                .status(ResponseStatus::UNPROCESSABLE_ENTITY)
+                                .kind(label, &format!("Failed to handle event '{}'", label))
+                                .detail(&err.to_string())
+                                .build();
+
+                            sentry::send(svc_error).unwrap_or_else(|err| {
+                                warn!("Error sending error to Sentry: {}", err)
+                            });
                         }
 
                         vec![]

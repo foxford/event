@@ -1,0 +1,17 @@
+GEM
+  remote: https://rubygems.org/
+  specs:
+    jwt (2.2.1)
+    mqtt (0.5.0)
+    ulms_client (0.2.0)
+      mqtt (~> 0.5)
+
+PLATFORMS
+  ruby
+
+DEPENDENCIES
+  jwt
+  ulms_client
+
+BUNDLED WITH
+   2.0.2
