@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::{err_msg, format_err, Error};
+use failure::{format_err, Error};
 use futures::task::SpawnExt;
 use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
@@ -194,15 +194,12 @@ impl RequestHandler for AdjustHandler {
 
                 let result = future
                     .await
-                    .and_then(|(modified_room, modified_segments)| {
-                        modified_room
-                            .source_room_id()
-                            .ok_or_else(|| err_msg("Missing source_room_id"))
-                            .map(|original_room_id| RoomAdjustResult::Success {
-                                original_room_id,
-                                modified_room_id: modified_room.id(),
-                                modified_segments,
-                            })
+                    .map(|(original_room, modified_room, modified_segments)| {
+                        RoomAdjustResult::Success {
+                            original_room_id: original_room.id(),
+                            modified_room_id: modified_room.id(),
+                            modified_segments,
+                        }
                     })
                     .unwrap_or_else(|err| {
                         error!(

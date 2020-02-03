@@ -31,6 +31,6 @@ create table adjustment (
     "offset" bigint not null,
     created_at timestamptz not null default now(),
 
-    primary key(room_id),
+    primary key (room_id),
     foreign key (room_id) references room (id) on delete cascade
 );

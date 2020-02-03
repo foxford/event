@@ -149,25 +149,6 @@ impl Client {
         Ok(events)
     }
 
-    /// `POST /{audience}/rooms/{room_id}/events`
-    pub(crate) async fn create_event(
-        &self,
-        account: &impl Authenticable,
-        audience: &str,
-        room_id: Uuid,
-        data: EventData,
-    ) -> Result<Event, Error> {
-        self.make_request::<_, _, CreateEventResponse>(
-            account,
-            Method::POST,
-            audience,
-            &format!("rooms/{}/events/{}", room_id, data.kind()),
-            &CreateEventRequest { data },
-        )
-        .await
-        .map(|payload| payload.event)
-    }
-
     /// `DELETE /{audience}/rooms/{room_id}/events/{type}/{event_id}`
     pub(crate) async fn delete_event(
         &self,
@@ -176,13 +157,16 @@ impl Client {
         room_id: Uuid,
         kind: &str,
         event_id: Uuid,
+        reason: Option<&str>,
     ) -> Result<(), Error> {
         self.make_request::<_, _, Ignore>(
             account,
             Method::DELETE,
             audience,
             &format!("rooms/{}/events/{}/{}", room_id, kind, event_id),
-            &Ignore {},
+            &DeleteEventRequest {
+                reason: reason.map(|r| r.to_owned()),
+            },
         )
         .await
         .map(|_payload| ())

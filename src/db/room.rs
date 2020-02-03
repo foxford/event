@@ -37,10 +37,6 @@ impl Object {
         &self.audience
     }
 
-    pub(crate) fn source_room_id(&self) -> Option<Uuid> {
-        self.source_room_id
-    }
-
     pub(crate) fn time(&self) -> &Time {
         &self.time
     }

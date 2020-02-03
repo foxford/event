@@ -36,14 +36,6 @@ pub(crate) enum EventData {
     Stream(StreamEvent),
 }
 
-impl EventData {
-    pub(crate) fn kind(&self) -> &'static str {
-        match self {
-            Self::Stream(_) => "stream",
-        }
-    }
-}
-
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StreamEvent {
     pub(crate) cut: CutKind,
@@ -85,6 +77,12 @@ pub(super) struct CreateEventRequest {
 #[derive(Debug, Deserialize)]
 pub(super) struct CreateEventResponse {
     pub(super) event: Event,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct DeleteEventRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) reason: Option<String>,
 }
 
 ///////////////////////////////////////////////////////////////////////////////

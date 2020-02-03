@@ -13,7 +13,7 @@ event = account('event', 'dev.svc.example.org')
 conn = connect host: 'localhost', port: 1883, agent: me, mode: 'service'
 
 # Create room.
-started_at = 1580173002
+started_at = Time.now.to_i
 finished_at = started_at + 100
 
 response = conn.make_request 'room.create', to: event, payload: {
@@ -110,7 +110,7 @@ response = conn.make_request 'room.adjust', to: event, payload: {
   id: room_id,
   started_at: Time.at(started_at).utc.iso8601,
   segments: [[0, 45_000], [55_000, 70_000]],
-  offset: 3000,
+  offset: 0,
 }
 
 assert response.properties['status'] == '202'
@@ -124,4 +124,91 @@ end
 assert notification.payload['status'] == 'success'
 puts notification.payload
 
-# TODO: Check out events and their timestamps in new rooms.
+original_room_id = notification.payload['original_room_id']
+modified_room_id = notification.payload['modified_room_id']
+
+assert notification.payload['modified_segments'] == [[0, 19999], [39999, 60000]]
+
+# Assert events and their timestamps in the original room.
+response = make_backend_request(
+  Net::HTTP::Get,
+  "dev.usr.example.org/rooms/#{original_room_id}/events?direction=forward",
+  token
+)
+
+assert response.is_a?(Net::HTTPSuccess)
+events = JSON.parse(response.body)['events']
+
+assert events[0]['type'] == 'message'
+assert events[0]['data'] == { 'message' => 'message 1' }
+assert events[0]['offset'] == 9999
+
+assert events[1]['type'] == 'message'
+assert events[1]['data'] == { 'message' => 'message 2' }
+assert events[1]['offset'] == 29999
+
+assert events[2]['type'] == 'stream'
+assert events[2]['data'] == { 'cut' => 'start' }
+assert (44000..45000).include?(events[2]['offset'])
+
+assert events[3]['type'] == 'stream'
+assert events[3]['data'] == { 'cut' => 'stop' }
+assert (44000..45000).include?(events[3]['offset'])
+
+assert events[4]['type'] == 'message'
+assert events[4]['data'] == { 'message' => 'message 3' }
+assert events[4]['offset'] == 45000
+
+assert events[5]['type'] == 'message'
+assert events[5]['data'] == { 'message' => 'message 4' }
+assert events[5]['offset'] == 49999
+
+assert events[6]['type'] == 'stream'
+assert events[6]['data'] == { 'cut' => 'start' }
+assert (59000..60000).include?(events[6]['offset'])
+
+# Assert events and their timestamps in the modified room.
+response = make_backend_request(
+  Net::HTTP::Get,
+  "dev.usr.example.org/rooms/#{modified_room_id}/events?direction=forward",
+  token
+)
+
+assert response.is_a?(Net::HTTPSuccess)
+events = JSON.parse(response.body)['events']
+
+assert events[0]['type'] == 'message'
+assert events[0]['data'] == { 'message' => 'message 1' }
+assert events[0]['offset'] == 9999
+
+assert events[1]['type'] == 'stream'
+assert events[1]['data'] == { 'cut' => 'start' }
+assert (19000..20000).include?(events[1]['offset'])
+
+assert events[2]['type'] == 'stream'
+assert events[2]['data'] == { 'cut' => 'stop' }
+assert (19000..20000).include?(events[2]['offset'])
+
+assert events[3]['type'] == 'message'
+assert events[3]['data'] == { 'message' => 'message 2' }
+assert events[3]['offset'] == 19999
+
+assert events[4]['type'] == 'stream'
+assert events[4]['data'] == { 'cut' => 'start' }
+assert (24000..25000).include?(events[4]['offset'])
+
+assert events[5]['type'] == 'stream'
+assert events[5]['data'] == { 'cut' => 'stop' }
+assert (24000..25000).include?(events[5]['offset'])
+
+assert events[6]['type'] == 'message'
+assert events[6]['data'] == { 'message' => 'message 3' }
+assert events[6]['offset'] == 25000
+
+assert events[7]['type'] == 'message'
+assert events[7]['data'] == { 'message' => 'message 4' }
+assert events[7]['offset'] == 29999
+
+assert events[8]['type'] == 'stream'
+assert events[8]['data'] == { 'cut' => 'start' }
+assert (39000..40000).include?(events[8]['offset'])

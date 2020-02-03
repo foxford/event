@@ -24,23 +24,15 @@
 //! The backend already can apply editings but the problem is that it applies both kinds at once.
 //! This algorithm works around this problem by removing cut-start/stop events from the live room
 //! like they have never been there to avoid their application when creating the original room.
-//! Then it puts them to the original room to apply them when creating the modified room.
-//! Also to avoid double application of video segments it removes them from the original room
-//! before creating the modified room.
 //!
 //! So the basic algorithm is the following:
 //! 1. Close the live room and set video segments.
-//! 2. Remove cut-start/stop events from the live room.
-//! 3. Clone the live room into the original room and shift events for video segments only.
-//! 4. Add cut-start/stop events from #2 into the original room.
-//! 5. Remove video segments from the original room to avoid double shifting.
-//! 6. Clone the original room into the modified room and shift events for cut-start/stop events only.
+//! 2. Clone the live room into the modified room with both video segments & cut-start/stop
+//!    events applied.
+//! 3. Remove cut-start/stop events from the live room.
+//! 4. Clone the live room into the original room with video segments applied only.
 //!
 //! Rooms are being synchronized in the backend and in the local DB so in total there are 6 rooms.
-
-use std::i64::MAX as MAX_I64;
-use std::ops::Bound;
-use std::time::{UNIX_EPOCH, Duration};
 
 use chrono::{DateTime, Utc};
 use failure::{format_err, Error};
@@ -61,7 +53,7 @@ pub(crate) async fn call(
     started_at: DateTime<Utc>,
     segments: Vec<Segment>,
     offset: i64,
-) -> Result<(LocalRoom, Vec<Segment>), Error> {
+) -> Result<(LocalRoom, LocalRoom, Vec<Segment>), Error> {
     info!(
         "Room adjustment task started for room_id = '{}'",
         local_live_room.id()
@@ -95,6 +87,15 @@ pub(crate) async fn call(
         )
         .await?;
 
+    // Clone the backend live room and offset according to both segments and cut-start/stop events.
+    let (backend_modified_room, modified_segments) = backend
+        .transcode_stream(account, &local_live_room.audience(), local_live_room.id())
+        .await?;
+
+    // Сreate local modified room.
+    let local_modified_room =
+        create_local_room(db.clone(), &local_live_room, &backend_modified_room)?;
+
     // Get cut-start/stop events from backend live room.
     let cut_events = backend
         .get_events(
@@ -105,7 +106,7 @@ pub(crate) async fn call(
         )
         .await?;
 
-    // Delete these events from the room to avoid premature cut-start/stop events application.
+    // Delete these events from the backend live room.
     for event in &cut_events {
         backend
             .delete_event(
@@ -114,66 +115,26 @@ pub(crate) async fn call(
                 local_live_room.id(),
                 "stream",
                 event.id,
+                Some("adjustment"),
             )
             .await?;
     }
 
-    // Clone the backend live room and offset according to segments.
+    // Clone the backend live room and offset according to segments only.
     let (backend_original_room, _original_segments) = backend
         .transcode_stream(account, &local_live_room.audience(), local_live_room.id())
         .await?;
 
     // Create local original room.
-    let local_original_room =
-        create_local_room(db.clone(), &local_live_room, &backend_original_room)?;
-
-    // Create cut-start/stop events in the backend original room to apply them into a new room.
-    // We don't use bulk endpoint here because it doesn't allow to specify `data` field.
-    for event in cut_events {
-        backend
-            .create_event(
-                account,
-                &local_original_room.audience(),
-                local_original_room.id(),
-                event.data,
-            )
-            .await?;
-    }
-
-    // Drop original room metadata avoid double offset on the next clone.
-    backend
-        .set_room_metadata(
-            account,
-            &local_original_room.audience(),
-            local_original_room.id(),
-            &BackendRoomMetadata {
-                // Zero is not allowed so we add just 1 millisecond to pass the validator.
-                started_at: DateTime::<Utc>::from(UNIX_EPOCH + Duration::from_millis(1)),
-                time: vec![(Bound::Included(0), Bound::Excluded(MAX_I64))],
-                preroll: 0,
-            },
-        )
-        .await?;
-
-    // Clone the backend original room and offset according to cut-start/stop events.
-    let (backend_modified_room, modified_segments) = backend
-        .transcode_stream(
-            account,
-            &local_original_room.audience(),
-            backend_original_room.id,
-        )
-        .await?;
-
-    // Сreate local modified room.
-    let local_modified_room = create_local_room(db, &local_original_room, &backend_modified_room)?;
+    let local_original_room = create_local_room(db, &local_live_room, &backend_original_room)?;
 
     info!(
-        "Room adjustment task successfully finished for room_id = '{}', duration = {}",
+        "Room adjustment task successfully finished for room_id = '{}', duration = {} ms",
         local_live_room.id(),
-        Utc::now() - start_timestamp
+        (Utc::now() - start_timestamp).num_milliseconds()
     );
 
-    Ok((local_modified_room, modified_segments))
+    Ok((local_original_room, local_modified_room, modified_segments))
 }
 
 fn create_local_room(
