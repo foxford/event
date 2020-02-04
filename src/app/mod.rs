@@ -43,7 +43,7 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
 
     // Message loop for incoming messages of MQTT Agent
     let (mq_tx, mut mq_rx) = futures_channel::mpsc::unbounded::<Notification>();
-    let thread_pool = ThreadPoolBuilder::new().create()?;
+    let thread_pool = Arc::new(ThreadPoolBuilder::new().create()?);
 
     thread::spawn(move || {
         for message in rx {
@@ -75,12 +75,20 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
         .map_err(|err| format_err!("Error subscribing to multicast requests: {}", err))?;
 
     // Message handler
-    let context = Context::new(agent.address().to_owned(), config, authz, db.clone());
+    let context = Context::new(
+        agent.to_owned(),
+        config,
+        authz,
+        db.clone(),
+        thread_pool.clone(),
+    );
+
     let message_handler = Arc::new(MessageHandler::new(agent, context));
 
     // Message loop
     while let Some(message) = mq_rx.next().await {
         let message_handler = message_handler.clone();
+
         thread_pool
             .spawn(async move {
                 match message {
@@ -99,3 +107,4 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
 mod context;
 mod endpoint;
 mod message_handler;
+pub(crate) mod operations;

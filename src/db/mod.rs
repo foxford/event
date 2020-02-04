@@ -22,4 +22,5 @@ pub(crate) mod sql {
     pub use svc_agent::sql::{Account_id, Agent_id};
 }
 
+pub(crate) mod adjustment;
 pub(crate) mod room;

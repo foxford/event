@@ -51,7 +51,8 @@ macro_rules! request_routes {
 // Request routes configuration: method => RequestHandler
 request_routes!(
     "room.create" => room::CreateHandler,
-    "room.read" => room::ReadHandler
+    "room.read" => room::ReadHandler,
+    "room.adjust" => room::AdjustHandler
 );
 
 ///////////////////////////////////////////////////////////////////////////////
