@@ -1,9 +1,13 @@
 ## -----------------------------------------------------------------------------
 ## Build
 ## -----------------------------------------------------------------------------
-# Using beta 1.41.0 because of this bugfix https://github.com/rust-lang/rust/pull/64856.
-# Stable release is scheduled on January 30, 2020.
-FROM instrumentisto/rust:1.41.0-beta-buster-slim as build-stage
+FROM rust:1.41.0-slim-buster as build-stage
+
+RUN apt update && apt install -y --no-install-recommends \
+  pkg-config \
+  libssl-dev \
+  libcurl4-openssl-dev \
+  libpq-dev
 
 WORKDIR "/build"
 
