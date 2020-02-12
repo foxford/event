@@ -1,13 +1,14 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::{bail, format_err, Error};
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::{
     mqtt::{
-        IncomingEventProperties, IntoPublishableDump, OutgoingEvent, ShortTermTimingProperties,
+        IncomingEventProperties, IntoPublishableDump, OutgoingEvent, ResponseStatus,
+        ShortTermTimingProperties,
     },
     AgentId, Authenticable,
 };
+use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::endpoint::EventHandler;
@@ -23,14 +24,17 @@ pub(crate) struct SubscriptionEvent {
 }
 
 impl SubscriptionEvent {
-    fn try_room_id(&self) -> Result<Uuid, Error> {
+    fn try_room_id(&self) -> Result<Uuid, SvcError> {
         let object: Vec<&str> = self.object.iter().map(AsRef::as_ref).collect();
 
         match object.as_slice() {
-            ["rooms", room_id, "events"] => {
-                Uuid::parse_str(room_id).map_err(|err| format_err!("UUID parse error: {}", err))
-            }
-            _ => bail!("Bad 'object' format; expected [\"room\", <ROOM_ID>, \"events\"]"),
+            ["rooms", room_id, "events"] => Uuid::parse_str(room_id).map_err(|err| {
+                svc_error!(ResponseStatus::BAD_REQUEST, "UUID parse error: {}", err)
+            }),
+            _ => Err(svc_error!(
+                ResponseStatus::BAD_REQUEST,
+                "Bad 'object' format; expected [\"room\", <ROOM_ID>, \"events\"]"
+            )),
         }
     }
 }
@@ -54,14 +58,15 @@ impl EventHandler for CreateHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error> {
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
-            bail!(
+            return Err(svc_error!(
+                ResponseStatus::FORBIDDEN,
                 "Expected subscription.create event to be sent from the broker account '{}', got '{}'",
                 context.config().broker_id,
                 evp.as_account_id()
-            );
+            ));
         }
 
         // Find room.
@@ -71,7 +76,13 @@ impl EventHandler for CreateHandler {
         room::FindQuery::new(room_id)
             .time(room::now())
             .execute(&conn)?
-            .ok_or_else(|| format_err!("the room = '{}' is not found", room_id))?;
+            .ok_or_else(|| {
+                svc_error!(
+                    ResponseStatus::NOT_FOUND,
+                    "the room = '{}' is not found",
+                    room_id
+                )
+            })?;
 
         // Update agent state to `ready`.
         agent::UpdateQuery::new(&payload.subject, room_id)
@@ -105,14 +116,15 @@ impl EventHandler for DeleteHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error> {
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
-            bail!(
-                "Expected subscription.deelete event to be sent from the broker account '{}', got '{}'",
+            return Err(svc_error!(
+                ResponseStatus::FORBIDDEN,
+                "Expected subscription.delete event to be sent from the broker account '{}', got '{}'",
                 context.config().broker_id,
                 evp.as_account_id()
-            );
+            ));
         }
 
         // Delete agent from the DB.
@@ -121,11 +133,12 @@ impl EventHandler for DeleteHandler {
         let row_count = agent::DeleteQuery::new(&payload.subject, room_id).execute(&conn)?;
 
         if row_count != 1 {
-            bail!(
+            return Err(svc_error!(
+                ResponseStatus::NOT_FOUND,
                 "the agent is not found for agent_id = '{}', room = '{}'",
                 payload.subject,
                 room_id
-            );
+            ));
         }
 
         // Send broadcast notification that the agent has left the room.

@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::{bail, format_err, Error};
 use futures::task::SpawnExt;
 use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
@@ -81,16 +80,30 @@ impl RequestHandler for CreateHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error> {
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
         let backend_room = context
             .backend()
             .create_room(reqp, &payload.audience)
-            .await?;
+            .await
+            .map_err(|err| {
+                svc_error!(
+                    ResponseStatus::FAILED_DEPENDENCY,
+                    "Backend room creation request failed: {}",
+                    err
+                )
+            })?;
 
         context
             .backend()
             .open_room(reqp, &payload.audience, backend_room.id)
-            .await?;
+            .await
+            .map_err(|err| {
+                svc_error!(
+                    ResponseStatus::FAILED_DEPENDENCY,
+                    "Backend room opening request failed: {}",
+                    err
+                )
+            })?;
 
         let room = {
             let mut query = InsertQuery::new(backend_room.id, &payload.audience, payload.time);
@@ -142,7 +155,7 @@ impl RequestHandler for ReadHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error> {
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
         let conn = context.db().get()?;
 
         let room = find_room!(
@@ -182,7 +195,7 @@ impl RequestHandler for EnterHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error> {
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
         let conn = context.db().get()?;
 
         let room = find_room!(
@@ -251,7 +264,7 @@ impl RequestHandler for LeaveHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error> {
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
         let conn = context.db().get()?;
 
         let room = find_room!(
@@ -270,11 +283,12 @@ impl RequestHandler for LeaveHandler {
             .execute(&conn)?;
 
         if results.len() == 0 {
-            bail!(
+            return Err(svc_error!(
+                ResponseStatus::NOT_FOUND,
                 "agent = '{}' is not online in the room = '{}'",
                 reqp.as_agent_id(),
                 room.id()
-            )
+            ));
         }
 
         // Send dynamic subscription deletion request to the broker.
@@ -329,7 +343,7 @@ impl RequestHandler for AdjustHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error> {
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
         let room = {
             let conn = context.db().get()?;
 
@@ -405,7 +419,8 @@ impl RequestHandler for AdjustHandler {
                 });
             })
             .map_err(|err| {
-                format_err!(
+                svc_error!(
+                    ResponseStatus::INTERNAL_SERVER_ERROR,
                     "Failed to spawn room adjustment task for room_id = '{}': {}",
                     id,
                     err,

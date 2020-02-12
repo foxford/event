@@ -1,3 +1,5 @@
+#![macro_use]
+
 use chrono::{DateTime, Duration, Utc};
 use serde::ser::Serialize;
 use svc_agent::mqtt::{
@@ -54,4 +56,13 @@ pub(crate) fn build_notification(
     let mut props = OutgoingEventProperties::new(label, timing);
     props.set_tracking(reqp.tracking().to_owned());
     Box::new(OutgoingEvent::broadcast(payload, props, path))
+}
+
+macro_rules! svc_error {
+    ($status: expr, $($arg:tt)*) => {
+        svc_error::Error::builder()
+            .status($status)
+            .detail(&format!($($arg)*))
+            .build()
+    }
 }

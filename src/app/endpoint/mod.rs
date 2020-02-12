@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::Error;
 use serde::de::DeserializeOwned;
 use svc_agent::mqtt::{
     compat::IncomingEnvelope, IncomingEventProperties, IncomingRequestProperties,
     IntoPublishableDump,
 };
+use svc_error::Error as SvcError;
 
 #[allow(unused_imports)]
 use crate::app::{
@@ -25,7 +25,7 @@ pub(crate) trait RequestHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error>;
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError>;
 }
 
 macro_rules! request_routes {
@@ -69,7 +69,7 @@ pub(crate) trait EventHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error>;
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError>;
 }
 
 macro_rules! event_routes {
@@ -101,7 +101,7 @@ event_routes!(
 
 ///////////////////////////////////////////////////////////////////////////////
 
-mod agent;
 mod helpers;
+mod agent;
 mod room;
 mod subscription;
