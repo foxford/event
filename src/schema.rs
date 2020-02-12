@@ -1,4 +1,7 @@
 table! {
+    use diesel::sql_types::*;
+    use crate::db::sql::*;
+
     adjustment (room_id) {
         room_id -> Uuid,
         started_at -> Timestamptz,
@@ -22,6 +25,26 @@ table! {
 }
 
 table! {
+    use diesel::sql_types::*;
+    use crate::db::sql::*;
+
+    event (id) {
+        id -> Uuid,
+        room_id -> Uuid,
+        #[sql_name = "type"]
+        type_ -> Text,
+        data -> Jsonb,
+        offset -> Int8,
+        created_by -> Agent_id,
+        created_at -> Timestamptz,
+        deleted_at -> Nullable<Timestamptz>,
+    }
+}
+
+table! {
+    use diesel::sql_types::*;
+    use crate::db::sql::*;
+
     room (id) {
         id -> Uuid,
         audience -> Text,
@@ -34,5 +57,6 @@ table! {
 
 joinable!(adjustment -> room (room_id));
 joinable!(agent -> room (room_id));
+joinable!(event -> room (room_id));
 
-allow_tables_to_appear_in_same_query!(adjustment, agent, room,);
+allow_tables_to_appear_in_same_query!(adjustment, agent, event, room,);

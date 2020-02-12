@@ -39,5 +39,6 @@ mod app;
 mod backend;
 mod config;
 mod db;
+#[allow(unused_imports)]
 mod schema;
 mod serde;

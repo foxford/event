@@ -10,3 +10,5 @@
         - [Leave](api.room.leave.md)
     - [Agent](api.agent.md)
         - [List](api.agent.list.md)
+    - [Event](api.event.md)
+        - [Create](api.event.create.md)
