@@ -3,7 +3,7 @@ require 'ulms_client'
 me = agent('alpha', account('test', 'dev.usr.example.org'))
 event = account('event', 'dev.svc.example.org')
 
-conn = connect host: 'localhost', port: 1883, agent: me, mode: 'service'
+conn = connect host: 'localhost', port: 1883, agent: me
 
 response = conn.make_request 'room.create', to: event, payload: {
   audience: 'dev.usr.example.org',

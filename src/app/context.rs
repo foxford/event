@@ -43,6 +43,10 @@ impl Context {
         &self.agent
     }
 
+    pub(crate) fn authz(&self) -> &Authz {
+        &self.authz
+    }
+
     pub(crate) fn config(&self) -> &Config {
         &self.config
     }

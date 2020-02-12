@@ -50,9 +50,12 @@ macro_rules! request_routes {
 
 // Request routes configuration: method => RequestHandler
 request_routes!(
+    "agent.list" => agent::ListHandler,
+    "room.adjust" => room::AdjustHandler,
     "room.create" => room::CreateHandler,
-    "room.read" => room::ReadHandler,
-    "room.adjust" => room::AdjustHandler
+    "room.enter" => room::EnterHandler,
+    "room.leave" => room::LeaveHandler,
+    "room.read" => room::ReadHandler
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -91,9 +94,14 @@ macro_rules! event_routes {
 }
 
 // Event routes configuration: label => EventHandler
-event_routes!();
+event_routes!(
+    "subscription.delete" => subscription::DeleteHandler,
+    "subscription.create" => subscription::CreateHandler
+);
 
 ///////////////////////////////////////////////////////////////////////////////
 
+mod agent;
 mod helpers;
 mod room;
+mod subscription;

@@ -1,4 +1,4 @@
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde::ser::Serialize;
 use svc_agent::mqtt::{
     IncomingRequestProperties, IntoPublishableDump, OutgoingEvent, OutgoingEventProperties,
@@ -13,8 +13,14 @@ pub(crate) fn build_response(
     payload: impl Serialize + 'static,
     reqp: &IncomingRequestProperties,
     start_timestamp: DateTime<Utc>,
+    maybe_authz_time: Option<Duration>,
 ) -> Box<dyn IntoPublishableDump> {
-    let timing = ShortTermTimingProperties::until_now(start_timestamp);
+    let mut timing = ShortTermTimingProperties::until_now(start_timestamp);
+
+    if let Some(authz_time) = maybe_authz_time {
+        timing.set_authorization_time(authz_time);
+    }
+
     let props = reqp.to_response(status, timing);
     let resp = OutgoingResponse::unicast(payload, props, reqp, API_VERSION);
     Box::new(resp) as Box<dyn IntoPublishableDump>
@@ -26,6 +32,7 @@ pub(crate) fn build_error_response(
     detail: &str,
     reqp: &IncomingRequestProperties,
     start_timestamp: DateTime<Utc>,
+    maybe_authz_time: Option<Duration>,
 ) -> Box<dyn IntoPublishableDump> {
     let error = SvcError::builder()
         .status(status)
@@ -33,7 +40,7 @@ pub(crate) fn build_error_response(
         .detail(detail)
         .build();
 
-    build_response(status, error, reqp, start_timestamp)
+    build_response(status, error, reqp, start_timestamp, maybe_authz_time)
 }
 
 pub(crate) fn build_notification(

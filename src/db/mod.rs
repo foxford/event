@@ -19,8 +19,10 @@ pub(crate) fn create_pool(url: &str, size: u32, timeout: u64) -> ConnectionPool 
 }
 
 pub(crate) mod sql {
+    pub use super::agent::Agent_status;
     pub use svc_agent::sql::{Account_id, Agent_id};
 }
 
 pub(crate) mod adjustment;
+pub(crate) mod agent;
 pub(crate) mod room;
