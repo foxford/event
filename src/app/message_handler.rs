@@ -8,7 +8,7 @@ use svc_agent::mqtt::{
     compat, Agent, IncomingEventProperties, IncomingRequestProperties, IntoPublishableDump,
     OutgoingResponse, ResponseStatus, ShortTermTimingProperties,
 };
-use svc_error::{extension::sentry, Error as SvcError};
+use svc_error::extension::sentry;
 
 use crate::app::{endpoint, Context, API_VERSION};
 
@@ -203,22 +203,18 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                 // Call handler.
                 Ok(payload) => H::handle(context, payload, reqp, start_timestamp)
                     .await
-                    .unwrap_or_else(|err| {
-                        let svc_error = SvcError::builder()
-                            .status(ResponseStatus::UNPROCESSABLE_ENTITY)
-                            .kind(reqp.method(), H::ERROR_TITLE)
-                            .detail(&err.to_string())
-                            .build();
+                    .unwrap_or_else(|mut svc_error| {
+                        svc_error.set_kind(reqp.method(), H::ERROR_TITLE);
 
-                        sentry::send(svc_error)
+                        sentry::send(svc_error.clone())
                             .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
 
                         // Handler returned an error => 422.
                         MessageHandler::error_response(
-                            ResponseStatus::UNPROCESSABLE_ENTITY,
+                            svc_error.status_code(),
                             reqp.method(),
                             H::ERROR_TITLE,
-                            &err.to_string(),
+                            &svc_error.to_string(),
                             &reqp,
                             start_timestamp,
                         )
@@ -276,18 +272,13 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                 // Call handler.
                 Ok(payload) => H::handle(context, payload, evp, start_timestamp)
                     .await
-                    .unwrap_or_else(|err| {
+                    .unwrap_or_else(|mut err| {
                         // Handler returned an error.
                         if let Some(label) = evp.label() {
+                            err.set_kind(label, &format!("Failed to handle event '{}'", label));
                             error!("Failed to handle event with label = '{}': {}", label, err);
 
-                            let svc_error = SvcError::builder()
-                                .status(ResponseStatus::UNPROCESSABLE_ENTITY)
-                                .kind(label, &format!("Failed to handle event '{}'", label))
-                                .detail(&err.to_string())
-                                .build();
-
-                            sentry::send(svc_error).unwrap_or_else(|err| {
+                            sentry::send(err).unwrap_or_else(|err| {
                                 warn!("Error sending error to Sentry: {}", err)
                             });
                         }

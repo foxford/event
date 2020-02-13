@@ -17,11 +17,9 @@ audience = ["dev.usr.example.org"]
 algorithm = "HS256"
 key = "docker/backend/conf.d/org.usr.example.iam.key"
 
-[authz."example.net"]
-type = "http"
-uri = "https://iam.example.net/authz"
-algorithm = "ES256"
-key = "data/keys/svc.private_key.p8.der.sample"
+[authz."dev.usr.example.org"]
+type = "local"
+trusted = ["test.dev.usr.example.org"]
 
 [mqtt]
 uri = "mqtt://0.0.0.0:1883"

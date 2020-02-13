@@ -12,6 +12,19 @@ use crate::schema::room;
 
 pub(crate) type Time = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
 
+/// Use to filter strictly by room time range.
+///
+///    [-----room.time-----]
+///  |                            NOT OK
+///              |                OK
+///                          |    NOT OK
+pub(crate) fn now() -> Time {
+    let now = Utc::now();
+    (Bound::Included(now), Bound::Included(now))
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 #[derive(Clone, Debug, Serialize, Identifiable, Associations, Queryable)]
 #[table_name = "room"]
 #[belongs_to(Object, foreign_key = "source_room_id")]
@@ -50,17 +63,32 @@ impl Object {
 
 pub(crate) struct FindQuery {
     id: Uuid,
+    time: Option<Time>,
 }
 
 impl FindQuery {
     pub(crate) fn new(id: Uuid) -> Self {
-        Self { id }
+        Self { id, time: None }
+    }
+
+    pub(crate) fn time(self, time: Time) -> Self {
+        Self {
+            time: Some(time),
+            ..self
+        }
     }
 
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
         use diesel::prelude::*;
+        use diesel::{dsl::sql, sql_types::Tstzrange};
 
-        room::table.find(self.id).get_result(conn).optional()
+        let mut q = room::table.into_boxed();
+
+        if let Some(time) = self.time {
+            q = q.filter(sql("room.time && ").bind::<Tstzrange, _>(time));
+        }
+
+        q.filter(room::id.eq(self.id)).get_result(conn).optional()
     }
 }
 

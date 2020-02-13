@@ -1,11 +1,11 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::Error;
 use serde::de::DeserializeOwned;
 use svc_agent::mqtt::{
     compat::IncomingEnvelope, IncomingEventProperties, IncomingRequestProperties,
     IntoPublishableDump,
 };
+use svc_error::Error as SvcError;
 
 #[allow(unused_imports)]
 use crate::app::{
@@ -25,7 +25,7 @@ pub(crate) trait RequestHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error>;
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError>;
 }
 
 macro_rules! request_routes {
@@ -50,9 +50,12 @@ macro_rules! request_routes {
 
 // Request routes configuration: method => RequestHandler
 request_routes!(
+    "agent.list" => agent::ListHandler,
+    "room.adjust" => room::AdjustHandler,
     "room.create" => room::CreateHandler,
-    "room.read" => room::ReadHandler,
-    "room.adjust" => room::AdjustHandler
+    "room.enter" => room::EnterHandler,
+    "room.leave" => room::LeaveHandler,
+    "room.read" => room::ReadHandler
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -66,7 +69,7 @@ pub(crate) trait EventHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, Error>;
+    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError>;
 }
 
 macro_rules! event_routes {
@@ -91,9 +94,14 @@ macro_rules! event_routes {
 }
 
 // Event routes configuration: label => EventHandler
-event_routes!();
+event_routes!(
+    "subscription.delete" => subscription::DeleteHandler,
+    "subscription.create" => subscription::CreateHandler
+);
 
 ///////////////////////////////////////////////////////////////////////////////
 
 mod helpers;
+mod agent;
 mod room;
+mod subscription;

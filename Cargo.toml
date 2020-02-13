@@ -9,6 +9,7 @@ async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 config = "0.10"
 diesel = { version = "1.4", features = ["postgres", "uuid", "chrono", "serde_json", "r2d2"] }
+diesel-derive-enum = { version = "0.4", features = ["postgres"] }
 dotenv = "0.15"
 env_logger = "0.7"
 failure = "0.1"
