@@ -1,0 +1,55 @@
+language: rust
+rust:
+  - 1.41.0
+before_install:
+  - sudo apt-get update
+  - sudo apt-get --yes remove postgresql\*
+  - sudo apt-get install -y postgresql-11 postgresql-client-11
+  - sudo cp /etc/postgresql/{9.6,11}/main/pg_hba.conf
+  - sudo service postgresql restart 11  
+addons:
+  postgresql: "11.2"
+  apt:
+    packages:
+      - awscli
+cache:
+  directories:
+    - ${TRAVIS_HOME}/.cargo
+before_cache:
+  - rm -rf ${TRAVIS_HOME}/.cargo/registry
+services:
+  - docker
+  - postgresql
+git:
+  depth: 1
+before_script:
+  - psql -c 'create database event_test;' -U postgres
+env:
+  - DATABASE_URL=postgres://postgres@localhost/event_test
+jobs:
+  include:
+    - stage: check
+      name: Tests
+      install: cargo install diesel_cli --no-default-features --features postgres
+      script: diesel migration run && cargo test
+    - stage: check
+      name : Rustfmt
+      install: rustup component add rustfmt
+      script: cargo fmt -- --check
+   - stage: check
+     name: Clippy
+     install: rustup component add clippy
+     script: cargo clippy
+    - stage: check
+      name: Docs
+      install: cargo install mdbook --vers 0.2.3 --force
+      script: mdbook build docs && ./deploy.init.sh && PROJECT='event' ./deploy/s3-docs.sh
+    - stage: deploy
+      name: Kubernetes
+      script: ./deploy.init.sh && ./deploy/travis-run.sh
+stages:
+  - name: check
+  - name: deploy
+    if: (branch = master AND type = push) OR tag IS present
+notifications:
+  email: false
