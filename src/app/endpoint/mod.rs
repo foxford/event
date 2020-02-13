@@ -51,6 +51,7 @@ macro_rules! request_routes {
 // Request routes configuration: method => RequestHandler
 request_routes!(
     "agent.list" => agent::ListHandler,
+    "event.create" => event::CreateHandler,
     "room.adjust" => room::AdjustHandler,
     "room.create" => room::CreateHandler,
     "room.enter" => room::EnterHandler,
@@ -103,5 +104,6 @@ event_routes!(
 
 mod helpers;
 mod agent;
+mod event;
 mod room;
 mod subscription;

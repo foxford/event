@@ -3,6 +3,7 @@ use std::ops::Bound;
 
 use chrono::{serde::ts_milliseconds, DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
+use svc_agent::AccountId;
 use uuid::Uuid;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -33,12 +34,68 @@ pub(crate) struct Event {
 #[serde(rename_all = "lowercase")]
 #[serde(untagged)]
 pub(crate) enum EventData {
+    Document(DocumentEvent),
+    Draw(DrawEvent),
+    Layout(LayoutEvent),
+    Leader(LeaderEvent),
+    Message(MessageEvent),
     Stream(StreamEvent),
+    Subscribe(SubscribeEvent),
+}
+
+impl EventData {
+    pub(crate) fn kind(&self) -> &'static str {
+        match self {
+            Self::Document(_) => "document",
+            Self::Draw(_) => "draw",
+            Self::Layout(_) => "layout",
+            Self::Leader(_) => "leader",
+            Self::Message(_) => "message",
+            Self::Stream(_) => "stream",
+            Self::Subscribe(_) => "subscribe",
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct DocumentEvent {
+    url: String,
+    title: Option<String>,
+    page: u64,
+    #[serde(default = "default_false")]
+    published: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct DrawEvent {
+    geometry: String,
+    url: String,
+    page: u64,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct LayoutEvent {
+    name: String,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct LeaderEvent {
+    account_id: AccountId,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct MessageEvent {
+    message: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) struct StreamEvent {
     pub(crate) cut: CutKind,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) struct SubscribeEvent {
+    conn_id: String,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -99,4 +156,8 @@ impl fmt::Display for ErrorResponse {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.error)
     }
+}
+
+fn default_false() -> bool {
+    false
 }

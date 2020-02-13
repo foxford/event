@@ -25,4 +25,5 @@ pub(crate) mod sql {
 
 pub(crate) mod adjustment;
 pub(crate) mod agent;
+pub(crate) mod event;
 pub(crate) mod room;
