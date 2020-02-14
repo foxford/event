@@ -35,7 +35,7 @@ table! {
         set -> Text,
         label -> Nullable<Text>,
         data -> Jsonb,
-        offset -> Int8,
+        occured_at -> Int8,
         created_by -> Agent_id,
         created_at -> Timestamptz,
         deleted_at -> Nullable<Timestamptz>,

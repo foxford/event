@@ -93,8 +93,10 @@ impl RequestHandler for CreateHandler {
             })?;
 
         // Insert event into the DB.
-        let offset = match room.time() {
-            (Bound::Included(opened_at), _) => Utc::now() - opened_at.to_owned(),
+        let occured_at = match room.time() {
+            (Bound::Included(opened_at), _) => {
+                (Utc::now() - opened_at.to_owned()).num_milliseconds()
+            }
             _ => {
                 return Err(svc_error!(
                     ResponseStatus::UNPROCESSABLE_ENTITY,
@@ -108,7 +110,7 @@ impl RequestHandler for CreateHandler {
             room.id(),
             &payload.kind,
             payload.data,
-            offset.num_milliseconds(),
+            occured_at,
             reqp.as_agent_id(),
         );
 

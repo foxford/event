@@ -21,7 +21,7 @@ pub(crate) struct Object {
     set: String,
     label: Option<String>,
     data: JsonValue,
-    offset: i64,
+    occured_at: i64,
     created_by: AgentId,
     #[serde(with = "ts_seconds")]
     created_at: DateTime<Utc>,
@@ -168,7 +168,7 @@ impl<'a> ListQuery<'a> {
                     q = q.filter(event::created_at.gt(event.created_at));
                 }
 
-                q.order_by(event::offset.asc())
+                q.order_by(event::occured_at.asc())
                     .then_order_by(event::created_at.asc())
             }
             Direction::Backward => {
@@ -176,7 +176,7 @@ impl<'a> ListQuery<'a> {
                     q = q.filter(event::created_at.lt(event.created_at));
                 }
 
-                q.order_by(event::offset.desc())
+                q.order_by(event::occured_at.desc())
                     .then_order_by(event::created_at.desc())
             }
         };
@@ -196,7 +196,7 @@ pub(crate) struct InsertQuery<'a> {
     set: &'a str,
     label: Option<&'a str>,
     data: JsonValue,
-    offset: i64,
+    occured_at: i64,
     created_by: &'a AgentId,
 }
 
@@ -205,7 +205,7 @@ impl<'a> InsertQuery<'a> {
         room_id: Uuid,
         kind: &'a str,
         data: JsonValue,
-        offset: i64,
+        occured_at: i64,
         created_by: &'a AgentId,
     ) -> Self {
         Self {
@@ -215,7 +215,7 @@ impl<'a> InsertQuery<'a> {
             set: kind,
             label: None,
             data,
-            offset,
+            occured_at,
             created_by,
         }
     }
