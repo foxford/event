@@ -30,6 +30,8 @@ Name       | Type       | Default    | Description
 ---------- | ---------- | ---------- | ------------------
 room_id    | string     | _required_ | Returns only events that belong to the room.
 type       | string     | _optional_ | Event type filter.
+set        | string     | _optional_ | Collection set filter.
+label      | string     | _optional_ | Collection item filter.
 last_id    | string     | _optional_ | Last seen id for pagination.
 direction  | string     |    forward | Pagination direction: forward | backward.
 limit      | int        |        100 | Limits the number of events in the response.

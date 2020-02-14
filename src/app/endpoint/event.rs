@@ -23,6 +23,8 @@ pub(crate) struct CreateRequest {
     room_id: Uuid,
     #[serde(rename = "type")]
     kind: String,
+    set: Option<String>,
+    label: Option<String>,
     data: JsonValue,
 }
 
@@ -102,13 +104,21 @@ impl RequestHandler for CreateHandler {
             }
         };
 
-        let query = db::event::InsertQuery::new(
+        let mut query = db::event::InsertQuery::new(
             room.id(),
             &payload.kind,
             payload.data,
             offset.num_milliseconds(),
             reqp.as_agent_id(),
         );
+
+        if let Some(ref set) = payload.set {
+            query = query.set(set);
+        }
+
+        if let Some(ref label) = payload.label {
+            query = query.label(label);
+        }
 
         let event = query.id(backend_event.id).execute(&conn).map_err(|err| {
             svc_error!(
@@ -148,6 +158,8 @@ pub(crate) struct ListRequest {
     room_id: Uuid,
     #[serde(rename = "type")]
     kind: Option<String>,
+    set: Option<String>,
+    label: Option<String>,
     last_id: Option<Uuid>,
     #[serde(default)]
     direction: db::event::Direction,
@@ -194,6 +206,14 @@ impl RequestHandler for ListHandler {
 
         if let Some(ref kind) = payload.kind {
             query = query.kind(kind);
+        }
+
+        if let Some(ref set) = payload.set {
+            query = query.set(set);
+        }
+
+        if let Some(ref label) = payload.label {
+            query = query.label(label);
         }
 
         if let Some(last_id) = payload.last_id {

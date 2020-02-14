@@ -29,6 +29,9 @@ correlation_data | string | _required_ | The same value will be in a response.
 Name        | Type       | Default    | Description
 ----------- | ---------- | ---------- | ------------------
 room_id     | uuid       | _required_ | The room identifier. The room must be opened. The agent must be entered to the room.
+type        | string     | _required_ | Event type.
+set         | string     |       type | Collection set name. Equals to `type` parameter by default.
+label       | string     | _optional_ | Collection item label.
 data        | json       | _required_ | The event JSON data.
 
 **Response**

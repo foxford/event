@@ -31,8 +31,9 @@ table! {
     event (id) {
         id -> Uuid,
         room_id -> Uuid,
-        #[sql_name = "type"]
-        type_ -> Text,
+        kind -> Text,
+        set -> Text,
+        label -> Nullable<Text>,
         data -> Jsonb,
         offset -> Int8,
         created_by -> Agent_id,
@@ -59,4 +60,9 @@ joinable!(adjustment -> room (room_id));
 joinable!(agent -> room (room_id));
 joinable!(event -> room (room_id));
 
-allow_tables_to_appear_in_same_query!(adjustment, agent, event, room,);
+allow_tables_to_appear_in_same_query!(
+    adjustment,
+    agent,
+    event,
+    room,
+);
