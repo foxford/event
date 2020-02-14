@@ -32,7 +32,7 @@ room_id    | string     | _required_ | Returns only events that belong to the ro
 type       | string     | _optional_ | Event type filter.
 set        | string     | _optional_ | Collection set filter.
 label      | string     | _optional_ | Collection item filter.
-last_id    | string     | _optional_ | Last seen id for pagination.
+last_created_at | int   | _optional_ | `created_at` value for the last seen event for pagination in milliseconds.
 direction  | string     |    forward | Pagination direction: forward | backward.
 limit      | int        |        100 | Limits the number of events in the response.
 

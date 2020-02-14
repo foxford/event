@@ -31,25 +31,6 @@ pub(crate) struct Object {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct FindQuery {
-    id: Uuid,
-}
-
-impl FindQuery {
-    pub(crate) fn new(id: Uuid) -> Self {
-        Self { id }
-    }
-
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
-        use crate::schema::event::dsl::*;
-        use diesel::prelude::*;
-
-        event.find(self.id).get_result(conn).optional()
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Direction {
@@ -68,7 +49,7 @@ pub(crate) struct ListQuery<'a> {
     kind: Option<&'a str>,
     set: Option<&'a str>,
     label: Option<&'a str>,
-    last_id: Option<Uuid>,
+    last_created_at: Option<DateTime<Utc>>,
     direction: Direction,
     limit: Option<i64>,
 }
@@ -80,7 +61,7 @@ impl<'a> ListQuery<'a> {
             kind: None,
             set: None,
             label: None,
-            last_id: None,
+            last_created_at: None,
             direction: Default::default(),
             limit: None,
         }
@@ -114,9 +95,9 @@ impl<'a> ListQuery<'a> {
         }
     }
 
-    pub(crate) fn last_id(self, last_id: Uuid) -> Self {
+    pub(crate) fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
         Self {
-            last_id: Some(last_id),
+            last_created_at: Some(last_created_at),
             ..self
         }
     }
@@ -135,7 +116,9 @@ impl<'a> ListQuery<'a> {
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
         use diesel::prelude::*;
 
-        let mut q = event::table.into_boxed();
+        let mut q = event::table
+            .filter(event::deleted_at.is_null())
+            .into_boxed();
 
         if let Some(room_id) = self.room_id {
             q = q.filter(event::room_id.eq(room_id));
@@ -157,23 +140,18 @@ impl<'a> ListQuery<'a> {
             q = q.limit(limit);
         }
 
-        let last_event = match self.last_id {
-            None => None,
-            Some(id) => FindQuery::new(id).execute(conn)?,
-        };
-
         q = match self.direction {
             Direction::Forward => {
-                if let Some(event) = last_event {
-                    q = q.filter(event::created_at.gt(event.created_at));
+                if let Some(last_created_at) = self.last_created_at {
+                    q = q.filter(event::created_at.gt(last_created_at));
                 }
 
                 q.order_by(event::occured_at.asc())
                     .then_order_by(event::created_at.asc())
             }
             Direction::Backward => {
-                if let Some(event) = last_event {
-                    q = q.filter(event::created_at.lt(event.created_at));
+                if let Some(last_created_at) = self.last_created_at {
+                    q = q.filter(event::created_at.lt(last_created_at));
                 }
 
                 q.order_by(event::occured_at.desc())
