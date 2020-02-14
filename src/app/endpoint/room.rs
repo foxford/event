@@ -272,7 +272,7 @@ impl RequestHandler for LeaveHandler {
             payload.id,
             reqp,
             start_timestamp,
-            EnterHandler::ERROR_TITLE
+            LeaveHandler::ERROR_TITLE
         );
 
         // Check room presence.
