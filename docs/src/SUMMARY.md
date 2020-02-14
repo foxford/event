@@ -12,3 +12,4 @@
         - [List](api.agent.list.md)
     - [Event](api.event.md)
         - [Create](api.event.create.md)
+        - [List](api.event.list.md)

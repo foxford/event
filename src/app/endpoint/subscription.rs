@@ -79,7 +79,7 @@ impl EventHandler for CreateHandler {
             .ok_or_else(|| {
                 svc_error!(
                     ResponseStatus::NOT_FOUND,
-                    "the room = '{}' is not found",
+                    "the room = '{}' is not found or closed",
                     room_id
                 )
             })?;

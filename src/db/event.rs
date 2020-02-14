@@ -29,6 +29,136 @@ pub(crate) struct Object {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+pub(crate) struct FindQuery {
+    id: Uuid,
+}
+
+impl FindQuery {
+    pub(crate) fn new(id: Uuid) -> Self {
+        Self { id }
+    }
+
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
+        use crate::schema::event::dsl::*;
+        use diesel::prelude::*;
+
+        event.find(self.id).get_result(conn).optional()
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum Direction {
+    Forward,
+    Backward,
+}
+
+impl Default for Direction {
+    fn default() -> Self {
+        Self::Forward
+    }
+}
+
+pub(crate) struct ListQuery {
+    room_id: Option<Uuid>,
+    kind: Option<String>,
+    last_id: Option<Uuid>,
+    direction: Direction,
+    limit: Option<i64>,
+}
+
+impl ListQuery {
+    pub(crate) fn new() -> Self {
+        Self {
+            room_id: None,
+            kind: None,
+            last_id: None,
+            direction: Default::default(),
+            limit: None,
+        }
+    }
+
+    pub(crate) fn room_id(self, room_id: Uuid) -> Self {
+        Self {
+            room_id: Some(room_id),
+            ..self
+        }
+    }
+
+    pub(crate) fn kind(self, kind: &str) -> Self {
+        Self {
+            kind: Some(kind.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn last_id(self, last_id: Uuid) -> Self {
+        Self {
+            last_id: Some(last_id),
+            ..self
+        }
+    }
+
+    pub(crate) fn direction(self, direction: Direction) -> Self {
+        Self { direction, ..self }
+    }
+
+    pub(crate) fn limit(self, limit: i64) -> Self {
+        Self {
+            limit: Some(limit),
+            ..self
+        }
+    }
+
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
+        use diesel::prelude::*;
+
+        let mut q = event::table.into_boxed();
+
+        if let Some(room_id) = self.room_id {
+            q = q.filter(event::room_id.eq(room_id));
+        }
+
+        if let Some(ref kind) = self.kind {
+            q = q.filter(event::type_.eq(kind));
+        }
+
+        if let Some(limit) = self.limit {
+            q = q.limit(limit);
+        }
+
+        let last_event = match self.last_id {
+            None => None,
+            Some(id) => FindQuery::new(id).execute(conn)?,
+        };
+
+        q = match self.direction {
+            Direction::Forward => {
+                if let Some(event) = last_event {
+                    q = q.filter(event::created_at.gt(event.created_at));
+                }
+
+                q.order_by(event::offset.asc())
+                    .then_order_by(event::created_at.asc())
+            }
+            Direction::Backward => {
+                if let Some(event) = last_event {
+                    q = q.filter(event::created_at.lt(event.created_at));
+                }
+
+                q.order_by(event::offset.desc())
+                    .then_order_by(event::created_at.desc())
+            }
+        };
+
+        q.get_results(conn)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 #[derive(Debug, Insertable)]
 #[table_name = "event"]
 pub(crate) struct InsertQuery<'a> {
@@ -36,6 +166,7 @@ pub(crate) struct InsertQuery<'a> {
     room_id: Uuid,
     type_: String,
     data: JsonValue,
+    offset: i64,
     created_by: &'a AgentId,
 }
 
@@ -44,6 +175,7 @@ impl<'a> InsertQuery<'a> {
         room_id: Uuid,
         type_: &str,
         data: JsonValue,
+        offset: i64,
         created_by: &'a AgentId,
     ) -> Self {
         Self {
@@ -51,6 +183,7 @@ impl<'a> InsertQuery<'a> {
             room_id,
             type_: type_.to_owned(),
             data,
+            offset,
             created_by,
         }
     }
