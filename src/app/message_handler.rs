@@ -272,13 +272,18 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                 // Call handler.
                 Ok(payload) => H::handle(context, payload, evp, start_timestamp)
                     .await
-                    .unwrap_or_else(|mut err| {
+                    .unwrap_or_else(|mut svc_error| {
                         // Handler returned an error.
                         if let Some(label) = evp.label() {
-                            err.set_kind(label, &format!("Failed to handle event '{}'", label));
-                            error!("Failed to handle event with label = '{}': {}", label, err);
+                            let error_title = format!("Failed to handle event '{}'", label);
+                            svc_error.set_kind(label, &error_title);
 
-                            sentry::send(err).unwrap_or_else(|err| {
+                            error!(
+                                "Failed to handle event with label = '{}': {}",
+                                label, svc_error
+                            );
+
+                            sentry::send(svc_error).unwrap_or_else(|err| {
                                 warn!("Error sending error to Sentry: {}", err)
                             });
                         }
