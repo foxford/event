@@ -32,4 +32,7 @@ id       | uuid       | _required_ | The room identifier. The room must be opene
 
 **Response**
 
-If successful, the response contains status only.
+If successful, the response contains 202 Accepted status only.
+It doesn't mean that the agent has already entered the room but that the process has been initiated.
+Before making any requests that require room entrance one must wait for the `room.enter` broadcast
+event that confirms the entrance.

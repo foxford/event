@@ -17,7 +17,9 @@ use crate::schema::event;
 pub(crate) struct Object {
     id: Uuid,
     room_id: Uuid,
-    type_: String,
+    kind: String,
+    set: String,
+    label: Option<String>,
     data: JsonValue,
     offset: i64,
     created_by: AgentId,
@@ -61,19 +63,23 @@ impl Default for Direction {
     }
 }
 
-pub(crate) struct ListQuery {
+pub(crate) struct ListQuery<'a> {
     room_id: Option<Uuid>,
-    kind: Option<String>,
+    kind: Option<&'a str>,
+    set: Option<&'a str>,
+    label: Option<&'a str>,
     last_id: Option<Uuid>,
     direction: Direction,
     limit: Option<i64>,
 }
 
-impl ListQuery {
+impl<'a> ListQuery<'a> {
     pub(crate) fn new() -> Self {
         Self {
             room_id: None,
             kind: None,
+            set: None,
+            label: None,
             last_id: None,
             direction: Default::default(),
             limit: None,
@@ -87,9 +93,23 @@ impl ListQuery {
         }
     }
 
-    pub(crate) fn kind(self, kind: &str) -> Self {
+    pub(crate) fn kind(self, kind: &'a str) -> Self {
         Self {
-            kind: Some(kind.to_owned()),
+            kind: Some(kind),
+            ..self
+        }
+    }
+
+    pub(crate) fn set(self, set: &'a str) -> Self {
+        Self {
+            set: Some(set),
+            ..self
+        }
+    }
+
+    pub(crate) fn label(self, label: &'a str) -> Self {
+        Self {
+            label: Some(label),
             ..self
         }
     }
@@ -122,7 +142,15 @@ impl ListQuery {
         }
 
         if let Some(ref kind) = self.kind {
-            q = q.filter(event::type_.eq(kind));
+            q = q.filter(event::kind.eq(kind));
+        }
+
+        if let Some(ref set) = self.set {
+            q = q.filter(event::set.eq(set));
+        }
+
+        if let Some(ref label) = self.label {
+            q = q.filter(event::label.eq(label));
         }
 
         if let Some(limit) = self.limit {
@@ -164,7 +192,9 @@ impl ListQuery {
 pub(crate) struct InsertQuery<'a> {
     id: Option<Uuid>,
     room_id: Uuid,
-    type_: String,
+    kind: &'a str,
+    set: &'a str,
+    label: Option<&'a str>,
     data: JsonValue,
     offset: i64,
     created_by: &'a AgentId,
@@ -173,7 +203,7 @@ pub(crate) struct InsertQuery<'a> {
 impl<'a> InsertQuery<'a> {
     pub(crate) fn new(
         room_id: Uuid,
-        type_: &str,
+        kind: &'a str,
         data: JsonValue,
         offset: i64,
         created_by: &'a AgentId,
@@ -181,7 +211,9 @@ impl<'a> InsertQuery<'a> {
         Self {
             id: None,
             room_id,
-            type_: type_.to_owned(),
+            kind,
+            set: kind,
+            label: None,
             data,
             offset,
             created_by,
@@ -191,6 +223,17 @@ impl<'a> InsertQuery<'a> {
     pub(crate) fn id(self, id: Uuid) -> Self {
         Self {
             id: Some(id),
+            ..self
+        }
+    }
+
+    pub(crate) fn set(self, set: &'a str) -> Self {
+        Self { set, ..self }
+    }
+
+    pub(crate) fn label(self, label: &'a str) -> Self {
+        Self {
+            label: Some(label),
             ..self
         }
     }
