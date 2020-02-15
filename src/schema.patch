@@ -1,0 +1,37 @@
+diff --git a/src/schema.rs b/src/schema.rs
+index 13e0328..032da8c 100644
+--- a/src/schema.rs
++++ b/src/schema.rs
+@@ -39,12 +39,21 @@ table! {
+         created_by -> Agent_id,
+         created_at -> Timestamptz,
+         deleted_at -> Nullable<Timestamptz>,
+     }
+ }
+ 
++table! {
++    use diesel::sql_types::*;
++    use crate::db::sql::*;
++
++    event_state (id) {
++        id -> Uuid,
++    }
++}
++
+ table! {
+     use diesel::sql_types::*;
+     use crate::db::sql::*;
+ 
+     room (id) {
+         id -> Uuid,
+@@ -56,8 +65,9 @@ table! {
+     }
+ }
+ 
+ joinable!(adjustment -> room (room_id));
+ joinable!(agent -> room (room_id));
+ joinable!(event -> room (room_id));
++joinable!(event -> event_state (id));
+ 
+-allow_tables_to_appear_in_same_query!(adjustment, agent, event, room,);
++allow_tables_to_appear_in_same_query!(adjustment, agent, event, event_state, room,);

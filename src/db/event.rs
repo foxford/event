@@ -1,13 +1,16 @@
-use chrono::serde::{ts_seconds, ts_seconds_option};
+use chrono::serde::{ts_milliseconds, ts_milliseconds_option};
 use chrono::{DateTime, Utc};
-use diesel::{pg::PgConnection, result::Error};
+use diesel::{
+    pg::{Pg, PgConnection},
+    result::Error,
+};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use svc_agent::AgentId;
 use uuid::Uuid;
 
 use super::room::Object as Room;
-use crate::schema::event;
+use crate::schema::{event, event_state};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -23,15 +26,15 @@ pub(crate) struct Object {
     data: JsonValue,
     occured_at: i64,
     created_by: AgentId,
-    #[serde(with = "ts_seconds")]
+    #[serde(with = "ts_milliseconds")]
     created_at: DateTime<Utc>,
-    #[serde(with = "ts_seconds_option")]
+    #[serde(with = "ts_milliseconds_option", skip_serializing_if = "Option::is_none")]
     deleted_at: Option<DateTime<Utc>>,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum Direction {
     Forward,
@@ -43,6 +46,8 @@ impl Default for Direction {
         Self::Forward
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct ListQuery<'a> {
     room_id: Option<Uuid>,
@@ -146,16 +151,14 @@ impl<'a> ListQuery<'a> {
                     q = q.filter(event::created_at.gt(last_created_at));
                 }
 
-                q.order_by(event::occured_at.asc())
-                    .then_order_by(event::created_at.asc())
+                q.order_by((event::occured_at, event::created_at))
             }
             Direction::Backward => {
                 if let Some(last_created_at) = self.last_created_at {
                     q = q.filter(event::created_at.lt(last_created_at));
                 }
 
-                q.order_by(event::occured_at.desc())
-                    .then_order_by(event::created_at.desc())
+                q.order_by((event::occured_at.desc(), event::created_at.desc()))
             }
         };
 
@@ -221,5 +224,102 @@ impl<'a> InsertQuery<'a> {
         use crate::schema::event::dsl::event;
 
         diesel::insert_into(event).values(self).get_result(conn)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+pub(crate) struct SetStateQuery<'a> {
+    room_id: Uuid,
+    set: &'a str,
+    occured_at: i64,
+    last_created_at: Option<DateTime<Utc>>,
+    direction: Direction,
+    limit: Option<i64>,
+}
+
+impl<'a> SetStateQuery<'a> {
+    pub(crate) fn new(room_id: Uuid, set: &'a str, occured_at: i64) -> Self {
+        Self {
+            room_id,
+            set,
+            occured_at,
+            last_created_at: None,
+            direction: Default::default(),
+            limit: None,
+        }
+    }
+
+    pub(crate) fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
+        Self {
+            last_created_at: Some(last_created_at),
+            ..self
+        }
+    }
+
+    pub(crate) fn direction(self, direction: Direction) -> Self {
+        Self { direction, ..self }
+    }
+
+    pub(crate) fn limit(self, limit: i64) -> Self {
+        Self {
+            limit: Some(limit),
+            ..self
+        }
+    }
+
+    fn build_query(&'a self) -> event::BoxedQuery<'a, Pg> {
+        use diesel::prelude::*;
+
+        let mut q = event::table
+            .filter(event::deleted_at.is_null())
+            .filter(event::room_id.eq(self.room_id))
+            .filter(event::set.eq(self.set))
+            .into_boxed();
+
+        match self.direction {
+            Direction::Forward => {
+                if let Some(last_created_at) = self.last_created_at {
+                    q = q.filter(event::created_at.gt(last_created_at));
+                }
+
+                q.filter(event::occured_at.gt(self.occured_at))
+            }
+            Direction::Backward => {
+                if let Some(last_created_at) = self.last_created_at {
+                    q = q.filter(event::created_at.lt(last_created_at));
+                }
+
+                q.filter(event::occured_at.lt(self.occured_at))
+            }
+        }
+    }
+
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
+        use crate::diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
+
+        let mut q = self.build_query().inner_join(event_state::table);
+
+        q = match self.direction {
+            Direction::Forward => q.order_by((event::occured_at.asc(), event::created_at.asc())),
+            Direction::Backward => q.order_by((event::occured_at.desc(), event::created_at.desc())),
+        };
+
+        if let Some(limit) = self.limit {
+            q = q.limit(limit);
+        }
+
+        println!("{}", diesel::debug_query::<Pg, _>(&q));
+        q.get_results(conn)
+    }
+
+    pub(crate) fn total_count(&self, conn: &PgConnection) -> Result<i64, Error> {
+        use crate::db::total_count::TotalCount;
+        use crate::diesel::QueryDsl;
+
+        self.build_query()
+            .inner_join(event_state::table)
+            .total_count()
+            .execute(conn)
     }
 }

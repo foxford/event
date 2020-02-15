@@ -27,3 +27,4 @@ pub(crate) mod adjustment;
 pub(crate) mod agent;
 pub(crate) mod event;
 pub(crate) mod room;
+pub(self) mod total_count;

@@ -46,6 +46,15 @@ table! {
     use diesel::sql_types::*;
     use crate::db::sql::*;
 
+    event_state (id) {
+        id -> Uuid,
+    }
+}
+
+table! {
+    use diesel::sql_types::*;
+    use crate::db::sql::*;
+
     room (id) {
         id -> Uuid,
         audience -> Text,
@@ -59,10 +68,6 @@ table! {
 joinable!(adjustment -> room (room_id));
 joinable!(agent -> room (room_id));
 joinable!(event -> room (room_id));
+joinable!(event -> event_state (id));
 
-allow_tables_to_appear_in_same_query!(
-    adjustment,
-    agent,
-    event,
-    room,
-);
+allow_tables_to_appear_in_same_query!(adjustment, agent, event, event_state, room,);

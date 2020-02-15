@@ -57,7 +57,8 @@ request_routes!(
     "room.create" => room::CreateHandler,
     "room.enter" => room::EnterHandler,
     "room.leave" => room::LeaveHandler,
-    "room.read" => room::ReadHandler
+    "room.read" => room::ReadHandler,
+    "state.read" => state::ReadHandler
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -107,4 +108,5 @@ mod helpers;
 mod agent;
 mod event;
 mod room;
+mod state;
 mod subscription;
