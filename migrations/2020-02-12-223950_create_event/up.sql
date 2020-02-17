@@ -13,3 +13,8 @@ create table event (
     foreign key (room_id) references room (id) on delete cascade,
     primary key (id)
 );
+
+create index event_room_id_idx on event (room_id) where deleted_at is null;
+create index event_kind_idx on event (kind) where deleted_at is null;
+create index event_set_label_idx on event (set, label) where deleted_at is null;
+create index event_occured_at_created_at_idx on event (occured_at, created_at) where deleted_at is null;
