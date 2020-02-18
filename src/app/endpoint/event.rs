@@ -70,6 +70,15 @@ impl RequestHandler for CreateHandler {
             ));
         }
 
+        // Authorize event creation on tenant.
+        let room_id = room.id().to_string();
+        let object = vec!["rooms", &room_id, "events"];
+
+        let authz_time = context
+            .authz()
+            .authorize(room.audience(), reqp, object, "create")
+            .await?;
+
         // Insert event into the DB.
         let occured_at = match room.time() {
             (Bound::Included(opened_at), _) => {
@@ -114,7 +123,7 @@ impl RequestHandler for CreateHandler {
             event.clone(),
             reqp,
             start_timestamp,
-            None,
+            Some(authz_time),
         );
 
         let notification = helpers::build_notification(
