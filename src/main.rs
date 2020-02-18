@@ -42,3 +42,5 @@ mod db;
 #[allow(unused_imports)]
 mod schema;
 mod serde;
+#[cfg(test)]
+mod test_helpers;

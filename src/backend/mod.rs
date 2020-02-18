@@ -53,102 +53,6 @@ impl Client {
         .map(|_payload| ())
     }
 
-    /// `POST /{audience}/rooms/{room_id}/close`
-    pub(crate) async fn close_room(
-        &self,
-        account: &impl Authenticable,
-        audience: &str,
-        id: Uuid,
-    ) -> Result<(), Error> {
-        self.make_request::<_, _, Ignore>(
-            account,
-            Method::POST,
-            audience,
-            &format!("rooms/{}/close", id),
-            &Ignore {},
-        )
-        .await
-        .map(|_payload| ())
-    }
-
-    /// `PUT /{audience}/rooms/{room_id}/stream`
-    pub(crate) async fn set_room_metadata(
-        &self,
-        account: &impl Authenticable,
-        audience: &str,
-        id: Uuid,
-        metadata: &RoomMetadata,
-    ) -> Result<(), Error> {
-        self.make_request::<_, _, Ignore>(
-            account,
-            Method::PUT,
-            audience,
-            &format!("rooms/{}/stream", id),
-            &metadata,
-        )
-        .await
-        .map(|_payload| ())
-    }
-
-    /// `POST /{audience}/rooms/{room_id}/stream/transcode`
-    pub(crate) async fn transcode_stream(
-        &self,
-        account: &impl Authenticable,
-        audience: &str,
-        room_id: Uuid,
-    ) -> Result<(Room, Vec<Segment>), Error> {
-        self.make_request::<_, _, TranscodeStreamResponse>(
-            account,
-            Method::POST,
-            audience,
-            &format!("rooms/{}/stream/transcode", room_id),
-            &Ignore {},
-        )
-        .await
-        .map(|payload| (payload.room, payload.time))
-    }
-
-    /// `GET /{audience}/rooms/{room_id}/events`
-    pub(crate) async fn get_events(
-        &self,
-        account: &impl Authenticable,
-        audience: &str,
-        room_id: Uuid,
-        kind: &str,
-    ) -> Result<Vec<Event>, Error> {
-        let mut events: Vec<Event> = vec![];
-        let mut page = None;
-
-        loop {
-            let path = format!(
-                "rooms/{room_id}/events?type={type}&page={page}&direction=forward",
-                room_id = room_id,
-                type = kind,
-                page = page.unwrap_or_else(|| String::from("")),
-            );
-
-            let mut response = self
-                .make_request::<_, _, GetEventsResponse>(
-                    account,
-                    Method::GET,
-                    audience,
-                    &path,
-                    &Ignore {},
-                )
-                .await?;
-
-            events.append(&mut response.events);
-
-            if response.has_next_page && response.next_page.is_some() {
-                page = response.next_page;
-            } else {
-                break;
-            }
-        }
-
-        Ok(events)
-    }
-
     /// `POST /{audience}/rooms/{room_id}/events/{type}`
     pub(crate) async fn create_event(
         &self,
@@ -166,29 +70,6 @@ impl Client {
         )
         .await
         .map(|payload| payload.event)
-    }
-
-    /// `DELETE /{audience}/rooms/{room_id}/events/{type}/{event_id}`
-    pub(crate) async fn delete_event(
-        &self,
-        account: &impl Authenticable,
-        audience: &str,
-        room_id: Uuid,
-        kind: &str,
-        event_id: Uuid,
-        reason: Option<&str>,
-    ) -> Result<(), Error> {
-        self.make_request::<_, _, Ignore>(
-            account,
-            Method::DELETE,
-            audience,
-            &format!("rooms/{}/events/{}/{}", room_id, kind, event_id),
-            &DeleteEventRequest {
-                reason: reason.map(|r| r.to_owned()),
-            },
-        )
-        .await
-        .map(|_payload| ())
     }
 
     ///////////////////////////////////////////////////////////////////////////
