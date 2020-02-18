@@ -36,7 +36,6 @@ fn main() {
 }
 
 mod app;
-mod backend;
 mod config;
 mod db;
 #[allow(unused_imports)]

@@ -13,7 +13,6 @@ use uuid::Uuid;
 
 use crate::app::endpoint::{helpers, RequestHandler};
 use crate::app::Context;
-use crate::backend::types::EventData;
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -71,27 +70,6 @@ impl RequestHandler for CreateHandler {
             ));
         }
 
-        // Create event in the backend.
-        let data = serde_json::from_value::<EventData>(payload.data.clone()).map_err(|err| {
-            svc_error!(
-                ResponseStatus::BAD_REQUEST,
-                "failed to parse event data: {}",
-                err
-            )
-        })?;
-
-        let backend_event = context
-            .backend()
-            .create_event(reqp, room.audience(), room.id(), data)
-            .await
-            .map_err(|err| {
-                svc_error!(
-                    ResponseStatus::FAILED_DEPENDENCY,
-                    "backend event creation request failed: {}",
-                    err
-                )
-            })?;
-
         // Insert event into the DB.
         let occured_at = match room.time() {
             (Bound::Included(opened_at), _) => {
@@ -122,7 +100,7 @@ impl RequestHandler for CreateHandler {
             query = query.label(label);
         }
 
-        let event = query.id(backend_event.id).execute(&conn).map_err(|err| {
+        let event = query.execute(&conn).map_err(|err| {
             svc_error!(
                 ResponseStatus::UNPROCESSABLE_ENTITY,
                 "failed to create event: {}",

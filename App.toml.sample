@@ -1,7 +1,6 @@
 id = "event.dev.svc.example.org"
 agent_label = "alpha"
 broker_id = "mqtt-gateway.dev.svc.example.org"
-backend_url = "http://0.0.0.0:8000"
 
 [id_token]
 algorithm = "ES256"

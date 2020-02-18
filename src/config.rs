@@ -15,7 +15,6 @@ pub(crate) struct Config {
     pub(crate) authz: Authz,
     pub(crate) mqtt: AgentConfig,
     pub(crate) sentry: Option<SentryConfig>,
-    pub(crate) backend_url: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

@@ -1,7 +1,0 @@
-authConfigFile: conf.d/auth.toml
-tenantsConfigFile: conf.d/tenants.toml
-cors:
-nsqAddr: backend_nsq:4150
-db:
-  driverName: postgres
-  dataSourceName: host=backend_db dbname=events_api_dev sslmode=disable user=postgres

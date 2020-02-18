@@ -18,7 +18,7 @@ export COMPOSE_FILE=docker/docker-compose
 docker-compose up
 ```
 
-This will start up the broker on port 1883, the legacy backend on port 8000 and its database.
+This will start up the broker on port 1883.
 
 Also this service requires local postgres with a database created and migrated:
 

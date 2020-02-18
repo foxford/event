@@ -1,5 +1,0 @@
-development:
-  dialect: postgres
-  datasource: host=backend_db dbname=events_api_dev sslmode=disable user=postgres
-  dir: migrations
-  table: gorp_migrations

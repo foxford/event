@@ -12,27 +12,3 @@ services:
       APP_DYNSUB_ENABLED: 1
       APP_AGENT_LABEL: alpha
       APP_ACCOUNT_ID: mqtt-gateway.dev.svc.example.org
-  backend:
-    image: netologygroup/ulms-events-api-server:1.1.12
-    entrypoint: /entrypoint.sh
-    ports:
-      - "8000:8000"
-    environment:
-      LOG_LEVEL: info
-    volumes:
-      - ./backend/entrypoint.sh:/entrypoint.sh
-      - ./backend/dbconfig.yml:/dbconfig.yml
-      - ./backend/conf.d:/etc/ulms/conf.d
-    links:
-      - backend_db
-      - backend_nsq
-  backend_db:
-    build:
-      context: ./backend_db
-    volumes:
-      - ./backend_db/data:/var/lib/postgresql/data
-  backend_nsq:
-    image: nsqio/nsq:v1.2.0
-    command: /nsqd
-    ports:
-      - "4150:4150"

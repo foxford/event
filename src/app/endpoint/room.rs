@@ -80,32 +80,8 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
-        let backend_room = context
-            .backend()
-            .create_room(reqp, &payload.audience)
-            .await
-            .map_err(|err| {
-                svc_error!(
-                    ResponseStatus::FAILED_DEPENDENCY,
-                    "Backend room creation request failed: {}",
-                    err
-                )
-            })?;
-
-        context
-            .backend()
-            .open_room(reqp, &payload.audience, backend_room.id)
-            .await
-            .map_err(|err| {
-                svc_error!(
-                    ResponseStatus::FAILED_DEPENDENCY,
-                    "Backend room opening request failed: {}",
-                    err
-                )
-            })?;
-
         let room = {
-            let mut query = InsertQuery::new(&payload.audience, payload.time).id(backend_room.id);
+            let mut query = InsertQuery::new(&payload.audience, payload.time);
 
             if let Some(tags) = payload.tags {
                 query = query.tags(tags);
