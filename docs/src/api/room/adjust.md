@@ -35,7 +35,7 @@ The actual result comes with a notification.
 
 ## Notification
 
-**URI:** `audiences/:audience/rooms/:room_id`
+**URI:** `audiences/:audience/events`
 
 **Label:** `room.adjust`
 

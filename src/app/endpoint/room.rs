@@ -109,7 +109,7 @@ impl RequestHandler for CreateHandler {
 
         let notification = helpers::build_notification(
             "room.create",
-            &format!("audiences/{}", payload.audience),
+            &format!("audiences/{}/events", payload.audience),
             room,
             reqp,
             start_timestamp,
@@ -412,7 +412,7 @@ impl RequestHandler for AdjustHandler {
 
                 let timing = ShortTermTimingProperties::new(Utc::now());
                 let props = OutgoingEventProperties::new("room.adjust", timing);
-                let path = format!("audiences/{}/rooms/{}", room.audience(), room.id());
+                let path = format!("audiences/{}/events", room.audience());
                 let event = Box::new(OutgoingEvent::broadcast(notification, props, &path));
 
                 publish_message(&mut agent, event).unwrap_or_else(|err| {

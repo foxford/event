@@ -24,7 +24,7 @@ tags     | json       | _optional_ | Tenant-specific JSON object associated with
 
 A notification is being sent to the _audience_ topic.
 
-**URI:** `audiences/:audience`
+**URI:** `audiences/:audience/events`
 
 **Label:** `room.create`.
 
