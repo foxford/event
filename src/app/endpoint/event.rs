@@ -1,9 +1,10 @@
 use std::ops::Bound;
 
 use async_trait::async_trait;
-use chrono::{serde::ts_milliseconds_option, DateTime, Utc};
+use chrono::{serde::ts_milliseconds_option, DateTime, Duration, Utc};
 use serde_derive::Deserialize;
 use serde_json::Value as JsonValue;
+use svc_agent::Authenticable;
 use svc_agent::{
     mqtt::{IncomingRequestProperties, IntoPublishableDump, ResponseStatus},
     Addressable,
@@ -70,14 +71,32 @@ impl RequestHandler for CreateHandler {
             ));
         }
 
-        // Authorize event creation on tenant.
+        // Authorize event creation on tenant with cache.
         let room_id = room.id().to_string();
         let object = vec!["rooms", &room_id, "events"];
 
-        let authz_time = context
-            .authz()
-            .authorize(room.audience(), reqp, object, "create")
-            .await?;
+        let cached_authz = context
+            .authz_cache()
+            .get(reqp.as_account_id(), &object, "create")
+            .map_err(|err| svc_error!(ResponseStatus::INTERNAL_SERVER_ERROR, "{}", err))?;
+
+        let authz_time = match cached_authz {
+            Some(true) => Duration::milliseconds(0),
+            Some(false) => return Err(svc_error!(ResponseStatus::FORBIDDEN, "Not authorized")),
+            None => {
+                let result = context
+                    .authz()
+                    .authorize(room.audience(), reqp, object.clone(), "create")
+                    .await;
+
+                context
+                    .authz_cache()
+                    .set(reqp.as_account_id(), &object, "create", result.is_ok())
+                    .map_err(|err| svc_error!(ResponseStatus::INTERNAL_SERVER_ERROR, "{}", err))?;
+
+                result?
+            }
+        };
 
         // Insert event into the DB.
         let occured_at = match room.time() {

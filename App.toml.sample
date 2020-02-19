@@ -6,19 +6,18 @@ broker_id = "mqtt-gateway.dev.svc.example.org"
 algorithm = "ES256"
 key = "data/keys/svc.private_key.p8.der.sample"
 
-[authn."iam.internal"]
-audience = ["internal"]
-algorithm = "HS256"
-key = "docker/backend/conf.d/org.usr.example.iam.key"
-
 [authn."iam.dev.usr.example.org"]
 audience = ["dev.usr.example.org"]
 algorithm = "HS256"
-key = "docker/backend/conf.d/org.usr.example.iam.key"
+key = "data/keys/svc.private_key.p8.der.sample"
 
 [authz."dev.usr.example.org"]
 type = "local"
 trusted = ["test.dev.usr.example.org"]
+
+[authz_cache]
+lifetime = 600
+vacuum_period = 3600
 
 [mqtt]
 uri = "mqtt://0.0.0.0:1883"

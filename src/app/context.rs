@@ -4,6 +4,7 @@ use futures::executor::ThreadPool;
 use svc_agent::mqtt::Agent;
 use svc_authz::ClientMap as Authz;
 
+use crate::authz_cache::AuthzCache;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
 
@@ -12,6 +13,7 @@ pub(crate) struct Context {
     agent: Agent,
     config: Arc<Config>,
     authz: Authz,
+    authz_cache: Arc<AuthzCache>,
     db: Db,
     thread_pool: Arc<ThreadPool>,
 }
@@ -22,6 +24,7 @@ impl Context {
         agent: Agent,
         config: Config,
         authz: Authz,
+        authz_cache: Arc<AuthzCache>,
         db: Db,
         thread_pool: Arc<ThreadPool>,
     ) -> Self {
@@ -29,6 +32,7 @@ impl Context {
             agent,
             config: Arc::new(config),
             authz,
+            authz_cache,
             db,
             thread_pool,
         }
@@ -40,6 +44,10 @@ impl Context {
 
     pub(crate) fn authz(&self) -> &Authz {
         &self.authz
+    }
+
+    pub(crate) fn authz_cache(&self) -> &AuthzCache {
+        &self.authz_cache
     }
 
     pub(crate) fn config(&self) -> &Config {
