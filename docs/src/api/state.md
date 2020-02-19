@@ -1,7 +1,7 @@
 # State
 
-A _state_ is an object of aggregated [events](api.event.md#event).
-The purpose is to represent the actual condition of the [room](api.room.md#room) on the given moment
+A _state_ is an object of aggregated [events](event.md#event).
+The purpose is to represent the actual condition of the [room](room.md#room) on the given moment
 without listing unrelated _events_.
 
 The grouping is being performed by two levels: _set_ and _label_.
@@ -16,8 +16,10 @@ Say, there is a bunch of text message _events_ that have _set_ = `messages`. Thi
 there's `messages` collection. Messages may be added, edited or removed. Identify of a message
 is tracked through _label_.
 
-When [reading](api.state.read.md) the state of this say for the current moment the state contains
+When [reading](state/read.md) the state of this say for the current moment the state contains
 a paginated `messages` collection grouped by _label_ with the latest versions of each message.
+
+For implementation details [State calculation](../impl/state_calculation.md).
 
 ## Non-collection states
 

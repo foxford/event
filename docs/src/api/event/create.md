@@ -1,12 +1,12 @@
 # event.create
 
-Create an [event](api.event.md#event) in a [room](api.room.md#room).
+Create an [event](../event.md#event) in a [room](../room.md#room).
 
 The _room_ must be opened.
 
 ## Authorization
 
-The current _agent_ must be [entered](api.room.enter.md) to the _room_.
+The current _agent_ must be [entered](../room/enter.md) to the _room_.
 
 The tenant authorizes the current _agent_ for `create` action on
 `["rooms", room_id, "events"]` object.
@@ -25,15 +25,15 @@ data    | json   | _required_ | The event JSON payload.
 
 **Status:** 201.
 
-**Payload:** [event](api.event.md#event) object.
+**Payload:** [event](../event.md#event) object.
 
 ## Notification
 
-A notification is being sent to all [agents](api.agent.md#agent) that have
-[entered](api.room.enter.md) the room.
+A notification is being sent to all [agents](../agent.md#agent) that have
+[entered](../room/enter.md) the room.
 
 **URI:** `rooms/:room_id/events`
 
 **Label:** `event.create`.
 
-**Payload:** [event](api.event.md#event) object.
+**Payload:** [event](../event.md#event) object.

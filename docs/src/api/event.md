@@ -1,11 +1,11 @@
 # Event
 
-An _event_ is a JSON document representing a fact that took place in a [room](api.room.md#room).
+An _event_ is a JSON document representing a fact that took place in a [room](room.md#room).
 
 It has arbitrary _type_ and _data_.
 
 Events may be grouped to _sets_ of elements identified by _label_ for aggregation to
-[state](api.state.md#state).
+[state](state.md#state).
 
 _Events_ are **immutable** by design. Any change is a new event.
 
@@ -29,7 +29,7 @@ created_at | int      | _required_ | Event absolute creation timestamp in millis
 
 ## Stream editing events
 
-The room [adjustment](api.room.adjust.md) algorithm depends on the stream editing events structure.
+The room [adjustment](room/adjust.md) algorithm depends on the stream editing events structure.
 They must have _type_ = `stream` and _data_ = `{ "cut": "start" }` or `{ "cut": "stop" }`.
 
 This is the only dependence on events specifics in the service.

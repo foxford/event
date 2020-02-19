@@ -1,6 +1,6 @@
 # room.create
 
-Create a [room](api.room.md#room).
+Create a [room](../room.md#room).
 
 ## Authorization
 
@@ -18,7 +18,7 @@ tags     | json       | _optional_ | Tenant-specific JSON object associated with
 
 **Status:** 201.
 
-**Payload:** [room](api.room.md#room) object.
+**Payload:** [room](../room.md#room) object.
 
 ## Notification
 
@@ -28,4 +28,4 @@ A notification is being sent to the _audience_ topic.
 
 **Label:** `room.create`.
 
-**Payload:** [room](api.roomt.md#room) object.
+**Payload:** [room](../room.md#room) object.

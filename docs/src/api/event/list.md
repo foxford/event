@@ -1,6 +1,6 @@
 # event.list
 
-List [events](api.event.md#event) in a [room](api.room#room).
+List [events](../event.md#event) in a [room](../room#room).
 
 ## Authorization
 
@@ -23,4 +23,4 @@ limit           | int    |        100 | Limits the number of events in the respo
 
 **Status:** 200.
 
-**Payload:** list of [events](api.event.md#event).
+**Payload:** list of [events](../event.md#event).

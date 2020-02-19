@@ -1,4 +1,5 @@
 [book]
-authors = []
+authors = ["Timofey Martynov"]
 multilingual = false
 src = "src"
+title = "Event service"

@@ -1,13 +1,15 @@
 # room.enter
 
-Enter a [room](api.room.md#room).
+Enter a [room](../room.md#room).
 
 The room must be opened.
 
 After entrance the current _agent_ starts to receive room notifications including real-time
-[events](api.event.md#room) and is able to call endpoints that require _room_ entrance.
+[events](../event.md#event) and is able to call endpoints that require _room_ entrance.
 
-Entered [agents](api.agent.md#agent) appear in the active _agents_ [list](api.agent.list.md).
+Entered [agents](../agent.md#agent) appear in the active _agents_ [list](../agent/list.md).
+
+For implementation details see [Room entrance](../../impl/room_entrance.md).
 
 ## Authorization
 
@@ -32,8 +34,8 @@ for the `room.enter` broadcast notification that confirms the entrance. The desc
 
 ## Notification
 
-A notification is being sent to all [agents](api.agent.md#agent) that have
-[entered](api.room.enter.md) the room.
+A notification is being sent to all [agents](../agent.md#agent) that have
+[entered](../room/enter.md) the room.
 
 **URI:** `rooms/:room_id/events`
 

@@ -1,6 +1,6 @@
 # room.read
 
-Retrieves the [room](api.room.md#room) object.
+Retrieves the [room](../room.md#room) object.
 
 ## Authorization
 
@@ -16,4 +16,4 @@ id    | uuid | _required_ | The room identifier.
 
 **Status:** 200.
 
-**Payload:** [room](api.room.md#room) object.
+**Payload:** [room](../room.md#room) object.

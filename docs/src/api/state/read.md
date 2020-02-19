@@ -1,6 +1,6 @@
 # state.read
 
-Read [state](api.state.md#state) of _sets_ in a [room](api.room.md#room).
+Read [state](../state.md#state) of _sets_ in a [room](../room.md#room).
 
 ## Authorization
 
@@ -22,6 +22,6 @@ limit           | int      |        100 | Limits the number of events in the res
 
 **Status:** 200.
 
-**Payload:** [state](api.state.md#state) object. If `sets` parameter has only one element there will
+**Payload:** [state](../state.md#state) object. If `sets` parameter has only one element there will
 also be `has_next` key with boolean value indicating that there's more data left for pagination
 when `true`.

@@ -1,10 +1,12 @@
 # room.adjust
 
-Create derived _original_ and _modified_ [rooms](api.room.md#room) with shifted
-[events](api.event.md#event) according to _segments_ and
-[stream editing events](api.event.md#stream-editing-events).
+Create derived _original_ and _modified_ [rooms](../room.md#room) with shifted
+[events](../event.md#event) according to _segments_ and
+[stream editing events](../event.md#stream-editing-events).
 
 The purpose is to keep events in sync with fragmented video stream and moderator edits.
+
+For more information on how it works see [Room adjustment](../../impl/room_adjustment.md).
 
 This endpoint is intened to call only by tenant.
 
