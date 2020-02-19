@@ -392,7 +392,7 @@ impl RequestHandler for AdjustHandler {
                         );
 
                         let error = SvcError::builder()
-                            .status(ResponseStatus::INTERNAL_SERVER_ERROR)
+                            .status(ResponseStatus::UNPROCESSABLE_ENTITY)
                             .kind("room.adjust", AdjustHandler::ERROR_TITLE)
                             .detail(&err.to_string())
                             .build();

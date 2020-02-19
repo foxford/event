@@ -1,7 +1,8 @@
 # Event
 
-An event service.
+[Documentation][documentation]
 
+[documentation]:https://docs.netology-group.services/event/index.html
 
 ## Development
 
@@ -35,9 +36,8 @@ The you can build and run the service locally having stable Rust [installed][rus
 cargo run
 ```
 
-[mqtt-gateway]:[http://github.com/netology-group/mqtt-gateway]
-[events-api]:[http://github.com/netology-group/ulms-events-api]
-[rustup]:[https://rustup.rs]
+[mqtt-gateway]:http://github.com/netology-group/mqtt-gateway
+[rustup]:https://rustup.rs
 
 
 ## Deployment

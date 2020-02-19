@@ -1,37 +1,23 @@
-# List
+# agent.list
 
-List active agents.
+List active [agents](api.agent.md#agent) in a [room](api.room#room).
 
-**Request**
+The _room_ must be opened.
 
-```bash
-pub agents/${ME}/api/v1/out/${APP_NAME}
-```
+## Authorization
 
-**Topic parameters**
+The current _agent_ must be [entered](api.room.enter.md) to the _room_.
 
-Name     | Type   | Default    | Description
--------- | ------ | ---------- | ------------------
-ME       | string | _required_ | Agent identifier.
-APP_NAME | string | _required_ | Name of the application.
+## Parameters
 
-**Properties**
+Name    | Type   | Default    | Description
+------- | ------ | ---------- | --------------------
+room_id | string | _required_ | The room identifier.
+offset  | int    | _optional_ | Pagination offset.
+limit   | int    |         25 | Pagination limit.
 
-Name             | Type   | Default    | Description
----------------- | ------ | ---------- | ------------------
-type             | string | _required_ | Always `request`.
-method           | string | _required_ | Always `agent.list`.
-response_topic   | string | _required_ | Always `agents/${ME}/api/v1/in/${APP_NAME}`.
-correlation_data | string | _required_ | The same value will be in a response.
+## Response
 
-**Payload**
+**Status:** 200.
 
-Name       | Type       | Default    | Description
----------- | ---------- | ---------- | ------------------
-room_id    | string     | _required_ | Returns only objects that belong to the room. The room must be opened.
-offset     | int        | _optional_ | Returns objects starting from the specified index.
-limit      | int        |         25 | Limits the number of objects in the response.
-
-**Response**
-
-If successful, the response payload contains the list of **Agent** objects.
+**Payload:** list of [agents](api.agent.md#agent).

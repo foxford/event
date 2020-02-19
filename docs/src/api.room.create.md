@@ -1,37 +1,31 @@
-# Create
+# room.create
 
-Create an events Room.
+Create a [room](api.room.md#room).
 
-**Request**
+## Authorization
 
-```bash
-pub agents/${ME}/api/v1/out/${APP_NAME}
-```
+The tenant authorizes the current _agent_ for `create` action on `["rooms"]` object.
 
-**Topic parameters**
+## Parameters
 
-Name     | Type   | Default    | Description
--------- | ------ | ---------- | ------------------
-ME       | string | _required_ | Agent identifier.
-APP_NAME | string | _required_ | Name of the application.
+Name     | Type       | Default    | Description
+-------- | ---------- | ---------- | ------------------------------------------------------------
+audience | string     | _required_ | The room audience.
+time     | [int, int] | _required_ | A [lt, rt) range of unix time (seconds) or null (unbounded).
+tags     | json       | _optional_ | Tenant-specific JSON object associated with the room.
 
-**Properties**
+## Response
 
-Name             | Type   | Default    | Description
----------------- | ------ | ---------- | ------------------
-type             | string | _required_ | Always `request`.
-method           | string | _required_ | Always `room.create`.
-response_topic   | string | _required_ | Always `agents/${ME}/api/v1/in/${APP_NAME}`.
-correlation_data | string | _required_ | The same value will be in a response.
+**Status:** 201.
 
-**Payload**
+**Payload:** [room](api.room.md#room) object.
 
-Name        | Type       | Default    | Description
------------ | ---------- | ---------- | ------------------
-audience    | string     | _required_ | The room audience.
-time        | [int, int] | _required_ | A [lt, rt) range of unix time (seconds) or null (unbounded).
-tags        | json       | _optional_ | Tenant-specific JSON object associated with the room.
+## Notification
 
-**Response**
+A notification is being sent to the _audience_ topic.
 
-If successful, the response payload contains a **Room** object.
+**URI:** `audiences/:audience`
+
+**Label:** `room.create`.
+
+**Payload:** [room](api.roomt.md#room) object.

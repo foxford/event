@@ -1,36 +1,44 @@
-# Leave
+# room.leave
 
-Unsubscribe from the room's events.
+Leave a room [room](api.room.md#room).
 
-**Request**
+After leaving a room the current _agent_ stops to receive room notifications and is not able
+to call endpoints that require _room_ entrance.
 
-```bash
-pub agents/${ME}/api/v1/out/${APP_NAME}
-```
+Left [agents](api.agent.md#agent) disappear from the active _agents_ [list](api.agent.list.md).
 
-**Topic parameters**
+## Authorization
 
-Name     | Type   | Default    | Description
--------- | ------ | ---------- | ------------------
-ME       | string | _required_ | Agent identifier.
-APP_NAME | string | _required_ | Name of the application.
+The current _agent_ must be [entered](api.room.enter.md) to the _room_.
 
-**Properties**
+## Parameters
 
-Name             | Type   | Default    | Description
----------------- | ------ | ---------- | ------------------
-type             | string | _required_ | Always `request`.
-method           | string | _required_ | Always `room.leave`.
-response_topic   | string | _required_ | Always `agents/${ME}/api/v1/in/${APP_NAME}`.
-correlation_data | string | _required_ | The same value will be in a response.
+Name | Type | Default    | Description
+---- | ---- | ---------- | --------------------
+id   | uuid | _required_ | The room identifier.
 
-**Payload**
+## Response
 
-Name     | Type       | Default    | Description
--------- | ---------- | ---------- | ------------------
-id       | uuid       | _required_ | The room identifier. The room must not be expired.
+**Status:** 202.
 
-**Response**
+**Payload:** empty object.
 
-If successful, the response contains 202 Accepted status only.
-It doesn't mean that the agent has already entered the room but that the process has been initiated.
+Receiving the response doesn't yet mean that the agent has already left the room but that the
+process has been initiated.
+
+## Notification
+
+A notification is being sent to all [agents](api.agent.md#agent) that are still in
+[entered](api.room.enter.md) the room.
+The current agent will not receive it since it's already left.
+
+**URI:** `rooms/:room_id/events`
+
+**Label:** `room.leave`
+
+**Payload:**
+
+Name     | Type     | Default    | Description
+-------- | -------- | ---------- | --------------------
+id       | uuid     | _required_ | The room identifier.
+agent_id | agent_id | _required_ | The agent identifier.

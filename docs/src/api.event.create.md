@@ -1,39 +1,39 @@
-# Create
+# event.create
 
-Create an Event.
+Create an [event](api.event.md#event) in a [room](api.room.md#room).
 
-**Request**
+The _room_ must be opened.
 
-```bash
-pub agents/${ME}/api/v1/out/${APP_NAME}
-```
+## Authorization
 
-**Topic parameters**
+The current _agent_ must be [entered](api.room.enter.md) to the _room_.
 
-Name     | Type   | Default    | Description
--------- | ------ | ---------- | ------------------
-ME       | string | _required_ | Agent identifier.
-APP_NAME | string | _required_ | Name of the application.
+The tenant authorizes the current _agent_ for `create` action on
+`["rooms", room_id, "events"]` object.
 
-**Properties**
+## Parameters
 
-Name             | Type   | Default    | Description
----------------- | ------ | ---------- | ------------------
-type             | string | _required_ | Always `request`.
-method           | string | _required_ | Always `event.create`.
-response_topic   | string | _required_ | Always `agents/${ME}/api/v1/in/${APP_NAME}`.
-correlation_data | string | _required_ | The same value will be in a response.
+Name    | Type   | Default    | Description
+------- | ------ | ---------- | -----------------------
+room_id | uuid   | _required_ | The room identifier.
+type    | string | _required_ | Event type.
+set     | string |       type | Collection set name.
+label   | string | _optional_ | Collection item label.
+data    | json   | _required_ | The event JSON payload.
 
-**Payload**
+## Response
 
-Name        | Type       | Default    | Description
------------ | ---------- | ---------- | ------------------
-room_id     | uuid       | _required_ | The room identifier. The room must be opened. The agent must be entered to the room.
-type        | string     | _required_ | Event type.
-set         | string     |       type | Collection set name. Equals to `type` parameter by default.
-label       | string     | _optional_ | Collection item label.
-data        | json       | _required_ | The event JSON data.
+**Status:** 201.
 
-**Response**
+**Payload:** [event](api.event.md#event) object.
 
-If successful, the response payload contains an **Event** object.
+## Notification
+
+A notification is being sent to all [agents](api.agent.md#agent) that have
+[entered](api.room.enter.md) the room.
+
+**URI:** `rooms/:room_id/events`
+
+**Label:** `event.create`.
+
+**Payload:** [event](api.event.md#event) object.

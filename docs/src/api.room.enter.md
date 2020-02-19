@@ -1,38 +1,47 @@
-# Enter
+# room.enter
 
-Subscribe to the room's events.
+Enter a [room](api.room.md#room).
 
-**Request**
+The room must be opened.
 
-```bash
-pub agents/${ME}/api/v1/out/${APP_NAME}
-```
+After entrance the current _agent_ starts to receive room notifications including real-time
+[events](api.event.md#room) and is able to call endpoints that require _room_ entrance.
 
-**Topic parameters**
+Entered [agents](api.agent.md#agent) appear in the active _agents_ [list](api.agent.list.md).
 
-Name     | Type   | Default    | Description
--------- | ------ | ---------- | ------------------
-ME       | string | _required_ | Agent identifier.
-APP_NAME | string | _required_ | Name of the application.
+## Authorization
 
-**Properties**
+The tenant authorizes the current _agent_ for `subscribe` action on
+`["rooms", room_id, "events"]` object.
 
-Name             | Type   | Default    | Description
----------------- | ------ | ---------- | ------------------
-type             | string | _required_ | Always `request`.
-method           | string | _required_ | Always `room.enter`.
-response_topic   | string | _required_ | Always `agents/${ME}/api/v1/in/${APP_NAME}`.
-correlation_data | string | _required_ | The same value will be in a response.
+## Paramteres
 
-**Payload**
+Name | Type | Default    | Description
+---- | ---- | ---------- | --------------------
+id   | uuid | _required_ | The room identifier.
 
-Name     | Type       | Default    | Description
--------- | ---------- | ---------- | ------------------
-id       | uuid       | _required_ | The room identifier. The room must be opened.
+## Response
 
-**Response**
+**Status:** 202.
 
-If successful, the response contains 202 Accepted status only.
-It doesn't mean that the agent has already entered the room but that the process has been initiated.
-Before making any requests that require room entrance one must wait for the `room.enter` broadcast
-event that confirms the entrance.
+**Payload:** empty object.
+
+Receiving the response doesn't yet mean that the agent has already entered the room but that
+the process has been initiated. Before making any requests that require room entrance one must wait
+for the `room.enter` broadcast notification that confirms the entrance. The description is below.
+
+## Notification
+
+A notification is being sent to all [agents](api.agent.md#agent) that have
+[entered](api.room.enter.md) the room.
+
+**URI:** `rooms/:room_id/events`
+
+**Label:** `room.enter`
+
+**Payload:**
+
+Name     | Type     | Default    | Description
+-------- | -------- | ---------- | --------------------
+id       | uuid     | _required_ | The room identifier.
+agent_id | agent_id | _required_ | The agent identifier.
