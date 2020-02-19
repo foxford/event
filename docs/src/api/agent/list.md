@@ -8,7 +8,7 @@ The _room_ must be opened.
 
 The current _agent_ must be [entered](../room/enter.md) to the _room_.
 
-## Parameters
+## Multicast request
 
 Name    | Type   | Default    | Description
 ------- | ------ | ---------- | --------------------
@@ -16,7 +16,7 @@ room_id | string | _required_ | The room identifier.
 offset  | int    | _optional_ | Pagination offset.
 limit   | int    |         25 | Pagination limit.
 
-## Response
+## Unicast response
 
 **Status:** 200.
 

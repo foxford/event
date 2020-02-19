@@ -15,7 +15,7 @@ This endpoint is intended for calling only a tenant.
 The current _agent's_ _account_ must be a configured _trusted account_ of the tenant for the
 _room's_ _audience_.
 
-## Parameters
+## Multicast request
 
 Name       | Type         | Default    | Description
 ---------- | ------------ | ---------- | --------------------------------------------------------
@@ -24,7 +24,7 @@ started_at | int          | _required_ | The conference room opening time for er
 segments   | [[int, int]] | _required_ | Start-stop millisecond timestamp pairs relative to started_at of video segments
 offset     | int          | _required_ | Pre-roll length in milliseconds.
 
-## Response
+## Unicast response
 
 **Status:** 202.
 
@@ -33,7 +33,7 @@ offset     | int          | _required_ | Pre-roll length in milliseconds.
 Receiving the response only means that the actual calculation has been started asynchronously.
 The actual result comes with a notification.
 
-## Notification
+## Broadcast event
 
 **URI:** `audiences/:audience/events`
 

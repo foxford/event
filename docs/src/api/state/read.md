@@ -7,7 +7,7 @@ Read [state](../state.md#state) of _sets_ in a [room](../room.md#room).
 The tenant authorizes the current _agent_ for `list` action on
 `["rooms", room_id, "events"]` object.
 
-## Parameters
+## Multicast request
 
 Name            | Type     | Default    | Description
 --------------- | -------- | ---------- | -------------------------------------------------------
@@ -18,7 +18,7 @@ last_created_at | int      | _optional_ | `created_at` value of the last seen ev
 direction       | string   |    forward | Pagination direction: forward | backward.
 limit           | int      |        100 | Limits the number of events in the response.
 
-## Response
+## Unicast response
 
 **Status:** 200.
 

@@ -11,7 +11,7 @@ The current _agent_ must be [entered](../room/enter.md) to the _room_.
 The tenant authorizes the current _agent_ for `create` action on
 `["rooms", room_id, "events"]` object.
 
-## Parameters
+## Multicast request
 
 Name    | Type   | Default    | Description
 ------- | ------ | ---------- | -----------------------
@@ -21,13 +21,13 @@ set     | string |       type | Collection set name.
 label   | string | _optional_ | Collection item label.
 data    | json   | _required_ | The event JSON payload.
 
-## Response
+## Unicast response
 
 **Status:** 201.
 
 **Payload:** [event](../event.md#event) object.
 
-## Notification
+## Broadcast event
 
 A notification is being sent to all [agents](../agent.md#agent) that have
 [entered](../room/enter.md) the room.

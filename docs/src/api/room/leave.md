@@ -11,13 +11,13 @@ Left [agents](../agent.md#agent) disappear from the active _agents_ [list](../ag
 
 The current _agent_ must be [entered](../room/enter.md) to the _room_.
 
-## Parameters
+## Multicast request
 
 Name | Type | Default    | Description
 ---- | ---- | ---------- | --------------------
 id   | uuid | _required_ | The room identifier.
 
-## Response
+## Unicast response
 
 **Status:** 202.
 
@@ -26,7 +26,7 @@ id   | uuid | _required_ | The room identifier.
 Receiving the response doesn't yet mean that the agent has already left the room but that the
 process has been initiated.
 
-## Notification
+## Broadcast event
 
 A notification is being sent to all [agents](../agent.md#agent) that are still in
 [entered](../room/enter.md) the room.

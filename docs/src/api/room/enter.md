@@ -16,13 +16,13 @@ For implementation details see [Room entrance](../../impl/room_entrance.md).
 The tenant authorizes the current _agent_ for `subscribe` action on
 `["rooms", room_id, "events"]` object.
 
-## Parameters
+## Multicast request
 
 Name | Type | Default    | Description
 ---- | ---- | ---------- | --------------------
 id   | uuid | _required_ | The room identifier.
 
-## Response
+## Unicast response
 
 **Status:** 202.
 
@@ -32,7 +32,7 @@ Receiving the response doesn't yet mean that the agent has already entered the r
 the process has been initiated. Before making any requests that require room entrance one must wait
 for the `room.enter` broadcast notification that confirms the entrance. The description is below.
 
-## Notification
+## Broadcast event
 
 A notification is being sent to all [agents](../agent.md#agent) that have
 [entered](../room/enter.md) the room.

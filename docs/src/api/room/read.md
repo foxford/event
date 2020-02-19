@@ -6,13 +6,13 @@ Retrieves the [room](../room.md#room) object.
 
 The tenant authorizes the current _agent_ for `read` action on `["rooms", room_id]` object.
 
-## Parameters
+## Multicast request
 
 Name  | Type | Default    | Description
 ----- | ---- | ---------- | --------------------
 id    | uuid | _required_ | The room identifier.
 
-## Response
+## Unicast response
 
 **Status:** 200.
 
