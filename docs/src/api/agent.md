@@ -3,7 +3,7 @@
 An _agent_ is an entity for tracking online presence of MQTT agents in [rooms](room.md#room).
 
 If an _agent_ has [entered](room/enter.md) a _room_ it will be [listed](agent/list.md)
-in the online agents list and get notified about [events](event.md#event) that happend
+in the online agents list and get notified about [events](event.md#event) that happened
 in the _room_.
 
 If an online _agent_ has [left](room/leave.md) the _room_ or disconnected from the broker

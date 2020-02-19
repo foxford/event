@@ -5,7 +5,7 @@ In case of error the response payload is a RFC7807 Problem Details object:
 Name   | Type   | Default    | Description
 ------ | ------ | ---------- | ---------------------------------
 type   | string | _required_ | Error type.
-title  | string | _requried_ | Human-readable short description.
+title  | string | _required_ | Human-readable short description.
 detail | string | _optional_ | Detailed error description.
 status | int    | _required_ | HTTP-compatible status code. The same code is in response properties.
 

@@ -24,7 +24,7 @@ which shares common resources like configuration, DB connection pool, authz obje
 Along with the `Context` it passes message properties and handling start timestamp.
 The latter is necessary for calculating timing properties of outgoing messages.
 
-The handler retuns a vector of outgoing messages. Usually it's a response and maybe a broadcast
+The handler returns a vector of outgoing messages. Usually it's a response and maybe a broadcast
 notification. When it's done `MessageHandler` publishes these messages.
 
 ## Handling events

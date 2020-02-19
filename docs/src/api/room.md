@@ -4,7 +4,7 @@ A room is scope for storing [events](event.md#event) sharing them between
 [agents](agent.md#agent).
 
 A room belongs to _audience_ that is a scope of a tenant. So tenants controls an _audience_ that
-contains many rooms. The tenant also may associate some aribitraty _tags_ to the room to keep the
+contains many rooms. The tenant also may associate some arbitrary _tags_ to the room to keep the
 linkage with its internal entities.
 
 A room has a _time_ period when its open i.e. available for creating events.

@@ -16,7 +16,7 @@ For implementation details see [Room entrance](../../impl/room_entrance.md).
 The tenant authorizes the current _agent_ for `subscribe` action on
 `["rooms", room_id, "events"]` object.
 
-## Paramteres
+## Parameters
 
 Name | Type | Default    | Description
 ---- | ---- | ---------- | --------------------

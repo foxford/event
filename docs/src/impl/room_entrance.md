@@ -9,7 +9,7 @@
 3. The broker subscribes the _agent_ to the _room's_ _events_ topic specified in the request and
    sends a `subscription.create` broadcast event to the event service.
 4. Also the broker send 202 response for the request (1) that the entrance process stared.
-   So for the _agent_ all this scheme is a blackbox: it just sends a request and receives
+   So for the _agent_ all this scheme is a black box: it just sends a request and receives
    a response.
 5. The event service handles the broadcast event (3), updates _agent_ status from (2) to `ready`
    and then sends a broadcast event to the _room's_ _events_ topic so other _agents_ could know

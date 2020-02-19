@@ -5,7 +5,7 @@ item of _sets_ parameter. This parameter is limited to 10 elements.
 
 A query filters _events_ by _room_ and _set_ and also filters the select by `occured_at` relative
 timestamp and absolute `created_at` greater (or less in case of backwards direction) than the
-corresponding paramters.
+corresponding parameters.
 
 Then it inner joins the query with the `event_state` view that returns only actual events by
 applying a `FIRST_VALUE` window function partitioning by label.

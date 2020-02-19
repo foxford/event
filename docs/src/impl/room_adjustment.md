@@ -66,7 +66,7 @@ beginning of the first _segment_.
 
 The recording may contain a preroll: a title in the beginning of the video added on transcoding.
 This requires to shift all events right for the preroll duration to keep them in sync.
-This duration is being specified with `offset` paramter.
+This duration is being specified with `offset` parameter.
 
 ## Room opening difference compensation
 

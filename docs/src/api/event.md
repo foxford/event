@@ -20,7 +20,7 @@ Name       | Type     | Default    | Description
 id         | uuid     | _required_ | The event identifier.
 room_id    | uuid     | _required_ | The room identifier to which the event belongs.
 type       | string   | _required_ | The event type.
-set        | string   |       kind | The set to which the event is related.
+set        | string   |       type | The set to which the event is related.
 label      | string   | _optional_ | A label to identify an element within the set.
 data       | json     | _required_ | Schemaless payload of the event.
 occured_at | int      | _required_ | Number of milliseconds since the room's opening when the event took place.

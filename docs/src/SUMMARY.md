@@ -22,4 +22,4 @@
     - [Room entrance](impl/room_entrance.md)
     - [State calculation](impl/state_calculation.md)
     - [Room adjustment](impl/room_adjustment.md)
-
+- [Integration](integration.md)
