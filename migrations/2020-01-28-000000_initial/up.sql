@@ -28,7 +28,7 @@ create table adjustment (
 
     started_at timestamptz not null,
     segments int8range[] not null,
-    occured_at bigint not null,
+    occurred_at bigint not null,
     created_at timestamptz not null default now(),
 
     primary key (room_id),

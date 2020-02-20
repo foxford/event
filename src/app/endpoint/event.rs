@@ -100,7 +100,7 @@ impl RequestHandler for CreateHandler {
         };
 
         // Insert event into the DB.
-        let occured_at = match room.time() {
+        let occurred_at = match room.time() {
             (Bound::Included(opened_at), _) => {
                 (Utc::now() - opened_at.to_owned()).num_milliseconds()
             }
@@ -117,7 +117,7 @@ impl RequestHandler for CreateHandler {
             room.id(),
             &payload.kind,
             payload.data,
-            occured_at,
+            occurred_at,
             reqp.as_agent_id(),
         );
 

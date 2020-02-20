@@ -24,7 +24,7 @@ pub(crate) struct Object {
     set: String,
     label: Option<String>,
     data: JsonValue,
-    occured_at: i64,
+    occurred_at: i64,
     created_by: AgentId,
     #[serde(with = "ts_milliseconds")]
     created_at: DateTime<Utc>,
@@ -45,8 +45,8 @@ impl Object {
         &self.kind
     }
 
-    pub(crate) fn occured_at(&self) -> i64 {
-        self.occured_at
+    pub(crate) fn occurred_at(&self) -> i64 {
+        self.occurred_at
     }
 
     pub(crate) fn data(&self) -> &JsonValue {
@@ -173,14 +173,14 @@ impl<'a> ListQuery<'a> {
                     q = q.filter(event::created_at.gt(last_created_at));
                 }
 
-                q.order_by((event::occured_at, event::created_at))
+                q.order_by((event::occurred_at, event::created_at))
             }
             Direction::Backward => {
                 if let Some(last_created_at) = self.last_created_at {
                     q = q.filter(event::created_at.lt(last_created_at));
                 }
 
-                q.order_by((event::occured_at.desc(), event::created_at.desc()))
+                q.order_by((event::occurred_at.desc(), event::created_at.desc()))
             }
         };
 
@@ -198,7 +198,7 @@ pub(crate) struct InsertQuery<'a> {
     set: &'a str,
     label: Option<&'a str>,
     data: JsonValue,
-    occured_at: i64,
+    occurred_at: i64,
     created_by: &'a AgentId,
     created_at: Option<DateTime<Utc>>,
 }
@@ -208,7 +208,7 @@ impl<'a> InsertQuery<'a> {
         room_id: Uuid,
         kind: &'a str,
         data: JsonValue,
-        occured_at: i64,
+        occurred_at: i64,
         created_by: &'a AgentId,
     ) -> Self {
         Self {
@@ -217,7 +217,7 @@ impl<'a> InsertQuery<'a> {
             set: kind,
             label: None,
             data,
-            occured_at,
+            occurred_at,
             created_by,
             created_at: None,
         }
@@ -279,18 +279,18 @@ impl<'a> DeleteQuery<'a> {
 pub(crate) struct SetStateQuery<'a> {
     room_id: Uuid,
     set: &'a str,
-    occured_at: i64,
+    occurred_at: i64,
     last_created_at: Option<DateTime<Utc>>,
     direction: Direction,
     limit: Option<i64>,
 }
 
 impl<'a> SetStateQuery<'a> {
-    pub(crate) fn new(room_id: Uuid, set: &'a str, occured_at: i64) -> Self {
+    pub(crate) fn new(room_id: Uuid, set: &'a str, occurred_at: i64) -> Self {
         Self {
             room_id,
             set,
-            occured_at,
+            occurred_at,
             last_created_at: None,
             direction: Default::default(),
             limit: None,
@@ -330,14 +330,14 @@ impl<'a> SetStateQuery<'a> {
                     q = q.filter(event::created_at.gt(last_created_at));
                 }
 
-                q.filter(event::occured_at.gt(self.occured_at))
+                q.filter(event::occurred_at.gt(self.occurred_at))
             }
             Direction::Backward => {
                 if let Some(last_created_at) = self.last_created_at {
                     q = q.filter(event::created_at.lt(last_created_at));
                 }
 
-                q.filter(event::occured_at.lt(self.occured_at))
+                q.filter(event::occurred_at.lt(self.occurred_at))
             }
         }
     }
@@ -348,8 +348,8 @@ impl<'a> SetStateQuery<'a> {
         let mut q = self.build_query().inner_join(event_state::table);
 
         q = match self.direction {
-            Direction::Forward => q.order_by((event::occured_at.asc(), event::created_at.asc())),
-            Direction::Backward => q.order_by((event::occured_at.desc(), event::created_at.desc())),
+            Direction::Forward => q.order_by((event::occurred_at.asc(), event::created_at.asc())),
+            Direction::Backward => q.order_by((event::occurred_at.desc(), event::created_at.desc())),
         };
 
         if let Some(limit) = self.limit {

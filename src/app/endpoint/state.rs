@@ -19,7 +19,7 @@ const MAX_LIMIT_PER_SET: i64 = 100;
 pub(crate) struct ReadRequest {
     room_id: Uuid,
     sets: Vec<String>,
-    occured_at: i64,
+    occurred_at: i64,
     #[serde(default, with = "ts_milliseconds_option")]
     last_created_at: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -84,7 +84,7 @@ impl RequestHandler for ReadHandler {
 
         for set in payload.sets.iter() {
             // Build a query for the particular set state.
-            let mut query = db::event::SetStateQuery::new(room.id(), &set, payload.occured_at)
+            let mut query = db::event::SetStateQuery::new(room.id(), &set, payload.occurred_at)
                 .direction(payload.direction);
 
             if let Some(last_created_at) = payload.last_created_at {

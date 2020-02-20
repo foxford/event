@@ -155,7 +155,7 @@ const SHIFT_CLONE_EVENTS_SQL: &'static str = r#"
             from gap_starts, gap_stops
             where gap_stops.row_number = gap_starts.row_number
         )
-    insert into event (id, room_id, kind, set, label, data, occured_at, created_by, created_at)
+    insert into event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
     select
         gen_random_uuid() as id,
         $3 as room_id,
@@ -163,11 +163,11 @@ const SHIFT_CLONE_EVENTS_SQL: &'static str = r#"
         set,
         label, 
         data,
-        occured_at - (
-            select coalesce(sum(least(stop, occured_at) - start), 0)
+        occurred_at - (
+            select coalesce(sum(least(stop, occurred_at) - start), 0)
             from gaps
-            where start < occured_at
-        ) + $4 as occured_at,
+            where start < occurred_at
+        ) + $4 as occurred_at,
         created_by,
         created_at
     from event
@@ -278,10 +278,10 @@ fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>, Error> {
 
         match (command, state) {
             (Some("start"), CutEventsToGapsState::Stopped) => {
-                state = CutEventsToGapsState::Started(event.occured_at());
+                state = CutEventsToGapsState::Started(event.occurred_at());
             }
             (Some("stop"), CutEventsToGapsState::Started(start)) => {
-                gaps.push((start, event.occured_at()));
+                gaps.push((start, event.occurred_at()));
                 state = CutEventsToGapsState::Stopped;
             }
             _ => bail!(
@@ -456,7 +456,7 @@ mod tests {
     fn create_event(
         conn: &PgConnection,
         room: &Room,
-        occured_at: i64,
+        occurred_at: i64,
         kind: &str,
         data: JsonValue,
     ) {
@@ -467,15 +467,15 @@ mod tests {
             _ => panic!("Invalid room time"),
         };
 
-        EventInsertQuery::new(room.id(), kind, data, occured_at, &created_by)
-            .created_at(opened_at + Duration::milliseconds(occured_at))
+        EventInsertQuery::new(room.id(), kind, data, occurred_at, &created_by)
+            .created_at(opened_at + Duration::milliseconds(occurred_at))
             .execute(conn)
             .expect("Failed to insert event");
     }
 
-    fn assert_event(event: &Event, occured_at: i64, kind: &str, data: &JsonValue) {
+    fn assert_event(event: &Event, occurred_at: i64, kind: &str, data: &JsonValue) {
         assert_eq!(event.kind(), kind);
         assert_eq!(event.data(), data);
-        assert_eq!(event.occured_at(), occured_at);
+        assert_eq!(event.occurred_at(), occurred_at);
     }
 }
