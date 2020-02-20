@@ -2,8 +2,8 @@ create view event_state as (
   select distinct
     first_value(id) over (
       partition by room_id, set, label
-      order by occurred_at DESC, created_at DESC
-    ) AS id
+      order by occurred_at desc, created_at desc
+    ) as id
   from event
 );
 

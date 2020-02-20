@@ -31,7 +31,7 @@ jobs:
     - stage: check
       name: Tests
       install: cargo install diesel_cli --no-default-features --features postgres
-      script: diesel migration run && cargo test
+      script: diesel migration run --locked-schema && cargo test
     - stage: check
       name : Rustfmt
       install: rustup component add rustfmt

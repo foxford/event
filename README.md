@@ -27,7 +27,7 @@ Also this service requires local postgres with a database created and migrated:
 createdb event.dev
 
 export DATABASE_URL=postgres://postgres@localhost/event.dev
-diesel migration run
+diesel migration run --locked-schema
 ```
 
 The you can build and run the service locally having stable Rust [installed][rustup]:
