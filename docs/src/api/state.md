@@ -4,28 +4,6 @@ A _state_ is an object of aggregated [events](event.md#event).
 The purpose is to represent the actual condition of the [room](room.md#room) on the given moment
 without listing unrelated _events_.
 
-The grouping is being performed by two levels: _set_ and _label_.
-I.e. at first _events_ are being grouped by _set_ which stands for collection and then by _label_
-inside of each _set_.
-
-## Sets by example
-
-_Sets_ may be hard to understand on abstract level but given an example it's pretty simple.
-
-Say, there is a bunch of text message _events_ that have _set_ = `messages`. This means that
-there's `messages` collection. Messages may be added, edited or removed. Identify of a message
-is tracked through _label_.
-
-When [reading](state/read.md) the state of this say for the current moment the state contains
-a paginated `messages` collection grouped by _label_ with the latest versions of each message.
-
-For implementation details [State calculation](../impl/state_calculation.md).
-
-## Non-collection states
-
-If there's a need to track a single entity one may simply use a _set_ with a single element by
-specifying a constant _label_. This is the case for example for tracking current UI layout mode.
-
 ## Properties
 
 A _state_ is a dynamic JSON object the structure of which depend on _sets_ requested.
@@ -35,9 +13,21 @@ as values. For example:
 
 ```json
 {
+    // Simple set: only one element as a single event.
+    "leader": {
+      "id": "2c4dd428-5368-11ea-b75b-60f81db6d53e",
+      "set": "leader",
+      "data": {
+        "account_id": "johndoe.usr.example.org",
+        // …
+      },
+      // …
+    },
+    // Collection: an array of events for each element.
     "messages": [
       {
         "id": "c28d5544-52a5-11ea-9b6f-60f81db6d53e",
+        "set": "messages",
         "label": "message-1",
         "data": {
           // …
@@ -50,4 +40,26 @@ as values. For example:
 }
 ```
 
-where `messages` is _set_ and `message-1` is _label_.
+See below on how this object is being build.
+For implementation details check out [State calculation](../impl/state_calculation.md).
+
+## Grouping by sets and labels
+
+Only _events_ with _set_ present can be in the state. Events are grouped by _state_.
+
+Element identity inside a _set_ is _label_. Events inside a state are grouped by _label_.
+
+## Collections and simple sets
+
+A _collection_ is an array with the most actual _event_ for each _label_ in a single _set_.
+
+In case of absent _label_ the _set_ is considered to be _simple_, i.e. containing only one
+element. There's no point of wrapping it into an array so it goes as a single _event_.
+
+## Event creation from the state perspective
+
+Regarding the _state_ for _events_ [creation](event/create.md) the rules are the following:
+
+1. To get an _event_ in the _state_ one has to specify a _set_.
+2. To get a _set_ as a _collection_ one also has to specify _label_.
+3. To get a simple _set_ as a single _event_ one has to omit _label_.

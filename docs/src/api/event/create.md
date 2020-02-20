@@ -21,6 +21,12 @@ set     | string |       type | Collection set name.
 label   | string | _optional_ | Collection item label.
 data    | json   | _required_ | The event JSON payload.
 
+The _type_ and _data_ is arbitrary except
+[stream editing events](../event.md#stream-editing-events).
+
+_set_ and _label_ are also arbitrary but they impact [state](../state.md#state).
+Check out [rules](../state.md#event-creation-from-the-state-perspective) on how to choose them.
+
 ## Unicast response
 
 **Status:** 201.
