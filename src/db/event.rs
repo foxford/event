@@ -28,8 +28,30 @@ pub(crate) struct Object {
     created_by: AgentId,
     #[serde(with = "ts_milliseconds")]
     created_at: DateTime<Utc>,
-    #[serde(with = "ts_milliseconds_option", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        with = "ts_milliseconds_option",
+        skip_serializing_if = "Option::is_none"
+    )]
     deleted_at: Option<DateTime<Utc>>,
+}
+
+impl Object {
+    pub(crate) fn id(&self) -> Uuid {
+        self.id
+    }
+
+    #[cfg(test)]
+    pub(crate) fn kind(&self) -> &str {
+        &self.kind
+    }
+
+    pub(crate) fn occured_at(&self) -> i64 {
+        self.occured_at
+    }
+
+    pub(crate) fn data(&self) -> &JsonValue {
+        &self.data
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -179,6 +201,7 @@ pub(crate) struct InsertQuery<'a> {
     data: JsonValue,
     occured_at: i64,
     created_by: &'a AgentId,
+    created_at: Option<DateTime<Utc>>,
 }
 
 impl<'a> InsertQuery<'a> {
@@ -198,6 +221,7 @@ impl<'a> InsertQuery<'a> {
             data,
             occured_at,
             created_by,
+            created_at: None,
         }
     }
 
@@ -219,11 +243,43 @@ impl<'a> InsertQuery<'a> {
         }
     }
 
+    #[cfg(test)]
+    pub(crate) fn created_at(self, created_at: DateTime<Utc>) -> Self {
+        Self {
+            created_at: Some(created_at),
+            ..self
+        }
+    }
+
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
         use crate::diesel::RunQueryDsl;
         use crate::schema::event::dsl::event;
 
         diesel::insert_into(event).values(self).get_result(conn)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+pub(crate) struct DeleteQuery<'a> {
+    room_id: Uuid,
+    kind: &'a str,
+}
+
+impl<'a> DeleteQuery<'a> {
+    pub(crate) fn new(room_id: Uuid, kind: &'a str) -> Self {
+        Self { room_id, kind }
+    }
+
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<(), Error> {
+        use diesel::prelude::*;
+
+        let q = event::table
+            .filter(event::room_id.eq(self.room_id))
+            .filter(event::kind.eq(self.kind));
+
+        diesel::delete(q).execute(conn)?;
+        Ok(())
     }
 }
 

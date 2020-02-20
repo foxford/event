@@ -50,6 +50,10 @@ impl Object {
         &self.audience
     }
 
+    pub(crate) fn source_room_id(&self) -> Option<Uuid> {
+        self.source_room_id
+    }
+
     pub(crate) fn time(&self) -> &Time {
         &self.time
     }
@@ -97,7 +101,7 @@ impl FindQuery {
 #[derive(Debug, Insertable)]
 #[table_name = "room"]
 pub(crate) struct InsertQuery {
-    id: Uuid,
+    id: Option<Uuid>,
     audience: String,
     source_room_id: Option<Uuid>,
     time: Time,
@@ -105,14 +109,21 @@ pub(crate) struct InsertQuery {
 }
 
 impl InsertQuery {
-    pub(crate) fn new(id: Uuid, audience: &str, time: Time) -> Self {
+    pub(crate) fn new(audience: &str, time: Time) -> Self {
         Self {
             // Specify id explicitly to keep it in sync with the backend.
-            id,
+            id: None,
             audience: audience.to_owned(),
             source_room_id: None,
             time,
             tags: None,
+        }
+    }
+
+    pub(crate) fn id(self, id: Uuid) -> Self {
+        Self {
+            id: Some(id),
+            ..self
         }
     }
 

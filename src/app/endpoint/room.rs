@@ -11,7 +11,6 @@ use svc_agent::{
     },
     Addressable, AgentId,
 };
-use svc_authn::Authenticable;
 use svc_error::{extension::sentry, Error as SvcError};
 use uuid::Uuid;
 
@@ -106,7 +105,7 @@ impl RequestHandler for CreateHandler {
             })?;
 
         let room = {
-            let mut query = InsertQuery::new(backend_room.id, &payload.audience, payload.time);
+            let mut query = InsertQuery::new(&payload.audience, payload.time).id(backend_room.id);
 
             if let Some(tags) = payload.tags {
                 query = query.tags(tags);
@@ -356,22 +355,20 @@ impl RequestHandler for AdjustHandler {
             )
         };
 
+        // TODO: Authorize tenant account by room audience.
+
         let mut agent = context.agent().clone();
         let db = context.db().to_owned();
-        let backend = context.backend();
-        let account = reqp.as_account_id().to_owned();
         let id = room.id();
 
         context
             .thread_pool()
             .spawn(async move {
                 let future = adjust_room(
-                    db,
-                    &backend,
-                    &account,
+                    &db,
                     &room,
                     payload.started_at,
-                    payload.segments,
+                    &payload.segments,
                     payload.offset,
                 );
 
