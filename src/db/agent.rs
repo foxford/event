@@ -24,9 +24,11 @@ pub(crate) enum Status {
 #[belongs_to(Room, foreign_key = "room_id")]
 #[table_name = "agent"]
 pub(crate) struct Object {
+    #[serde(skip_serializing)]
     id: Uuid,
     agent_id: AgentId,
     room_id: Uuid,
+    #[serde(skip_serializing)]
     status: Status,
     #[serde(with = "ts_seconds")]
     created_at: DateTime<Utc>,
