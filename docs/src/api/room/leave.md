@@ -2,14 +2,13 @@
 
 Leave a room [room](../room.md#room).
 
-After leaving a room the current _agent_ stops to receive room notifications and is not able
-to call endpoints that require _room_ entrance.
+After leaving a room, the current _agent_ stops to receive room notifications and can not call endpoints that require _room_ entering.
 
-Left [agents](../agent.md#agent) disappear from the active _agents_ [list](../agent/list.md).
+Absent [agents](../agent.md#agent) disappear from the active _agents_ [list](../agent/list.md).
 
 ## Authorization
 
-The current _agent_ must be [entered](../room/enter.md) to the _room_.
+The current _agent_ must [be in](../room/enter.md) the _room_.
 
 ## Multicast request
 
@@ -23,14 +22,12 @@ id   | uuid | _required_ | The room identifier.
 
 **Payload:** empty object.
 
-Receiving the response doesn't yet mean that the agent has already left the room but that the
-process has been initiated.
+Receiving the response means that leaving still in progress and the agent is not out of the room yet.
 
 ## Broadcast event
 
-A notification is being sent to all [agents](../agent.md#agent) that are still in
-[entered](../room/enter.md) the room.
-The current agent will not receive it since it's already left.
+A notification is being sent to all [agents](../agent.md#agent) that are [still in](../room/enter.md) the room.
+The current agent stays uninformed.
 
 **URI:** `rooms/:room_id/events`
 
