@@ -96,7 +96,8 @@ pub(crate) async fn call(
         )
         .await?;
 
-    // Clone the backend real-time room and offset applying both segments and cut-start/stop events.
+    // Clone the backend real-time room and shift events applying both segments and
+    // cut-start/stop events.
     let (backend_modified_room, modified_segments) = backend
         .transcode_stream(
             account,
@@ -133,7 +134,7 @@ pub(crate) async fn call(
             .await?;
     }
 
-    // Clone the backend real-time room and offset according to segments only.
+    // Clone the backend real-time room and shift events according to segments only.
     let (backend_original_room, _original_segments) = backend
         .transcode_stream(
             account,

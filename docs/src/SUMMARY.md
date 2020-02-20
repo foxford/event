@@ -13,3 +13,5 @@
     - [Event](api.event.md)
         - [Create](api.event.create.md)
         - [List](api.event.list.md)
+    - [State](api.state.md)
+        - [State](api.state.read.md)

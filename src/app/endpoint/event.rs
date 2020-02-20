@@ -1,7 +1,7 @@
 use std::ops::Bound;
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::{serde::ts_milliseconds_option, DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::Value as JsonValue;
 use svc_agent::{
@@ -93,8 +93,10 @@ impl RequestHandler for CreateHandler {
             })?;
 
         // Insert event into the DB.
-        let offset = match room.time() {
-            (Bound::Included(opened_at), _) => Utc::now() - opened_at.to_owned(),
+        let occured_at = match room.time() {
+            (Bound::Included(opened_at), _) => {
+                (Utc::now() - opened_at.to_owned()).num_milliseconds()
+            }
             _ => {
                 return Err(svc_error!(
                     ResponseStatus::UNPROCESSABLE_ENTITY,
@@ -108,7 +110,7 @@ impl RequestHandler for CreateHandler {
             room.id(),
             &payload.kind,
             payload.data,
-            offset.num_milliseconds(),
+            occured_at,
             reqp.as_agent_id(),
         );
 
@@ -160,7 +162,8 @@ pub(crate) struct ListRequest {
     kind: Option<String>,
     set: Option<String>,
     label: Option<String>,
-    last_id: Option<Uuid>,
+    #[serde(default, with = "ts_milliseconds_option")]
+    last_created_at: Option<DateTime<Utc>>,
     #[serde(default)]
     direction: db::event::Direction,
     limit: Option<i64>,
@@ -216,8 +219,8 @@ impl RequestHandler for ListHandler {
             query = query.label(label);
         }
 
-        if let Some(last_id) = payload.last_id {
-            query = query.last_id(last_id);
+        if let Some(last_created_at) = payload.last_created_at {
+            query = query.last_created_at(last_created_at);
         }
 
         let events = query

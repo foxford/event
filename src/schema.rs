@@ -35,10 +35,19 @@ table! {
         set -> Text,
         label -> Nullable<Text>,
         data -> Jsonb,
-        offset -> Int8,
+        occured_at -> Int8,
         created_by -> Agent_id,
         created_at -> Timestamptz,
         deleted_at -> Nullable<Timestamptz>,
+    }
+}
+
+table! {
+    use diesel::sql_types::*;
+    use crate::db::sql::*;
+
+    event_state (id) {
+        id -> Uuid,
     }
 }
 
@@ -59,10 +68,6 @@ table! {
 joinable!(adjustment -> room (room_id));
 joinable!(agent -> room (room_id));
 joinable!(event -> room (room_id));
+joinable!(event -> event_state (id));
 
-allow_tables_to_appear_in_same_query!(
-    adjustment,
-    agent,
-    event,
-    room,
-);
+allow_tables_to_appear_in_same_query!(adjustment, agent, event, event_state, room,);

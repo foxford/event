@@ -39,6 +39,13 @@ assert response.properties['status'] == '201'
 assert response.payload['data'] == { 'message' => 'hello' }
 event_id = response.payload['id']
 
+# Receive new event notification.
+conn.receive do |msg|
+  msg.properties['type'] == "event" &&
+    msg.properties['label'] == 'event.create' &&
+    msg.payload['id'] == event_id
+end
+
 # List events.
 response = conn.make_request 'event.list', to: event, payload: {
   room_id: room_id,
@@ -46,4 +53,6 @@ response = conn.make_request 'event.list', to: event, payload: {
 }
 
 assert response.properties['status'] == '200'
-assert response.payload.any? { |evt| evt['id'] == event_id }
+assert response.payload.length == 1
+assert response.payload[0]['id'] == event_id
+assert response.payload[0]['data']['message'] == 'hello'

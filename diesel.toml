@@ -3,4 +3,6 @@
 
 [print_schema]
 file = "src/schema.rs"
+# Diesel's print_schema can't infer views so we have to add them with a patch.
+patch_file = "src/schema.patch"
 import_types = ["diesel::sql_types::*", "crate::db::sql::*"]
