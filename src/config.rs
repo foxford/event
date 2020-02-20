@@ -13,9 +13,9 @@ pub(crate) struct Config {
     pub(crate) broker_id: AccountId,
     pub(crate) authn: Authn,
     pub(crate) authz: Authz,
+    pub(crate) authz_cache: AuthzCacheConfig,
     pub(crate) mqtt: AgentConfig,
     pub(crate) sentry: Option<SentryConfig>,
-    pub(crate) backend_url: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -24,6 +24,12 @@ pub(crate) struct JwtConfig {
     pub(crate) algorithm: Algorithm,
     #[serde(deserialize_with = "svc_authn::serde::file")]
     pub(crate) key: Vec<u8>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub(crate) struct AuthzCacheConfig {
+    pub(crate) lifetime: i64,
+    pub(crate) vacuum_period: u64,
 }
 
 pub(crate) fn load() -> Result<Config, config::ConfigError> {

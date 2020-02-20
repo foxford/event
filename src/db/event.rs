@@ -193,7 +193,6 @@ impl<'a> ListQuery<'a> {
 #[derive(Debug, Insertable)]
 #[table_name = "event"]
 pub(crate) struct InsertQuery<'a> {
-    id: Option<Uuid>,
     room_id: Uuid,
     kind: &'a str,
     set: &'a str,
@@ -213,7 +212,6 @@ impl<'a> InsertQuery<'a> {
         created_by: &'a AgentId,
     ) -> Self {
         Self {
-            id: None,
             room_id,
             kind,
             set: kind,
@@ -222,13 +220,6 @@ impl<'a> InsertQuery<'a> {
             occured_at,
             created_by,
             created_at: None,
-        }
-    }
-
-    pub(crate) fn id(self, id: Uuid) -> Self {
-        Self {
-            id: Some(id),
-            ..self
         }
     }
 

@@ -80,32 +80,15 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
-        let backend_room = context
-            .backend()
-            .create_room(reqp, &payload.audience)
-            .await
-            .map_err(|err| {
-                svc_error!(
-                    ResponseStatus::FAILED_DEPENDENCY,
-                    "Backend room creation request failed: {}",
-                    err
-                )
-            })?;
+        // Authorize room creation on the tenant.
+        let authz_time = context
+            .authz()
+            .authorize(&payload.audience, reqp, vec!["rooms"], "create")
+            .await?;
 
-        context
-            .backend()
-            .open_room(reqp, &payload.audience, backend_room.id)
-            .await
-            .map_err(|err| {
-                svc_error!(
-                    ResponseStatus::FAILED_DEPENDENCY,
-                    "Backend room opening request failed: {}",
-                    err
-                )
-            })?;
-
+        // Insert room.
         let room = {
-            let mut query = InsertQuery::new(&payload.audience, payload.time).id(backend_room.id);
+            let mut query = InsertQuery::new(&payload.audience, payload.time);
 
             if let Some(tags) = payload.tags {
                 query = query.tags(tags);
@@ -115,12 +98,13 @@ impl RequestHandler for CreateHandler {
             query.execute(&conn)?
         };
 
+        // Respond and broadcast to the audience topic.
         let response = helpers::build_response(
             ResponseStatus::CREATED,
             room.clone(),
             reqp,
             start_timestamp,
-            None,
+            Some(authz_time),
         );
 
         let notification = helpers::build_notification(
@@ -165,12 +149,21 @@ impl RequestHandler for ReadHandler {
             ReadHandler::ERROR_TITLE
         );
 
+        // Authorize room reading on the tenant.
+        let room_id = room.id().to_string();
+        let object = vec!["rooms", &room_id];
+
+        let authz_time = context
+            .authz()
+            .authorize(room.audience(), reqp, object, "read")
+            .await?;
+
         Ok(vec![helpers::build_response(
             ResponseStatus::OK,
             room,
             reqp,
             start_timestamp,
-            None,
+            Some(authz_time),
         )])
     }
 }
@@ -355,8 +348,16 @@ impl RequestHandler for AdjustHandler {
             )
         };
 
-        // TODO: Authorize tenant account by room audience.
+        // Authorize trusted account for the room's audience.
+        let room_id = room.id().to_string();
+        let object = vec!["rooms", &room_id];
 
+        let authz_time = context
+            .authz()
+            .authorize(room.audience(), reqp, object, "adjust")
+            .await?;
+
+        // Run asynchronous task for adjustment.
         let mut agent = context.agent().clone();
         let db = context.db().to_owned();
         let id = room.id();
@@ -364,6 +365,7 @@ impl RequestHandler for AdjustHandler {
         context
             .thread_pool()
             .spawn(async move {
+                // Call room adjustment operation.
                 let future = adjust_room(
                     &db,
                     &room,
@@ -372,6 +374,7 @@ impl RequestHandler for AdjustHandler {
                     payload.offset,
                 );
 
+                // Await for the future and handle result.
                 let result = future
                     .await
                     .map(|(original_room, modified_room, modified_segments)| {
@@ -400,6 +403,7 @@ impl RequestHandler for AdjustHandler {
                         RoomAdjustResult::Error { error }
                     });
 
+                // Publish success/failure notification.
                 let notification = RoomAdjustNotification {
                     status: result.status(),
                     tags: room.tags().map(|t| t.to_owned()),
@@ -424,12 +428,14 @@ impl RequestHandler for AdjustHandler {
                 )
             })?;
 
+        // Respond with 202.
+        // The actual task result will be broadcasted to the room topic when finished.
         Ok(vec![helpers::build_response(
             ResponseStatus::ACCEPTED,
             json!({}),
             reqp,
             start_timestamp,
-            None,
+            Some(authz_time),
         )])
     }
 }

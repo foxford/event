@@ -4,7 +4,7 @@ use futures::executor::ThreadPool;
 use svc_agent::mqtt::Agent;
 use svc_authz::ClientMap as Authz;
 
-use crate::backend::Client as BackendClient;
+use crate::authz_cache::AuthzCache;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
 
@@ -13,8 +13,8 @@ pub(crate) struct Context {
     agent: Agent,
     config: Arc<Config>,
     authz: Authz,
+    authz_cache: Arc<AuthzCache>,
     db: Db,
-    backend: Arc<BackendClient>,
     thread_pool: Arc<ThreadPool>,
 }
 
@@ -24,17 +24,16 @@ impl Context {
         agent: Agent,
         config: Config,
         authz: Authz,
+        authz_cache: Arc<AuthzCache>,
         db: Db,
         thread_pool: Arc<ThreadPool>,
     ) -> Self {
-        let backend = BackendClient::new(config.to_owned());
-
         Self {
             agent,
             config: Arc::new(config),
             authz,
+            authz_cache,
             db,
-            backend: Arc::new(backend),
             thread_pool,
         }
     }
@@ -47,16 +46,16 @@ impl Context {
         &self.authz
     }
 
+    pub(crate) fn authz_cache(&self) -> &AuthzCache {
+        &self.authz_cache
+    }
+
     pub(crate) fn config(&self) -> &Config {
         &self.config
     }
 
     pub(crate) fn db(&self) -> &Db {
         &self.db
-    }
-
-    pub(crate) fn backend(&self) -> Arc<BackendClient> {
-        self.backend.clone()
     }
 
     pub(crate) fn thread_pool(&self) -> Arc<ThreadPool> {

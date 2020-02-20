@@ -49,7 +49,12 @@ pub(crate) async fn call(
 
     // Create original room with events shifted according to segments.
     let original_room = create_room(&conn, &real_time_room)?;
-    clone_events(&conn, &original_room, &segment_gaps, offset - room_opening_diff)?;
+    clone_events(
+        &conn,
+        &original_room,
+        &segment_gaps,
+        offset - room_opening_diff,
+    )?;
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -371,7 +376,7 @@ mod tests {
                 .connection_pool()
                 .get()
                 .expect("Failed to get db connection");
-    
+
             let events = EventListQuery::new()
                 .room_id(original_room.id())
                 .execute(&conn)

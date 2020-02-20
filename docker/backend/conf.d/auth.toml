@@ -1,6 +1,0 @@
-[authn."iam.dev.usr.example.org"]
-audience = ["dev.usr.example.org", "internal"]
-key = "conf.d/org.usr.example.iam.key"
-trusted = true
-
-[authz."dev.usr.example.org"]

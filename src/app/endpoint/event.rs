@@ -1,9 +1,10 @@
 use std::ops::Bound;
 
 use async_trait::async_trait;
-use chrono::{serde::ts_milliseconds_option, DateTime, Utc};
+use chrono::{serde::ts_milliseconds_option, DateTime, Duration, Utc};
 use serde_derive::Deserialize;
 use serde_json::Value as JsonValue;
+use svc_agent::Authenticable;
 use svc_agent::{
     mqtt::{IncomingRequestProperties, IntoPublishableDump, ResponseStatus},
     Addressable,
@@ -13,7 +14,6 @@ use uuid::Uuid;
 
 use crate::app::endpoint::{helpers, RequestHandler};
 use crate::app::Context;
-use crate::backend::types::EventData;
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -71,26 +71,32 @@ impl RequestHandler for CreateHandler {
             ));
         }
 
-        // Create event in the backend.
-        let data = serde_json::from_value::<EventData>(payload.data.clone()).map_err(|err| {
-            svc_error!(
-                ResponseStatus::BAD_REQUEST,
-                "failed to parse event data: {}",
-                err
-            )
-        })?;
+        // Authorize event creation on tenant with cache.
+        let room_id = room.id().to_string();
+        let object = vec!["rooms", &room_id, "events"];
 
-        let backend_event = context
-            .backend()
-            .create_event(reqp, room.audience(), room.id(), data)
-            .await
-            .map_err(|err| {
-                svc_error!(
-                    ResponseStatus::FAILED_DEPENDENCY,
-                    "backend event creation request failed: {}",
-                    err
-                )
-            })?;
+        let cached_authz = context
+            .authz_cache()
+            .get(reqp.as_account_id(), &object, "create")
+            .map_err(|err| svc_error!(ResponseStatus::INTERNAL_SERVER_ERROR, "{}", err))?;
+
+        let authz_time = match cached_authz {
+            Some(true) => Duration::milliseconds(0),
+            Some(false) => return Err(svc_error!(ResponseStatus::FORBIDDEN, "Not authorized")),
+            None => {
+                let result = context
+                    .authz()
+                    .authorize(room.audience(), reqp, object.clone(), "create")
+                    .await;
+
+                context
+                    .authz_cache()
+                    .set(reqp.as_account_id(), &object, "create", result.is_ok())
+                    .map_err(|err| svc_error!(ResponseStatus::INTERNAL_SERVER_ERROR, "{}", err))?;
+
+                result?
+            }
+        };
 
         // Insert event into the DB.
         let occured_at = match room.time() {
@@ -122,7 +128,7 @@ impl RequestHandler for CreateHandler {
             query = query.label(label);
         }
 
-        let event = query.id(backend_event.id).execute(&conn).map_err(|err| {
+        let event = query.execute(&conn).map_err(|err| {
             svc_error!(
                 ResponseStatus::UNPROCESSABLE_ENTITY,
                 "failed to create event: {}",
@@ -136,7 +142,7 @@ impl RequestHandler for CreateHandler {
             event.clone(),
             reqp,
             start_timestamp,
-            None,
+            Some(authz_time),
         );
 
         let notification = helpers::build_notification(
