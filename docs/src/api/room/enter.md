@@ -4,12 +4,12 @@ Enter a [room](../room.md#room).
 
 The room must be opened.
 
-After entrance the current _agent_ starts to receive room notifications including real-time
-[events](../event.md#event) and is able to call endpoints that require _room_ entrance.
+On entering the current _agent_ starts to receive room notifications including real-time
+[events](../event.md#event) and can call endpoints that require _room_ entering.
 
 Entered [agents](../agent.md#agent) appear in the active _agents_ [list](../agent/list.md).
 
-For implementation details see [Room entrance](../../impl/room_entrance.md).
+For implementation details see the [room entrance](../../impl/room_entrance.md).
 
 ## Authorization
 
@@ -28,14 +28,12 @@ id   | uuid | _required_ | The room identifier.
 
 **Payload:** empty object.
 
-Receiving the response doesn't yet mean that the agent has already entered the room but that
-the process has been initiated. Before making any requests that require room entrance one must wait
+Receiving the response means that entering is still in progress and the agent is not in the room yet. Before making any requests that require room access one must wait
 for the `room.enter` broadcast notification that confirms the entrance. The description is below.
 
 ## Broadcast event
 
-A notification is being sent to all [agents](../agent.md#agent) that have
-[entered](../room/enter.md) the room.
+A notification is being sent to all [agents](../agent.md#agent) that [are in](../room/enter.md) the room.
 
 **URI:** `rooms/:room_id/events`
 
