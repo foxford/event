@@ -16,6 +16,7 @@
     - [State](api/state.md)
         - [Read](api/state/read.md)
     - [Errors](api/errors.md)
+- [Authorization](authz.md)
 - [Implementation details](impl.md)
     - [Database schema](impl/database_schema.md)
     - [Message handling](impl/message_handling.md)
