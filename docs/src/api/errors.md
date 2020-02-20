@@ -1,6 +1,6 @@
 # Errors
 
-In case of error the response payload is a RFC7807 Problem Details object:
+In case of an error, the response payload is an RFC7807 Problem Details object:
 
 Name   | Type   | Default    | Description
 ------ | ------ | ---------- | ---------------------------------
