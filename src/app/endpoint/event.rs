@@ -74,7 +74,14 @@ impl RequestHandler for CreateHandler {
         // Authorize event creation on tenant with cache.
         let room_id = room.id().to_string();
         let author = reqp.as_account_id().to_string();
-        let object = vec!["rooms", &room_id, "events", &payload.kind, "authors", &author];
+        let object = vec![
+            "rooms",
+            &room_id,
+            "events",
+            &payload.kind,
+            "authors",
+            &author,
+        ];
 
         let cached_authz = context
             .authz_cache()

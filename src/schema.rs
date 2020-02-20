@@ -46,7 +46,16 @@ table! {
     use diesel::sql_types::*;
     use crate::db::sql::*;
 
-    event_state (id) {
+    event_state_backward (id) {
+        id -> Uuid,
+    }
+}
+
+table! {
+    use diesel::sql_types::*;
+    use crate::db::sql::*;
+
+    event_state_forward (id) {
         id -> Uuid,
     }
 }
@@ -68,6 +77,14 @@ table! {
 joinable!(adjustment -> room (room_id));
 joinable!(agent -> room (room_id));
 joinable!(event -> room (room_id));
-joinable!(event -> event_state (id));
+joinable!(event -> event_state_backward (id));
+joinable!(event -> event_state_forward (id));
 
-allow_tables_to_appear_in_same_query!(adjustment, agent, event, event_state, room,);
+allow_tables_to_appear_in_same_query!(
+    adjustment,
+    agent,
+    event,
+    event_state_backward,
+    event_state_forward,
+    room,
+);
