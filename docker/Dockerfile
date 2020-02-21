@@ -27,6 +27,7 @@ FROM debian:buster
 
 # Install runtime dependencies
 RUN apt update && apt install -y --no-install-recommends \
+  ca-certificates \
   libssl1.1 \
   libcurl4 \
   libpq5
