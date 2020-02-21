@@ -13,9 +13,10 @@ use svc_agent::{
 use svc_error::{extension::sentry, Error as SvcError};
 use uuid::Uuid;
 
+use crate::app::context::Context;
 use crate::app::endpoint::{helpers, RequestHandler};
 use crate::app::operations::adjust_room;
-use crate::app::{Context, API_VERSION};
+use crate::app::API_VERSION;
 use crate::db::adjustment::Segment;
 use crate::db::agent;
 use crate::db::room::{FindQuery, InsertQuery, Time};
@@ -72,8 +73,8 @@ impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
     const ERROR_TITLE: &'static str = "Failed to create room";
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
@@ -131,8 +132,8 @@ impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
     const ERROR_TITLE: &'static str = "Failed to read room";
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
@@ -180,8 +181,8 @@ impl RequestHandler for EnterHandler {
     type Payload = EnterRequest;
     const ERROR_TITLE: &'static str = "Failed to enter room";
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
@@ -249,8 +250,8 @@ impl RequestHandler for LeaveHandler {
     type Payload = LeaveRequest;
     const ERROR_TITLE: &'static str = "Failed to leave room";
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
@@ -328,8 +329,8 @@ impl RequestHandler for AdjustHandler {
     type Payload = AdjustRequest;
     const ERROR_TITLE: &'static str = "Failed to adjust room";
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,

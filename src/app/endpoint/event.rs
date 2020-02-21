@@ -12,8 +12,8 @@ use svc_agent::{
 use svc_error::Error as SvcError;
 use uuid::Uuid;
 
+use crate::app::context::Context;
 use crate::app::endpoint::{helpers, RequestHandler};
-use crate::app::Context;
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -35,8 +35,8 @@ impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
     const ERROR_TITLE: &'static str = "Failed to create event";
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
@@ -190,8 +190,8 @@ impl RequestHandler for ListHandler {
     type Payload = ListRequest;
     const ERROR_TITLE: &'static str = "Failed to list events";
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,

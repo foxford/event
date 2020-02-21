@@ -6,8 +6,8 @@ use svc_agent::mqtt::{IncomingRequestProperties, IntoPublishableDump, ResponseSt
 use svc_error::Error as SvcError;
 use uuid::Uuid;
 
+use crate::app::context::Context;
 use crate::app::endpoint::{helpers, RequestHandler};
-use crate::app::Context;
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -34,8 +34,8 @@ impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
     const ERROR_TITLE: &'static str = "Failed to read state";
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,

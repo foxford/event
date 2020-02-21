@@ -10,15 +10,15 @@ use svc_agent::mqtt::{
 };
 use svc_error::extension::sentry;
 
-use crate::app::{endpoint, Context, API_VERSION};
+use crate::app::{context::Context, endpoint, API_VERSION};
 
-pub(crate) struct MessageHandler {
+pub(crate) struct MessageHandler<C: Context> {
     agent: Agent,
-    context: Context,
+    context: C,
 }
 
-impl MessageHandler {
-    pub(crate) fn new(agent: Agent, context: Context) -> Self {
+impl<C: Context + Sync> MessageHandler<C> {
+    pub(crate) fn new(agent: Agent, context: C) -> Self {
         Self { agent, context }
     }
 
@@ -69,7 +69,7 @@ impl MessageHandler {
             endpoint::route_request(&self.context, envelope, &reqp, start_timestamp)
                 .await
                 .unwrap_or_else(|| {
-                    Self::error_response(
+                    error_response(
                         ResponseStatus::METHOD_NOT_ALLOWED,
                         "about:blank",
                         "Uknown method",
@@ -119,26 +119,26 @@ impl MessageHandler {
 
         Ok(())
     }
+}
 
-    fn error_response(
-        status: ResponseStatus,
-        kind: &str,
-        title: &str,
-        detail: &str,
-        reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
-    ) -> Vec<Box<dyn IntoPublishableDump>> {
-        let err = svc_error::Error::builder()
-            .status(status)
-            .kind(kind, title)
-            .detail(detail)
-            .build();
+fn error_response(
+    status: ResponseStatus,
+    kind: &str,
+    title: &str,
+    detail: &str,
+    reqp: &IncomingRequestProperties,
+    start_timestamp: DateTime<Utc>,
+) -> Vec<Box<dyn IntoPublishableDump>> {
+    let err = svc_error::Error::builder()
+        .status(status)
+        .kind(kind, title)
+        .detail(detail)
+        .build();
 
-        let timing = ShortTermTimingProperties::until_now(start_timestamp);
-        let props = reqp.to_response(status, timing);
-        let resp = OutgoingResponse::unicast(err, props, reqp, API_VERSION);
-        vec![Box::new(resp) as Box<dyn IntoPublishableDump>]
-    }
+    let timing = ShortTermTimingProperties::until_now(start_timestamp);
+    let props = reqp.to_response(status, timing);
+    let resp = OutgoingResponse::unicast(err, props, reqp, API_VERSION);
+    vec![Box::new(resp) as Box<dyn IntoPublishableDump>]
 }
 
 pub(crate) fn publish_message(
@@ -168,8 +168,8 @@ pub(crate) fn publish_message(
 // We just need to specify the payload type and specific logic.
 
 pub(crate) trait RequestEnvelopeHandler<'async_trait> {
-    fn handle_envelope(
-        context: &'async_trait Context,
+    fn handle_envelope<C: Context>(
+        context: &'async_trait C,
         envelope: compat::IncomingEnvelope,
         reqp: &'async_trait IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
@@ -182,8 +182,8 @@ pub(crate) trait RequestEnvelopeHandler<'async_trait> {
 impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
     RequestEnvelopeHandler<'async_trait> for H
 {
-    fn handle_envelope(
-        context: &'async_trait Context,
+    fn handle_envelope<C: Context>(
+        context: &'async_trait C,
         envelope: compat::IncomingEnvelope,
         reqp: &'async_trait IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
@@ -192,8 +192,8 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
         Self: Sync + 'async_trait,
     {
         // The actual implementation.
-        async fn handle_envelope<H: endpoint::RequestHandler>(
-            context: &Context,
+        async fn handle_envelope<H: endpoint::RequestHandler, C: Context>(
+            context: &C,
             envelope: compat::IncomingEnvelope,
             reqp: &IncomingRequestProperties,
             start_timestamp: DateTime<Utc>,
@@ -210,7 +210,7 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                             .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
 
                         // Handler returned an error => 422.
-                        MessageHandler::error_response(
+                        error_response(
                             svc_error.status_code(),
                             reqp.method(),
                             H::ERROR_TITLE,
@@ -220,7 +220,7 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                         )
                     }),
                 // Bad envelope or payload format => 400.
-                Err(err) => MessageHandler::error_response(
+                Err(err) => error_response(
                     ResponseStatus::BAD_REQUEST,
                     reqp.method(),
                     H::ERROR_TITLE,
@@ -231,7 +231,7 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
             }
         }
 
-        Box::pin(handle_envelope::<H>(
+        Box::pin(handle_envelope::<H, C>(
             context,
             envelope,
             reqp,
@@ -241,8 +241,8 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
 }
 
 pub(crate) trait EventEnvelopeHandler<'async_trait> {
-    fn handle_envelope(
-        context: &'async_trait Context,
+    fn handle_envelope<C: Context>(
+        context: &'async_trait C,
         envelope: compat::IncomingEnvelope,
         evp: &'async_trait IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
@@ -253,16 +253,16 @@ pub(crate) trait EventEnvelopeHandler<'async_trait> {
 impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandler<'async_trait>
     for H
 {
-    fn handle_envelope(
-        context: &'async_trait Context,
+    fn handle_envelope<C: Context>(
+        context: &'async_trait C,
         envelope: compat::IncomingEnvelope,
         evp: &'async_trait IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Pin<Box<dyn Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'async_trait>>
     {
         // The actual implementation.
-        async fn handle_envelope<H: endpoint::EventHandler>(
-            context: &Context,
+        async fn handle_envelope<H: endpoint::EventHandler, C: Context>(
+            context: &C,
             envelope: compat::IncomingEnvelope,
             evp: &IncomingEventProperties,
             start_timestamp: DateTime<Utc>,
@@ -301,7 +301,7 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
             }
         }
 
-        Box::pin(handle_envelope::<H>(
+        Box::pin(handle_envelope::<H, C>(
             context,
             envelope,
             evp,

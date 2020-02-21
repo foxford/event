@@ -11,8 +11,8 @@ use svc_agent::{
 use svc_error::Error as SvcError;
 use uuid::Uuid;
 
+use crate::app::context::Context;
 use crate::app::endpoint::EventHandler;
-use crate::app::Context;
 use crate::db::{agent, room};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -53,8 +53,8 @@ pub(crate) struct CreateHandler;
 impl EventHandler for CreateHandler {
     type Payload = SubscriptionEvent;
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
@@ -111,8 +111,8 @@ pub(crate) struct DeleteHandler;
 impl EventHandler for DeleteHandler {
     type Payload = SubscriptionEvent;
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,

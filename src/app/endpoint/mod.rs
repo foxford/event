@@ -9,8 +9,8 @@ use svc_error::Error as SvcError;
 
 #[allow(unused_imports)]
 use crate::app::{
+    context::Context,
     message_handler::{EventEnvelopeHandler, RequestEnvelopeHandler},
-    Context,
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -20,8 +20,8 @@ pub(crate) trait RequestHandler {
     type Payload: Send + DeserializeOwned;
     const ERROR_TITLE: &'static str;
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
@@ -30,17 +30,17 @@ pub(crate) trait RequestHandler {
 
 macro_rules! request_routes {
     ($($m: pat => $h: ty),*) => {
-        pub(crate) async fn route_request(
-            context: &Context,
+        pub(crate) async fn route_request<C: Context>(
+            context: &C,
             envelope: IncomingEnvelope,
             reqp: &IncomingRequestProperties,
             start_timestamp: DateTime<Utc>,
         ) -> Option<Vec<Box<dyn IntoPublishableDump>>> {
             match reqp.method() {
                 $(
-                    $m => {
-                        Some(<$h>::handle_envelope(context, envelope, reqp, start_timestamp).await)
-                    }
+                    $m => Some(
+                        <$h>::handle_envelope::<C>(context, envelope, reqp, start_timestamp).await
+                    ),
                 )*
                 _ => None,
             }
@@ -67,8 +67,8 @@ request_routes!(
 pub(crate) trait EventHandler {
     type Payload: Send + DeserializeOwned;
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
@@ -78,17 +78,17 @@ pub(crate) trait EventHandler {
 macro_rules! event_routes {
     ($($l: pat => $h: ty),*) => {
         #[allow(unused_variables)]
-        pub(crate) async fn route_event(
-            context: &Context,
+        pub(crate) async fn route_event<C: Context>(
+            context: &C,
             envelope: IncomingEnvelope,
             evp: &IncomingEventProperties,
             start_timestamp: DateTime<Utc>,
         ) -> Option<Vec<Box<dyn IntoPublishableDump>>> {
             match evp.label() {
                 $(
-                    Some($l) => {
-                        Some(<$h>::handle_envelope(context, envelope, evp, start_timestamp).await)
-                    }
+                    Some($l) => Some(
+                        <$h>::handle_envelope::<C>(context, envelope, evp, start_timestamp).await
+                    ),
                 )*
                 _ => None,
             }

@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::db::ConnectionPool as Db;
 
 #[derive(Clone)]
-pub(crate) struct Context {
+pub(crate) struct AppContext {
     config: Arc<Config>,
     authz: Authz,
     authz_cache: Arc<AuthzCache>,
@@ -17,7 +17,7 @@ pub(crate) struct Context {
 }
 
 #[allow(dead_code)]
-impl Context {
+impl AppContext {
     pub(crate) fn new(
         config: Config,
         authz: Authz,
@@ -33,24 +33,34 @@ impl Context {
             task_executor: Arc::new(task_executor),
         }
     }
+}
 
-    pub(crate) fn authz(&self) -> &Authz {
+pub(crate) trait Context: Sync {
+    fn authz(&self) -> &Authz;
+    fn authz_cache(&self) -> &AuthzCache;
+    fn config(&self) -> &Config;
+    fn db(&self) -> &Db;
+    fn task_executor(&self) -> &TaskExecutor;
+}
+
+impl Context for AppContext {
+    fn authz(&self) -> &Authz {
         &self.authz
     }
 
-    pub(crate) fn authz_cache(&self) -> &AuthzCache {
+    fn authz_cache(&self) -> &AuthzCache {
         &self.authz_cache
     }
 
-    pub(crate) fn config(&self) -> &Config {
+    fn config(&self) -> &Config {
         &self.config
     }
 
-    pub(crate) fn db(&self) -> &Db {
+    fn db(&self) -> &Db {
         &self.db
     }
 
-    pub(crate) fn task_executor(&self) -> &TaskExecutor {
+    fn task_executor(&self) -> &TaskExecutor {
         &self.task_executor
     }
 }

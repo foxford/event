@@ -13,7 +13,7 @@ use svc_authn::token::jws_compact;
 use crate::authz_cache::AuthzCache;
 use crate::config;
 use crate::db::ConnectionPool;
-use context::Context;
+use context::AppContext;
 use message_handler::MessageHandler;
 use task_executor::TaskExecutor;
 
@@ -96,7 +96,7 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
         .map_err(|err| format_err!("Error subscribing to multicast requests: {}", err))?;
 
     // Context
-    let context = Context::new(
+    let context = AppContext::new(
         config,
         authz,
         authz_cache,
