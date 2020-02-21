@@ -72,7 +72,7 @@ impl RequestHandler for ReadHandler {
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id];
+        let object = vec!["rooms", &room_id, "events"];
 
         let authz_time = context
             .authz()
