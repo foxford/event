@@ -1,6 +1,5 @@
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use futures::task::SpawnExt;
 use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -15,7 +14,6 @@ use svc_error::{extension::sentry, Error as SvcError};
 use uuid::Uuid;
 
 use crate::app::endpoint::{helpers, RequestHandler};
-use crate::app::message_handler::publish_message;
 use crate::app::operations::adjust_room;
 use crate::app::{Context, API_VERSION};
 use crate::db::adjustment::Segment;
@@ -358,75 +356,60 @@ impl RequestHandler for AdjustHandler {
             .await?;
 
         // Run asynchronous task for adjustment.
-        let mut agent = context.agent().clone();
         let db = context.db().to_owned();
-        let id = room.id();
 
-        context
-            .thread_pool()
-            .spawn(async move {
-                // Call room adjustment operation.
-                let future = adjust_room(
-                    &db,
-                    &room,
-                    payload.started_at,
-                    &payload.segments,
-                    payload.offset,
-                );
+        context.task_executor().run(async move {
+            // Call room adjustment operation.
+            let operation_result = adjust_room(
+                &db,
+                &room,
+                payload.started_at,
+                &payload.segments,
+                payload.offset,
+            );
 
-                // Await for the future and handle result.
-                let result = future
-                    .await
-                    .map(|(original_room, modified_room, modified_segments)| {
-                        RoomAdjustResult::Success {
-                            original_room_id: original_room.id(),
-                            modified_room_id: modified_room.id(),
-                            modified_segments,
-                        }
-                    })
-                    .unwrap_or_else(|err| {
-                        error!(
-                            "Room adjustment job failed for room_id = '{}': {}",
-                            room.id(),
-                            err
-                        );
+            // Handle result.
+            let result = match operation_result {
+                Ok((original_room, modified_room, modified_segments)) => {
+                    RoomAdjustResult::Success {
+                        original_room_id: original_room.id(),
+                        modified_room_id: modified_room.id(),
+                        modified_segments,
+                    }
+                }
+                Err(err) => {
+                    error!(
+                        "Room adjustment job failed for room_id = '{}': {}",
+                        room.id(),
+                        err
+                    );
 
-                        let error = SvcError::builder()
-                            .status(ResponseStatus::UNPROCESSABLE_ENTITY)
-                            .kind("room.adjust", AdjustHandler::ERROR_TITLE)
-                            .detail(&err.to_string())
-                            .build();
+                    let error = SvcError::builder()
+                        .status(ResponseStatus::UNPROCESSABLE_ENTITY)
+                        .kind("room.adjust", AdjustHandler::ERROR_TITLE)
+                        .detail(&err.to_string())
+                        .build();
 
-                        sentry::send(error.clone())
-                            .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
+                    sentry::send(error.clone())
+                        .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
 
-                        RoomAdjustResult::Error { error }
-                    });
+                    RoomAdjustResult::Error { error }
+                }
+            };
 
-                // Publish success/failure notification.
-                let notification = RoomAdjustNotification {
-                    status: result.status(),
-                    tags: room.tags().map(|t| t.to_owned()),
-                    result,
-                };
+            // Publish success/failure notification.
+            let notification = RoomAdjustNotification {
+                status: result.status(),
+                tags: room.tags().map(|t| t.to_owned()),
+                result,
+            };
 
-                let timing = ShortTermTimingProperties::new(Utc::now());
-                let props = OutgoingEventProperties::new("room.adjust", timing);
-                let path = format!("audiences/{}/events", room.audience());
-                let event = Box::new(OutgoingEvent::broadcast(notification, props, &path));
-
-                publish_message(&mut agent, event).unwrap_or_else(|err| {
-                    error!("Failed to publish room.adjust notification: {}", err)
-                });
-            })
-            .map_err(|err| {
-                svc_error!(
-                    ResponseStatus::INTERNAL_SERVER_ERROR,
-                    "Failed to spawn room adjustment task for room_id = '{}': {}",
-                    id,
-                    err,
-                )
-            })?;
+            let timing = ShortTermTimingProperties::new(Utc::now());
+            let props = OutgoingEventProperties::new("room.adjust", timing);
+            let path = format!("audiences/{}/events", room.audience());
+            let event = OutgoingEvent::broadcast(notification, props, &path);
+            vec![Box::new(event) as Box<dyn IntoPublishableDump>]
+        })?;
 
         // Respond with 202.
         // The actual task result will be broadcasted to the room topic when finished.

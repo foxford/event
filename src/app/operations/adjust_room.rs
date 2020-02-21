@@ -12,7 +12,7 @@ use crate::db::event::{
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::ConnectionPool as Db;
 
-pub(crate) async fn call(
+pub(crate) fn call(
     db: &Db,
     real_time_room: &Room,
     started_at: DateTime<Utc>,
@@ -362,7 +362,6 @@ mod tests {
             // Call room adjustment.
             let (original_room, modified_room, modified_segments) =
                 super::call(db.connection_pool(), &room, started_at, &segments, offset)
-                    .await
                     .expect("Room adjustment failed");
 
             // Assert original room.

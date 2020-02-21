@@ -1,45 +1,37 @@
 use std::sync::Arc;
 
-use futures::executor::ThreadPool;
-use svc_agent::mqtt::Agent;
 use svc_authz::ClientMap as Authz;
 
+use crate::app::task_executor::TaskExecutor;
 use crate::authz_cache::AuthzCache;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
 
 #[derive(Clone)]
 pub(crate) struct Context {
-    agent: Agent,
     config: Arc<Config>,
     authz: Authz,
     authz_cache: Arc<AuthzCache>,
     db: Db,
-    thread_pool: Arc<ThreadPool>,
+    task_executor: Arc<TaskExecutor>,
 }
 
 #[allow(dead_code)]
 impl Context {
     pub(crate) fn new(
-        agent: Agent,
         config: Config,
         authz: Authz,
         authz_cache: Arc<AuthzCache>,
         db: Db,
-        thread_pool: Arc<ThreadPool>,
+        task_executor: TaskExecutor,
     ) -> Self {
         Self {
-            agent,
             config: Arc::new(config),
             authz,
             authz_cache,
             db,
-            thread_pool,
+            task_executor: Arc::new(task_executor),
         }
-    }
-
-    pub(crate) fn agent(&self) -> &Agent {
-        &self.agent
     }
 
     pub(crate) fn authz(&self) -> &Authz {
@@ -58,7 +50,7 @@ impl Context {
         &self.db
     }
 
-    pub(crate) fn thread_pool(&self) -> Arc<ThreadPool> {
-        self.thread_pool.clone()
+    pub(crate) fn task_executor(&self) -> &TaskExecutor {
+        &self.task_executor
     }
 }
