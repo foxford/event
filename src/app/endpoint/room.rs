@@ -467,7 +467,7 @@ mod tests {
     use serde_derive::Deserialize;
     use serde_json::json;
 
-    use crate::db::room::Object as Room;
+    use crate::db::{agent::Status as AgentStatus, room::Object as Room};
     use crate::test_helpers::prelude::*;
 
     use super::*;
@@ -560,6 +560,7 @@ mod tests {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
+
             authz.allow(
                 agent.account_id(),
                 vec!["rooms", &room_id, "events"],
@@ -584,6 +585,53 @@ mod tests {
             assert_eq!(topic, expected_topic);
             assert_eq!(reqp.method(), "subscription.create");
             assert_eq!(payload.subject, agent.agent_id().to_owned());
+            assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
+        });
+    }
+
+    #[test]
+    fn leave_room() {
+        futures::executor::block_on(async {
+            // Create room.
+            let db = TestDb::new();
+            let room = insert_room(&db);
+
+            // Put agent online in the room.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                factory::Agent::new()
+                    .room_id(room.id())
+                    .agent_id(agent.agent_id().to_owned())
+                    .status(AgentStatus::Ready)
+                    .insert(&conn);
+            }
+
+            // Make room.leave request.
+            let context = TestContext::new(db, TestAuthz::new());
+            let payload = LeaveRequest { id: room.id() };
+            let messages = handle_request::<LeaveHandler>(&context, &agent, payload).await;
+
+            // Assert dynamic subscription request.
+            let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
+
+            let expected_topic = format!(
+                "agents/{}/api/{}/in/{}",
+                agent.agent_id(),
+                MQTT_GW_API_VERSION,
+                context.config().id,
+            );
+
+            assert_eq!(topic, expected_topic);
+            assert_eq!(reqp.method(), "subscription.delete");
+            assert_eq!(&payload.subject, agent.agent_id());
+
+            let room_id = room.id().to_string();
             assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
         });
     }
