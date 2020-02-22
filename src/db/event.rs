@@ -10,7 +10,7 @@ use svc_agent::AgentId;
 use uuid::Uuid;
 
 use super::room::Object as Room;
-use crate::schema::{event, event_state};
+use crate::schema::{event, event_state_backward, event_state_forward};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -345,28 +345,49 @@ impl<'a> SetStateQuery<'a> {
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
         use crate::diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 
-        let mut q = self.build_query().inner_join(event_state::table);
+        match self.direction {
+            Direction::Forward => {
+                let mut q = self
+                    .build_query()
+                    .inner_join(event_state_forward::table)
+                    .order_by((event::occurred_at.asc(), event::created_at.asc()));
 
-        q = match self.direction {
-            Direction::Forward => q.order_by((event::occurred_at.asc(), event::created_at.asc())),
-            Direction::Backward => q.order_by((event::occurred_at.desc(), event::created_at.desc())),
-        };
+                if let Some(limit) = self.limit {
+                    q = q.limit(limit);
+                }
 
-        if let Some(limit) = self.limit {
-            q = q.limit(limit);
+                q.get_results(conn)
+            }
+            Direction::Backward => {
+                let mut q = self
+                    .build_query()
+                    .inner_join(event_state_backward::table)
+                    .order_by((event::occurred_at.desc(), event::created_at.desc()));
+
+                if let Some(limit) = self.limit {
+                    q = q.limit(limit);
+                }
+
+                q.get_results(conn)
+            }
         }
-
-        println!("{}", diesel::debug_query::<Pg, _>(&q));
-        q.get_results(conn)
     }
 
     pub(crate) fn total_count(&self, conn: &PgConnection) -> Result<i64, Error> {
         use crate::db::total_count::TotalCount;
         use crate::diesel::QueryDsl;
 
-        self.build_query()
-            .inner_join(event_state::table)
-            .total_count()
-            .execute(conn)
+        match self.direction {
+            Direction::Forward => self
+                .build_query()
+                .inner_join(event_state_forward::table)
+                .total_count()
+                .execute(conn),
+            Direction::Backward => self
+                .build_query()
+                .inner_join(event_state_backward::table)
+                .total_count()
+                .execute(conn),
+        }
     }
 }

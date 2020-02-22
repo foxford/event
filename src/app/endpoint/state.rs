@@ -72,7 +72,7 @@ impl RequestHandler for ReadHandler {
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id];
+        let object = vec!["rooms", &room_id, "events"];
 
         let authz_time = context
             .authz()
@@ -127,7 +127,16 @@ impl RequestHandler for ReadHandler {
                 )
             })?;
 
-            state.insert(set.to_owned(), serialized_set_state);
+            match serialized_set_state.as_array().and_then(|a| a.first()) {
+                Some(event) if event.get("label").is_none() => {
+                    // The first event has no label => simple set with a single event…
+                    state.insert(set.to_owned(), event.to_owned());
+                }
+                _ => {
+                    // …or it's a collection.
+                    state.insert(set.to_owned(), serialized_set_state);
+                }
+            }
         }
 
         // Respond with state.

@@ -1,8 +1,8 @@
 diff --git a/src/schema.rs b/src/schema.rs
-index 13e0328..032da8c 100644
+index 27db591..a42512f 100644
 --- a/src/schema.rs
 +++ b/src/schema.rs
-@@ -39,12 +39,21 @@ table! {
+@@ -39,12 +39,30 @@ table! {
          created_by -> Agent_id,
          created_at -> Timestamptz,
          deleted_at -> Nullable<Timestamptz>,
@@ -13,7 +13,16 @@ index 13e0328..032da8c 100644
 +    use diesel::sql_types::*;
 +    use crate::db::sql::*;
 +
-+    event_state (id) {
++    event_state_backward (id) {
++        id -> Uuid,
++    }
++}
++
++table! {
++    use diesel::sql_types::*;
++    use crate::db::sql::*;
++
++    event_state_forward (id) {
 +        id -> Uuid,
 +    }
 +}
@@ -24,14 +33,21 @@ index 13e0328..032da8c 100644
  
      room (id) {
          id -> Uuid,
-@@ -56,8 +65,9 @@ table! {
+@@ -56,13 +74,17 @@ table! {
      }
  }
  
  joinable!(adjustment -> room (room_id));
  joinable!(agent -> room (room_id));
  joinable!(event -> room (room_id));
-+joinable!(event -> event_state (id));
++joinable!(event -> event_state_backward (id));
++joinable!(event -> event_state_forward (id));
  
--allow_tables_to_appear_in_same_query!(adjustment, agent, event, room,);
-+allow_tables_to_appear_in_same_query!(adjustment, agent, event, event_state, room,);
+ allow_tables_to_appear_in_same_query!(
+     adjustment,
+     agent,
+     event,
++    event_state_backward,
++    event_state_forward,
+     room,
+ );
