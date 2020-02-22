@@ -1,18 +1,18 @@
 # state.read
 
-Read [state](../state.md#state) of _sets_ in a [room](../room.md#room).
+Read a [state](../state.md#state) of _sets_ at a [room](../room.md#room).
 
 ## Authorization
 
-The tenant authorizes the current _agent_ for `list` action on `["rooms", room_id, "list"]` object.
+The tenant authorizes the current _agent_ for a `list` action on `["rooms", room_id, "list"]` object.
 
 ## Multicast request
 
 Name            | Type     | Default    | Description
 --------------- | -------- | ---------- | -------------------------------------------------------
-room_id         | string   | _required_ | The room identifier.
-sets            | [string] | _required_ | Set names to calculate the state for. 1 to 10 elements.
-occurred_at     | int      | _required_ | Number of milliseconds since room opening to specify the moment to calculate the state for.
+room_id         | string   | _required_ | The room's identifier.
+sets            | [string] | _required_ | Set's names to calculate the state for. Up to 10 elements.
+occurred_at     | int      | _required_ | The number of milliseconds since the room opening to specify the moment of state calculation.
 last_created_at | int      | _optional_ | `created_at` value of the last seen event for pagination in milliseconds.
 direction       | string   |    forward | Pagination direction: forward | backward.
 limit           | int      |        100 | Limits the number of events in the response.
@@ -21,6 +21,5 @@ limit           | int      |        100 | Limits the number of events in the res
 
 **Status:** 200.
 
-**Payload:** [state](../state.md#state) object. If `sets` parameter has only one element there will
-also be `has_next` key with boolean value indicating that there's more data left for pagination
+**Payload:** [state](../state.md#state) object. If `sets` parameter has only one element, `has_next` key appears with a boolean value indicating that there are more data left for pagination
 when `true`.
