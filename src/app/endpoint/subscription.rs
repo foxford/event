@@ -154,3 +154,98 @@ impl EventHandler for DeleteHandler {
         Ok(vec![Box::new(outgoing_event)])
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Bound;
+
+    use chrono::{Duration, SubsecRound, Utc};
+    use serde_json::json;
+
+    use crate::db::{
+        agent::{ListQuery as AgentListQuery, Status as AgentStatus},
+        room::Object as Room,
+    };
+    use crate::test_helpers::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn create_subscription() {
+        futures::executor::block_on(async {
+            // Create room.
+            let db = TestDb::new();
+            let room = insert_room(&db);
+
+            // Put agent in the room in `in_progress` status.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                factory::Agent::new()
+                    .room_id(room.id())
+                    .agent_id(agent.agent_id().to_owned())
+                    .insert(&conn);
+            }
+
+            // Send subscription.create event.
+            let context = TestContext::new(db.clone(), TestAuthz::new());
+            let room_id = room.id().to_string();
+
+            let payload = SubscriptionEvent {
+                subject: agent.agent_id().to_owned(),
+                object: vec!["rooms".to_string(), room_id, "events".to_string()],
+            };
+
+            let broker_account_label = context.config().broker_id.label();
+            let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
+            let messages = handle_event::<CreateHandler>(&context, &broker, payload).await;
+
+            // Assert notification.
+            let (payload, evp, topic) = find_event::<RoomEnterLeaveEvent>(messages.as_slice());
+            assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
+            assert_eq!(evp.label(), "room.enter");
+            assert_eq!(payload.id, room.id());
+            assert_eq!(&payload.agent_id, agent.agent_id());
+
+            // Assert agent turned to `ready` status.
+            let conn = db
+                .connection_pool()
+                .get()
+                .expect("Failed to get DB connection");
+
+            let db_agents = AgentListQuery::new()
+                .agent_id(agent.agent_id())
+                .room_id(room.id())
+                .execute(&conn)
+                .expect("Failed to execute agent list query");
+
+            let db_agent = db_agents.first().expect("Missing agent in the DB");
+            assert_eq!(db_agent.status(), AgentStatus::Ready);
+        });
+    }
+
+    fn insert_room(db: &TestDb) -> Room {
+        let conn = db
+            .connection_pool()
+            .get()
+            .expect("Failed to get DB connection");
+
+        let now = Utc::now().trunc_subsecs(0);
+
+        factory::Room::new()
+            .audience(USR_AUDIENCE)
+            .time((
+                Bound::Included(now),
+                Bound::Excluded(now + Duration::hours(1)),
+            ))
+            .tags(&json!({ "webinar_id": "123" }))
+            .insert(&conn)
+    }
+}

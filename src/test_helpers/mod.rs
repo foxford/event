@@ -1,9 +1,9 @@
 use chrono::Utc;
 use serde::de::DeserializeOwned;
 use serde_json::json;
-use svc_agent::mqtt::{IncomingRequestProperties, IntoPublishableDump};
+use svc_agent::mqtt::{IncomingEventProperties, IncomingRequestProperties, IntoPublishableDump};
 
-use crate::app::endpoint::RequestHandler;
+use crate::app::endpoint::{EventHandler, RequestHandler};
 
 use self::agent::TestAgent;
 use self::context::TestContext;
@@ -47,6 +47,38 @@ pub(crate) async fn handle_request<H: RequestHandler>(
     let messages = H::handle(context, payload, &reqp, Utc::now())
         .await
         .expect("Failed to handler request");
+
+    parse_messages(messages)
+}
+
+pub(crate) async fn handle_event<H: EventHandler>(
+    context: &TestContext,
+    agent: &TestAgent,
+    payload: H::Payload,
+) -> Vec<OutgoingEnvelope> {
+    let agent_id = agent.agent_id().to_string();
+    let now = Utc::now().timestamp().to_string();
+
+    let evp_json = json!({
+        "type": "event",
+        "label": "ignore",
+        "agent_id": agent_id,
+        "connection_mode": "default",
+        "connection_version": "v2",
+        "broker_agent_id": format!("alpha.mqtt-gateway.{}", SVC_AUDIENCE),
+        "broker_timestamp": now,
+        "broker_processing_timestamp": now,
+        "broker_initial_processing_timestamp": now,
+        "tracking_id": "16911d40-0b13-11ea-8171-60f81db6d53e.14097484-0c8d-11ea-bb82-60f81db6d53e.147b2994-0c8d-11ea-8933-60f81db6d53e",
+        "session_tracking_label": "16cc4294-0b13-11ea-91ae-60f81db6d53e.16ee876e-0b13-11ea-8c32-60f81db6d53e 2565f962-0b13-11ea-9359-60f81db6d53e.25c2b97c-0b13-11ea-9f20-60f81db6d53e",
+    });
+
+    let evp =
+        serde_json::from_value::<IncomingEventProperties>(evp_json).expect("Failed to parse evp");
+
+    let messages = H::handle(context, payload, &evp, Utc::now())
+        .await
+        .expect("Failed to handler event");
 
     parse_messages(messages)
 }
@@ -116,7 +148,7 @@ pub(crate) mod prelude {
     #[allow(unused_imports)]
     pub(crate) use super::{
         agent::TestAgent, authz::TestAuthz, context::TestContext, db::TestDb, factory, find_event,
-        find_request, find_response, handle_request, SVC_AUDIENCE, USR_AUDIENCE,
+        find_request, find_response, handle_event, handle_request, SVC_AUDIENCE, USR_AUDIENCE,
     };
 }
 

@@ -34,6 +34,13 @@ pub(crate) struct Object {
     created_at: DateTime<Utc>,
 }
 
+impl Object {
+    #[cfg(test)]
+    pub(crate) fn status(&self) -> Status {
+        self.status
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct ListQuery<'a> {
