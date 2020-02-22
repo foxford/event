@@ -82,15 +82,10 @@ impl RequestHandler for ListHandler {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Bound;
-
-    use chrono::{Duration, SubsecRound, Utc};
     use serde_derive::Deserialize;
-    use serde_json::json;
     use svc_agent::AgentId;
     use uuid::Uuid;
 
-    use crate::db::{agent::Status as AgentStatus, room::Object as Room};
     use crate::test_helpers::prelude::*;
 
     use super::*;
@@ -104,12 +99,22 @@ mod tests {
     #[test]
     fn list_agents() {
         futures::executor::block_on(async {
-            // Create room.
             let db = TestDb::new();
-            let room = insert_room(&db);
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room and put the agent online.
+                let room = shared_helpers::insert_room(&conn);
+                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                room
+            };
 
             // Allow agent to list agents in the room.
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
 
@@ -118,20 +123,6 @@ mod tests {
                 vec!["rooms", &room_id, "agents"],
                 "list",
             );
-
-            // Put agent online in the room.
-            {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
-                factory::Agent::new()
-                    .room_id(room.id())
-                    .agent_id(agent.agent_id().to_owned())
-                    .status(AgentStatus::Ready)
-                    .insert(&conn);
-            }
 
             // Make agent.list request.
             let context = TestContext::new(db, authz);
@@ -151,23 +142,5 @@ mod tests {
             assert_eq!(&agents[0].agent_id, agent.agent_id());
             assert_eq!(agents[0].room_id, room.id());
         });
-    }
-
-    fn insert_room(db: &TestDb) -> Room {
-        let conn = db
-            .connection_pool()
-            .get()
-            .expect("Failed to get DB connection");
-
-        let now = Utc::now().trunc_subsecs(0);
-
-        factory::Room::new()
-            .audience(USR_AUDIENCE)
-            .time((
-                Bound::Included(now),
-                Bound::Excluded(now + Duration::hours(1)),
-            ))
-            .tags(&json!({ "webinar_id": "123" }))
-            .insert(&conn)
     }
 }

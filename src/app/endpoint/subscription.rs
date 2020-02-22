@@ -159,15 +159,7 @@ impl EventHandler for DeleteHandler {
 
 #[cfg(test)]
 mod tests {
-    use std::ops::Bound;
-
-    use chrono::{Duration, SubsecRound, Utc};
-    use serde_json::json;
-
-    use crate::db::{
-        agent::{ListQuery as AgentListQuery, Status as AgentStatus},
-        room::Object as Room,
-    };
+    use crate::db::agent::{ListQuery as AgentListQuery, Status as AgentStatus};
     use crate::test_helpers::prelude::*;
 
     use super::*;
@@ -175,24 +167,26 @@ mod tests {
     #[test]
     fn create_subscription() {
         futures::executor::block_on(async {
-            // Create room.
             let db = TestDb::new();
-            let room = insert_room(&db);
-
-            // Put agent in the room in `in_progress` status.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            {
+            let room = {
                 let conn = db
                     .connection_pool()
                     .get()
                     .expect("Failed to get DB connection");
 
+                // Create room.
+                let room = shared_helpers::insert_room(&conn);
+
+                // Put agent in the room in `in_progress` status.
                 factory::Agent::new()
                     .room_id(room.id())
                     .agent_id(agent.agent_id().to_owned())
                     .insert(&conn);
-            }
+
+                room
+            };
 
             // Send subscription.create event.
             let context = TestContext::new(db.clone(), TestAuthz::new());
@@ -234,25 +228,21 @@ mod tests {
     #[test]
     fn delete_subscription() {
         futures::executor::block_on(async {
-            // Create room.
             let db = TestDb::new();
-            let room = insert_room(&db);
-
-            // Put agent online in the room.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            {
+
+            let room = {
                 let conn = db
                     .connection_pool()
                     .get()
                     .expect("Failed to get DB connection");
 
-                factory::Agent::new()
-                    .room_id(room.id())
-                    .agent_id(agent.agent_id().to_owned())
-                    .status(AgentStatus::Ready)
-                    .insert(&conn);
-            }
+                // Create room and put the agent online.
+                let room = shared_helpers::insert_room(&conn);
+                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                room
+            };
 
             // Send subscription.delete event.
             let context = TestContext::new(db.clone(), TestAuthz::new());
@@ -288,23 +278,5 @@ mod tests {
 
             assert_eq!(db_agents.len(), 0);
         });
-    }
-
-    fn insert_room(db: &TestDb) -> Room {
-        let conn = db
-            .connection_pool()
-            .get()
-            .expect("Failed to get DB connection");
-
-        let now = Utc::now().trunc_subsecs(0);
-
-        factory::Room::new()
-            .audience(USR_AUDIENCE)
-            .time((
-                Bound::Included(now),
-                Bound::Excluded(now + Duration::hours(1)),
-            ))
-            .tags(&json!({ "webinar_id": "123" }))
-            .insert(&conn)
     }
 }

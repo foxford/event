@@ -467,7 +467,7 @@ mod tests {
     use serde_derive::Deserialize;
     use serde_json::json;
 
-    use crate::db::{agent::Status as AgentStatus, room::Object as Room};
+    use crate::db::room::Object as Room;
     use crate::test_helpers::prelude::*;
 
     use super::*;
@@ -519,9 +519,17 @@ mod tests {
     #[test]
     fn read_room() {
         futures::executor::block_on(async {
-            // Create room.
             let db = TestDb::new();
-            let room = insert_room(&db);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                shared_helpers::insert_room(&conn)
+            };
 
             // Allow user to read the room.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
@@ -552,9 +560,17 @@ mod tests {
     #[test]
     fn enter_room() {
         futures::executor::block_on(async {
-            // Create room.
             let db = TestDb::new();
-            let room = insert_room(&db);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                shared_helpers::insert_room(&conn)
+            };
 
             // Allow user to subscribe to the rooms' events.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
@@ -592,25 +608,22 @@ mod tests {
     #[test]
     fn leave_room() {
         futures::executor::block_on(async {
-            // Create room.
             let db = TestDb::new();
-            let room = insert_room(&db);
-
-            // Put agent online in the room.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            {
+            let room = {
                 let conn = db
                     .connection_pool()
                     .get()
                     .expect("Failed to get DB connection");
 
-                factory::Agent::new()
-                    .room_id(room.id())
-                    .agent_id(agent.agent_id().to_owned())
-                    .status(AgentStatus::Ready)
-                    .insert(&conn);
-            }
+                // Create room.
+                let room = shared_helpers::insert_room(&conn);
+
+                // Put agent online in the room.
+                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                room
+            };
 
             // Make room.leave request.
             let context = TestContext::new(db, TestAuthz::new());
@@ -634,23 +647,5 @@ mod tests {
             let room_id = room.id().to_string();
             assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
         });
-    }
-
-    fn insert_room(db: &TestDb) -> Room {
-        let conn = db
-            .connection_pool()
-            .get()
-            .expect("Failed to get DB connection");
-
-        let now = Utc::now().trunc_subsecs(0);
-
-        factory::Room::new()
-            .audience(USR_AUDIENCE)
-            .time((
-                Bound::Included(now),
-                Bound::Excluded(now + Duration::hours(1)),
-            ))
-            .tags(&json!({ "webinar_id": "123" }))
-            .insert(&conn)
     }
 }

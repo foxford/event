@@ -148,7 +148,8 @@ pub(crate) mod prelude {
     #[allow(unused_imports)]
     pub(crate) use super::{
         agent::TestAgent, authz::TestAuthz, context::TestContext, db::TestDb, factory, find_event,
-        find_request, find_response, handle_event, handle_request, SVC_AUDIENCE, USR_AUDIENCE,
+        find_request, find_response, handle_event, handle_request, shared_helpers, SVC_AUDIENCE,
+        USR_AUDIENCE,
     };
 }
 
@@ -158,3 +159,4 @@ pub(crate) mod context;
 pub(crate) mod db;
 pub(crate) mod factory;
 pub(crate) mod outgoing_envelope;
+pub(crate) mod shared_helpers;
