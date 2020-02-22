@@ -16,12 +16,13 @@ use uuid::Uuid;
 use crate::app::context::Context;
 use crate::app::endpoint::{helpers, RequestHandler};
 use crate::app::operations::adjust_room;
-use crate::app::API_VERSION;
 use crate::db::adjustment::Segment;
 use crate::db::agent;
 use crate::db::room::{FindQuery, InsertQuery, Time};
 
 ///////////////////////////////////////////////////////////////////////////////
+
+const MQTT_GW_API_VERSION: &'static str = "v1";
 
 macro_rules! find_room {
     ($conn: expr, $id: expr, $reqp: expr, $start_timestamp: expr, $error_title: expr) => {
@@ -231,7 +232,7 @@ impl RequestHandler for EnterHandler {
         //        https://github.com/vernemq/vernemq/issues/1326.
         //        Then we won't need the local state on the broker at all and will be able
         //        to send a multicast request to the broker.
-        let outgoing_request = OutgoingRequest::unicast(payload, props, reqp, API_VERSION);
+        let outgoing_request = OutgoingRequest::unicast(payload, props, reqp, MQTT_GW_API_VERSION);
         Ok(vec![Box::new(outgoing_request)])
     }
 }
@@ -306,7 +307,7 @@ impl RequestHandler for LeaveHandler {
         //        https://github.com/vernemq/vernemq/issues/1326.
         //        Then we won't need the local state on the broker at all and will be able
         //        to send a multicast request to the broker.
-        let outgoing_request = OutgoingRequest::unicast(payload, props, reqp, API_VERSION);
+        let outgoing_request = OutgoingRequest::unicast(payload, props, reqp, MQTT_GW_API_VERSION);
         Ok(vec![Box::new(outgoing_request)])
     }
 }
@@ -463,6 +464,7 @@ mod tests {
     use std::ops::Bound;
 
     use chrono::{Duration, SubsecRound, Utc};
+    use serde_derive::Deserialize;
     use serde_json::json;
 
     use crate::db::room::Object as Room;
@@ -519,24 +521,7 @@ mod tests {
         futures::executor::block_on(async {
             // Create room.
             let db = TestDb::new();
-
-            let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
-                let now = Utc::now().trunc_subsecs(0);
-
-                factory::Room::new()
-                    .audience(USR_AUDIENCE)
-                    .time((
-                        Bound::Included(now),
-                        Bound::Excluded(now + Duration::hours(1)),
-                    ))
-                    .tags(&json!({ "webinar_id": "123" }))
-                    .insert(&conn)
-            };
+            let room = insert_room(&db);
 
             // Allow user to read the room.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
@@ -556,5 +541,68 @@ mod tests {
             assert_eq!(resp_room.time(), room.time());
             assert_eq!(resp_room.tags(), room.tags());
         });
+    }
+
+    #[derive(Deserialize)]
+    struct DynSubRequest {
+        subject: AgentId,
+        object: Vec<String>,
+    }
+
+    #[test]
+    fn enter_room() {
+        futures::executor::block_on(async {
+            // Create room.
+            let db = TestDb::new();
+            let room = insert_room(&db);
+
+            // Allow user to subscribe to the rooms' events.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            authz.allow(
+                agent.account_id(),
+                vec!["rooms", &room_id, "events"],
+                "subscribe",
+            );
+
+            // Make room.enter request.
+            let context = TestContext::new(db, authz);
+            let payload = EnterRequest { id: room.id() };
+            let messages = handle_request::<EnterHandler>(&context, &agent, payload).await;
+
+            // Assert dynamic subscription request.
+            let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
+
+            let expected_topic = format!(
+                "agents/{}/api/{}/in/{}",
+                agent.agent_id(),
+                MQTT_GW_API_VERSION,
+                context.config().id,
+            );
+
+            assert_eq!(topic, expected_topic);
+            assert_eq!(reqp.method(), "subscription.create");
+            assert_eq!(payload.subject, agent.agent_id().to_owned());
+            assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
+        });
+    }
+
+    fn insert_room(db: &TestDb) -> Room {
+        let conn = db
+            .connection_pool()
+            .get()
+            .expect("Failed to get DB connection");
+
+        let now = Utc::now().trunc_subsecs(0);
+
+        factory::Room::new()
+            .audience(USR_AUDIENCE)
+            .time((
+                Bound::Included(now),
+                Bound::Excluded(now + Duration::hours(1)),
+            ))
+            .tags(&json!({ "webinar_id": "123" }))
+            .insert(&conn)
     }
 }

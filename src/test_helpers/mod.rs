@@ -9,7 +9,7 @@ use self::agent::TestAgent;
 use self::context::TestContext;
 use self::outgoing_envelope::{
     OutgoingEnvelope, OutgoingEnvelopeProperties, OutgoingEventProperties,
-    OutgoingResponseProperties,
+    OutgoingRequestProperties, OutgoingResponseProperties,
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -95,13 +95,28 @@ where
     panic!("Response not found");
 }
 
+pub(crate) fn find_request<P>(
+    messages: &[OutgoingEnvelope],
+) -> (P, &OutgoingRequestProperties, &str)
+where
+    P: DeserializeOwned,
+{
+    for message in messages {
+        if let OutgoingEnvelopeProperties::Request(reqp) = message.properties() {
+            return (message.payload::<P>(), reqp, message.topic());
+        }
+    }
+
+    panic!("Request not found");
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) mod prelude {
     #[allow(unused_imports)]
     pub(crate) use super::{
         agent::TestAgent, authz::TestAuthz, context::TestContext, db::TestDb, factory, find_event,
-        find_response, handle_request, SVC_AUDIENCE, USR_AUDIENCE,
+        find_request, find_response, handle_request, SVC_AUDIENCE, USR_AUDIENCE,
     };
 }
 

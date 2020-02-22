@@ -60,4 +60,12 @@ impl OutgoingResponseProperties {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct OutgoingRequestProperties {}
+pub(crate) struct OutgoingRequestProperties {
+    method: String,
+}
+
+impl OutgoingRequestProperties {
+    pub(crate) fn method(&self) -> &str {
+        &self.method
+    }
+}
