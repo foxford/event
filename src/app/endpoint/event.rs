@@ -144,7 +144,7 @@ impl RequestHandler for CreateHandler {
             )
         })?;
 
-        // Respond to the user and notify room subscribers.
+        // Respond to the agent and notify room subscribers.
         let response = helpers::build_response(
             ResponseStatus::CREATED,
             event.clone(),
@@ -253,5 +253,85 @@ impl RequestHandler for ListHandler {
             start_timestamp,
             Some(authz_time),
         )])
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use crate::db::event::Object as Event;
+    use crate::test_helpers::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn create_event() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room and put the agent online.
+                let room = shared_helpers::insert_room(&conn);
+                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                room
+            };
+
+            // Allow agent to create events of type `message` in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let account_id = agent.account_id().to_string();
+
+            let object = vec![
+                "rooms",
+                &room_id,
+                "events",
+                "message",
+                "authors",
+                &account_id,
+            ];
+
+            authz.allow(agent.account_id(), object, "create");
+
+            // Make event.create request.
+            let context = TestContext::new(db, authz);
+
+            let payload = CreateRequest {
+                room_id: room.id(),
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                data: json!({ "text": "hello" }),
+            };
+
+            let messages = handle_request::<CreateHandler>(&context, &agent, payload).await;
+
+            // Assert response.
+            let (event, respp) = find_response::<Event>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(event.room_id(), room.id());
+            assert_eq!(event.kind(), "message");
+            assert_eq!(event.set(), "messages");
+            assert_eq!(event.label(), Some("message-1"));
+            assert_eq!(event.data(), &json!({ "text": "hello" }));
+
+            // Assert notification.
+            let (event, evp, topic) = find_event::<Event>(messages.as_slice());
+            assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
+            assert_eq!(evp.label(), "event.create");
+            assert_eq!(event.room_id(), room.id());
+            assert_eq!(event.kind(), "message");
+            assert_eq!(event.set(), "messages");
+            assert_eq!(event.label(), Some("message-1"));
+            assert_eq!(event.data(), &json!({ "text": "hello" }));
+        });
     }
 }

@@ -475,7 +475,7 @@ mod tests {
     #[test]
     fn create_room() {
         futures::executor::block_on(async {
-            // Allow user to create rooms.
+            // Allow agent to create rooms.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
             authz.allow(agent.account_id(), vec!["rooms"], "create");
@@ -531,7 +531,7 @@ mod tests {
                 shared_helpers::insert_room(&conn)
             };
 
-            // Allow user to read the room.
+            // Allow agent to read the room.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
@@ -572,7 +572,7 @@ mod tests {
                 shared_helpers::insert_room(&conn)
             };
 
-            // Allow user to subscribe to the rooms' events.
+            // Allow agent to subscribe to the rooms' events.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();

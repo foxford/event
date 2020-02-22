@@ -231,7 +231,6 @@ mod tests {
             let db = TestDb::new();
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-
             let room = {
                 let conn = db
                     .connection_pool()

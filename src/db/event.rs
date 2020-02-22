@@ -30,7 +30,9 @@ pub(crate) struct Object {
     created_at: DateTime<Utc>,
     #[serde(
         with = "ts_milliseconds_option",
-        skip_serializing_if = "Option::is_none"
+        skip_serializing_if = "Option::is_none",
+        skip_deserializing,
+        default
     )]
     deleted_at: Option<DateTime<Utc>>,
 }
@@ -41,16 +43,31 @@ impl Object {
     }
 
     #[cfg(test)]
+    pub(crate) fn room_id(&self) -> Uuid {
+        self.room_id
+    }
+
+    #[cfg(test)]
     pub(crate) fn kind(&self) -> &str {
         &self.kind
     }
 
-    pub(crate) fn occurred_at(&self) -> i64 {
-        self.occurred_at
+    #[cfg(test)]
+    pub(crate) fn set(&self) -> &str {
+        &self.set
+    }
+
+    #[cfg(test)]
+    pub(crate) fn label(&self) -> Option<&str> {
+        self.label.as_ref().map(|val| val.as_ref())
     }
 
     pub(crate) fn data(&self) -> &JsonValue {
         &self.data
+    }
+
+    pub(crate) fn occurred_at(&self) -> i64 {
+        self.occurred_at
     }
 }
 
