@@ -1,8 +1,11 @@
+use std::future::Future;
 use std::sync::Arc;
 
+use svc_agent::mqtt::IntoPublishableDump;
 use svc_authz::ClientMap as Authz;
+use svc_error::Error as SvcError;
 
-use crate::app::task_executor::TaskExecutor;
+use crate::app::task_executor::{AppTaskExecutor, TaskExecutor};
 use crate::authz_cache::AuthzCache;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
@@ -13,17 +16,16 @@ pub(crate) struct AppContext {
     authz: Authz,
     authz_cache: Arc<AuthzCache>,
     db: Db,
-    task_executor: Arc<TaskExecutor>,
+    task_executor: Arc<AppTaskExecutor>,
 }
 
-#[allow(dead_code)]
 impl AppContext {
     pub(crate) fn new(
         config: Config,
         authz: Authz,
         authz_cache: Arc<AuthzCache>,
         db: Db,
-        task_executor: TaskExecutor,
+        task_executor: AppTaskExecutor,
     ) -> Self {
         Self {
             config: Arc::new(config),
@@ -40,7 +42,11 @@ pub(crate) trait Context: Sync {
     fn authz_cache(&self) -> &AuthzCache;
     fn config(&self) -> &Config;
     fn db(&self) -> &Db;
-    fn task_executor(&self) -> &TaskExecutor;
+
+    fn run_task(
+        &self,
+        task: impl Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'static,
+    ) -> Result<(), SvcError>;
 }
 
 impl Context for AppContext {
@@ -60,7 +66,10 @@ impl Context for AppContext {
         &self.db
     }
 
-    fn task_executor(&self) -> &TaskExecutor {
-        &self.task_executor
+    fn run_task(
+        &self,
+        task: impl Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'static,
+    ) -> Result<(), SvcError> {
+        self.task_executor.run(task)
     }
 }

@@ -10,17 +10,26 @@ use crate::app::message_handler::publish_message;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct TaskExecutor {
+pub(crate) struct AppTaskExecutor {
     agent: Agent,
     thread_pool: Arc<ThreadPool>,
 }
 
-impl TaskExecutor {
+impl AppTaskExecutor {
     pub(crate) fn new(agent: Agent, thread_pool: Arc<ThreadPool>) -> Self {
         Self { agent, thread_pool }
     }
+}
 
-    pub(crate) fn run(
+pub(crate) trait TaskExecutor {
+    fn run(
+        &self,
+        task: impl Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'static,
+    ) -> Result<(), SvcError>;
+}
+
+impl TaskExecutor for AppTaskExecutor {
+    fn run(
         &self,
         task: impl Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'static,
     ) -> Result<(), SvcError> {

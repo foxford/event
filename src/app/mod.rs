@@ -15,7 +15,7 @@ use crate::config;
 use crate::db::ConnectionPool;
 use context::AppContext;
 use message_handler::MessageHandler;
-use task_executor::TaskExecutor;
+use task_executor::AppTaskExecutor;
 
 pub(crate) const API_VERSION: &str = "v1";
 
@@ -101,7 +101,7 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
         authz,
         authz_cache,
         db.clone(),
-        TaskExecutor::new(agent.clone(), thread_pool.clone()),
+        AppTaskExecutor::new(agent.clone(), thread_pool.clone()),
     );
 
     // Message handler
@@ -126,8 +126,8 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
     Ok(())
 }
 
-mod context;
-mod endpoint;
-mod message_handler;
+pub(crate) mod context;
+pub(crate) mod endpoint;
+pub(crate) mod message_handler;
 pub(crate) mod operations;
 pub(crate) mod task_executor;

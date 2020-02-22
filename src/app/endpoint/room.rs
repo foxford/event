@@ -359,7 +359,7 @@ impl RequestHandler for AdjustHandler {
         // Run asynchronous task for adjustment.
         let db = context.db().to_owned();
 
-        context.task_executor().run(async move {
+        context.run_task(async move {
             // Call room adjustment operation.
             let operation_result = adjust_room(
                 &db,
@@ -453,5 +453,64 @@ impl RoomAdjustResult {
             Self::Success { .. } => "success",
             Self::Error { .. } => "error",
         }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use std::ops::Bound;
+
+    use chrono::{Duration, SubsecRound, Utc};
+    use serde_json::json;
+
+    use crate::db::room::Object as Room;
+    use crate::test_helpers::prelude::*;
+
+    use super::*;
+
+    #[test]
+    fn create_room() {
+        futures::executor::block_on(async {
+            // Allow user to create rooms.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            authz.allow(agent.account_id(), vec!["rooms"], "create");
+
+            // Make room.create request.
+            let context = TestContext::new(authz);
+            let now = Utc::now().trunc_subsecs(0);
+
+            let time = (
+                Bound::Included(now),
+                Bound::Excluded(now + Duration::hours(1)),
+            );
+
+            let tags = json!({ "webinar_id": "123" });
+
+            let payload = CreateRequest {
+                time: time.clone(),
+                audience: USR_AUDIENCE.to_owned(),
+                tags: Some(tags.clone()),
+            };
+
+            let messages = handle_request::<CreateHandler>(&context, &agent, payload).await;
+
+            // Assert response.
+            let (room, respp) = find_response::<Room>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(room.audience(), USR_AUDIENCE);
+            assert_eq!(room.time(), &time);
+            assert_eq!(room.tags(), Some(&tags));
+
+            // Assert notification.
+            let (room, evp, topic) = find_event::<Room>(messages.as_slice());
+            assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
+            assert_eq!(evp.label(), "room.create");
+            assert_eq!(room.audience(), USR_AUDIENCE);
+            assert_eq!(room.time(), &time);
+            assert_eq!(room.tags(), Some(&tags));
+        });
     }
 }
