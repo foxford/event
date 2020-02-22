@@ -231,6 +231,65 @@ mod tests {
         });
     }
 
+    #[test]
+    fn delete_subscription() {
+        futures::executor::block_on(async {
+            // Create room.
+            let db = TestDb::new();
+            let room = insert_room(&db);
+
+            // Put agent online in the room.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                factory::Agent::new()
+                    .room_id(room.id())
+                    .agent_id(agent.agent_id().to_owned())
+                    .status(AgentStatus::Ready)
+                    .insert(&conn);
+            }
+
+            // Send subscription.delete event.
+            let context = TestContext::new(db.clone(), TestAuthz::new());
+            let room_id = room.id().to_string();
+
+            let payload = SubscriptionEvent {
+                subject: agent.agent_id().to_owned(),
+                object: vec!["rooms".to_string(), room_id, "events".to_string()],
+            };
+
+            let broker_account_label = context.config().broker_id.label();
+            let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
+            let messages = handle_event::<DeleteHandler>(&context, &broker, payload).await;
+
+            // Assert notification.
+            let (payload, evp, topic) = find_event::<RoomEnterLeaveEvent>(messages.as_slice());
+            assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
+            assert_eq!(evp.label(), "room.leave");
+            assert_eq!(payload.id, room.id());
+            assert_eq!(&payload.agent_id, agent.agent_id());
+
+            // Assert agent deleted from the DB.
+            let conn = db
+                .connection_pool()
+                .get()
+                .expect("Failed to get DB connection");
+
+            let db_agents = AgentListQuery::new()
+                .agent_id(agent.agent_id())
+                .room_id(room.id())
+                .execute(&conn)
+                .expect("Failed to execute agent list query");
+
+            assert_eq!(db_agents.len(), 0);
+        });
+    }
+
     fn insert_room(db: &TestDb) -> Room {
         let conn = db
             .connection_pool()
