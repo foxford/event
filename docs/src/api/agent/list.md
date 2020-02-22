@@ -6,13 +6,13 @@ The _room_ must be opened.
 
 ## Authorization
 
-The current _agent_ must be [entered](../room/enter.md) to the _room_.
+The current _agent_ must be [in](../room/enter.md) the _room_.
 
 ## Multicast request
 
 Name    | Type   | Default    | Description
 ------- | ------ | ---------- | --------------------
-room_id | string | _required_ | The room identifier.
+room_id | string | _required_ | The room's identifier.
 offset  | int    | _optional_ | Pagination offset.
 limit   | int    |         25 | Pagination limit.
 
