@@ -1,22 +1,20 @@
 # Overview
 
-Event service is intended for storing and broadcasting event data.
+Event service is intended to store and broadcast event data.
 
-An [event](api/event.md#event) is a schemaless JSON document representing something that took place
-in a [room](api/room.md#room).
+The [event](api/event.md#event) is a schemaless JSON document representing processes that took place
+in the [room](api/room.md#room).
 
-An event may be a text message, drawing, file upload, UI layout change etc.
-The service does not depend on event data specifics [except](api/event.md#stream-editing-events)
-stream editing events.
+The event may be a text message, drawing, file upload, UI layout change, etc.
+The service does not depend on event data specifics except [stream editing](api/event.md#stream-editing-events) events.
 
 All online [agents](api/agent.md#agent) in the room get notified on these
 events as they happen.
 
-One can retrieve events [history](api/event/list.md) or an aggregated room
+One can retrieve events [history](api/event/list.md) or the aggregated room
 [state](api/state.md#state) on a certain point of time.
 
-Once a real-time room is finished it can be [adjusted](api/room/adjust.md) by the tenant
-by applying segments from [conference][conference] serivce and stream editing events created
-by a moderator during the translation.
+A tenant can [adjust](api/room/adjust.md) the real-time room
+by applying segments ([conference][conference] service) and stream editing events (created by a moderator) during the translation once it finished.
 
 [conference]:https://docs.netology-group.services/conference/index.html
