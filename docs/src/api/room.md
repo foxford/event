@@ -1,15 +1,15 @@
 # Room
 
-A room is scope for storing [events](event.md#event) sharing them between
+The room is a scope for storing [events](event.md#event) and sharing them between
 [agents](agent.md#agent).
 
-A room belongs to _audience_ that is a scope of a tenant. So tenants controls an _audience_ that
-contains many rooms. The tenant also may associate some arbitrary _tags_ to the room to keep the
-linkage with its internal entities.
+The room belongs to an _audience_ that is a scope of a tenant. So the tenant controls the _audience_ that
+contains multiple rooms. The tenant also may associate some arbitrary _tags_ with the room to keep the
+relations with its internal entities.
 
-A room has a _time_ period when its open i.e. available for creating events.
+The room has a _time_ period when it is open, i.e. available for creating events.
 
-A room may be derived from another room during the process of [adjustment](room/adjust.md).
+The room may be derived from another room during the [adjustment](room/adjust.md).
 The room from which the current room is derived is being called the _source room_.
 
 ## Properties
