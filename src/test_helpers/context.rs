@@ -55,7 +55,7 @@ pub(crate) struct TestContext {
 }
 
 impl TestContext {
-    pub(crate) fn new(authz: TestAuthz) -> Self {
+    pub(crate) fn new(db: TestDb, authz: TestAuthz) -> Self {
         let config = build_config();
         let authz_cache = AuthzCache::new(&config.authz_cache);
 
@@ -63,7 +63,7 @@ impl TestContext {
             config,
             authz: authz.into(),
             authz_cache: Arc::new(authz_cache),
-            db: TestDb::new(),
+            db,
         }
     }
 }

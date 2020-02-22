@@ -479,7 +479,7 @@ mod tests {
             authz.allow(agent.account_id(), vec!["rooms"], "create");
 
             // Make room.create request.
-            let context = TestContext::new(authz);
+            let context = TestContext::new(TestDb::new(), authz);
             let now = Utc::now().trunc_subsecs(0);
 
             let time = (
@@ -511,6 +511,50 @@ mod tests {
             assert_eq!(room.audience(), USR_AUDIENCE);
             assert_eq!(room.time(), &time);
             assert_eq!(room.tags(), Some(&tags));
+        });
+    }
+
+    #[test]
+    fn read_room() {
+        futures::executor::block_on(async {
+            // Create room.
+            let db = TestDb::new();
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                let now = Utc::now().trunc_subsecs(0);
+
+                factory::Room::new()
+                    .audience(USR_AUDIENCE)
+                    .time((
+                        Bound::Included(now),
+                        Bound::Excluded(now + Duration::hours(1)),
+                    ))
+                    .tags(&json!({ "webinar_id": "123" }))
+                    .insert(&conn)
+            };
+
+            // Allow user to read the room.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
+
+            // Make room.read request.
+            let context = TestContext::new(db, authz);
+            let payload = ReadRequest { id: room.id() };
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload).await;
+
+            // Assert response.
+            let (resp_room, respp) = find_response::<Room>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(resp_room.audience(), room.audience());
+            assert_eq!(resp_room.time(), room.time());
+            assert_eq!(resp_room.tags(), room.tags());
         });
     }
 }

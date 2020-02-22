@@ -100,8 +100,8 @@ where
 pub(crate) mod prelude {
     #[allow(unused_imports)]
     pub(crate) use super::{
-        agent::TestAgent, authz::TestAuthz, context::TestContext, find_event, find_response,
-        handle_request, SVC_AUDIENCE, USR_AUDIENCE,
+        agent::TestAgent, authz::TestAuthz, context::TestContext, db::TestDb, factory, find_event,
+        find_response, handle_request, SVC_AUDIENCE, USR_AUDIENCE,
     };
 }
 
@@ -109,4 +109,5 @@ pub(crate) mod agent;
 pub(crate) mod authz;
 pub(crate) mod context;
 pub(crate) mod db;
+pub(crate) mod factory;
 pub(crate) mod outgoing_envelope;
