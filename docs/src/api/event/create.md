@@ -6,7 +6,7 @@ The _room_ must be opened.
 
 ## Authorization
 
-The current _agent_ must be [entered](../room/enter.md) to the _room_.
+The current _agent_ must [be in](../room/enter.md) the _room_.
 
 The tenant authorizes the current _agent_ for `create` action on
 `["rooms", room_id, "events", type, "authors", current_account_id]`.
@@ -15,16 +15,16 @@ The tenant authorizes the current _agent_ for `create` action on
 
 Name    | Type   | Default    | Description
 ------- | ------ | ---------- | -----------------------
-room_id | uuid   | _required_ | The room identifier.
-type    | string | _required_ | Event type.
-set     | string |       type | Collection set name.
-label   | string | _optional_ | Collection item label.
+room_id | uuid   | _required_ | The room's identifier.
+type    | string | _required_ | The event type.
+set     | string |       type | Collection set's name.
+label   | string | _optional_ | Collection item's label.
 data    | json   | _required_ | The event JSON payload.
 
 The _type_ and _data_ is arbitrary except
 [stream editing events](../event.md#stream-editing-events).
 
-_set_ and _label_ are also arbitrary but they impact [state](../state.md#state).
+The _set_ and _label_ are also arbitrary, but they impact a [state](../state.md#state).
 Check out [rules](../state.md#event-creation-from-the-state-perspective) on how to choose them.
 
 ## Unicast response
@@ -35,8 +35,8 @@ Check out [rules](../state.md#event-creation-from-the-state-perspective) on how 
 
 ## Broadcast event
 
-A notification is being sent to all [agents](../agent.md#agent) that have
-[entered](../room/enter.md) the room.
+A notification is being sent to all [agents](../agent.md#agent) that
+[are in](../room/enter.md) the room.
 
 **URI:** `rooms/:room_id/events`
 
