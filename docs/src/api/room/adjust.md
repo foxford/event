@@ -4,9 +4,9 @@ Create derived _original_ and _modified_ [rooms](../room.md#room) with shifted
 [events](../event.md#event) according to _segments_ and
 [stream editing events](../event.md#stream-editing-events).
 
-The purpose is to keep events in sync with fragmented video stream and moderator edits.
+The purpose is to keep events in sync with a fragmented video stream and moderator's editions.
 
-For more information on how it works see [Room adjustment](../../impl/room_adjustment.md).
+For more information on how it works, see the [Room adjustment](../../impl/room_adjustment.md).
 
 This endpoint is intended for calling only a tenant.
 
@@ -20,8 +20,8 @@ _room's_ _audience_.
 Name       | Type         | Default    | Description
 ---------- | ------------ | ---------- | --------------------------------------------------------
 id         | uuid         | _required_ | The real-time room identifier.
-started_at | int          | _required_ | The conference room opening time for error compensation in seconds.
-segments   | [[int, int]] | _required_ | Start-stop millisecond timestamp pairs relative to started_at of video segments
+started_at | int          | _required_ | The conference room's opening time for error compensation in seconds.
+segments   | [[int, int]] | _required_ | Start/stop millisecond timestamp pairs relative to video segments's `started_at`
 offset     | int          | _required_ | Pre-roll length in milliseconds.
 
 ## Unicast response
@@ -51,8 +51,8 @@ result | json   | _required_ | Result object (see below).
 
 Name              | Type         | Default    | Description
 ----------------- | ------------ | ---------- | ---------------------------------
-original_room_id  | uuid         | _required_ | Identifier of the original room with only segments applied.
-modified_room_id  | uuid         | _required_ | Identifier of the modified room with stream editing events also applied.
+original_room_id  | uuid         | _required_ | Original room's identifier with applied segments only.
+modified_room_id  | uuid         | _required_ | Modified room's identifier with applied stream editing events.
 modified_segments | [[int, int]] | _required_ | Segments edited with stream editing events.
 
 `result` object in case of `error` status:
