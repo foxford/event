@@ -5,7 +5,7 @@
 1. An _agent_ sends a [room.enter](../api/room/enter.md) request.
 2. Event service creates an [agent](../api/agent.md#agent) entry in the DB at `in_progress` status
    and sends `subscription.create` request to the broker[^1].
-   That occures at `endpoint::room::EnterHandler`.
+   That occurres at `endpoint::room::EnterHandler`.
 3. The broker subscribes the _agent_ to the _room_ _events'_ topic specified at the request and
    sends a `subscription.create` broadcast event to the event service.
 4. Also, the broker sends 202 response for the request (1) that the entrance process started.
