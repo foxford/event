@@ -407,7 +407,7 @@ mod tests {
             assert_eq!(events[0].id(), db_events[2].id());
             assert_eq!(events[1].id(), db_events[1].id());
 
-            // Request next page.
+            // Request the next page.
             let payload = ListRequest {
                 room_id: room.id(),
                 kind: None,

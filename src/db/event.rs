@@ -22,6 +22,7 @@ pub(crate) struct Object {
     room_id: Uuid,
     kind: String,
     set: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
     data: JsonValue,
     occurred_at: i64,
