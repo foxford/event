@@ -114,6 +114,8 @@ impl Agent {
 pub(crate) struct Event {
     room_id: Option<Uuid>,
     kind: Option<String>,
+    set: Option<String>,
+    label: Option<String>,
     data: Option<JsonValue>,
     occurred_at: Option<i64>,
     created_by: Option<AgentId>,
@@ -124,6 +126,8 @@ impl Event {
         Self {
             room_id: None,
             kind: None,
+            set: None,
+            label: None,
             data: None,
             occurred_at: None,
             created_by: None,
@@ -140,6 +144,20 @@ impl Event {
     pub(crate) fn kind(self, kind: &str) -> Self {
         Self {
             kind: Some(kind.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn set(self, set: &str) -> Self {
+        Self {
+            set: Some(set.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn label(self, label: &str) -> Self {
+        Self {
+            label: Some(label.to_owned()),
             ..self
         }
     }
@@ -172,8 +190,17 @@ impl Event {
         let occurred_at = self.occurred_at.expect("Occurrence date not set");
         let created_by = self.created_by.expect("Creator not set");
 
-        db::event::InsertQuery::new(room_id, &kind, &data, occurred_at, &created_by)
-            .execute(conn)
-            .expect("Failed to insert event")
+        let mut query =
+            db::event::InsertQuery::new(room_id, &kind, &data, occurred_at, &created_by);
+
+        if let Some(ref set) = self.set {
+            query = query.set(set);
+        }
+
+        if let Some(ref label) = self.label {
+            query = query.label(label);
+        }
+
+        query.execute(conn).expect("Failed to insert event")
     }
 }

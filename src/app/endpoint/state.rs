@@ -149,3 +149,106 @@ impl RequestHandler for ReadHandler {
         )])
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use serde_derive::Deserialize;
+    use serde_json::json;
+
+    use crate::db::event::{Direction, Object as Event};
+    use crate::test_helpers::prelude::*;
+
+    use super::*;
+
+    #[derive(Deserialize)]
+    struct State {
+        messages: Vec<Event>,
+        has_next: bool,
+    }
+
+    #[test]
+    fn read_state() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let (room, db_events) = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                let room = shared_helpers::insert_room(&conn);
+
+                // Create events in the room.
+                let events = (1..7)
+                    .map(|i| {
+                        factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .set("messages")
+                            .label(&format!("message-{}", i % 3))
+                            .data(&json!({
+                                "text": format!("message {}, version {}", i % 3, i / 3),
+                            }))
+                            .occurred_at(i * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&conn)
+                    })
+                    .collect::<Vec<Event>>();
+
+                (room, events)
+            };
+
+            // Allow agent to list events in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id, "events"];
+            authz.allow(agent.account_id(), object, "list");
+
+            // Make event.list request.
+            let context = TestContext::new(db, authz);
+
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages")],
+                occurred_at: Utc::now().timestamp(),
+                last_created_at: None,
+                direction: Direction::Backward,
+                limit: Some(2),
+            };
+
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload).await;
+
+            // Assert last two events response.
+            let (state, respp) = find_response::<State>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(state.messages.len(), 2);
+            assert_eq!(state.messages[0].id(), db_events[5].id());
+            assert_eq!(state.messages[1].id(), db_events[4].id());
+            assert_eq!(state.has_next, true);
+
+            // Request next page.
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages")],
+                occurred_at: state.messages[1].occurred_at(),
+                last_created_at: Some(state.messages[1].created_at()),
+                direction: Direction::Backward,
+                limit: Some(2),
+            };
+
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload).await;
+
+            // Assert the first event.
+            let (state, respp) = find_response::<State>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(state.messages.len(), 1);
+            assert_eq!(state.messages[0].id(), db_events[3].id());
+            assert_eq!(state.has_next, false);
+        });
+    }
+}

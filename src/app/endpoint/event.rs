@@ -419,8 +419,9 @@ mod tests {
                 limit: Some(2),
             };
 
-            // Assert the first event.
             let messages = handle_request::<ListHandler>(&context, &agent, payload).await;
+
+            // Assert the first event.
             let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(events.len(), 1);
