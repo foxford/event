@@ -30,6 +30,12 @@ export DATABASE_URL=postgres://postgres@localhost/event.dev
 diesel migration run --locked-schema
 ```
 
+Set up config from the sample:
+
+```bash
+cp App.toml.sample App.toml
+```
+
 The you can build and run the service locally having stable Rust [installed][rustup]:
 
 ```bash
