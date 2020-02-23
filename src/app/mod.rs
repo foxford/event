@@ -1,16 +1,13 @@
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration as StdDuration;
 
 use failure::{format_err, Error};
 use futures::{executor::ThreadPoolBuilder, task::SpawnExt, StreamExt};
-use futures_timer::Delay;
 use log::{error, info};
 use svc_agent::mqtt::{AgentBuilder, ConnectionMode, Notification, QoS};
 use svc_agent::{AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
 
-use crate::authz_cache::AuthzCache;
 use crate::config;
 use crate::db::ConnectionPool;
 use context::AppContext;
@@ -61,23 +58,6 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
     let authz = svc_authz::ClientMap::new(&config.id, None, config.authz.clone())
         .map_err(|err| format_err!("Error converting authz config to clients: {}", err))?;
 
-    // Authz cache
-    let authz_cache = Arc::new(AuthzCache::new(&config.authz_cache));
-    let authz_cache_clone = authz_cache.clone();
-    let authz_cache_vacuum_period = StdDuration::from_secs(config.authz_cache.vacuum_period);
-
-    thread_pool
-        .spawn(async move {
-            loop {
-                Delay::new(authz_cache_vacuum_period).await;
-
-                if let Err(err) = authz_cache_clone.vacuum() {
-                    error!("Authz cache vacuum failed: {}", err);
-                }
-            }
-        })
-        .map_err(|err| format_err!("Failed to schedule authz cache vacuum job: {}", err))?;
-
     // Sentry
     if let Some(sentry_config) = config.sentry.as_ref() {
         svc_error::extension::sentry::init(sentry_config);
@@ -99,7 +79,6 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
     let context = AppContext::new(
         config,
         authz,
-        authz_cache,
         db.clone(),
         AppTaskExecutor::new(agent.clone(), thread_pool.clone()),
     );
