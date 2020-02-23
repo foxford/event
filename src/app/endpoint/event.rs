@@ -123,7 +123,7 @@ impl RequestHandler for CreateHandler {
         let mut query = db::event::InsertQuery::new(
             room.id(),
             &payload.kind,
-            payload.data,
+            &payload.data,
             occurred_at,
             reqp.as_agent_id(),
         );
@@ -176,6 +176,7 @@ pub(crate) struct ListRequest {
     kind: Option<String>,
     set: Option<String>,
     label: Option<String>,
+    last_occurred_at: Option<i64>,
     #[serde(default, with = "ts_milliseconds_option")]
     last_created_at: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -233,8 +234,19 @@ impl RequestHandler for ListHandler {
             query = query.label(label);
         }
 
+        if let Some(last_occurred_at) = payload.last_occurred_at {
+            query = query.last_occurred_at(last_occurred_at);
+        }
+
         if let Some(last_created_at) = payload.last_created_at {
-            query = query.last_created_at(last_created_at);
+            if payload.last_occurred_at.is_some() {
+                query = query.last_created_at(last_created_at);
+            } else {
+                return Err(svc_error!(
+                    ResponseStatus::BAD_REQUEST,
+                    "`last_created_at` given without `last_occurred_at`"
+                ));
+            }
         }
 
         let events = query
@@ -262,7 +274,7 @@ impl RequestHandler for ListHandler {
 mod tests {
     use serde_json::json;
 
-    use crate::db::event::Object as Event;
+    use crate::db::event::{Direction, Object as Event};
     use crate::test_helpers::prelude::*;
 
     use super::*;
@@ -332,6 +344,87 @@ mod tests {
             assert_eq!(event.set(), "messages");
             assert_eq!(event.label(), Some("message-1"));
             assert_eq!(event.data(), &json!({ "text": "hello" }));
+        });
+    }
+
+    #[test]
+    fn list_events() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let (room, db_events) = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                let room = shared_helpers::insert_room(&conn);
+
+                // Create events in the room.
+                let events = (1..4)
+                    .map(|i| {
+                        factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .data(&json!({ "text": format!("message {}", i) }))
+                            .occurred_at(i * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&conn)
+                    })
+                    .collect::<Vec<Event>>();
+
+                (room, events)
+            };
+
+            // Allow agent to list events in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id, "events"];
+            authz.allow(agent.account_id(), object, "list");
+
+            // Make event.list request.
+            let context = TestContext::new(db, authz);
+
+            let payload = ListRequest {
+                room_id: room.id(),
+                kind: None,
+                set: None,
+                label: None,
+                last_occurred_at: None,
+                last_created_at: None,
+                direction: Direction::Backward,
+                limit: Some(2),
+            };
+
+            let messages = handle_request::<ListHandler>(&context, &agent, payload).await;
+
+            // Assert last two events response.
+            let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(events.len(), 2);
+            assert_eq!(events[0].id(), db_events[2].id());
+            assert_eq!(events[1].id(), db_events[1].id());
+
+            // Request next page.
+            let payload = ListRequest {
+                room_id: room.id(),
+                kind: None,
+                set: None,
+                label: None,
+                last_occurred_at: Some(events[1].occurred_at()),
+                last_created_at: Some(events[1].created_at()),
+                direction: Direction::Backward,
+                limit: Some(2),
+            };
+
+            // Assert the first event.
+            let messages = handle_request::<ListHandler>(&context, &agent, payload).await;
+            let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].id(), db_events[0].id());
         });
     }
 }

@@ -108,3 +108,72 @@ impl Agent {
         query.execute(conn).expect("Failed to insert agent")
     }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+
+pub(crate) struct Event {
+    room_id: Option<Uuid>,
+    kind: Option<String>,
+    data: Option<JsonValue>,
+    occurred_at: Option<i64>,
+    created_by: Option<AgentId>,
+}
+
+impl Event {
+    pub(crate) fn new() -> Self {
+        Self {
+            room_id: None,
+            kind: None,
+            data: None,
+            occurred_at: None,
+            created_by: None,
+        }
+    }
+
+    pub(crate) fn room_id(self, room_id: Uuid) -> Self {
+        Self {
+            room_id: Some(room_id),
+            ..self
+        }
+    }
+
+    pub(crate) fn kind(self, kind: &str) -> Self {
+        Self {
+            kind: Some(kind.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn data(self, data: &JsonValue) -> Self {
+        Self {
+            data: Some(data.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn occurred_at(self, occurred_at: i64) -> Self {
+        Self {
+            occurred_at: Some(occurred_at),
+            ..self
+        }
+    }
+
+    pub(crate) fn created_by(self, created_by: &AgentId) -> Self {
+        Self {
+            created_by: Some(created_by.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn insert(self, conn: &PgConnection) -> db::event::Object {
+        let room_id = self.room_id.expect("Room ID not set");
+        let kind = self.kind.expect("Kind not set");
+        let data = self.data.expect("Data not set");
+        let occurred_at = self.occurred_at.expect("Occurrence date not set");
+        let created_by = self.created_by.expect("Creator not set");
+
+        db::event::InsertQuery::new(room_id, &kind, &data, occurred_at, &created_by)
+            .execute(conn)
+            .expect("Failed to insert event")
+    }
+}

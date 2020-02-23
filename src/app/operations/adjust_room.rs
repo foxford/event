@@ -466,7 +466,7 @@ mod tests {
             _ => panic!("Invalid room time"),
         };
 
-        EventInsertQuery::new(room.id(), kind, data, occurred_at, &created_by)
+        EventInsertQuery::new(room.id(), kind, &data, occurred_at, &created_by)
             .created_at(opened_at + Duration::milliseconds(occurred_at))
             .execute(conn)
             .expect("Failed to insert event");

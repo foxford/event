@@ -8,15 +8,16 @@ The tenant authorizes the current _agent_ for `list` action on `["rooms", room_i
 
 ## Multicast request
 
-Name            | Type   | Default    | Description
---------------- | ------ | ---------- | ------------------
-room_id         | string | _required_ | The room's identifier.
-type            | string | _optional_ | The event's type filter.
-set             | string | _optional_ | Collection set's filter.
-label           | string | _optional_ | Collection item's filter.
-last_created_at | int    | _optional_ | `created_at` value of the last seen event on the previous page in milliseconds.
-direction       | string |    forward | Pagination direction: forward | backward.
-limit           | int    |        100 | Limits the number of events in the response.
+Name             | Type   | Default    | Description
+---------------- | ------ | ---------- | ------------------
+room_id          | string | _required_ | The room's identifier.
+type             | string | _optional_ | The event's type filter.
+set              | string | _optional_ | Collection set's filter.
+label            | string | _optional_ | Collection item's filter.
+last_occurred_at | int    | _optional_ | `occurred_at` value of the last seen event on the previous page in milliseconds.
+last_created_at  | int    | _optional_ | `created_at` value of the last seen event on the previous page in milliseconds. Applicable only together with `last_occurred_at`.
+direction        | string |    forward | Pagination direction: forward | backward.
+limit            | int    |        100 | Limits the number of events in the response.
 
 ## Unicast response
 
