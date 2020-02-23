@@ -7,6 +7,7 @@ use log::{error, info};
 use svc_agent::mqtt::{AgentBuilder, ConnectionMode, Notification, QoS};
 use svc_agent::{AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
+use svc_authz::cache::Cache as AuthzCache;
 
 use crate::config;
 use crate::db::ConnectionPool;
@@ -18,7 +19,7 @@ pub(crate) const API_VERSION: &str = "v1";
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
+pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) -> Result<(), Error> {
     // Config
     let config = config::load().map_err(|err| format_err!("Failed to load config: {}", err))?;
     info!("App config: {:?}", config);
@@ -55,7 +56,7 @@ pub(crate) async fn run(db: &ConnectionPool) -> Result<(), Error> {
     });
 
     // Authz
-    let authz = svc_authz::ClientMap::new(&config.id, None, config.authz.clone())
+    let authz = svc_authz::ClientMap::new(&config.id, authz_cache, config.authz.clone())
         .map_err(|err| format_err!("Error converting authz config to clients: {}", err))?;
 
     // Sentry

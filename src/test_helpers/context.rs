@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::sync::Arc;
 
 use serde_json::json;
 use svc_agent::mqtt::IntoPublishableDump;
