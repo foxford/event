@@ -87,6 +87,10 @@ select
         when 'unsubscribe' then data->'conn_id'
         when 'subscribe' then data->'conn_id'
         when 'document' then data->'url'
+        when 'document-delete' then data->'url'
+        when 'stream' then id::text
+        when 'message' then id::text
+        when 'draw' then id:text
         else null
     end as label,
     data,
