@@ -60,6 +60,6 @@ element. There's no point of wrapping it into an array, so it goes as a single _
 
 Regarding the _state_ for _events_ [creation](event/create.md), the rules are the following:
 
-1. To get an _event_ at the _state_ one has to specify a _set_.
-2. To get a _set_ as a _collection_ one has to specify _label_ also.
-3. To get a simple _set_ as a single _event_ one has to omit a _label_.
+1. _Set_ is a key in the _state_ where the event will be. By default it equals to _type_.
+1. To get a _set_ as a _collection_ one has to specify _label_.
+2. To get a simple _set_ as a single _event_ one has to omit _label_.
