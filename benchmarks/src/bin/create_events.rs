@@ -8,48 +8,17 @@ use chrono::Utc;
 use clap::{value_t, App, Arg};
 use futures::executor::ThreadPool;
 use log::info;
-use serde_derive::{Deserialize, Serialize};
-use serde_json::{json, Value as JsonValue};
+use serde_json::json;
 use svc_agent::{
-    mqtt::{compat, AgentBuilder, AgentConfig, ConnectionMode, Notification, QoS, ResponseStatus},
+    mqtt::{
+        compat, AgentBuilder, AgentConfig, ConnectionMode, IncomingEvent, Notification, QoS,
+        ResponseStatus,
+    },
     AccountId, AgentId, Subscription,
 };
 use uuid::Uuid;
 
-use event_benchmark::{Interval, TestAgent};
-
-///////////////////////////////////////////////////////////////////////////////
-
-const API_VERSION: &'static str = "v1";
-const ROOM_DURATION: i64 = 3600;
-
-#[derive(Debug, Serialize)]
-struct RoomCreateRequest {
-    audience: String,
-    time: (i64, i64),
-    tags: JsonValue,
-}
-
-#[derive(Debug, Deserialize)]
-struct RoomCreateResponse {
-    id: Uuid,
-}
-
-#[derive(Debug, Serialize)]
-struct RoomEnterRequest {
-    id: Uuid,
-}
-
-#[derive(Debug, Deserialize)]
-struct RoomEnterResponse {}
-
-#[derive(Clone, Debug, Serialize)]
-struct EventCreateRequest {
-    room_id: Uuid,
-    #[serde(rename = "type")]
-    kind: String,
-    data: JsonValue,
-}
+use event_benchmark::{types::*, Interval, TestAgent};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -230,6 +199,7 @@ fn main() {
     ///////////////////////////////////////////////////////////////////////////
 
     let pool = Arc::new(ThreadPool::new().expect("Failed to build thread pool"));
+
     let agent_config_json = format!(
         "{{
             \"uri\": \"{}:{}\",
@@ -311,6 +281,11 @@ fn main() {
                 if response.properties().status() != ResponseStatus::ACCEPTED {
                     panic!("Failed to enter room");
                 }
+
+                // Wait for entrance notification.
+                agent.wait_for_event("room.enter", |event: &IncomingEvent<RoomEnterEvent>| {
+                    event.payload().id == room_id && &event.payload().agent_id == agent.id()
+                });
             }
 
             (room_id, room_agents)
@@ -323,6 +298,7 @@ fn main() {
         "Creating {} events per second for each agent. Stop with Ctrl+C.",
         rate
     );
+
     let mut intervals = Vec::with_capacity(rooms_count * agents_per_room);
 
     // Run event creation loop for each agent in each room.
@@ -341,6 +317,8 @@ fn main() {
                             EventCreateRequest {
                                 room_id,
                                 kind: String::from("message"),
+                                set: None,
+                                label: None,
                                 data: json!({ "text": "hello" }),
                             },
                         )
