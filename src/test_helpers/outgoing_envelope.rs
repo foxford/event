@@ -2,7 +2,7 @@ use serde::de::DeserializeOwned;
 use serde_derive::Deserialize;
 use svc_agent::mqtt::ResponseStatus;
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct OutgoingEnvelope {
     payload: String,
     properties: OutgoingEnvelopeProperties,
@@ -30,7 +30,7 @@ impl OutgoingEnvelope {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type")]
 pub(crate) enum OutgoingEnvelopeProperties {
     Event(OutgoingEventProperties),
@@ -38,7 +38,7 @@ pub(crate) enum OutgoingEnvelopeProperties {
     Request(OutgoingRequestProperties),
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct OutgoingEventProperties {
     label: String,
 }
@@ -49,7 +49,7 @@ impl OutgoingEventProperties {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct OutgoingResponseProperties {
     status: String,
 }
@@ -60,7 +60,7 @@ impl OutgoingResponseProperties {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub(crate) struct OutgoingRequestProperties {
     method: String,
 }

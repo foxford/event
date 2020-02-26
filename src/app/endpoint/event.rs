@@ -279,6 +279,8 @@ mod tests {
 
     use super::*;
 
+    ///////////////////////////////////////////////////////////////////////////
+
     #[test]
     fn create_event() {
         futures::executor::block_on(async {
@@ -324,7 +326,9 @@ mod tests {
                 data: json!({ "text": "hello" }),
             };
 
-            let messages = handle_request::<CreateHandler>(&context, &agent, payload).await;
+            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                .await
+                .expect("Event creation failed");
 
             // Assert response.
             let (event, respp) = find_response::<Event>(messages.as_slice());
@@ -346,6 +350,171 @@ mod tests {
             assert_eq!(event.data(), &json!({ "text": "hello" }));
         });
     }
+
+    #[test]
+    fn create_event_not_authorized() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room and put the agent online.
+                let room = shared_helpers::insert_room(&conn);
+                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                room
+            };
+
+            // Make event.create request.
+            let context = TestContext::new(db, TestAuthz::new());
+
+            let payload = CreateRequest {
+                room_id: room.id(),
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                data: json!({ "text": "hello" }),
+            };
+
+            let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on event creation");
+
+            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+        });
+    }
+
+    #[test]
+    fn create_event_not_entered() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                shared_helpers::insert_room(&conn)
+            };
+
+            // Allow agent to create events of type `message` in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let account_id = agent.account_id().to_string();
+
+            let object = vec![
+                "rooms",
+                &room_id,
+                "events",
+                "message",
+                "authors",
+                &account_id,
+            ];
+
+            authz.allow(agent.account_id(), object, "create");
+
+            // Make event.create request.
+            let context = TestContext::new(db, authz);
+
+            let payload = CreateRequest {
+                room_id: room.id(),
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                data: json!({ "text": "hello" }),
+            };
+
+            let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on event creation");
+
+            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+        });
+    }
+
+    #[test]
+    fn create_event_closed_room() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create closed room and put the agent online.
+                let room = shared_helpers::insert_closed_room(&conn);
+                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                room
+            };
+
+            // Allow agent to create events of type `message` in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let account_id = agent.account_id().to_string();
+
+            let object = vec![
+                "rooms",
+                &room_id,
+                "events",
+                "message",
+                "authors",
+                &account_id,
+            ];
+
+            authz.allow(agent.account_id(), object, "create");
+
+            // Make event.create request.
+            let context = TestContext::new(db, authz);
+
+            let payload = CreateRequest {
+                room_id: room.id(),
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                data: json!({ "text": "hello" }),
+            };
+
+            let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on event creation");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    #[test]
+    fn create_event_missing_room() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+
+            let payload = CreateRequest {
+                room_id: Uuid::new_v4(),
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                data: json!({ "text": "hello" }),
+            };
+
+            let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on event creation");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
 
     #[test]
     fn list_events() {
@@ -398,7 +567,9 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ListHandler>(&context, &agent, payload).await;
+            let messages = handle_request::<ListHandler>(&context, &agent, payload)
+                .await
+                .expect("Events listing failed (page 1)");
 
             // Assert last two events response.
             let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
@@ -419,13 +590,76 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ListHandler>(&context, &agent, payload).await;
+            let messages = handle_request::<ListHandler>(&context, &agent, payload)
+                .await
+                .expect("Events listing failed (page 2)");
 
             // Assert the first event.
             let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].id(), db_events[0].id());
+        });
+    }
+
+    #[test]
+    fn list_events_not_authorized() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                shared_helpers::insert_room(&conn)
+            };
+
+            let context = TestContext::new(db, TestAuthz::new());
+
+            let payload = ListRequest {
+                room_id: room.id(),
+                kind: None,
+                set: None,
+                label: None,
+                last_occurred_at: None,
+                last_created_at: None,
+                direction: Direction::Backward,
+                limit: Some(2),
+            };
+
+            let err = handle_request::<ListHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on events listing");
+
+            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+        });
+    }
+
+    #[test]
+    fn list_events_missing_room() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+
+            let payload = ListRequest {
+                room_id: Uuid::new_v4(),
+                kind: None,
+                set: None,
+                label: None,
+                last_occurred_at: None,
+                last_created_at: None,
+                direction: Direction::Backward,
+                limit: Some(2),
+            };
+
+            let err = handle_request::<ListHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on events listing");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
         });
     }
 }

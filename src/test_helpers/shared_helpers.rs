@@ -26,6 +26,19 @@ pub(crate) fn insert_room(conn: &PgConnection) -> Room {
         .insert(&conn)
 }
 
+pub(crate) fn insert_closed_room(conn: &PgConnection) -> Room {
+    let now = Utc::now().trunc_subsecs(0);
+
+    factory::Room::new()
+        .audience(USR_AUDIENCE)
+        .time((
+            Bound::Included(now - Duration::hours(10)),
+            Bound::Excluded(now - Duration::hours(8)),
+        ))
+        .tags(&json!({ "webinar_id": "123" }))
+        .insert(&conn)
+}
+
 pub(crate) fn insert_agent(conn: &PgConnection, agent_id: &AgentId, room_id: Uuid) -> Agent {
     factory::Agent::new()
         .agent_id(agent_id.to_owned())

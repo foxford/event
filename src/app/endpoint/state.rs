@@ -162,6 +162,8 @@ mod tests {
 
     use super::*;
 
+    ///////////////////////////////////////////////////////////////////////////
+
     #[derive(Deserialize)]
     struct State {
         messages: Vec<Event>,
@@ -224,7 +226,9 @@ mod tests {
                 limit: None,
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload).await;
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect("State reading failed");
 
             // Assert last two events response.
             let (state, respp) = find_response::<State>(messages.as_slice());
@@ -294,7 +298,9 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload).await;
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect("State reading failed (page 1)");
 
             // Assert last two events response.
             let (state, respp) = find_response::<CollectionState>(messages.as_slice());
@@ -314,7 +320,9 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload).await;
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect("State reading failed (page 2)");
 
             // Assert the first event.
             let (state, respp) = find_response::<CollectionState>(messages.as_slice());
@@ -322,6 +330,63 @@ mod tests {
             assert_eq!(state.messages.len(), 1);
             assert_eq!(state.messages[0].id(), db_events[3].id());
             assert_eq!(state.has_next, false);
+        });
+    }
+
+    #[test]
+    fn read_state_not_authorized() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                shared_helpers::insert_room(&conn)
+            };
+
+            let context = TestContext::new(db, TestAuthz::new());
+
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages"), String::from("layout")],
+                occurred_at: Utc::now().timestamp(),
+                last_created_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            };
+
+            let err = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success reading state");
+
+            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+        });
+    }
+
+    #[test]
+    fn read_state_missing_room() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+
+            let payload = ReadRequest {
+                room_id: Uuid::new_v4(),
+                sets: vec![String::from("messages"), String::from("layout")],
+                occurred_at: Utc::now().timestamp(),
+                last_created_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            };
+
+            let err = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success reading state");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
         });
     }
 }

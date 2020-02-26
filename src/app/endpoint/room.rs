@@ -18,29 +18,11 @@ use crate::app::endpoint::{helpers, RequestHandler};
 use crate::app::operations::adjust_room;
 use crate::db::adjustment::Segment;
 use crate::db::agent;
-use crate::db::room::{FindQuery, InsertQuery, Time};
+use crate::db::room::{now, FindQuery, InsertQuery, Time};
 
 ///////////////////////////////////////////////////////////////////////////////
 
 const MQTT_GW_API_VERSION: &'static str = "v1";
-
-macro_rules! find_room {
-    ($conn: expr, $id: expr, $reqp: expr, $start_timestamp: expr, $error_title: expr) => {
-        match FindQuery::new($id).execute(&$conn)? {
-            Some(room) => room,
-            None => {
-                return Ok(vec![helpers::build_error_response(
-                    ResponseStatus::NOT_FOUND,
-                    $error_title,
-                    &format!("Room not found, id = '{}'", &$id),
-                    $reqp,
-                    $start_timestamp,
-                    None,
-                )])
-            }
-        }
-    };
-}
 
 #[derive(Debug, Serialize)]
 struct SubscriptionRequest {
@@ -141,13 +123,16 @@ impl RequestHandler for ReadHandler {
     ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
         let conn = context.db().get()?;
 
-        let room = find_room!(
-            conn,
-            payload.id,
-            reqp,
-            start_timestamp,
-            ReadHandler::ERROR_TITLE
-        );
+        let room = match FindQuery::new(payload.id).execute(&conn)? {
+            Some(room) => room,
+            None => {
+                return Err(svc_error!(
+                    ResponseStatus::NOT_FOUND,
+                    "Room not found, id = '{}'",
+                    payload.id
+                ))
+            }
+        };
 
         // Authorize room reading on the tenant.
         let room_id = room.id().to_string();
@@ -190,13 +175,16 @@ impl RequestHandler for EnterHandler {
     ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
         let conn = context.db().get()?;
 
-        let room = find_room!(
-            conn,
-            payload.id,
-            reqp,
-            start_timestamp,
-            EnterHandler::ERROR_TITLE
-        );
+        let room = match FindQuery::new(payload.id).time(now()).execute(&conn)? {
+            Some(room) => room,
+            None => {
+                return Err(svc_error!(
+                    ResponseStatus::NOT_FOUND,
+                    "Room not found, id = '{}'",
+                    payload.id
+                ))
+            }
+        };
 
         // Authorize subscribing to the room's events.
         let room_id = room.id().to_string();
@@ -259,13 +247,16 @@ impl RequestHandler for LeaveHandler {
     ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
         let conn = context.db().get()?;
 
-        let room = find_room!(
-            conn,
-            payload.id,
-            reqp,
-            start_timestamp,
-            LeaveHandler::ERROR_TITLE
-        );
+        let room = match FindQuery::new(payload.id).execute(&conn)? {
+            Some(room) => room,
+            None => {
+                return Err(svc_error!(
+                    ResponseStatus::NOT_FOUND,
+                    "Room not found, id = '{}'",
+                    payload.id
+                ))
+            }
+        };
 
         // Check room presence.
         let results = agent::ListQuery::new()
@@ -339,13 +330,16 @@ impl RequestHandler for AdjustHandler {
         let room = {
             let conn = context.db().get()?;
 
-            find_room!(
-                conn,
-                payload.id,
-                reqp,
-                start_timestamp,
-                AdjustHandler::ERROR_TITLE
-            )
+            match FindQuery::new(payload.id).execute(&conn)? {
+                Some(room) => room,
+                None => {
+                    return Err(svc_error!(
+                        ResponseStatus::NOT_FOUND,
+                        "Room not found, id = '{}'",
+                        payload.id
+                    ))
+                }
+            }
         };
 
         // Authorize trusted account for the room's audience.
@@ -472,6 +466,8 @@ mod tests {
 
     use super::*;
 
+    ///////////////////////////////////////////////////////////////////////////
+
     #[test]
     fn create_room() {
         futures::executor::block_on(async {
@@ -497,7 +493,9 @@ mod tests {
                 tags: Some(tags.clone()),
             };
 
-            let messages = handle_request::<CreateHandler>(&context, &agent, payload).await;
+            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                .await
+                .expect("Room creation failed");
 
             // Assert response.
             let (room, respp) = find_response::<Room>(messages.as_slice());
@@ -515,6 +513,36 @@ mod tests {
             assert_eq!(room.tags(), Some(&tags));
         });
     }
+
+    #[test]
+    fn create_room_not_authorized() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            // Make room.create request.
+            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+            let now = Utc::now().trunc_subsecs(0);
+
+            let time = (
+                Bound::Included(now),
+                Bound::Excluded(now + Duration::hours(1)),
+            );
+
+            let payload = CreateRequest {
+                time: time.clone(),
+                audience: USR_AUDIENCE.to_owned(),
+                tags: None,
+            };
+
+            let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room creation");
+
+            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+        });
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
 
     #[test]
     fn read_room() {
@@ -540,7 +568,10 @@ mod tests {
             // Make room.read request.
             let context = TestContext::new(db, authz);
             let payload = ReadRequest { id: room.id() };
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload).await;
+
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect("Room reading failed");
 
             // Assert response.
             let (resp_room, respp) = find_response::<Room>(messages.as_slice());
@@ -550,6 +581,51 @@ mod tests {
             assert_eq!(resp_room.tags(), room.tags());
         });
     }
+
+    #[test]
+    fn read_room_not_authorized() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new();
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                shared_helpers::insert_room(&conn)
+            };
+
+            // Make room.read request.
+            let context = TestContext::new(db, TestAuthz::new());
+            let payload = ReadRequest { id: room.id() };
+
+            let err = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room reading");
+
+            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+        });
+    }
+
+    #[test]
+    fn read_room_missing() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+            let payload = ReadRequest { id: Uuid::new_v4() };
+
+            let err = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room reading");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
 
     #[derive(Deserialize)]
     struct DynSubRequest {
@@ -586,7 +662,10 @@ mod tests {
             // Make room.enter request.
             let context = TestContext::new(db, authz);
             let payload = EnterRequest { id: room.id() };
-            let messages = handle_request::<EnterHandler>(&context, &agent, payload).await;
+
+            let messages = handle_request::<EnterHandler>(&context, &agent, payload)
+                .await
+                .expect("Room entrance failed");
 
             // Assert dynamic subscription request.
             let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
@@ -604,6 +683,89 @@ mod tests {
             assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
         });
     }
+
+    #[test]
+    fn enter_room_not_authorized() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new();
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                shared_helpers::insert_room(&conn)
+            };
+
+            // Make room.enter request.
+            let context = TestContext::new(db, TestAuthz::new());
+            let payload = EnterRequest { id: room.id() };
+
+            let err = handle_request::<EnterHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room entering");
+
+            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+        });
+    }
+
+    #[test]
+    fn enter_room_missing() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+            let payload = EnterRequest { id: Uuid::new_v4() };
+
+            let err = handle_request::<EnterHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room entering");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    #[test]
+    fn enter_room_closed() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create closed room.
+                shared_helpers::insert_closed_room(&conn)
+            };
+
+            // Allow agent to subscribe to the rooms' events.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+
+            authz.allow(
+                agent.account_id(),
+                vec!["rooms", &room_id, "events"],
+                "subscribe",
+            );
+
+            // Make room.enter request.
+            let context = TestContext::new(db, TestAuthz::new());
+            let payload = EnterRequest { id: room.id() };
+
+            let err = handle_request::<EnterHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room entering");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
 
     #[test]
     fn leave_room() {
@@ -628,7 +790,10 @@ mod tests {
             // Make room.leave request.
             let context = TestContext::new(db, TestAuthz::new());
             let payload = LeaveRequest { id: room.id() };
-            let messages = handle_request::<LeaveHandler>(&context, &agent, payload).await;
+
+            let messages = handle_request::<LeaveHandler>(&context, &agent, payload)
+                .await
+                .expect("Room leaving failed");
 
             // Assert dynamic subscription request.
             let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
@@ -646,6 +811,106 @@ mod tests {
 
             let room_id = room.id().to_string();
             assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
+        });
+    }
+
+    #[test]
+    fn leave_room_while_not_entered() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new();
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                shared_helpers::insert_room(&conn)
+            };
+
+            // Make room.leave request.
+            let context = TestContext::new(db, TestAuthz::new());
+            let payload = LeaveRequest { id: room.id() };
+
+            let err = handle_request::<LeaveHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room leaving");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    #[test]
+    fn leave_room_missing() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+            let payload = LeaveRequest { id: Uuid::new_v4() };
+
+            let err = handle_request::<LeaveHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room leaving");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    #[test]
+    fn adjust_room_not_authorized() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new();
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                shared_helpers::insert_room(&conn)
+            };
+
+            // Make room.adjust request.
+            let context = TestContext::new(db, TestAuthz::new());
+
+            let payload = AdjustRequest {
+                id: room.id(),
+                started_at: Utc::now(),
+                segments: vec![],
+                offset: 0,
+            };
+
+            let err = handle_request::<AdjustHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room adjustment");
+
+            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+        });
+    }
+
+    #[test]
+    fn adjust_room_missing() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+
+            let payload = AdjustRequest {
+                id: Uuid::new_v4(),
+                started_at: Utc::now(),
+                segments: vec![],
+                offset: 0,
+            };
+
+            let err = handle_request::<AdjustHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room adjustment");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
         });
     }
 }

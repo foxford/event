@@ -164,6 +164,8 @@ mod tests {
 
     use super::*;
 
+    ///////////////////////////////////////////////////////////////////////////
+
     #[test]
     fn create_subscription() {
         futures::executor::block_on(async {
@@ -199,7 +201,10 @@ mod tests {
 
             let broker_account_label = context.config().broker_id.label();
             let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
-            let messages = handle_event::<CreateHandler>(&context, &broker, payload).await;
+
+            let messages = handle_event::<CreateHandler>(&context, &broker, payload)
+                .await
+                .expect("Subscription creation failed");
 
             // Assert notification.
             let (payload, evp, topic) = find_event::<RoomEnterLeaveEvent>(messages.as_slice());
@@ -224,6 +229,66 @@ mod tests {
             assert_eq!(db_agent.status(), AgentStatus::Ready);
         });
     }
+
+    #[test]
+    fn create_subscription_missing_room() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new();
+            let context = TestContext::new(db, TestAuthz::new());
+            let room_id = Uuid::new_v4().to_string();
+
+            let payload = SubscriptionEvent {
+                subject: agent.agent_id().to_owned(),
+                object: vec!["rooms".to_string(), room_id, "events".to_string()],
+            };
+
+            let broker_account_label = context.config().broker_id.label();
+            let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
+
+            let err = handle_event::<CreateHandler>(&context, &broker, payload)
+                .await
+                .expect_err("Unexpected success on subscription creation");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    #[test]
+    fn create_subscription_closed_room() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                shared_helpers::insert_closed_room(&conn)
+            };
+
+            let context = TestContext::new(db, TestAuthz::new());
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let room_id = room.id().to_string();
+
+            let payload = SubscriptionEvent {
+                subject: agent.agent_id().to_owned(),
+                object: vec!["rooms".to_string(), room_id, "events".to_string()],
+            };
+
+            let broker_account_label = context.config().broker_id.label();
+            let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
+
+            let err = handle_event::<CreateHandler>(&context, &broker, payload)
+                .await
+                .expect_err("Unexpected success on subscription creation");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
 
     #[test]
     fn delete_subscription() {
@@ -254,7 +319,10 @@ mod tests {
 
             let broker_account_label = context.config().broker_id.label();
             let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
-            let messages = handle_event::<DeleteHandler>(&context, &broker, payload).await;
+
+            let messages = handle_event::<DeleteHandler>(&context, &broker, payload)
+                .await
+                .expect("Subscription deletion failed");
 
             // Assert notification.
             let (payload, evp, topic) = find_event::<RoomEnterLeaveEvent>(messages.as_slice());
@@ -276,6 +344,64 @@ mod tests {
                 .expect("Failed to execute agent list query");
 
             assert_eq!(db_agents.len(), 0);
+        });
+    }
+
+    #[test]
+    fn delete_subscription_missing_agent() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new();
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                shared_helpers::insert_room(&conn)
+            };
+
+            let context = TestContext::new(db.clone(), TestAuthz::new());
+            let room_id = room.id().to_string();
+
+            let payload = SubscriptionEvent {
+                subject: agent.agent_id().to_owned(),
+                object: vec!["rooms".to_string(), room_id, "events".to_string()],
+            };
+
+            let broker_account_label = context.config().broker_id.label();
+            let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
+
+            let err = handle_event::<DeleteHandler>(&context, &broker, payload)
+                .await
+                .expect_err("Unexpected success on subscription deletion");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    #[test]
+    fn delete_subscription_missing_room() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new();
+            let context = TestContext::new(db.clone(), TestAuthz::new());
+            let room_id = Uuid::new_v4().to_string();
+
+            let payload = SubscriptionEvent {
+                subject: agent.agent_id().to_owned(),
+                object: vec!["rooms".to_string(), room_id, "events".to_string()],
+            };
+
+            let broker_account_label = context.config().broker_id.label();
+            let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
+
+            let err = handle_event::<DeleteHandler>(&context, &broker, payload)
+                .await
+                .expect_err("Unexpected success on subscription deletion");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
         });
     }
 }

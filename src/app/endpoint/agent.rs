@@ -90,6 +90,8 @@ mod tests {
 
     use super::*;
 
+    ///////////////////////////////////////////////////////////////////////////
+
     #[derive(Deserialize)]
     struct Agent {
         agent_id: AgentId,
@@ -133,7 +135,9 @@ mod tests {
                 limit: None,
             };
 
-            let messages = handle_request::<ListHandler>(&context, &agent, payload).await;
+            let messages = handle_request::<ListHandler>(&context, &agent, payload)
+                .await
+                .expect("Agents listing failed");
 
             // Assert response.
             let (agents, respp) = find_response::<Vec<Agent>>(messages.as_slice());
@@ -141,6 +145,100 @@ mod tests {
             assert_eq!(agents.len(), 1);
             assert_eq!(&agents[0].agent_id, agent.agent_id());
             assert_eq!(agents[0].room_id, room.id());
+        });
+    }
+
+    #[test]
+    fn list_agents_not_authorized() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new();
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                shared_helpers::insert_room(&conn)
+            };
+
+            let context = TestContext::new(db, TestAuthz::new());
+
+            let payload = ListRequest {
+                room_id: room.id(),
+                offset: None,
+                limit: None,
+            };
+
+            let err = handle_request::<ListHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on agents listing");
+
+            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+        });
+    }
+
+    #[test]
+    fn list_agents_closed_room() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new();
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create closed room.
+                shared_helpers::insert_closed_room(&conn)
+            };
+
+            // Allow agent to list agents in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+
+            authz.allow(
+                agent.account_id(),
+                vec!["rooms", &room_id, "agents"],
+                "list",
+            );
+
+            // Make agent.list request.
+            let context = TestContext::new(db, authz);
+
+            let payload = ListRequest {
+                room_id: room.id(),
+                offset: None,
+                limit: None,
+            };
+
+            let err = handle_request::<ListHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on agents listing");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
+    }
+
+    #[test]
+    fn list_agents_missing_room() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+
+            let payload = ListRequest {
+                room_id: Uuid::new_v4(),
+                offset: None,
+                limit: None,
+            };
+
+            let err = handle_request::<ListHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on agents listing");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
         });
     }
 }
