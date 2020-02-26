@@ -261,15 +261,15 @@ mod tests {
                 let room = shared_helpers::insert_room(&conn);
 
                 // Create events in the room.
-                let events = (1..7)
+                let events = (0..6)
                     .map(|i| {
                         factory::Event::new()
                             .room_id(room.id())
                             .kind("message")
                             .set("messages")
-                            .label(&format!("message-{}", i % 3))
+                            .label(&format!("message-{}", i % 3 + 1))
                             .data(&json!({
-                                "text": format!("message {}, version {}", i % 3, i / 3),
+                                "text": format!("message {}, version {}", i % 3 + 1, i / 3 + 1),
                             }))
                             .occurred_at(i * 1000)
                             .created_by(&agent.agent_id())

@@ -10,7 +10,7 @@ use svc_agent::AgentId;
 use uuid::Uuid;
 
 use super::room::Object as Room;
-use crate::schema::{event, event_state_backward, event_state_forward};
+use crate::schema::event;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -364,40 +364,53 @@ impl<'a> SetStateQuery<'a> {
     }
 
     fn build_query(&'a self) -> event::BoxedQuery<'a, Pg> {
+        use diesel::dsl::sql;
         use diesel::prelude::*;
 
-        let mut q = event::table
+        let sql_direction = match self.direction {
+            Direction::Forward => "asc",
+            Direction::Backward => "desc",
+        };
+
+        let window_sql = format!(
+            "first_value(id) over (
+                partition by room_id, set, label
+                order by occurred_at {direction}, created_at {direction}
+            )",
+            direction = sql_direction
+        );
+
+        let subquery = event::table
+            .select(sql(&window_sql))
             .filter(event::deleted_at.is_null())
             .filter(event::room_id.eq(self.room_id))
             .filter(event::set.eq(self.set))
             .into_boxed();
 
-        match self.direction {
-            Direction::Forward => {
-                q = q.filter(event::occurred_at.gt(self.occurred_at));
+        let query = event::table.filter(event::id.eq_any(subquery)).into_boxed();
 
-                if let Some(last_created_at) = self.last_created_at {
-                    q = q.or_filter(
-                        event::occurred_at
+        if let Some(last_created_at) = self.last_created_at {
+            match self.direction {
+                // `or_filter` doesn't add parenthesis causing wrong query so go the hard way.
+                Direction::Forward => query.filter(
+                    event::occurred_at
+                        .gt(self.occurred_at)
+                        .or(event::occurred_at
                             .eq(self.occurred_at)
-                            .and(event::created_at.gt(last_created_at)),
-                    );
-                }
-
-                q
+                            .and(event::created_at.gt(last_created_at))),
+                ),
+                Direction::Backward => query.filter(
+                    event::occurred_at
+                        .lt(self.occurred_at)
+                        .or(event::occurred_at
+                            .eq(self.occurred_at)
+                            .and(event::created_at.lt(last_created_at))),
+                ),
             }
-            Direction::Backward => {
-                q = q.filter(event::occurred_at.lt(self.occurred_at));
-
-                if let Some(last_created_at) = self.last_created_at {
-                    q = q.or_filter(
-                        event::occurred_at
-                            .eq(self.occurred_at)
-                            .and(event::created_at.lt(last_created_at)),
-                    );
-                }
-
-                q
+        } else {
+            match self.direction {
+                Direction::Forward => query.filter(event::occurred_at.gt(self.occurred_at)),
+                Direction::Backward => query.filter(event::occurred_at.lt(self.occurred_at)),
             }
         }
     }
@@ -405,49 +418,27 @@ impl<'a> SetStateQuery<'a> {
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
         use crate::diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 
-        match self.direction {
+        let mut query = self.build_query();
+
+        query = match self.direction {
             Direction::Forward => {
-                let mut q = self
-                    .build_query()
-                    .inner_join(event_state_forward::table)
-                    .order_by((event::occurred_at.asc(), event::created_at.asc()));
-
-                if let Some(limit) = self.limit {
-                    q = q.limit(limit);
-                }
-
-                q.get_results(conn)
+                query.order_by((event::occurred_at.asc(), event::created_at.asc()))
             }
             Direction::Backward => {
-                let mut q = self
-                    .build_query()
-                    .inner_join(event_state_backward::table)
-                    .order_by((event::occurred_at.desc(), event::created_at.desc()));
-
-                if let Some(limit) = self.limit {
-                    q = q.limit(limit);
-                }
-
-                q.get_results(conn)
+                query.order_by((event::occurred_at.desc(), event::created_at.desc()))
             }
+        };
+
+        if let Some(limit) = self.limit {
+            query = query.limit(limit);
         }
+
+        query.get_results(conn)
     }
 
     pub(crate) fn total_count(&self, conn: &PgConnection) -> Result<i64, Error> {
         use crate::db::total_count::TotalCount;
-        use crate::diesel::QueryDsl;
 
-        match self.direction {
-            Direction::Forward => self
-                .build_query()
-                .inner_join(event_state_forward::table)
-                .total_count()
-                .execute(conn),
-            Direction::Backward => self
-                .build_query()
-                .inner_join(event_state_backward::table)
-                .total_count()
-                .execute(conn),
-        }
+        self.build_query().total_count().execute(conn)
     }
 }
