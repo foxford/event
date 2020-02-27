@@ -1,8 +1,12 @@
 # Event
 
+[![Build Status][travis-img]][travis]
+
 [Documentation][documentation]
 
 [documentation]:https://docs.netology-group.services/event/index.html
+[travis]:https://travis-ci.com/netology-group/event?branch=master
+[travis-img]:https://travis-ci.com/netology-group/event.png?branch=master
 
 ## Development
 
@@ -24,10 +28,8 @@ This will start up the broker on port 1883.
 Also this service requires local postgres with a database created and migrated:
 
 ```bash
-createdb event.dev
-
 export DATABASE_URL=postgres://postgres@localhost/event.dev
-diesel migration run --locked-schema
+diesel database setup
 ```
 
 Set up config from the sample:
@@ -45,7 +47,6 @@ cargo run
 [mqtt-gateway]:http://github.com/netology-group/mqtt-gateway
 [rustup]:https://rustup.rs
 
-
 ## Deployment
 
 This service has a regular deployment to k8s with skaffold.
@@ -55,7 +56,6 @@ For example to deploy the current revision to testing run:
 NAMESPACE=testing ./deploy.init.sh
 IMAGE_TAG=$(git rev-parse --short HEAD) skaffold run -n testing
 ```
-
 
 ## License
 
