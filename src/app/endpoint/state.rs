@@ -19,7 +19,7 @@ const MAX_LIMIT_PER_SET: i64 = 100;
 pub(crate) struct ReadRequest {
     room_id: Uuid,
     sets: Vec<String>,
-    occurred_at: i64,
+    occurred_at: Option<i64>,
     #[serde(default, with = "ts_milliseconds_option")]
     last_created_at: Option<DateTime<Utc>>,
     #[serde(default)]
@@ -84,8 +84,12 @@ impl RequestHandler for ReadHandler {
 
         for set in payload.sets.iter() {
             // Build a query for the particular set state.
-            let mut query = db::event::SetStateQuery::new(room.id(), &set, payload.occurred_at)
-                .direction(payload.direction);
+            let mut query =
+                db::event::SetStateQuery::new(room.id(), &set).direction(payload.direction);
+
+            if let Some(occurred_at) = payload.occurred_at {
+                query = query.occurred_at(occurred_at);
+            }
 
             if let Some(last_created_at) = payload.last_created_at {
                 query = query.last_created_at(last_created_at);
@@ -220,7 +224,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages"), String::from("layout")],
-                occurred_at: Utc::now().timestamp(),
+                occurred_at: None,
                 last_created_at: None,
                 direction: Direction::Backward,
                 limit: None,
@@ -292,7 +296,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages")],
-                occurred_at: Utc::now().timestamp(),
+                occurred_at: None,
                 last_created_at: None,
                 direction: Direction::Backward,
                 limit: Some(2),
@@ -314,7 +318,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages")],
-                occurred_at: state.messages[1].occurred_at(),
+                occurred_at: Some(state.messages[1].occurred_at()),
                 last_created_at: Some(state.messages[1].created_at()),
                 direction: Direction::Backward,
                 limit: Some(2),
@@ -353,7 +357,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages"), String::from("layout")],
-                occurred_at: Utc::now().timestamp(),
+                occurred_at: None,
                 last_created_at: None,
                 direction: Direction::Backward,
                 limit: None,
@@ -376,7 +380,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: Uuid::new_v4(),
                 sets: vec![String::from("messages"), String::from("layout")],
-                occurred_at: Utc::now().timestamp(),
+                occurred_at: None,
                 last_created_at: None,
                 direction: Direction::Backward,
                 limit: None,

@@ -12,7 +12,7 @@ Name            | Type     | Default    | Description
 --------------- | -------- | ---------- | -------------------------------------------------------
 room_id         | string   | _required_ | The room's identifier.
 sets            | [string] | _required_ | Set's names to calculate the state for. Up to 10 elements.
-occurred_at     | int      | _required_ | The number of milliseconds since the room opening to specify the moment of state calculation.
+occurred_at     | int      |        now | The number of milliseconds since the room opening to specify the moment of state calculation.
 last_created_at | int      | _optional_ | `created_at` value of the last seen event for pagination in milliseconds.
 direction       | string   |    forward | Pagination direction: forward | backward.
 limit           | int      |        100 | Limits the number of events in the response.
