@@ -131,6 +131,13 @@ fn main() {
                 .takes_value(true),
         )
         .arg(
+            Arg::with_name("mqtt-password")
+                .short("W")
+                .long("mqtt-password")
+                .help("Broker connection password")
+                .takes_value(true),
+        )
+        .arg(
             Arg::with_name("account-id")
                 .short("A")
                 .long("account-id")
@@ -176,6 +183,7 @@ fn main() {
 
     let mqtt_host = matches.value_of("mqtt-host").unwrap_or("0.0.0.0");
     let mqtt_port = value_t!(matches, "mqtt-port", u16).unwrap_or(1883);
+    let mqtt_password = matches.value_of("password");
 
     let account_id = AccountId::from_str(
         matches
@@ -200,17 +208,18 @@ fn main() {
 
     let pool = Arc::new(ThreadPool::new().expect("Failed to build thread pool"));
 
-    let agent_config_json = format!(
-        "{{
-            \"uri\": \"{}:{}\",
-            \"incomming_message_queue_size\": 1000000,
-            \"outgoing_message_queue_size\": 1000000
-        }}",
-        mqtt_host, mqtt_port
-    );
+    let agent_config_json = json!({
+        "uri": format!("{}:{}", mqtt_host, mqtt_port),
+        "incoming_message_queue_size": 1000000,
+        "outgoing_message_queue_size": 1000000,
+    });
 
-    let agent_config = serde_json::from_str::<AgentConfig>(&agent_config_json)
+    let mut agent_config = serde_json::from_value::<AgentConfig>(agent_config_json)
         .expect("Failed to parse agent config");
+
+    if let Some(ref password) = mqtt_password {
+        agent_config.set_password(password);
+    }
 
     info!("Connecting stats agent.");
     let stats_agent_id = AgentId::new("stats", account_id.clone());
