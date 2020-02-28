@@ -1,7 +1,7 @@
 use std::ops::Bound;
 
 use async_trait::async_trait;
-use chrono::{serde::ts_milliseconds_option, DateTime, Duration, Utc};
+use chrono::{serde::ts_milliseconds_option, DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::Value as JsonValue;
 use svc_agent::Authenticable;
@@ -83,28 +83,10 @@ impl RequestHandler for CreateHandler {
             &author,
         ];
 
-        let cached_authz = context
-            .authz_cache()
-            .get(reqp.as_account_id(), &object, "create")
-            .map_err(|err| svc_error!(ResponseStatus::INTERNAL_SERVER_ERROR, "{}", err))?;
-
-        let authz_time = match cached_authz {
-            Some(true) => Duration::milliseconds(0),
-            Some(false) => return Err(svc_error!(ResponseStatus::FORBIDDEN, "Not authorized")),
-            None => {
-                let result = context
-                    .authz()
-                    .authorize(room.audience(), reqp, object.clone(), "create")
-                    .await;
-
-                context
-                    .authz_cache()
-                    .set(reqp.as_account_id(), &object, "create", result.is_ok())
-                    .map_err(|err| svc_error!(ResponseStatus::INTERNAL_SERVER_ERROR, "{}", err))?;
-
-                result?
-            }
-        };
+        let authz_time = context
+            .authz()
+            .authorize(room.audience(), reqp, object.clone(), "create")
+            .await?;
 
         // Insert event into the DB.
         let occurred_at = match room.time() {

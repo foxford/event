@@ -6,7 +6,6 @@ use svc_authz::ClientMap as Authz;
 use svc_error::Error as SvcError;
 
 use crate::app::task_executor::{AppTaskExecutor, TaskExecutor};
-use crate::authz_cache::AuthzCache;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
 
@@ -14,7 +13,6 @@ use crate::db::ConnectionPool as Db;
 pub(crate) struct AppContext {
     config: Arc<Config>,
     authz: Authz,
-    authz_cache: Arc<AuthzCache>,
     db: Db,
     task_executor: Arc<AppTaskExecutor>,
 }
@@ -23,14 +21,12 @@ impl AppContext {
     pub(crate) fn new(
         config: Config,
         authz: Authz,
-        authz_cache: Arc<AuthzCache>,
         db: Db,
         task_executor: AppTaskExecutor,
     ) -> Self {
         Self {
             config: Arc::new(config),
             authz,
-            authz_cache,
             db,
             task_executor: Arc::new(task_executor),
         }
@@ -39,7 +35,6 @@ impl AppContext {
 
 pub(crate) trait Context: Sync {
     fn authz(&self) -> &Authz;
-    fn authz_cache(&self) -> &AuthzCache;
     fn config(&self) -> &Config;
     fn db(&self) -> &Db;
 
@@ -52,10 +47,6 @@ pub(crate) trait Context: Sync {
 impl Context for AppContext {
     fn authz(&self) -> &Authz {
         &self.authz
-    }
-
-    fn authz_cache(&self) -> &AuthzCache {
-        &self.authz_cache
     }
 
     fn config(&self) -> &Config {

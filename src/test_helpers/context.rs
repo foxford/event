@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::sync::Arc;
 
 use serde_json::json;
 use svc_agent::mqtt::IntoPublishableDump;
@@ -7,7 +6,6 @@ use svc_authz::ClientMap as Authz;
 use svc_error::Error as SvcError;
 
 use crate::app::context::Context;
-use crate::authz_cache::AuthzCache;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
 
@@ -31,10 +29,6 @@ fn build_config() -> Config {
         },
         "authn": {},
         "authz": {},
-        "authz_cache": {
-            "lifetime": 600,
-            "vacuum_period": 3600,
-        },
         "mqtt": {
             "uri": "mqtt://0.0.0.0:1883",
             "clean_session": false,
@@ -50,19 +44,16 @@ fn build_config() -> Config {
 pub(crate) struct TestContext {
     config: Config,
     authz: Authz,
-    authz_cache: Arc<AuthzCache>,
     db: TestDb,
 }
 
 impl TestContext {
     pub(crate) fn new(db: TestDb, authz: TestAuthz) -> Self {
         let config = build_config();
-        let authz_cache = AuthzCache::new(&config.authz_cache);
 
         Self {
             config,
             authz: authz.into(),
-            authz_cache: Arc::new(authz_cache),
             db,
         }
     }
@@ -71,10 +62,6 @@ impl TestContext {
 impl Context for TestContext {
     fn authz(&self) -> &Authz {
         &self.authz
-    }
-
-    fn authz_cache(&self) -> &AuthzCache {
-        &self.authz_cache
     }
 
     fn config(&self) -> &Config {
