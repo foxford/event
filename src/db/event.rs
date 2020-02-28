@@ -327,21 +327,28 @@ impl<'a> DeleteQuery<'a> {
 pub(crate) struct SetStateQuery<'a> {
     room_id: Uuid,
     set: &'a str,
-    occurred_at: i64,
+    occurred_at: Option<i64>,
     last_created_at: Option<DateTime<Utc>>,
     direction: Direction,
     limit: Option<i64>,
 }
 
 impl<'a> SetStateQuery<'a> {
-    pub(crate) fn new(room_id: Uuid, set: &'a str, occurred_at: i64) -> Self {
+    pub(crate) fn new(room_id: Uuid, set: &'a str) -> Self {
         Self {
             room_id,
             set,
-            occurred_at,
+            occurred_at: None,
             last_created_at: None,
             direction: Default::default(),
             limit: None,
+        }
+    }
+
+    pub(crate) fn occurred_at(self, occurred_at: i64) -> Self {
+        Self {
+            occurred_at: Some(occurred_at),
+            ..self
         }
     }
 
@@ -389,29 +396,29 @@ impl<'a> SetStateQuery<'a> {
 
         let query = event::table.filter(event::id.eq_any(subquery)).into_boxed();
 
-        if let Some(last_created_at) = self.last_created_at {
-            match self.direction {
-                // `or_filter` doesn't add parenthesis causing wrong query so go the hard way.
-                Direction::Forward => query.filter(
-                    event::occurred_at
-                        .gt(self.occurred_at)
-                        .or(event::occurred_at
-                            .eq(self.occurred_at)
+        if let Some(occurred_at) = self.occurred_at {
+            if let Some(last_created_at) = self.last_created_at {
+                match self.direction {
+                    // `or_filter` doesn't add parenthesis causing wrong query so go the hard way.
+                    Direction::Forward => query.filter(
+                        event::occurred_at.gt(occurred_at).or(event::occurred_at
+                            .eq(occurred_at)
                             .and(event::created_at.gt(last_created_at))),
-                ),
-                Direction::Backward => query.filter(
-                    event::occurred_at
-                        .lt(self.occurred_at)
-                        .or(event::occurred_at
-                            .eq(self.occurred_at)
+                    ),
+                    Direction::Backward => query.filter(
+                        event::occurred_at.lt(occurred_at).or(event::occurred_at
+                            .eq(occurred_at)
                             .and(event::created_at.lt(last_created_at))),
-                ),
+                    ),
+                }
+            } else {
+                match self.direction {
+                    Direction::Forward => query.filter(event::occurred_at.gt(occurred_at)),
+                    Direction::Backward => query.filter(event::occurred_at.lt(occurred_at)),
+                }
             }
         } else {
-            match self.direction {
-                Direction::Forward => query.filter(event::occurred_at.gt(self.occurred_at)),
-                Direction::Backward => query.filter(event::occurred_at.lt(self.occurred_at)),
-            }
+            query
         }
     }
 

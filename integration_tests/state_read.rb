@@ -74,12 +74,9 @@ assert response.properties['status'] == '201'
 
 # Now we have 3 messages and the second of them has 2 versions.
 # Read the first page of the actual state.
-occurred_at = Time.now.to_i * 1000 - room_created_at
-
 response = conn.make_request 'state.read', to: event, payload: {
   room_id: room_id,
   sets: %w(messages),
-  occurred_at: occurred_at,
   direction: 'backward',
   limit: 2,
 }
