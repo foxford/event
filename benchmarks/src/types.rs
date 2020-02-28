@@ -53,7 +53,6 @@ pub struct StateReadRequest {
     pub kind: String,
     pub sets: Vec<String>,
     pub occurred_at: i64,
-    pub direction: String,
     pub limit: usize,
 }
 

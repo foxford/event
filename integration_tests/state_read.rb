@@ -77,7 +77,6 @@ assert response.properties['status'] == '201'
 response = conn.make_request 'state.read', to: event, payload: {
   room_id: room_id,
   sets: %w(messages),
-  direction: 'backward',
   limit: 2,
 }
 
@@ -95,7 +94,6 @@ response = conn.make_request 'state.read', to: event, payload: {
   sets: %w(messages),
   occurred_at: occurred_at,
   last_created_at: response.payload['messages'][1]['created_at'],
-  direction: 'backward',
   limit: 2,
 }
 

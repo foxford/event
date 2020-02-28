@@ -217,7 +217,6 @@ fn main() {
         kind: String::from("message"),
         sets,
         occurred_at: Utc::now().timestamp(),
-        direction: String::from("backward"),
         limit: labels_count,
     };
 

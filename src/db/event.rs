@@ -330,7 +330,6 @@ pub(crate) struct SetStateQuery<'a> {
     set: &'a str,
     occurred_at: Option<i64>,
     last_created_at: Option<DateTime<Utc>>,
-    direction: Direction,
     limit: Option<i64>,
 }
 
@@ -341,7 +340,6 @@ impl<'a> SetStateQuery<'a> {
             set,
             occurred_at: None,
             last_created_at: None,
-            direction: Default::default(),
             limit: None,
         }
     }
@@ -360,10 +358,6 @@ impl<'a> SetStateQuery<'a> {
         }
     }
 
-    pub(crate) fn direction(self, direction: Direction) -> Self {
-        Self { direction, ..self }
-    }
-
     pub(crate) fn limit(self, limit: i64) -> Self {
         Self {
             limit: Some(limit),
@@ -375,21 +369,11 @@ impl<'a> SetStateQuery<'a> {
         use diesel::dsl::sql;
         use diesel::prelude::*;
 
-        let sql_direction = match self.direction {
-            Direction::Forward => "asc",
-            Direction::Backward => "desc",
-        };
-
-        let window_sql = format!(
-            "first_value(id) over (
-                partition by room_id, set, label
-                order by occurred_at {direction}, created_at {direction}
-            )",
-            direction = sql_direction
-        );
-
         let subquery = event::table
-            .select(sql(&window_sql))
+            .select(sql("first_value(id) over (
+                partition by room_id, set, label
+                order by occurred_at desc, created_at desc
+            )"))
             .filter(event::deleted_at.is_null())
             .filter(event::room_id.eq(self.room_id))
             .filter(event::set.eq(self.set))
@@ -399,24 +383,14 @@ impl<'a> SetStateQuery<'a> {
 
         if let Some(occurred_at) = self.occurred_at {
             if let Some(last_created_at) = self.last_created_at {
-                match self.direction {
-                    // `or_filter` doesn't add parenthesis causing wrong query so go the hard way.
-                    Direction::Forward => query.filter(
-                        event::occurred_at.gt(occurred_at).or(event::occurred_at
-                            .eq(occurred_at)
-                            .and(event::created_at.gt(last_created_at))),
-                    ),
-                    Direction::Backward => query.filter(
-                        event::occurred_at.lt(occurred_at).or(event::occurred_at
-                            .eq(occurred_at)
-                            .and(event::created_at.lt(last_created_at))),
-                    ),
-                }
+                // `or_filter` doesn't add parenthesis causing wrong query so go the hard way.
+                query.filter(
+                    event::occurred_at.lt(occurred_at).or(event::occurred_at
+                        .eq(occurred_at)
+                        .and(event::created_at.lt(last_created_at))),
+                )
             } else {
-                match self.direction {
-                    Direction::Forward => query.filter(event::occurred_at.gt(occurred_at)),
-                    Direction::Backward => query.filter(event::occurred_at.lt(occurred_at)),
-                }
+                query.filter(event::occurred_at.lt(occurred_at))
             }
         } else {
             query
@@ -426,16 +400,9 @@ impl<'a> SetStateQuery<'a> {
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
         use crate::diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
 
-        let mut query = self.build_query();
-
-        query = match self.direction {
-            Direction::Forward => {
-                query.order_by((event::occurred_at.asc(), event::created_at.asc()))
-            }
-            Direction::Backward => {
-                query.order_by((event::occurred_at.desc(), event::created_at.desc()))
-            }
-        };
+        let mut query = self
+            .build_query()
+            .order_by((event::occurred_at.desc(), event::created_at.desc()));
 
         if let Some(limit) = self.limit {
             query = query.limit(limit);

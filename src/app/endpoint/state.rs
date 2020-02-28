@@ -22,8 +22,6 @@ pub(crate) struct ReadRequest {
     occurred_at: Option<i64>,
     #[serde(default, with = "ts_milliseconds_option")]
     last_created_at: Option<DateTime<Utc>>,
-    #[serde(default)]
-    direction: db::event::Direction,
     limit: Option<i64>,
 }
 
@@ -84,8 +82,7 @@ impl RequestHandler for ReadHandler {
 
         for set in payload.sets.iter() {
             // Build a query for the particular set state.
-            let mut query =
-                db::event::SetStateQuery::new(room.id(), &set).direction(payload.direction);
+            let mut query = db::event::SetStateQuery::new(room.id(), &set);
 
             if let Some(occurred_at) = payload.occurred_at {
                 query = query.occurred_at(occurred_at);
@@ -161,7 +158,7 @@ mod tests {
     use serde_derive::Deserialize;
     use serde_json::json;
 
-    use crate::db::event::{Direction, Object as Event};
+    use crate::db::event::Object as Event;
     use crate::test_helpers::prelude::*;
 
     use super::*;
@@ -226,7 +223,6 @@ mod tests {
                 sets: vec![String::from("messages"), String::from("layout")],
                 occurred_at: None,
                 last_created_at: None,
-                direction: Direction::Backward,
                 limit: None,
             };
 
@@ -298,7 +294,6 @@ mod tests {
                 sets: vec![String::from("messages")],
                 occurred_at: None,
                 last_created_at: None,
-                direction: Direction::Backward,
                 limit: Some(2),
             };
 
@@ -320,7 +315,6 @@ mod tests {
                 sets: vec![String::from("messages")],
                 occurred_at: Some(state.messages[1].occurred_at()),
                 last_created_at: Some(state.messages[1].created_at()),
-                direction: Direction::Backward,
                 limit: Some(2),
             };
 
@@ -359,7 +353,6 @@ mod tests {
                 sets: vec![String::from("messages"), String::from("layout")],
                 occurred_at: None,
                 last_created_at: None,
-                direction: Direction::Backward,
                 limit: None,
             };
 
@@ -382,7 +375,6 @@ mod tests {
                 sets: vec![String::from("messages"), String::from("layout")],
                 occurred_at: None,
                 last_created_at: None,
-                direction: Direction::Backward,
                 limit: None,
             };
 
