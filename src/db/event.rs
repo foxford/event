@@ -20,6 +20,7 @@ use crate::schema::event;
 pub(crate) struct Object {
     id: Uuid,
     room_id: Uuid,
+    #[serde(rename = "type")]
     kind: String,
     set: String,
     #[serde(skip_serializing_if = "Option::is_none")]
