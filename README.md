@@ -6,12 +6,7 @@
 
 ## Development
 
-This services requires both [mqtt-gateway][mqtt-gateway] and legacy [events-api][events-api] service.
-
-The legacy is needed because currently this service is being developed as an adapter to the legacy
-one but in the future all of its functionality will be reimplemented here.
-
-For development convenience all of the dependiences are wrapped into a docker-compose project:
+Start the broker:
 
 ```bash
 export COMPOSE_PROJECT_NAME=event
@@ -19,9 +14,7 @@ export COMPOSE_FILE=docker/docker-compose
 docker-compose up
 ```
 
-This will start up the broker on port 1883.
-
-Also this service requires local postgres with a database created and migrated:
+Set up database:
 
 ```bash
 createdb event.dev
@@ -42,7 +35,6 @@ The you can build and run the service locally having stable Rust [installed][rus
 cargo run
 ```
 
-[mqtt-gateway]:http://github.com/netology-group/mqtt-gateway
 [rustup]:https://rustup.rs
 
 
