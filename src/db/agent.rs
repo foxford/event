@@ -34,6 +34,13 @@ pub(crate) struct Object {
     created_at: DateTime<Utc>,
 }
 
+impl Object {
+    #[cfg(test)]
+    pub(crate) fn status(&self) -> Status {
+        self.status
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct ListQuery<'a> {
@@ -127,6 +134,7 @@ pub(crate) struct InsertQuery<'a> {
     id: Option<Uuid>,
     agent_id: &'a AgentId,
     room_id: Uuid,
+    status: Status,
 }
 
 impl<'a> InsertQuery<'a> {
@@ -135,7 +143,13 @@ impl<'a> InsertQuery<'a> {
             id: None,
             agent_id,
             room_id,
+            status: Status::InProgress,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn status(self, status: Status) -> Self {
+        Self { status, ..self }
     }
 
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
@@ -146,7 +160,7 @@ impl<'a> InsertQuery<'a> {
             .values(self)
             .on_conflict((agent_id, room_id))
             .do_update()
-            .set(status.eq(Status::InProgress))
+            .set(status.eq(self.status))
             .get_result(conn)
     }
 }

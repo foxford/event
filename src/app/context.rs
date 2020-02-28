@@ -1,64 +1,75 @@
+use std::future::Future;
 use std::sync::Arc;
 
-use futures::executor::ThreadPool;
-use svc_agent::mqtt::Agent;
+use svc_agent::mqtt::IntoPublishableDump;
 use svc_authz::ClientMap as Authz;
+use svc_error::Error as SvcError;
 
+use crate::app::task_executor::{AppTaskExecutor, TaskExecutor};
 use crate::authz_cache::AuthzCache;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
 
 #[derive(Clone)]
-pub(crate) struct Context {
-    agent: Agent,
+pub(crate) struct AppContext {
     config: Arc<Config>,
     authz: Authz,
     authz_cache: Arc<AuthzCache>,
     db: Db,
-    thread_pool: Arc<ThreadPool>,
+    task_executor: Arc<AppTaskExecutor>,
 }
 
-#[allow(dead_code)]
-impl Context {
+impl AppContext {
     pub(crate) fn new(
-        agent: Agent,
         config: Config,
         authz: Authz,
         authz_cache: Arc<AuthzCache>,
         db: Db,
-        thread_pool: Arc<ThreadPool>,
+        task_executor: AppTaskExecutor,
     ) -> Self {
         Self {
-            agent,
             config: Arc::new(config),
             authz,
             authz_cache,
             db,
-            thread_pool,
+            task_executor: Arc::new(task_executor),
         }
     }
+}
 
-    pub(crate) fn agent(&self) -> &Agent {
-        &self.agent
-    }
+pub(crate) trait Context: Sync {
+    fn authz(&self) -> &Authz;
+    fn authz_cache(&self) -> &AuthzCache;
+    fn config(&self) -> &Config;
+    fn db(&self) -> &Db;
 
-    pub(crate) fn authz(&self) -> &Authz {
+    fn run_task(
+        &self,
+        task: impl Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'static,
+    ) -> Result<(), SvcError>;
+}
+
+impl Context for AppContext {
+    fn authz(&self) -> &Authz {
         &self.authz
     }
 
-    pub(crate) fn authz_cache(&self) -> &AuthzCache {
+    fn authz_cache(&self) -> &AuthzCache {
         &self.authz_cache
     }
 
-    pub(crate) fn config(&self) -> &Config {
+    fn config(&self) -> &Config {
         &self.config
     }
 
-    pub(crate) fn db(&self) -> &Db {
+    fn db(&self) -> &Db {
         &self.db
     }
 
-    pub(crate) fn thread_pool(&self) -> Arc<ThreadPool> {
-        self.thread_pool.clone()
+    fn run_task(
+        &self,
+        task: impl Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'static,
+    ) -> Result<(), SvcError> {
+        self.task_executor.run(task)
     }
 }

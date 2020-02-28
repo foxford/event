@@ -4,6 +4,7 @@ use std::env::var;
 
 const TIMEOUT: u64 = 60000;
 
+#[derive(Clone)]
 pub(crate) struct TestDb {
     connection_pool: ConnectionPool,
 }

@@ -6,7 +6,6 @@ use svc_agent::mqtt::{
     IncomingRequestProperties, IntoPublishableDump, OutgoingEvent, OutgoingEventProperties,
     OutgoingResponse, ResponseStatus, ShortTermTimingProperties,
 };
-use svc_error::Error as SvcError;
 
 use crate::app::API_VERSION;
 
@@ -26,23 +25,6 @@ pub(crate) fn build_response(
     let props = reqp.to_response(status, timing);
     let resp = OutgoingResponse::unicast(payload, props, reqp, API_VERSION);
     Box::new(resp) as Box<dyn IntoPublishableDump>
-}
-
-pub(crate) fn build_error_response(
-    status: ResponseStatus,
-    title: &str,
-    detail: &str,
-    reqp: &IncomingRequestProperties,
-    start_timestamp: DateTime<Utc>,
-    maybe_authz_time: Option<Duration>,
-) -> Box<dyn IntoPublishableDump> {
-    let error = SvcError::builder()
-        .status(status)
-        .kind(reqp.method(), title)
-        .detail(detail)
-        .build();
-
-    build_response(status, error, reqp, start_timestamp, maybe_authz_time)
 }
 
 pub(crate) fn build_notification(

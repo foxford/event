@@ -6,8 +6,8 @@ use svc_agent::mqtt::{IncomingRequestProperties, IntoPublishableDump, ResponseSt
 use svc_error::Error as SvcError;
 use uuid::Uuid;
 
+use crate::app::context::Context;
 use crate::app::endpoint::{helpers, RequestHandler};
-use crate::app::Context;
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -34,8 +34,8 @@ impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
     const ERROR_TITLE: &'static str = "Failed to read state";
 
-    async fn handle(
-        context: &Context,
+    async fn handle<C: Context>(
+        context: &C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
@@ -147,5 +147,246 @@ impl RequestHandler for ReadHandler {
             start_timestamp,
             Some(authz_time),
         )])
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#[cfg(test)]
+mod tests {
+    use serde_derive::Deserialize;
+    use serde_json::json;
+
+    use crate::db::event::{Direction, Object as Event};
+    use crate::test_helpers::prelude::*;
+
+    use super::*;
+
+    ///////////////////////////////////////////////////////////////////////////
+
+    #[derive(Deserialize)]
+    struct State {
+        messages: Vec<Event>,
+        layout: Event,
+    }
+
+    #[test]
+    fn read_state_multiple_sets() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let (room, message_event, layout_event) = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                let room = shared_helpers::insert_room(&conn);
+
+                // Create events in the room.
+                let message_event = factory::Event::new()
+                    .room_id(room.id())
+                    .kind("message")
+                    .set("messages")
+                    .label("message-1")
+                    .data(&json!({ "text": "hello", }))
+                    .occurred_at(1000)
+                    .created_by(&agent.agent_id())
+                    .insert(&conn);
+
+                let layout_event = factory::Event::new()
+                    .room_id(room.id())
+                    .kind("layout")
+                    .set("layout")
+                    .data(&json!({ "name": "presentation", }))
+                    .occurred_at(2000)
+                    .created_by(&agent.agent_id())
+                    .insert(&conn);
+
+                (room, message_event, layout_event)
+            };
+
+            // Allow agent to list events in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id, "events"];
+            authz.allow(agent.account_id(), object, "list");
+
+            // Make state.read request.
+            let context = TestContext::new(db, authz);
+
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages"), String::from("layout")],
+                occurred_at: Utc::now().timestamp(),
+                last_created_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            };
+
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect("State reading failed");
+
+            // Assert last two events response.
+            let (state, respp) = find_response::<State>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(state.messages.len(), 1);
+            assert_eq!(state.messages[0].id(), message_event.id());
+            assert_eq!(state.layout.id(), layout_event.id());
+        });
+    }
+
+    #[derive(Deserialize)]
+    struct CollectionState {
+        messages: Vec<Event>,
+        has_next: bool,
+    }
+
+    #[test]
+    fn read_state_collection() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let (room, db_events) = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                let room = shared_helpers::insert_room(&conn);
+
+                // Create events in the room.
+                let events = (1..7)
+                    .map(|i| {
+                        factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .set("messages")
+                            .label(&format!("message-{}", i % 3))
+                            .data(&json!({
+                                "text": format!("message {}, version {}", i % 3, i / 3),
+                            }))
+                            .occurred_at(i * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&conn)
+                    })
+                    .collect::<Vec<Event>>();
+
+                (room, events)
+            };
+
+            // Allow agent to list events in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id, "events"];
+            authz.allow(agent.account_id(), object, "list");
+
+            // Make state.read request.
+            let context = TestContext::new(db, authz);
+
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages")],
+                occurred_at: Utc::now().timestamp(),
+                last_created_at: None,
+                direction: Direction::Backward,
+                limit: Some(2),
+            };
+
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect("State reading failed (page 1)");
+
+            // Assert last two events response.
+            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(state.messages.len(), 2);
+            assert_eq!(state.messages[0].id(), db_events[5].id());
+            assert_eq!(state.messages[1].id(), db_events[4].id());
+            assert_eq!(state.has_next, true);
+
+            // Request the next page.
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages")],
+                occurred_at: state.messages[1].occurred_at(),
+                last_created_at: Some(state.messages[1].created_at()),
+                direction: Direction::Backward,
+                limit: Some(2),
+            };
+
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect("State reading failed (page 2)");
+
+            // Assert the first event.
+            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(state.messages.len(), 1);
+            assert_eq!(state.messages[0].id(), db_events[3].id());
+            assert_eq!(state.has_next, false);
+        });
+    }
+
+    #[test]
+    fn read_state_not_authorized() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                shared_helpers::insert_room(&conn)
+            };
+
+            let context = TestContext::new(db, TestAuthz::new());
+
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages"), String::from("layout")],
+                occurred_at: Utc::now().timestamp(),
+                last_created_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            };
+
+            let err = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success reading state");
+
+            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+        });
+    }
+
+    #[test]
+    fn read_state_missing_room() {
+        futures::executor::block_on(async {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+
+            let payload = ReadRequest {
+                room_id: Uuid::new_v4(),
+                sets: vec![String::from("messages"), String::from("layout")],
+                occurred_at: Utc::now().timestamp(),
+                last_created_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            };
+
+            let err = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect_err("Unexpected success reading state");
+
+            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+        });
     }
 }

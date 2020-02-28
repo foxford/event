@@ -2,7 +2,7 @@ use std::ops::Bound;
 
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use diesel::{pg::PgConnection, result::Error};
-use serde_derive::Serialize;
+use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use uuid::Uuid;
 
@@ -25,7 +25,7 @@ pub(crate) fn now() -> Time {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, Serialize, Identifiable, Associations, Queryable)]
+#[derive(Clone, Debug, Deserialize, Serialize, Identifiable, Associations, Queryable)]
 #[table_name = "room"]
 #[belongs_to(Object, foreign_key = "source_room_id")]
 pub(crate) struct Object {
