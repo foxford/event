@@ -12,7 +12,6 @@ pub(crate) struct OutgoingEnvelope {
 
 impl OutgoingEnvelope {
     pub(crate) fn payload<P: DeserializeOwned>(&self) -> P {
-        println!("{}", self.payload);
         serde_json::from_str::<P>(&self.payload).expect("Failed to parse payload")
     }
 
