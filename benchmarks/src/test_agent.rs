@@ -46,7 +46,7 @@ impl TestAgent {
     ) -> Self {
         // Start agent.
         let (mut agent, rx) = AgentBuilder::new(id.clone(), API_VERSION)
-            .connection_mode(ConnectionMode::Service)
+            .connection_mode(ConnectionMode::Default)
             .start(&config)
             .expect("Failed to start agent");
 
@@ -158,13 +158,14 @@ impl TestAgent {
         correlation_data: &str,
         payload: P,
     ) -> OutgoingRequest<P> {
-        let reqp = OutgoingRequestProperties::new(
+        let mut reqp = OutgoingRequestProperties::new(
             method,
             &self.inbox_topic,
             correlation_data,
             ShortTermTimingProperties::new(Utc::now()),
         );
 
+        reqp.set_local_timestamp(Utc::now());
         OutgoingRequest::multicast(payload, reqp, &self.service_account_id)
     }
 

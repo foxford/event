@@ -263,6 +263,7 @@ dependencies = [
  "futures 0.3.4",
  "futures-timer",
  "log",
+ "quantiles",
  "rand 0.7.3",
  "serde",
  "serde_derive",
@@ -725,6 +726,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "quantiles"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c10fa813fb26fb6c321a6f3085b5ade4cb4730d08d0b9e70a3759136940957f2"
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1106,8 +1113,6 @@ checksum = "8ea5119cdb4c55b55d432abb513a0429384878c15dde60cc77b1c99de1a95a6a"
 [[package]]
 name = "svc-agent"
 version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "534321e1b0cbbca7dd810923d768d71279ba482e1930c1312b6f4db08aaedf41"
 dependencies = [
  "base64",
  "chrono",

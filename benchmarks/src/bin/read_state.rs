@@ -89,7 +89,7 @@ fn main() {
 
     let mqtt_host = matches.value_of("mqtt-host").unwrap_or("0.0.0.0");
     let mqtt_port = value_t!(matches, "mqtt-port", u16).unwrap_or(1883);
-    let mqtt_password = matches.value_of("password");
+    let mqtt_password = matches.value_of("mqtt-password");
 
     let account_id = AccountId::from_str(
         matches
@@ -117,7 +117,6 @@ fn main() {
     let agent_config_json = json!({
         "uri": format!("{}:{}", mqtt_host, mqtt_port),
     });
-
 
     let mut agent_config = serde_json::from_value::<AgentConfig>(agent_config_json)
         .expect("Failed to parse agent config");

@@ -8,6 +8,7 @@ use chrono::Utc;
 use clap::{value_t, App, Arg};
 use futures::executor::ThreadPool;
 use log::info;
+use quantiles::ckms::CKMS;
 use serde_json::json;
 use svc_agent::{
     mqtt::{
@@ -22,24 +23,26 @@ use event_benchmark::{types::*, Interval, TestAgent};
 
 ///////////////////////////////////////////////////////////////////////////////
 
+const CKMS_ERROR: f64 = 0.001;
+
 /// Listens to event.create events in all rooms and remembers their processing times.
 struct StatsAgent {
     is_running: AtomicBool,
-    processing_times: Mutex<Vec<usize>>,
+    processing_times: Mutex<CKMS<u32>>,
 }
 
 impl StatsAgent {
     fn new() -> Self {
         Self {
             is_running: AtomicBool::new(false),
-            processing_times: Mutex::new(vec![]),
+            processing_times: Mutex::new(CKMS::<u32>::new(CKMS_ERROR)),
         }
     }
 
     async fn start(&self, config: &AgentConfig, id: AgentId, service_account_id: &AccountId) {
         // Start agent.
         let (mut agent, rx) = AgentBuilder::new(id.clone(), API_VERSION)
-            .connection_mode(ConnectionMode::Default)
+            .connection_mode(ConnectionMode::Observer)
             .start(&config)
             .expect("Failed to start agent");
 
@@ -74,7 +77,7 @@ impl StatsAgent {
                             .expect("Missing broker timestamp in event properties")
                             .as_str()
                             .expect("Failed to cast broker timestamp as string")
-                            .parse::<usize>()
+                            .parse::<u64>()
                             .expect("Failed to parse broker timestamp");
 
                         let initial_timestamp = evp_value
@@ -82,10 +85,14 @@ impl StatsAgent {
                             .expect("Missing initial timestamp in event properties")
                             .as_str()
                             .expect("Failed to cast initial timestamp as string")
-                            .parse::<usize>()
+                            .parse::<u64>()
                             .expect("Failed to parse initial timestamp");
 
-                        processing_times.push(broker_timestamp - initial_timestamp);
+                        if initial_timestamp > broker_timestamp {
+                            println!("{} {}", broker_timestamp, initial_timestamp);
+                        }
+
+                        (*processing_times).insert((broker_timestamp - initial_timestamp) as u32);
                     }
                 }
             }
@@ -98,14 +105,14 @@ impl StatsAgent {
 
     fn with_processing_times<F, R>(&self, fun: F) -> R
     where
-        F: FnOnce(&[usize]) -> R,
+        F: FnOnce(&CKMS<u32>) -> R,
     {
         let processing_times = self
             .processing_times
             .lock()
             .expect("Failed to obtain lock because stats agent failed during data collection");
 
-        fun(&*processing_times.as_slice())
+        fun(&*processing_times)
     }
 }
 
@@ -141,7 +148,7 @@ fn main() {
             Arg::with_name("account-id")
                 .short("A")
                 .long("account-id")
-                .help("Account ID with which agents connect")
+                .help("Account ID with which agents connect. Must be allowed to connect in observer mode.")
                 .takes_value(true),
         )
         .arg(
@@ -149,6 +156,13 @@ fn main() {
                 .short("S")
                 .long("service-account-id")
                 .help("Event service account ID")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("audience")
+                .short("a")
+                .long("audience")
+                .help("Audience to create rooms within. Default is the audience from account-id.")
                 .takes_value(true),
         )
         .arg(
@@ -160,7 +174,7 @@ fn main() {
         )
         .arg(
             Arg::with_name("agents")
-                .short("a")
+                .short("u")
                 .long("agents")
                 .help("Number of agents per room")
                 .takes_value(true),
@@ -183,7 +197,7 @@ fn main() {
 
     let mqtt_host = matches.value_of("mqtt-host").unwrap_or("0.0.0.0");
     let mqtt_port = value_t!(matches, "mqtt-port", u16).unwrap_or(1883);
-    let mqtt_password = matches.value_of("password");
+    let mqtt_password = matches.value_of("mqtt-password");
 
     let account_id = AccountId::from_str(
         matches
@@ -198,6 +212,10 @@ fn main() {
             .unwrap_or("event.dev.svc.example.org"),
     )
     .expect("Failed to parse service account ID");
+
+    let audience = matches
+        .value_of("audience")
+        .unwrap_or_else(|| account_id.audience());
 
     let rooms_count = value_t!(matches, "rooms", usize).unwrap_or(1);
     let agents_per_room = value_t!(matches, "agents", usize).unwrap_or(1);
@@ -268,7 +286,7 @@ fn main() {
             let response = room_agents[0].request::<RoomCreateRequest, RoomCreateResponse>(
                 "room.create",
                 RoomCreateRequest {
-                    audience: account_id.audience().to_owned(),
+                    audience: audience.to_owned(),
                     time: (now, now + ROOM_DURATION),
                     tags: json!({ "benchmark": tag }),
                 },
@@ -363,9 +381,12 @@ fn main() {
 
     // Calculate and print results.
     stats_agent.with_processing_times(|times| {
-        if times.len() > 0 {
-            let avg = times.iter().fold(0, |acc, x| acc + x) / times.len();
-            println!("Average processing time: {}", avg);
+        if times.count() > 0 {
+            for q in vec![0.5, 0.75, 0.9, 0.95, 0.99, 1.0] {
+                if let Some((a, b)) = times.query(q) {
+                    println!("Q{}: {}, {}", q, a, b);
+                }
+            }
         } else {
             println!("No events captured");
         }
