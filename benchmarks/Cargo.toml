@@ -20,5 +20,3 @@ svc-agent = "0.11"
 quantiles = "0.7.1"
 uuid = { version = "0.6", features = ["v4", "serde"] }
 
-[patch.crates-io]
-svc-agent = { path = "../../svc-agent-rs" }
