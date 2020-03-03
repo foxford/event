@@ -17,4 +17,6 @@ serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 svc-agent = "0.11"
+quantiles = "0.7.1"
 uuid = { version = "0.6", features = ["v4", "serde"] }
+
