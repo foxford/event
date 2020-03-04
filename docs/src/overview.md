@@ -12,7 +12,7 @@ All online [agents](api/agent.md#agent) in the room get notified on these
 events as they happen.
 
 One can retrieve events [history](api/event/list.md) or the aggregated room
-[state](api/state.md#state) on a certain point of time.
+[state](api/state.md#state) at a certain point in time.
 
 A tenant can [adjust](api/room/adjust.md) the real-time room
 by applying segments ([conference][conference] service) and stream editing events (created by a moderator) during the translation once it finished.

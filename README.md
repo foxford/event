@@ -14,7 +14,7 @@ Start the broker:
 
 ```bash
 export COMPOSE_PROJECT_NAME=event
-export COMPOSE_FILE=docker/docker-compose
+export COMPOSE_FILE=docker/docker-compose.yml
 docker-compose up
 ```
 
