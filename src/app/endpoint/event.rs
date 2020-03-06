@@ -90,9 +90,9 @@ impl RequestHandler for CreateHandler {
 
         // Insert event into the DB.
         let occurred_at = match room.time() {
-            (Bound::Included(opened_at), _) => {
-                (Utc::now() - opened_at.to_owned()).num_milliseconds()
-            }
+            (Bound::Included(opened_at), _) => (Utc::now() - opened_at.to_owned())
+                .num_nanoseconds()
+                .unwrap_or(std::i64::MAX),
             _ => {
                 return Err(svc_error!(
                     ResponseStatus::UNPROCESSABLE_ENTITY,

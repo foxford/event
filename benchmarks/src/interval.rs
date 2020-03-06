@@ -12,7 +12,7 @@ pub struct Interval {
 impl Interval {
     pub fn new(rate: u64) -> Self {
         Self {
-            max_duration: StdDuration::from_nanos(1000000000 / rate),
+            max_duration: StdDuration::from_nanos(1_000_000_000 / rate),
             is_running: AtomicBool::new(true),
         }
     }

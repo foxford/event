@@ -12,6 +12,8 @@ use crate::db::event::{
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::ConnectionPool as Db;
 
+const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
+
 pub(crate) fn call(
     db: &Db,
     real_time_room: &Room,
@@ -41,19 +43,34 @@ pub(crate) fn call(
         _ => bail!("invalid duration for room = '{}'", real_time_room.id()),
     };
 
+    // Convert segments to nanoseconds.
+    let mut nano_segments = Vec::with_capacity(segments.len());
+
+    for segment in segments {
+        match segment {
+            (Bound::Included(start), Bound::Excluded(stop)) => {
+                let nano_start = Bound::Included(start * NANOSECONDS_IN_MILLISECOND);
+                let nano_stop = Bound::Excluded(stop * NANOSECONDS_IN_MILLISECOND);
+                nano_segments.push((nano_start, nano_stop));
+            }
+            _ => bail!("invalid segment"),
+        }
+    }
+
     // Invert segments to gaps.
-    let segment_gaps = invert_segments(&segments, room_duration)?;
+    let segment_gaps = invert_segments(&nano_segments, room_duration)?;
 
     // Calculate the difference between opening rooms in conference and event services.
     let room_opening_diff = (room_opening - started_at).num_milliseconds();
 
     // Create original room with events shifted according to segments.
     let original_room = create_room(&conn, &real_time_room)?;
+
     clone_events(
         &conn,
         &original_room,
         &segment_gaps,
-        offset - room_opening_diff,
+        (offset - room_opening_diff) * NANOSECONDS_IN_MILLISECOND,
     )?;
 
     ///////////////////////////////////////////////////////////////////////////
@@ -98,7 +115,12 @@ pub(crate) fn call(
 
     let mut modified_segments = invert_segments(&bounded_cut_gaps, room_duration)?
         .into_iter()
-        .map(|(start, stop)| (Bound::Included(start), Bound::Excluded(stop)))
+        .map(|(start, stop)| {
+            (
+                Bound::Included(start / NANOSECONDS_IN_MILLISECOND),
+                Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
+            )
+        })
         .collect::<Vec<Segment>>();
 
     // Correct the last segment stop to be a sum of initial segments' lengths.
@@ -176,7 +198,7 @@ const SHIFT_CLONE_EVENTS_SQL: &'static str = r#"
 "#;
 
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
-/// adding `offset`.
+/// adding `offset` (both in nanoseconds).
 fn clone_events(
     conn: &PgConnection,
     room: &Room,
@@ -185,6 +207,8 @@ fn clone_events(
 ) -> Result<(), Error> {
     use diesel::prelude::*;
     use diesel::sql_types::{Array, Int8, Uuid};
+
+    println!("{:?}, {}", gaps, offset);
 
     let source_room_id = match room.source_room_id() {
         Some(id) => id,
@@ -249,10 +273,10 @@ fn invert_segments(
     if let Some(last_segment) = segments.last() {
         match last_segment {
             (_, Bound::Excluded(last_segment_stop)) => {
-                let room_duration_millis = room_duration.num_milliseconds();
+                let room_duration_nanos = room_duration.num_nanoseconds().unwrap_or(std::i64::MAX);
 
-                if *last_segment_stop < room_duration_millis {
-                    gaps.push((*last_segment_stop, room_duration_millis));
+                if *last_segment_stop < room_duration_nanos {
+                    gaps.push((*last_segment_stop, room_duration_nanos));
                 }
             }
             _ => bail!("invalid last segment"),
@@ -466,8 +490,8 @@ mod tests {
             _ => panic!("Invalid room time"),
         };
 
-        EventInsertQuery::new(room.id(), kind, &data, occurred_at, &created_by)
-            .created_at(opened_at + Duration::milliseconds(occurred_at))
+        EventInsertQuery::new(room.id(), kind, &data, occurred_at * 1_000_000, &created_by)
+            .created_at(opened_at + Duration::nanoseconds(occurred_at * 1_000_000))
             .execute(conn)
             .expect("Failed to insert event");
     }
@@ -475,6 +499,6 @@ mod tests {
     fn assert_event(event: &Event, occurred_at: i64, kind: &str, data: &JsonValue) {
         assert_eq!(event.kind(), kind);
         assert_eq!(event.data(), data);
-        assert_eq!(event.occurred_at(), occurred_at);
+        assert_eq!(event.occurred_at(), occurred_at * 1_000_000);
     }
 }

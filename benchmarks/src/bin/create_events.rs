@@ -228,8 +228,8 @@ fn main() {
 
     let agent_config_json = json!({
         "uri": format!("{}:{}", mqtt_host, mqtt_port),
-        "incoming_message_queue_size": 1000000,
-        "outgoing_message_queue_size": 1000000,
+        "incoming_message_queue_size": 1_000_000,
+        "outgoing_message_queue_size": 1_000_000,
     });
 
     let mut agent_config = serde_json::from_value::<AgentConfig>(agent_config_json)
