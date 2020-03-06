@@ -1,7 +1,7 @@
 use std::ops::Bound;
 
 use async_trait::async_trait;
-use chrono::{serde::ts_milliseconds_option, DateTime, Utc};
+use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::Value as JsonValue;
 use svc_agent::Authenticable;
@@ -159,8 +159,6 @@ pub(crate) struct ListRequest {
     set: Option<String>,
     label: Option<String>,
     last_occurred_at: Option<i64>,
-    #[serde(default, with = "ts_milliseconds_option")]
-    last_created_at: Option<DateTime<Utc>>,
     #[serde(default)]
     direction: db::event::Direction,
     limit: Option<i64>,
@@ -218,17 +216,6 @@ impl RequestHandler for ListHandler {
 
         if let Some(last_occurred_at) = payload.last_occurred_at {
             query = query.last_occurred_at(last_occurred_at);
-        }
-
-        if let Some(last_created_at) = payload.last_created_at {
-            if payload.last_occurred_at.is_some() {
-                query = query.last_created_at(last_created_at);
-            } else {
-                return Err(svc_error!(
-                    ResponseStatus::BAD_REQUEST,
-                    "`last_created_at` given without `last_occurred_at`"
-                ));
-            }
         }
 
         let events = query
@@ -544,7 +531,6 @@ mod tests {
                 set: None,
                 label: None,
                 last_occurred_at: None,
-                last_created_at: None,
                 direction: Direction::Backward,
                 limit: Some(2),
             };
@@ -567,7 +553,6 @@ mod tests {
                 set: None,
                 label: None,
                 last_occurred_at: Some(events[1].occurred_at()),
-                last_created_at: Some(events[1].created_at()),
                 direction: Direction::Backward,
                 limit: Some(2),
             };
@@ -607,7 +592,6 @@ mod tests {
                 set: None,
                 label: None,
                 last_occurred_at: None,
-                last_created_at: None,
                 direction: Direction::Backward,
                 limit: Some(2),
             };
@@ -632,7 +616,6 @@ mod tests {
                 set: None,
                 label: None,
                 last_occurred_at: None,
-                last_created_at: None,
                 direction: Direction::Backward,
                 limit: Some(2),
             };

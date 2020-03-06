@@ -92,8 +92,7 @@ assert response.payload['has_next'] == true
 response = conn.make_request 'state.read', to: event, payload: {
   room_id: room_id,
   sets: %w(messages),
-  occurred_at: occurred_at,
-  last_created_at: response.payload['messages'][1]['created_at'],
+  occurred_at: response.payload['messages'].last['original_occurred_at'],
   limit: 2,
 }
 
