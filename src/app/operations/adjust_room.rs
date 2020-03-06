@@ -163,38 +163,51 @@ fn create_room(conn: &PgConnection, source_room: &Room) -> Result<Room, Error> {
 }
 
 const SHIFT_CLONE_EVENTS_SQL: &'static str = r#"
-    with
-        gap_starts as (
-            select start, row_number() over() as row_number
-            from unnest($1::bigint[]) as start
-        ),
-        gap_stops as (
-            select stop, row_number() over() as row_number
-            from unnest($2::bigint[]) as stop
-        ),
-        gaps as (
-            select start, stop
-            from gap_starts, gap_stops
-            where gap_stops.row_number = gap_starts.row_number
-        )
-    insert into event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
+WITH
+    gap_starts AS (
+        SELECT start, ROW_NUMBER() OVER () AS row_number
+        FROM UNNEST($1::BIGINT[]) AS start
+    ),
+    gap_stops AS (
+        SELECT stop, ROW_NUMBER() OVER () AS row_number
+        FROM UNNEST($2::BIGINT[]) AS stop
+    ),
+    gaps AS (
+        SELECT start, stop
+        FROM gap_starts, gap_stops
+        WHERE gap_stops.row_number = gap_starts.row_number
+    )
+INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
+SELECT
+    id,
+    room_id,
+    kind,
+    set,
+    label,
+    data,
+    -- Monotonization
+    occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1,
+    created_by,
+    created_at
+from (
     select
-        gen_random_uuid() as id,
-        $3 as room_id,
+        gen_random_uuid() AS id,
+        $3 AS room_id,
         kind,
         set,
         label, 
         data,
         occurred_at - (
-            select coalesce(sum(least(stop, occurred_at) - start), 0)
-            from gaps
-            where start < occurred_at
-        ) + $4 as occurred_at,
+            SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
+            FROM gaps
+            WHERE start < occurred_at
+        ) + $4 AS occurred_at,
         created_by,
         created_at
-    from event
-    where room_id = $5
-    and deleted_at is null
+    FROM event
+    WHERE room_id = $5
+    AND   deleted_at IS NULL
+) AS sub
 "#;
 
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
@@ -207,8 +220,6 @@ fn clone_events(
 ) -> Result<(), Error> {
     use diesel::prelude::*;
     use diesel::sql_types::{Array, Int8, Uuid};
-
-    println!("{:?}, {}", gaps, offset);
 
     let source_room_id = match room.source_room_id() {
         Some(id) => id,
@@ -359,18 +370,102 @@ mod tests {
                 .expect("Failed to insert room");
 
             // Create events.
-            create_event(&conn, &room, 1000, "message", json!({"message": "m1"}));
-            create_event(&conn, &room, 2000, "message", json!({"message": "m2"}));
-            create_event(&conn, &room, 3000, "stream", json!({"cut": "start"}));
-            create_event(&conn, &room, 4000, "message", json!({"message": "m4"}));
-            create_event(&conn, &room, 5000, "stream", json!({"cut": "stop"}));
-            create_event(&conn, &room, 6000, "message", json!({"message": "m6"}));
-            create_event(&conn, &room, 7000, "message", json!({"message": "m7"}));
-            create_event(&conn, &room, 8000, "stream", json!({"cut": "start"}));
-            create_event(&conn, &room, 9000, "message", json!({"message": "m9"}));
-            create_event(&conn, &room, 10000, "stream", json!({"cut": "stop"}));
-            create_event(&conn, &room, 11000, "message", json!({"message": "m11"}));
-            create_event(&conn, &room, 12000, "message", json!({"message": "m12"}));
+            create_event(
+                &conn,
+                &room,
+                1_000_000_000,
+                "message",
+                json!({"message": "m1"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                2_000_000_000,
+                "message",
+                json!({"message": "m2"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                3_000_000_000,
+                "stream",
+                json!({"cut": "start"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                4_000_000_000,
+                "message",
+                json!({"message": "m4"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                5_000_000_000,
+                "stream",
+                json!({"cut": "stop"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                6_000_000_000,
+                "message",
+                json!({"message": "m6"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                7_000_000_000,
+                "message",
+                json!({"message": "m7"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                8_000_000_000,
+                "stream",
+                json!({"cut": "start"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                9_000_000_000,
+                "message",
+                json!({"message": "m9"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                10_000_000_000,
+                "stream",
+                json!({"cut": "stop"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                11_000_000_000,
+                "message",
+                json!({"message": "m11"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                12_000_000_000,
+                "message",
+                json!({"message": "m12"}),
+            );
+
             drop(conn);
 
             // Video segments.
@@ -407,30 +502,97 @@ mod tests {
 
             assert_eq!(events.len(), 12);
 
-            // 0 + 3000 (offset) - 50 (diff)
-            assert_event(&events[0], 2950, "message", &json!({"message": "m1"}));
-            // 2000 - 1500 (gap 1) + 3000 (offset) - 50 (diff)
-            assert_event(&events[1], 3450, "message", &json!({"message": "m2"}));
-            // 3000 - 1500 (gap 1) + 3000 (offset) - 50 (diff)
-            assert_event(&events[2], 4450, "stream", &json!({"cut": "start"}));
-            // 4000 - 1500 (gap 1) + 3000 (offset) - 50 (diff)
-            assert_event(&events[3], 5450, "message", &json!({"message": "m4"}));
-            // 5000 - 1500 (gap 1) + 3000 (offset) - 50 (diff)
-            assert_event(&events[4], 6450, "stream", &json!({"cut": "stop"}));
-            // 6000 - 1500 (gap 1) + 3000 (offset) - 50 (diff)
-            assert_event(&events[5], 7450, "message", &json!({"message": "m6"}));
-            // 7000 - 1500 (gap 1) - (7000 - 6500) (gap 2 part) + 3000 (offset) - 50 (diff)
-            assert_event(&events[6], 7950, "message", &json!({"message": "m7"}));
-            // 8000 - 1500 (gap 1) - (8000 - 6500) (gap 2 part) + 3000 (offset) - 50 (diff)
-            assert_event(&events[7], 7950, "stream", &json!({"cut": "start"}));
-            // 7000 - 1500 (gap 1) - 2000 (gap 2) + 3000 (offset) - 50 (diff)
-            assert_event(&events[8], 8450, "message", &json!({"message": "m9"}));
-            // 9000 - 1500 (gap 1) - 2000 (gap 2) + 3000 (offset) - 50 (diff)
-            assert_event(&events[9], 9450, "stream", &json!({"cut": "stop"}));
-            // 10000 - 1500 (gap 1) - 2000 (gap 2) + 3000 (offset) - 50 (diff)
-            assert_event(&events[10], 10450, "message", &json!({"message": "m11"}));
-            // 11500 (last segment stop) - 1500 (gap 1) - 2000 (gap 2) + 3000 (offset) - 50 (diff)
-            assert_event(&events[11], 10950, "message", &json!({"message": "m12"}));
+            // 0 + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(
+                &events[0],
+                2_950_000_000,
+                "message",
+                &json!({"message": "m1"}),
+            );
+
+            // 2_000_000_000 - 1_500_000_000 (gap 1) + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(
+                &events[1],
+                3_450_000_000,
+                "message",
+                &json!({"message": "m2"}),
+            );
+
+            // 3_000_000_000 - 1_500_000_000 (gap 1) + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(
+                &events[2],
+                4_450_000_000,
+                "stream",
+                &json!({"cut": "start"}),
+            );
+
+            // 4_000_000_000 - 1_500_000_000 (gap 1) + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(
+                &events[3],
+                5_450_000_000,
+                "message",
+                &json!({"message": "m4"}),
+            );
+
+            // 5000 - 1_500_000_000 (gap 1) + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(&events[4], 6_450_000_000, "stream", &json!({"cut": "stop"}));
+
+            // 6_000_000_000 - 1_500_000_000 (gap 1) + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(
+                &events[5],
+                7_450_000_000,
+                "message",
+                &json!({"message": "m6"}),
+            );
+
+            // 7_000_000_000 - 1_500_000_000 (gap 1) - (7_000_000_000 - 6_500_000_000) (gap 2 part)
+            //     + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(
+                &events[6],
+                7_950_000_000,
+                "message",
+                &json!({"message": "m7"}),
+            );
+
+            // 8_000_000_000 - 1_500_000_000 (gap 1) - (8_000_000_000 - 6_500_000_000) (gap 2 part)
+            //     + 3_000_000_000 (offset) - 50_000_000 (diff) + 1 (monotonize)
+            assert_event(
+                &events[7],
+                7_950_000_001,
+                "stream",
+                &json!({"cut": "start"}),
+            );
+
+            // 7_000_000_000 - 1_500_000_000 (gap 1) - 2_000_000_000 (gap 2)
+            //     + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(
+                &events[8],
+                8_450_000_000,
+                "message",
+                &json!({"message": "m9"}),
+            );
+
+            // 9_000_000_000 - 1_500_000_000 (gap 1) - 2_000_000_000 (gap 2)
+            //     + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(&events[9], 9_450_000_000, "stream", &json!({"cut": "stop"}));
+
+            // 10_000_000_000 - 1_500_000_000 (gap 1) - 2_000_000_000 (gap 2)
+            //     + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(
+                &events[10],
+                10_450_000_000,
+                "message",
+                &json!({"message": "m11"}),
+            );
+
+            // 11_500_000_000 (last segment stop) - 1_500_000_000 (gap 1)
+            //     - 2_000_000_000 (gap 2) + 3_000_000_000 (offset) - 50_000_000 (diff)
+            assert_event(
+                &events[11],
+                10_950_000_000,
+                "message",
+                &json!({"message": "m12"}),
+            );
 
             // Assert modified room.
             assert_eq!(modified_room.source_room_id(), Some(original_room.id()));
@@ -446,22 +608,70 @@ mod tests {
 
             assert_eq!(events.len(), 8);
 
-            // 2950
-            assert_event(&events[0], 2950, "message", &json!({"message": "m1"}));
-            // 3450
-            assert_event(&events[1], 3450, "message", &json!({"message": "m2"}));
-            // 5450 - (2500 - 1500) (cut 1 part)
-            assert_event(&events[2], 4450, "message", &json!({"message": "m4"}));
-            // 7450 - 2000 (cut 1)
-            assert_event(&events[3], 5450, "message", &json!({"message": "m6"}));
-            // 7950 - 2000 (cut 1)
-            assert_event(&events[4], 5950, "message", &json!({"message": "m7"}));
-            // 8450 - 2000 (cut 1) - (3500 - 3000) (cut 2 part)
-            assert_event(&events[5], 5950, "message", &json!({"message": "m9"}));
-            // 10450 - 2000 (cut 1) - 1500 (cut 2)
-            assert_event(&events[6], 6950, "message", &json!({"message": "m11"}));
-            // 10950 - 2000 (cut 1) - 1500 (cut 2)
-            assert_event(&events[7], 7450, "message", &json!({"message": "m12"}));
+            // 2_950_000_000
+            assert_event(
+                &events[0],
+                2_950_000_000,
+                "message",
+                &json!({"message": "m1"}),
+            );
+
+            // 3_450_000_000
+            assert_event(
+                &events[1],
+                3_450_000_000,
+                "message",
+                &json!({"message": "m2"}),
+            );
+
+            // 5_450_000_000 - (2_500_000_000 - 1_500_000_000) (cut 1 part) + 1 (monotonize)
+            assert_event(
+                &events[2],
+                4_450_000_001,
+                "message",
+                &json!({"message": "m4"}),
+            );
+
+            // 7_450_000_000 - 2_000_000_000 (cut 1)
+            assert_event(
+                &events[3],
+                5_450_000_000,
+                "message",
+                &json!({"message": "m6"}),
+            );
+
+            // 7_950_000_000 - 2_000_000_000 (cut 1)
+            assert_event(
+                &events[4],
+                5_950_000_000,
+                "message",
+                &json!({"message": "m7"}),
+            );
+
+            // 8_450_000_000 - 2_000_000_000 (cut 1) - (3_500_000_000 - 3_000_000_000) (cut 2 part)
+            //     + 2 (monotonize)
+            assert_event(
+                &events[5],
+                5_950_000_002,
+                "message",
+                &json!({"message": "m9"}),
+            );
+
+            // 10_450_000_000 - 2_000_000_000 (cut 1) - 1_500_000_000 (cut 2) + 1 (monotonize)
+            assert_event(
+                &events[6],
+                6_950_000_001,
+                "message",
+                &json!({"message": "m11"}),
+            );
+
+            // 10_950_000_000 - 2_000_000_000 (cut 1) - 1_500_000_000 (cut 2) + 1 (monotonize)
+            assert_event(
+                &events[7],
+                7_450_000_001,
+                "message",
+                &json!({"message": "m12"}),
+            );
 
             // Assert modified segments.
             assert_eq!(
@@ -490,8 +700,8 @@ mod tests {
             _ => panic!("Invalid room time"),
         };
 
-        EventInsertQuery::new(room.id(), kind, &data, occurred_at * 1_000_000, &created_by)
-            .created_at(opened_at + Duration::nanoseconds(occurred_at * 1_000_000))
+        EventInsertQuery::new(room.id(), kind, &data, occurred_at, &created_by)
+            .created_at(opened_at + Duration::nanoseconds(occurred_at))
             .execute(conn)
             .expect("Failed to insert event");
     }
@@ -499,6 +709,6 @@ mod tests {
     fn assert_event(event: &Event, occurred_at: i64, kind: &str, data: &JsonValue) {
         assert_eq!(event.kind(), kind);
         assert_eq!(event.data(), data);
-        assert_eq!(event.occurred_at(), occurred_at * 1_000_000);
+        assert_eq!(event.occurred_at(), occurred_at);
     }
 }
