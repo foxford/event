@@ -23,7 +23,7 @@ type        | string   | _required_ | The event type.
 set         | string   |       type | The set to which the event is related.
 label       | string   | _optional_ | A label to identify an element within the set.
 data        | json     | _required_ | Schemaless payload of the event.
-occurred_at | int      | _required_ | Number of milliseconds since the room's opening when the event took place.
+occurred_at | int      | _required_ | Number of nanoseconds since the room's opening when the event took place.
 created_by  | agent_id | _required_ | An agent who created the event.
 created_at  | int      | _required_ | The event's absolute creation timestamp in milliseconds.
 

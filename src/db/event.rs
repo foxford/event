@@ -1,9 +1,6 @@
 use chrono::serde::{ts_milliseconds, ts_milliseconds_option};
 use chrono::{DateTime, Utc};
-use diesel::{
-    pg::{Pg, PgConnection},
-    result::Error,
-};
+use diesel::{pg::PgConnection, result::Error};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use svc_agent::AgentId;
@@ -14,7 +11,9 @@ use crate::schema::event;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, Serialize, Deserialize, Identifiable, Queryable, Associations)]
+#[derive(
+    Clone, Debug, Serialize, Deserialize, Identifiable, Queryable, QueryableByName, Associations,
+)]
 #[belongs_to(Room, foreign_key = "room_id")]
 #[table_name = "event"]
 pub(crate) struct Object {
@@ -71,11 +70,6 @@ impl Object {
     pub(crate) fn occurred_at(&self) -> i64 {
         self.occurred_at
     }
-
-    #[cfg(test)]
-    pub(crate) fn created_at(&self) -> DateTime<Utc> {
-        self.created_at
-    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -101,7 +95,6 @@ pub(crate) struct ListQuery<'a> {
     set: Option<&'a str>,
     label: Option<&'a str>,
     last_occurred_at: Option<i64>,
-    last_created_at: Option<DateTime<Utc>>,
     direction: Direction,
     limit: Option<i64>,
 }
@@ -114,7 +107,6 @@ impl<'a> ListQuery<'a> {
             set: None,
             label: None,
             last_occurred_at: None,
-            last_created_at: None,
             direction: Default::default(),
             limit: None,
         }
@@ -151,13 +143,6 @@ impl<'a> ListQuery<'a> {
     pub(crate) fn last_occurred_at(self, last_occurred_at: i64) -> Self {
         Self {
             last_occurred_at: Some(last_occurred_at),
-            ..self
-        }
-    }
-
-    pub(crate) fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
-        Self {
-            last_created_at: Some(last_created_at),
             ..self
         }
     }
@@ -204,14 +189,6 @@ impl<'a> ListQuery<'a> {
             Direction::Forward => {
                 if let Some(last_occurred_at) = self.last_occurred_at {
                     q = q.filter(event::occurred_at.gt(last_occurred_at));
-
-                    if let Some(last_created_at) = self.last_created_at {
-                        q = q.or_filter(
-                            event::occurred_at
-                                .eq(last_occurred_at)
-                                .and(event::created_at.gt(last_created_at)),
-                        );
-                    }
                 }
 
                 q.order_by((event::occurred_at, event::created_at))
@@ -219,14 +196,6 @@ impl<'a> ListQuery<'a> {
             Direction::Backward => {
                 if let Some(last_occurred_at) = self.last_occurred_at {
                     q = q.filter(event::occurred_at.lt(last_occurred_at));
-
-                    if let Some(last_created_at) = self.last_created_at {
-                        q = q.or_filter(
-                            event::occurred_at
-                                .eq(last_occurred_at)
-                                .and(event::created_at.lt(last_created_at)),
-                        );
-                    }
                 }
 
                 q.order_by((event::occurred_at.desc(), event::created_at.desc()))
@@ -325,95 +294,117 @@ impl<'a> DeleteQuery<'a> {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug, Deserialize, Serialize, QueryableByName)]
+pub(crate) struct SetStateItem {
+    #[sql_type = "diesel::sql_types::Uuid"]
+    id: Uuid,
+    #[sql_type = "diesel::sql_types::Uuid"]
+    room_id: Uuid,
+    #[sql_type = "diesel::sql_types::Text"]
+    #[serde(rename = "type")]
+    kind: String,
+    #[sql_type = "diesel::sql_types::Text"]
+    set: String,
+    #[sql_type = "diesel::sql_types::Nullable<diesel::sql_types::Text>"]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
+    #[sql_type = "diesel::sql_types::Jsonb"]
+    data: JsonValue,
+    #[sql_type = "diesel::sql_types::BigInt"]
+    occurred_at: i64,
+    #[sql_type = "svc_agent::sql::Agent_id"]
+    created_by: AgentId,
+    #[sql_type = "diesel::sql_types::Timestamptz"]
+    #[serde(with = "ts_milliseconds")]
+    created_at: DateTime<Utc>,
+    #[sql_type = "diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>"]
+    #[serde(
+        with = "ts_milliseconds_option",
+        skip_serializing_if = "Option::is_none",
+        default
+    )]
+    deleted_at: Option<DateTime<Utc>>,
+    #[sql_type = "diesel::sql_types::BigInt"]
+    original_occurred_at: i64,
+}
+
+#[cfg(test)]
+impl SetStateItem {
+    pub(crate) fn id(&self) -> Uuid {
+        self.id
+    }
+
+    pub(crate) fn original_occurred_at(&self) -> i64 {
+        self.original_occurred_at
+    }
+}
+
+const SET_STATE_QUERY_SQL: &'static str = r#"
+SELECT
+    e.*,
+    sub.original_occurred_at
+FROM (
+  SELECT DISTINCT ON (original_id)
+    LAST_VALUE(id)           OVER w AS last_id,
+    LAST_VALUE(occurred_at)  OVER w AS last_occurred_at,
+    FIRST_VALUE(id)          OVER w AS original_id,
+    FIRST_VALUE(occurred_at) OVER w AS original_occurred_at
+  FROM event
+  WHERE deleted_at IS NULL
+  AND   room_id = $1
+  AND   set = $2
+  WINDOW w AS (
+    PARTITION BY room_id, set, label
+    ORDER BY occurred_at
+  )
+  ORDER BY original_id, last_occurred_at DESC
+) AS sub
+INNER JOIN event AS e
+ON e.id = sub.last_id
+WHERE sub.original_occurred_at < $3
+ORDER BY sub.original_occurred_at DESC
+LIMIT $4
+"#;
+
 pub(crate) struct SetStateQuery<'a> {
     room_id: Uuid,
     set: &'a str,
-    occurred_at: Option<i64>,
-    last_created_at: Option<DateTime<Utc>>,
-    limit: Option<i64>,
+    occurred_at: i64,
+    limit: i64,
 }
 
 impl<'a> SetStateQuery<'a> {
-    pub(crate) fn new(room_id: Uuid, set: &'a str) -> Self {
+    pub(crate) fn new(room_id: Uuid, set: &'a str, occurred_at: i64, limit: i64) -> Self {
         Self {
             room_id,
             set,
-            occurred_at: None,
-            last_created_at: None,
-            limit: None,
+            occurred_at,
+            limit,
         }
     }
 
-    pub(crate) fn occurred_at(self, occurred_at: i64) -> Self {
-        Self {
-            occurred_at: Some(occurred_at),
-            ..self
-        }
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<SetStateItem>, Error> {
+        use crate::diesel::RunQueryDsl;
+        use diesel::sql_types::*;
+
+        diesel::sql_query(SET_STATE_QUERY_SQL)
+            .bind::<Uuid, _>(self.room_id)
+            .bind::<Text, _>(self.set)
+            .bind::<Int8, _>(self.occurred_at)
+            .bind::<Int8, _>(self.limit)
+            .get_results(conn)
     }
 
-    pub(crate) fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
-        Self {
-            last_created_at: Some(last_created_at),
-            ..self
-        }
-    }
-
-    pub(crate) fn limit(self, limit: i64) -> Self {
-        Self {
-            limit: Some(limit),
-            ..self
-        }
-    }
-
-    fn build_query(&'a self) -> event::BoxedQuery<'a, Pg> {
-        use diesel::dsl::sql;
+    pub(crate) fn total_count(&self, conn: &PgConnection) -> Result<usize, Error> {
+        use crate::diesel::RunQueryDsl;
         use diesel::prelude::*;
 
-        let subquery = event::table
-            .select(sql("first_value(id) over (
-                partition by room_id, set, label
-                order by occurred_at desc, created_at desc
-            )"))
+        event::table
+            .distinct_on(event::label)
             .filter(event::deleted_at.is_null())
             .filter(event::room_id.eq(self.room_id))
             .filter(event::set.eq(self.set))
-            .into_boxed();
-
-        let query = event::table.filter(event::id.eq_any(subquery)).into_boxed();
-
-        if let Some(occurred_at) = self.occurred_at {
-            if let Some(last_created_at) = self.last_created_at {
-                // `or_filter` doesn't add parenthesis causing wrong query so go the hard way.
-                query.filter(
-                    event::occurred_at.lt(occurred_at).or(event::occurred_at
-                        .eq(occurred_at)
-                        .and(event::created_at.lt(last_created_at))),
-                )
-            } else {
-                query.filter(event::occurred_at.lt(occurred_at))
-            }
-        } else {
-            query
-        }
-    }
-
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
-        use crate::diesel::{ExpressionMethods, QueryDsl, RunQueryDsl};
-
-        let mut query = self
-            .build_query()
-            .order_by((event::occurred_at.desc(), event::created_at.desc()));
-
-        if let Some(limit) = self.limit {
-            query = query.limit(limit);
-        }
-
-        query.get_results(conn)
-    }
-
-    pub(crate) fn total_count(&self, conn: &PgConnection) -> Result<i64, Error> {
-        use crate::db::total_count::TotalCount;
-
-        self.build_query().total_count().execute(conn)
+            .filter(event::occurred_at.lt(self.occurred_at))
+            .execute(conn)
     }
 }

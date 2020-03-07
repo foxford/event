@@ -1,5 +1,7 @@
+use std::ops::Bound;
+
 use async_trait::async_trait;
-use chrono::{serde::ts_milliseconds_option, DateTime, Utc};
+use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::{map::Map as JsonMap, Value as JsonValue};
 use svc_agent::mqtt::{IncomingRequestProperties, IntoPublishableDump, ResponseStatus};
@@ -20,8 +22,6 @@ pub(crate) struct ReadRequest {
     room_id: Uuid,
     sets: Vec<String>,
     occurred_at: Option<i64>,
-    #[serde(default, with = "ts_milliseconds_option")]
-    last_created_at: Option<DateTime<Utc>>,
     limit: Option<i64>,
 }
 
@@ -77,20 +77,26 @@ impl RequestHandler for ReadHandler {
             .authorize(room.audience(), reqp, object, "list")
             .await?;
 
+        // Default `occurred_at`: closing time of the room.
+        let occurred_at = if let Some(occurred_at) = payload.occurred_at {
+            occurred_at
+        } else if let (Bound::Included(opened_at), Bound::Excluded(closed_at)) = room.time() {
+            (*closed_at - *opened_at)
+                .num_nanoseconds()
+                .unwrap_or(std::i64::MAX)
+        } else {
+            return Err(svc_error!(
+                ResponseStatus::UNPROCESSABLE_ENTITY,
+                "Bad room time"
+            ));
+        };
+
         // Retrieve state for each set from the DB and put them into a map.
         let mut state = JsonMap::new();
 
         for set in payload.sets.iter() {
             // Build a query for the particular set state.
-            let mut query = db::event::SetStateQuery::new(room.id(), &set);
-
-            if let Some(occurred_at) = payload.occurred_at {
-                query = query.occurred_at(occurred_at);
-            }
-
-            if let Some(last_created_at) = payload.last_created_at {
-                query = query.last_created_at(last_created_at);
-            }
+            let query = db::event::SetStateQuery::new(room.id(), &set, occurred_at, limit);
 
             // If it is the only set specified at first execute a total count query and
             // add `has_next` pagination flag to the state.
@@ -104,12 +110,12 @@ impl RequestHandler for ReadHandler {
                     )
                 })?;
 
-                let has_next = total_count > limit;
+                let has_next = total_count as i64 > limit;
                 state.insert(String::from("has_next"), JsonValue::Bool(has_next));
             }
 
             // Limit the query and retrieve the state.
-            let set_state = query.limit(limit).execute(&conn).map_err(|err| {
+            let set_state = query.execute(&conn).map_err(|err| {
                 svc_error!(
                     ResponseStatus::UNPROCESSABLE_ENTITY,
                     "failed to query state for set = '{}': {}",
@@ -158,7 +164,7 @@ mod tests {
     use serde_derive::Deserialize;
     use serde_json::json;
 
-    use crate::db::event::Object as Event;
+    use crate::db::event::{Object as Event, SetStateItem};
     use crate::test_helpers::prelude::*;
 
     use super::*;
@@ -167,8 +173,8 @@ mod tests {
 
     #[derive(Deserialize)]
     struct State {
-        messages: Vec<Event>,
-        layout: Event,
+        messages: Vec<SetStateItem>,
+        layout: SetStateItem,
     }
 
     #[test]
@@ -222,7 +228,6 @@ mod tests {
                 room_id: room.id(),
                 sets: vec![String::from("messages"), String::from("layout")],
                 occurred_at: None,
-                last_created_at: None,
                 limit: None,
             };
 
@@ -241,7 +246,7 @@ mod tests {
 
     #[derive(Deserialize)]
     struct CollectionState {
-        messages: Vec<Event>,
+        messages: Vec<SetStateItem>,
         has_next: bool,
     }
 
@@ -293,7 +298,6 @@ mod tests {
                 room_id: room.id(),
                 sets: vec![String::from("messages")],
                 occurred_at: None,
-                last_created_at: None,
                 limit: Some(2),
             };
 
@@ -313,8 +317,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages")],
-                occurred_at: Some(state.messages[1].occurred_at()),
-                last_created_at: Some(state.messages[1].created_at()),
+                occurred_at: Some(state.messages[1].original_occurred_at()),
                 limit: Some(2),
             };
 
@@ -352,7 +355,6 @@ mod tests {
                 room_id: room.id(),
                 sets: vec![String::from("messages"), String::from("layout")],
                 occurred_at: None,
-                last_created_at: None,
                 limit: None,
             };
 
@@ -374,7 +376,6 @@ mod tests {
                 room_id: Uuid::new_v4(),
                 sets: vec![String::from("messages"), String::from("layout")],
                 occurred_at: None,
-                last_created_at: None,
                 limit: None,
             };
 

@@ -94,7 +94,7 @@ select
         else null
     end as label,
     data,
-    "offset" as occurred_at,
+    "offset" * 1000000 as occurred_at,
     ('(' || account_id || ',' || audience || ')', 'web')::agent_id as created_by,
     created_at
 from dblink('legacy_db', '
