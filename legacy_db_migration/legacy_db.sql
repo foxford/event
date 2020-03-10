@@ -30,7 +30,7 @@ select
     id,
     audience,
     parent_id as source_room_id,
-    tstzrange(opened_at, closed_at) as time,
+    tstzrange(opened_at, coalesce(closed_at, opened_at + interval '10 years')) as time,
     created_at
 from dblink('legacy_db', '
     select
