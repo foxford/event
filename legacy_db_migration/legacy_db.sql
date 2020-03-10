@@ -1,5 +1,7 @@
 begin;
 
+create extension if not exists "uuid-ossp";
+
 -- Connect to the legacy DB.
 create extension if not exists "dblink";
 create foreign data wrapper legacy_db_wrapper validator postgresql_fdw_validator;
@@ -82,15 +84,18 @@ select
     id,
     room_id,
     type as kind,
-    type as set,
     case type
-        when 'unsubscribe' then data->'conn_id'
-        when 'subscribe' then data->'conn_id'
-        when 'document' then data->'url'
-        when 'document-delete' then data->'url'
+        when 'draw' then 'draw_' || uuid_generate_v5(uuid_ns_url(), data->>'url')::text || '_' || (data->>'page')::text
+        else type
+    end as set,
+    case type
+        when 'unsubscribe' then data->>'conn_id'
+        when 'subscribe' then data->>'conn_id'
+        when 'document' then uuid_generate_v5(uuid_ns_url(), data->>'url')::text
+        when 'document-delete' then uuid_generate_v5(uuid_ns_url(), data->>'url')::text
         when 'stream' then id::text
         when 'message' then id::text
-        when 'draw' then id:text
+        when 'draw' then id::text
         else null
     end as label,
     data,
@@ -143,5 +148,6 @@ reindex table event;
 drop server legacy_db cascade;
 drop foreign data wrapper legacy_db_wrapper;
 drop extension "dblink";
+drop extension "uuid-ossp";
 
 commit;
