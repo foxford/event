@@ -26,6 +26,14 @@ pub(crate) struct CreateRequest {
     set: Option<String>,
     label: Option<String>,
     data: JsonValue,
+    #[serde(default = "CreateRequest::default_is_claim")]
+    is_claim: bool,
+}
+
+impl CreateRequest {
+    fn default_is_claim() -> bool {
+        false
+    }
 }
 
 pub(crate) struct CreateHandler;
@@ -74,14 +82,13 @@ impl RequestHandler for CreateHandler {
         // Authorize event creation on tenant with cache.
         let room_id = room.id().to_string();
         let author = reqp.as_account_id().to_string();
-        let object = vec![
-            "rooms",
-            &room_id,
-            "events",
-            &payload.kind,
-            "authors",
-            &author,
-        ];
+
+        let key = match payload.is_claim {
+            false => "events",
+            true => "claims",
+        };
+
+        let object = vec!["rooms", &room_id, key, &payload.kind, "authors", &author];
 
         let authz_time = context
             .authz()
@@ -126,24 +133,38 @@ impl RequestHandler for CreateHandler {
             )
         })?;
 
-        // Respond to the agent and notify room subscribers.
-        let response = helpers::build_response(
+        let mut messages = Vec::with_capacity(3);
+
+        // Respond to the agent.
+        messages.push(helpers::build_response(
             ResponseStatus::CREATED,
             event.clone(),
             reqp,
             start_timestamp,
             Some(authz_time),
-        );
+        ));
 
-        let notification = helpers::build_notification(
+        // If the event is claim notify the tenant.
+        if payload.is_claim {
+            messages.push(helpers::build_notification(
+                "event.create",
+                &format!("audiences/{}/events", room.audience()),
+                event.clone(),
+                reqp,
+                start_timestamp,
+            ));
+        }
+
+        // Notify room subscribers.
+        messages.push(helpers::build_notification(
             "event.create",
             &format!("rooms/{}/events", room.id()),
             event,
             reqp,
             start_timestamp,
-        );
+        ));
 
-        Ok(vec![response, notification])
+        Ok(messages)
     }
 }
 
@@ -244,6 +265,7 @@ mod tests {
     use serde_json::json;
 
     use crate::db::event::{Direction, Object as Event};
+    use crate::test_helpers::outgoing_envelope::OutgoingEnvelopeProperties;
     use crate::test_helpers::prelude::*;
 
     use super::*;
@@ -293,11 +315,14 @@ mod tests {
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
                 data: json!({ "text": "hello" }),
+                is_claim: false,
             };
 
             let messages = handle_request::<CreateHandler>(&context, &agent, payload)
                 .await
                 .expect("Event creation failed");
+
+            assert_eq!(messages.len(), 2);
 
             // Assert response.
             let (event, respp) = find_response::<Event>(messages.as_slice());
@@ -317,6 +342,92 @@ mod tests {
             assert_eq!(event.set(), "messages");
             assert_eq!(event.label(), Some("message-1"));
             assert_eq!(event.data(), &json!({ "text": "hello" }));
+        });
+    }
+
+    #[test]
+    fn create_claim() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room and put the agent online.
+                let room = shared_helpers::insert_room(&conn);
+                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                room
+            };
+
+            // Allow agent to create claims of type `block` in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let account_id = agent.account_id().to_string();
+
+            let object = vec!["rooms", &room_id, "claims", "block", "authors", &account_id];
+
+            authz.allow(agent.account_id(), object, "create");
+
+            // Make event.create request.
+            let context = TestContext::new(db, authz);
+
+            let payload = CreateRequest {
+                room_id: room.id(),
+                kind: String::from("block"),
+                set: Some(String::from("blocks")),
+                label: Some(String::from("user-1")),
+                data: json!({ "blocked": true }),
+                is_claim: true,
+            };
+
+            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                .await
+                .expect("Event creation failed");
+
+            assert_eq!(messages.len(), 3);
+
+            // Assert response.
+            let (event, respp) = find_response::<Event>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(event.room_id(), room.id());
+            assert_eq!(event.kind(), "block");
+            assert_eq!(event.set(), "blocks");
+            assert_eq!(event.label(), Some("user-1"));
+            assert_eq!(event.data(), &json!({ "blocked": true }));
+
+            // Assert tenant & room notifications.
+            let mut has_tenant_notification = false;
+            let mut has_room_notification = false;
+
+            for message in messages {
+                if let OutgoingEnvelopeProperties::Event(evp) = message.properties() {
+                    let topic = message.topic();
+
+                    if topic.ends_with(&format!("/audiences/{}/events", room.audience())) {
+                        has_tenant_notification = true;
+                    }
+
+                    if topic.ends_with(&format!("/rooms/{}/events", room.id())) {
+                        has_room_notification = true;
+                    }
+
+                    assert_eq!(evp.label(), "event.create");
+
+                    let event = message.payload::<Event>();
+                    assert_eq!(event.room_id(), room.id());
+                    assert_eq!(event.kind(), "block");
+                    assert_eq!(event.set(), "blocks");
+                    assert_eq!(event.label(), Some("user-1"));
+                    assert_eq!(event.data(), &json!({ "blocked": true }));
+                }
+            }
+
+            assert_eq!(has_tenant_notification, true);
+            assert_eq!(has_room_notification, true);
         });
     }
 
@@ -347,6 +458,7 @@ mod tests {
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
                 data: json!({ "text": "hello" }),
+                is_claim: false,
             };
 
             let err = handle_request::<CreateHandler>(&context, &agent, payload)
@@ -398,6 +510,7 @@ mod tests {
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
                 data: json!({ "text": "hello" }),
+                is_claim: false,
             };
 
             let err = handle_request::<CreateHandler>(&context, &agent, payload)
@@ -451,6 +564,7 @@ mod tests {
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
                 data: json!({ "text": "hello" }),
+                is_claim: false,
             };
 
             let err = handle_request::<CreateHandler>(&context, &agent, payload)
@@ -473,6 +587,7 @@ mod tests {
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
                 data: json!({ "text": "hello" }),
+                is_claim: false,
             };
 
             let err = handle_request::<CreateHandler>(&context, &agent, payload)
