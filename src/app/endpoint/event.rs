@@ -28,11 +28,17 @@ pub(crate) struct CreateRequest {
     data: JsonValue,
     #[serde(default = "CreateRequest::default_is_claim")]
     is_claim: bool,
+    #[serde(default = "CreateRequest::default_is_persistent")]
+    is_persistent: bool,
 }
 
 impl CreateRequest {
     fn default_is_claim() -> bool {
         false
+    }
+
+    fn default_is_persistent() -> bool {
+        true
     }
 }
 
@@ -95,7 +101,7 @@ impl RequestHandler for CreateHandler {
             .authorize(room.audience(), reqp, object.clone(), "create")
             .await?;
 
-        // Insert event into the DB.
+        // Calculate occurrence date.
         let occurred_at = match room.time() {
             (Bound::Included(opened_at), _) => (Utc::now() - opened_at.to_owned())
                 .num_nanoseconds()
@@ -109,29 +115,56 @@ impl RequestHandler for CreateHandler {
             }
         };
 
-        let mut query = db::event::InsertQuery::new(
-            room.id(),
-            &payload.kind,
-            &payload.data,
-            occurred_at,
-            reqp.as_agent_id(),
-        );
+        let event = if payload.is_persistent {
+            // Insert event into the DB.
+            let mut query = db::event::InsertQuery::new(
+                room.id(),
+                &payload.kind,
+                &payload.data,
+                occurred_at,
+                reqp.as_agent_id(),
+            );
 
-        if let Some(ref set) = payload.set {
-            query = query.set(set);
-        }
+            if let Some(ref set) = payload.set {
+                query = query.set(set);
+            }
 
-        if let Some(ref label) = payload.label {
-            query = query.label(label);
-        }
+            if let Some(ref label) = payload.label {
+                query = query.label(label);
+            }
 
-        let event = query.execute(&conn).map_err(|err| {
-            svc_error!(
-                ResponseStatus::UNPROCESSABLE_ENTITY,
-                "failed to create event: {}",
-                err
-            )
-        })?;
+            query.execute(&conn).map_err(|err| {
+                svc_error!(
+                    ResponseStatus::UNPROCESSABLE_ENTITY,
+                    "failed to create event: {}",
+                    err
+                )
+            })?
+        } else {
+            // Build transient event.
+            let mut builder = db::event::Builder::new()
+                .room_id(payload.room_id)
+                .kind(&payload.kind)
+                .data(&payload.data)
+                .occurred_at(occurred_at)
+                .created_by(reqp.as_agent_id());
+
+            if let Some(ref set) = payload.set {
+                builder = builder.set(set)
+            }
+
+            if let Some(ref label) = payload.label {
+                builder = builder.label(label)
+            }
+
+            builder.build().map_err(|err| {
+                svc_error!(
+                    ResponseStatus::UNPROCESSABLE_ENTITY,
+                    "Error building transient event: {}",
+                    err,
+                )
+            })?
+        };
 
         let mut messages = Vec::with_capacity(3);
 
@@ -316,6 +349,7 @@ mod tests {
                 label: Some(String::from("message-1")),
                 data: json!({ "text": "hello" }),
                 is_claim: false,
+                is_persistent: true,
             };
 
             let messages = handle_request::<CreateHandler>(&context, &agent, payload)
@@ -382,6 +416,7 @@ mod tests {
                 label: Some(String::from("user-1")),
                 data: json!({ "blocked": true }),
                 is_claim: true,
+                is_persistent: true,
             };
 
             let messages = handle_request::<CreateHandler>(&context, &agent, payload)
@@ -432,6 +467,86 @@ mod tests {
     }
 
     #[test]
+    fn create_transient_event() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room and put the agent online.
+                let room = shared_helpers::insert_room(&conn);
+                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                room
+            };
+
+            // Allow agent to create events of type `message` in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let account_id = agent.account_id().to_string();
+
+            let object = vec![
+                "rooms",
+                &room_id,
+                "events",
+                "cursor",
+                "authors",
+                &account_id,
+            ];
+
+            authz.allow(agent.account_id(), object, "create");
+
+            // Make event.create request.
+            let context = TestContext::new(db, authz);
+
+            let data = json!({
+                "agent_id": agent.agent_id().to_string(),
+                "x": 123,
+                "y": 456,
+            });
+
+            let payload = CreateRequest {
+                room_id: room.id(),
+                kind: String::from("cursor"),
+                set: None,
+                label: None,
+                data: data.clone(),
+                is_claim: false,
+                is_persistent: false,
+            };
+
+            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                .await
+                .expect("Event creation failed");
+
+            assert_eq!(messages.len(), 2);
+
+            // Assert response.
+            let (event, respp) = find_response::<Event>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(event.room_id(), room.id());
+            assert_eq!(event.kind(), "cursor");
+            assert_eq!(event.set(), "cursor");
+            assert_eq!(event.label(), None);
+            assert_eq!(event.data(), &data);
+
+            // Assert notification.
+            let (event, evp, topic) = find_event::<Event>(messages.as_slice());
+            assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
+            assert_eq!(evp.label(), "event.create");
+            assert_eq!(event.room_id(), room.id());
+            assert_eq!(event.kind(), "cursor");
+            assert_eq!(event.set(), "cursor");
+            assert_eq!(event.label(), None);
+            assert_eq!(event.data(), &data);
+        });
+    }
+
+    #[test]
     fn create_event_not_authorized() {
         futures::executor::block_on(async {
             let db = TestDb::new();
@@ -459,6 +574,7 @@ mod tests {
                 label: Some(String::from("message-1")),
                 data: json!({ "text": "hello" }),
                 is_claim: false,
+                is_persistent: true,
             };
 
             let err = handle_request::<CreateHandler>(&context, &agent, payload)
@@ -511,6 +627,7 @@ mod tests {
                 label: Some(String::from("message-1")),
                 data: json!({ "text": "hello" }),
                 is_claim: false,
+                is_persistent: true,
             };
 
             let err = handle_request::<CreateHandler>(&context, &agent, payload)
@@ -565,6 +682,7 @@ mod tests {
                 label: Some(String::from("message-1")),
                 data: json!({ "text": "hello" }),
                 is_claim: false,
+                is_persistent: true,
             };
 
             let err = handle_request::<CreateHandler>(&context, &agent, payload)
@@ -588,6 +706,7 @@ mod tests {
                 label: Some(String::from("message-1")),
                 data: json!({ "text": "hello" }),
                 is_claim: false,
+                is_persistent: true,
             };
 
             let err = handle_request::<CreateHandler>(&context, &agent, payload)

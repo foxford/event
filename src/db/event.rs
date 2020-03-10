@@ -1,6 +1,7 @@
 use chrono::serde::{ts_milliseconds, ts_milliseconds_option};
 use chrono::{DateTime, Utc};
 use diesel::{pg::PgConnection, result::Error};
+use failure::err_msg;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use svc_agent::AgentId;
@@ -69,6 +70,109 @@ impl Object {
 
     pub(crate) fn occurred_at(&self) -> i64 {
         self.occurred_at
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+pub(crate) struct Builder {
+    room_id: Option<Uuid>,
+    kind: Option<String>,
+    set: Option<String>,
+    label: Option<String>,
+    data: Option<JsonValue>,
+    occurred_at: Option<i64>,
+    created_by: Option<AgentId>,
+}
+
+impl Builder {
+    pub(crate) fn new() -> Self {
+        Self {
+            room_id: None,
+            kind: None,
+            set: None,
+            label: None,
+            data: None,
+            occurred_at: None,
+            created_by: None,
+        }
+    }
+
+    pub(crate) fn room_id(self, room_id: Uuid) -> Self {
+        Self {
+            room_id: Some(room_id),
+            ..self
+        }
+    }
+
+    pub(crate) fn kind(self, kind: &str) -> Self {
+        Self {
+            kind: Some(kind.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn set(self, set: &str) -> Self {
+        Self {
+            set: Some(set.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn label(self, label: &str) -> Self {
+        Self {
+            label: Some(label.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn data(self, data: &JsonValue) -> Self {
+        Self {
+            data: Some(data.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn occurred_at(self, occurred_at: i64) -> Self {
+        Self {
+            occurred_at: Some(occurred_at),
+            ..self
+        }
+    }
+
+    pub(crate) fn created_by(self, created_by: &AgentId) -> Self {
+        Self {
+            created_by: Some(created_by.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn build(self) -> Result<Object, failure::Error> {
+        let room_id = self.room_id.ok_or_else(|| err_msg("Missing `room_id`"))?;
+        let kind = self.kind.ok_or_else(|| err_msg("Missing `kind`"))?;
+        let set = self.set.unwrap_or_else(|| kind.clone());
+        let data = self.data.ok_or_else(|| err_msg("Missing `data`"))?;
+
+        let occurred_at = self
+            .occurred_at
+            .ok_or_else(|| err_msg("Missing `occurred_at`"))?;
+
+        let created_by = self
+            .created_by
+            .ok_or_else(|| err_msg("Missing `created_by`"))?;
+
+        Ok(Object {
+            id: Uuid::new_v4(),
+            room_id,
+            kind,
+            set,
+            label: self.label,
+            data,
+            occurred_at,
+            created_by,
+            created_at: Utc::now(),
+            deleted_at: None,
+        })
     }
 }
 

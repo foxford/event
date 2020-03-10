@@ -16,14 +16,15 @@ In case `is_claim` parameter is `true` the object is
 
 ## Multicast request
 
-Name     | Type    | Default    | Description
--------- | ------- | ---------- | -----------------------------
-room_id  | uuid    | _required_ | The room's identifier.
-type     | string  | _required_ | The event type.
-set      | string  |       type | Collection set's name.
-label    | string  | _optional_ | Collection item's label.
-data     | json    | _required_ | The event JSON payload.
-is_claim | boolean |      false | Whether to notify the tenant.
+Name          | Type    | Default    | Description
+------------- | ------- | ---------- | -----------------------------
+room_id       | uuid    | _required_ | The room's identifier.
+type          | string  | _required_ | The event type.
+set           | string  |       type | Collection set's name.
+label         | string  | _optional_ | Collection item's label.
+data          | json    | _required_ | The event JSON payload.
+is_claim      | boolean |      false | Whether to notify the tenant.
+is_persistent | boolean |       true | Whether to persist the event.
 
 The _type_ and _data_ is arbitrary except
 [stream editing events](../event.md#stream-editing-events).
