@@ -204,3 +204,22 @@ impl Event {
         query.execute(conn).expect("Failed to insert event")
     }
 }
+
+pub(crate) struct Edition {
+    source_room_id: Uuid,
+    created_by: AgentId,
+}
+
+impl Edition {
+    pub(crate) fn new(source_room_id: Uuid, created_by: &AgentId) -> Self {
+        Self {
+            source_room_id,
+            created_by: created_by.to_owned(),
+        }
+    }
+
+    pub(crate) fn insert(self, conn: &PgConnection) -> db::edition::Object {
+        let query = db::edition::InsertQuery::new(&self.source_room_id, &self.created_by);
+        query.execute(conn).expect("Failed to insert edition")
+    }
+}
