@@ -83,7 +83,10 @@ insert into event (id, room_id, kind, set, label, data, occurred_at, created_by,
 select
     id,
     room_id,
-    type as kind,
+    case type
+        when 'document-delete' then 'document'
+        else type
+    end as kind,
     case type
         when 'draw' then 'draw_' || uuid_generate_v5(uuid_ns_url(), data->>'url')::text || '_' || (data->>'page')::text
         else type
@@ -98,7 +101,10 @@ select
         when 'draw' then id::text
         else null
     end as label,
-    data,
+    case type
+        when 'document-delete' then data || '{"_removed": true}'::jsonb
+        else data
+    end as data,
     "offset" * 1000000 as occurred_at,
     ('(' || account_id || ',' || audience || ')', 'web')::agent_id as created_by,
     created_at
