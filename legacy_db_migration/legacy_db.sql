@@ -1,5 +1,7 @@
 begin;
 
+create extension if not exists "uuid-ossp";
+
 -- Connect to the legacy DB.
 create extension if not exists "dblink";
 create foreign data wrapper legacy_db_wrapper validator postgresql_fdw_validator;
@@ -28,7 +30,7 @@ select
     id,
     audience,
     parent_id as source_room_id,
-    tstzrange(opened_at, closed_at) as time,
+    tstzrange(opened_at, coalesce(closed_at, opened_at + interval '10 years')) as time,
     created_at
 from dblink('legacy_db', '
     select
@@ -81,19 +83,28 @@ insert into event (id, room_id, kind, set, label, data, occurred_at, created_by,
 select
     id,
     room_id,
-    type as kind,
-    type as set,
     case type
-        when 'unsubscribe' then data->'conn_id'
-        when 'subscribe' then data->'conn_id'
-        when 'document' then data->'url'
-        when 'document-delete' then data->'url'
+        when 'document-delete' then 'document'
+        else type
+    end as kind,
+    case type
+        when 'draw' then 'draw_' || uuid_generate_v5(uuid_ns_url(), data->>'url')::text || '_' || (data->>'page')::text
+        else type
+    end as set,
+    case type
+        when 'unsubscribe' then data->>'conn_id'
+        when 'subscribe' then data->>'conn_id'
+        when 'document' then uuid_generate_v5(uuid_ns_url(), data->>'url')::text
+        when 'document-delete' then uuid_generate_v5(uuid_ns_url(), data->>'url')::text
         when 'stream' then id::text
         when 'message' then id::text
-        when 'draw' then id:text
+        when 'draw' then id::text
         else null
     end as label,
-    data,
+    case type
+        when 'document-delete' then data || '{"_removed": true}'::jsonb
+        else data
+    end as data,
     "offset" * 1000000 as occurred_at,
     ('(' || account_id || ',' || audience || ')', 'web')::agent_id as created_by,
     created_at
@@ -143,5 +154,6 @@ reindex table event;
 drop server legacy_db cascade;
 drop foreign data wrapper legacy_db_wrapper;
 drop extension "dblink";
+drop extension "uuid-ossp";
 
 commit;
