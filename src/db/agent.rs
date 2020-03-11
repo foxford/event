@@ -11,11 +11,10 @@ use crate::schema::agent;
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize, PartialEq)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 #[PgType = "agent_status"]
 #[DieselType = "Agent_status"]
 pub(crate) enum Status {
-    #[serde(rename = "in_progress")]
     InProgress,
     Ready,
 }

@@ -28,6 +28,20 @@ table! {
     use diesel::sql_types::*;
     use crate::db::sql::*;
 
+    change (id) {
+        id -> Uuid,
+        edition_id -> Uuid,
+        kind -> Change_type,
+        data -> Jsonb,
+        event_id -> Nullable<Uuid>,
+        created_at -> Timestamptz,
+    }
+}
+
+table! {
+    use diesel::sql_types::*;
+    use crate::db::sql::*;
+
     edition (id) {
         id -> Uuid,
         source_room_id -> Uuid,
@@ -70,7 +84,9 @@ table! {
 
 joinable!(adjustment -> room (room_id));
 joinable!(agent -> room (room_id));
+joinable!(change -> edition (edition_id));
+joinable!(change -> event (event_id));
 joinable!(edition -> room (source_room_id));
 joinable!(event -> room (room_id));
 
-allow_tables_to_appear_in_same_query!(adjustment, agent, edition, event, room,);
+allow_tables_to_appear_in_same_query!(adjustment, agent, change, edition, event, room,);
