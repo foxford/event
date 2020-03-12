@@ -83,6 +83,7 @@ impl RequestHandler for ReadHandler {
         } else if let (Bound::Included(opened_at), Bound::Excluded(closed_at)) = room.time() {
             (*closed_at - *opened_at)
                 .num_nanoseconds()
+                .map(|n| n + 1)
                 .unwrap_or(std::i64::MAX)
         } else {
             return Err(svc_error!(
@@ -164,7 +165,7 @@ mod tests {
     use serde_derive::Deserialize;
     use serde_json::json;
 
-    use crate::db::event::{Object as Event, SetStateItem};
+    use crate::db::event::Object as Event;
     use crate::test_helpers::prelude::*;
 
     use super::*;
@@ -173,8 +174,8 @@ mod tests {
 
     #[derive(Deserialize)]
     struct State {
-        messages: Vec<SetStateItem>,
-        layout: SetStateItem,
+        messages: Vec<Event>,
+        layout: Event,
     }
 
     #[test]
@@ -246,7 +247,7 @@ mod tests {
 
     #[derive(Deserialize)]
     struct CollectionState {
-        messages: Vec<SetStateItem>,
+        messages: Vec<Event>,
         has_next: bool,
     }
 

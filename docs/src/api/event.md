@@ -15,17 +15,18 @@ the _label_ equal to arbitrary message's id.
 
 ## Properties
 
-Name        | Type     | Default    | Description
------------ | -------- | ---------- | -------------------------------------------------
-id          | uuid     | _required_ | The event's identifier.
-room_id     | uuid     | _required_ | The room's identifier to which the event belongs.
-type        | string   | _required_ | The event type.
-set         | string   |       type | The set to which the event is related.
-label       | string   | _optional_ | A label to identify an element within the set.
-data        | json     | _required_ | Schemaless payload of the event.
-occurred_at | int      | _required_ | Number of nanoseconds since the room's opening when the event took place.
-created_by  | agent_id | _required_ | An agent who created the event.
-created_at  | int      | _required_ | The event's absolute creation timestamp in milliseconds.
+Name                 | Type     | Default    | Description
+-------------------- | -------- | ---------- | -------------------------------------------------
+id                   | uuid     | _required_ | The event's identifier.
+room_id              | uuid     | _required_ | The room's identifier to which the event belongs.
+type                 | string   | _required_ | The event type.
+set                  | string   |       type | The set to which the event is related.
+label                | string   | _optional_ | A label to identify an element within the set.
+data                 | json     | _required_ | Schemaless payload of the event.
+occurred_at          | int      | _required_ | Number of nanoseconds since the room's opening when the event took place.
+original_occurred_at | int      | _required_ | `occurred_at` of the first event with the same `label`.
+created_by           | agent_id | _required_ | An agent who created the event.
+created_at           | int      | _required_ | The event's absolute creation timestamp in milliseconds.
 
 ## Stream editing events
 
