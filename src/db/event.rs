@@ -73,6 +73,10 @@ impl Object {
         self.occurred_at
     }
 
+    pub(crate) fn created_by(&self) -> &AgentId {
+        &self.created_by
+    }
+
     #[cfg(test)]
     pub(crate) fn original_occurred_at(&self) -> i64 {
         self.original_occurred_at
@@ -453,5 +457,38 @@ impl<'a> SetStateQuery<'a> {
             .filter(event::original_occurred_at.lt(self.occurred_at))
             .select(sql("COUNT(DISTINCT label) AS total"))
             .get_result(conn)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+pub(crate) struct OriginalEventQuery<'a> {
+    room_id: Uuid,
+    set: &'a str,
+    label: &'a str,
+}
+
+impl<'a> OriginalEventQuery<'a> {
+    pub(crate) fn new(room_id: Uuid, set: &'a str, label: &'a str) -> Self {
+        Self {
+            room_id,
+            set,
+            label,
+        }
+    }
+
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
+        use crate::diesel::RunQueryDsl;
+        use diesel::prelude::*;
+
+        event::table
+            .filter(event::deleted_at.is_null())
+            .filter(event::room_id.eq(self.room_id))
+            .filter(event::set.eq(self.set))
+            .filter(event::label.eq(self.label))
+            .order_by(event::occurred_at)
+            .limit(1)
+            .get_result(conn)
+            .optional()
     }
 }
