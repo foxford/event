@@ -52,6 +52,9 @@ macro_rules! request_routes {
 // Request routes configuration: method => RequestHandler
 request_routes!(
     "agent.list" => agent::ListHandler,
+    "change.create" => change::CreateHandler,
+    "change.delete" => change::DeleteHandler,
+    "change.list" => change::ListHandler,
     "edition.create" => edition::CreateHandler,
     "edition.list" => edition::ListHandler,
     "event.create" => event::CreateHandler,
@@ -108,6 +111,7 @@ event_routes!(
 
 pub(self) mod helpers;
 mod agent;
+mod change;
 mod edition;
 mod event;
 mod room;

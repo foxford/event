@@ -32,8 +32,13 @@ table! {
         id -> Uuid,
         edition_id -> Uuid,
         kind -> Change_type,
-        data -> Jsonb,
         event_id -> Nullable<Uuid>,
+        event_kind -> Nullable<Text>,
+        event_set -> Text,
+        event_label -> Nullable<Text>,
+        event_data -> Nullable<Jsonb>,
+        event_occurred_at -> Nullable<Int8>,
+        event_created_by -> Nullable<Agent_id>,
         created_at -> Timestamptz,
     }
 }

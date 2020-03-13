@@ -219,7 +219,57 @@ impl Edition {
     }
 
     pub(crate) fn insert(self, conn: &PgConnection) -> db::edition::Object {
-        let query = db::edition::InsertQuery::new(&self.source_room_id, &self.created_by);
+        let query = db::edition::InsertQuery::new(self.source_room_id, &self.created_by);
+        query.execute(conn).expect("Failed to insert edition")
+    }
+}
+
+pub(crate) struct Change {
+    edition_id: Uuid,
+    kind: crate::db::change::ChangeType,
+    event_id: Option<Uuid>,
+    event_data: Option<JsonValue>,
+}
+
+impl Change {
+    pub(crate) fn new(edition_id: Uuid, kind: crate::db::change::ChangeType) -> Self {
+        Self {
+            event_data: None,
+            event_id: None,
+            edition_id,
+            kind,
+        }
+    }
+
+    pub(crate) fn event_id(self, event_id: &Uuid) -> Self {
+        Self {
+            event_id: Some(event_id.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn event_data(self, data: JsonValue) -> Self {
+        Self {
+            event_data: Some(data),
+            ..self
+        }
+    }
+
+    pub(crate) fn insert(self, conn: &PgConnection) -> db::change::Object {
+        let query = db::change::InsertQuery::new(self.edition_id, self.kind);
+
+        let query = if let Some(event_id) = self.event_id {
+            query.event_id(event_id)
+        } else {
+            query
+        };
+
+        let query = if let Some(ref event_data) = self.event_data {
+            query.event_data(event_data)
+        } else {
+            query
+        };
+
         query.execute(conn).expect("Failed to insert edition")
     }
 }

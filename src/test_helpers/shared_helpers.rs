@@ -7,6 +7,7 @@ use svc_agent::AgentId;
 use uuid::Uuid;
 
 use crate::db::agent::{Object as Agent, Status as AgentStatus};
+use crate::db::edition::Object as Edition;
 use crate::db::room::Object as Room;
 
 use super::{factory, USR_AUDIENCE};
@@ -45,4 +46,8 @@ pub(crate) fn insert_agent(conn: &PgConnection, agent_id: &AgentId, room_id: Uui
         .room_id(room_id)
         .status(AgentStatus::Ready)
         .insert(&conn)
+}
+
+pub(crate) fn insert_edition(conn: &PgConnection, room: &Room, agent_id: &AgentId) -> Edition {
+    factory::Edition::new(room.id(), &agent_id).insert(&conn)
 }
