@@ -48,7 +48,7 @@ impl RequestHandler for CreateHandler {
             )
             .await?;
 
-        let query = db::edition::InsertQuery::new(&payload.room_id, reqp.as_agent_id());
+        let query = db::edition::InsertQuery::new(payload.room_id, reqp.as_agent_id());
         let edition = query.execute(&conn)?;
 
         let response = helpers::build_response(
@@ -153,13 +153,14 @@ impl RequestHandler for DeleteHandler {
     ) -> Result {
         let conn = context.db().get()?;
 
-        let (edition, room) = match db::edition::FindQuery::new(payload.id).execute(&conn)? {
-            Some((edition, room)) => (edition, room),
-            None => {
-                return Err(format!("Change not found, id = '{}'", payload.id))
-                    .status(ResponseStatus::NOT_FOUND);
-            }
-        };
+        let (edition, room) =
+            match db::edition::FindWithRoomQuery::new(payload.id).execute(&conn)? {
+                Some((edition, room)) => (edition, room),
+                None => {
+                    return Err(format!("Change not found, id = '{}'", payload.id))
+                        .status(ResponseStatus::NOT_FOUND);
+                }
+            };
 
         let authz_time = context
             .authz()

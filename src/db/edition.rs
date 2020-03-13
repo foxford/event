@@ -22,15 +22,37 @@ pub(crate) struct Object {
     created_at: DateTime<Utc>,
 }
 
+pub(crate) struct FindWithRoomQuery {
+    id: Uuid,
+}
+
+type EditionWithRoom = (Object, Room);
+
+impl FindWithRoomQuery {
+    pub(crate) fn new(id: Uuid) -> Self {
+        Self { id }
+    }
+
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<EditionWithRoom>, Error> {
+        use crate::schema::room;
+        use diesel::prelude::*;
+
+        let q = edition::table
+            .inner_join(room::table)
+            .filter(edition::id.eq(self.id));
+        q.get_result(conn).optional()
+    }
+}
+
 #[derive(Debug, Insertable)]
 #[table_name = "edition"]
 pub(crate) struct InsertQuery<'a> {
-    source_room_id: &'a Uuid,
+    source_room_id: Uuid,
     created_by: &'a AgentId,
 }
 
 impl<'a> InsertQuery<'a> {
-    pub(crate) fn new(source_room_id: &'a Uuid, created_by: &'a AgentId) -> Self {
+    pub(crate) fn new(source_room_id: Uuid, created_by: &'a AgentId) -> Self {
         Self {
             source_room_id,
             created_by,
@@ -54,17 +76,14 @@ pub(crate) struct ListQuery {
 impl ListQuery {
     pub(crate) fn new(source_room_id: Uuid) -> Self {
         Self {
-            source_room_id: source_room_id,
             limit: 25,
             last_created_at: None,
+            source_room_id,
         }
     }
 
     pub(crate) fn limit(self, limit: i64) -> Self {
-        Self {
-            limit: limit,
-            ..self
-        }
+        Self { limit, ..self }
     }
 
     pub(crate) fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
@@ -85,28 +104,8 @@ impl ListQuery {
             q = q.filter(edition::created_at.ge(last_created_at));
         }
 
-        q = q.limit(self.limit);
+        q = q.order_by(edition::created_at.desc()).limit(self.limit);
         q.get_results(conn)
-    }
-}
-
-pub(crate) struct FindQuery {
-    id: Uuid,
-}
-
-impl FindQuery {
-    pub(crate) fn new(id: Uuid) -> Self {
-        Self { id }
-    }
-
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<(Object, Room)>, Error> {
-        use crate::schema::room;
-        use diesel::prelude::*;
-
-        let q = edition::table
-            .inner_join(room::table)
-            .filter(edition::id.eq(self.id));
-        q.get_result(conn).optional()
     }
 }
 
