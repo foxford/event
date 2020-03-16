@@ -17,7 +17,7 @@ use crate::app::context::Context;
 use crate::app::endpoint::{helpers, RequestHandler};
 use crate::app::operations::adjust_room;
 use crate::db::adjustment::Segment;
-use crate::db::agent;
+use crate::db::agent_session;
 use crate::db::room::{now, FindQuery, InsertQuery, Time};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -196,7 +196,7 @@ impl RequestHandler for EnterHandler {
             .await?;
 
         // Register agent in `in_progress` state.
-        agent::InsertQuery::new(reqp.as_agent_id(), room.id()).execute(&conn)?;
+        agent_session::InsertQuery::new(reqp.as_agent_id(), room.id()).execute(&conn)?;
 
         // Send dynamic subscription creation request to the broker.
         let payload = SubscriptionRequest::new(reqp.as_agent_id().to_owned(), object);
@@ -259,10 +259,10 @@ impl RequestHandler for LeaveHandler {
         };
 
         // Check room presence.
-        let results = agent::ListQuery::new()
+        let results = agent_session::ListQuery::new()
             .room_id(room.id())
             .agent_id(reqp.as_agent_id())
-            .status(agent::Status::Ready)
+            .status(agent_session::Status::Started)
             .execute(&conn)?;
 
         if results.len() == 0 {
@@ -783,7 +783,7 @@ mod tests {
                 let room = shared_helpers::insert_room(&conn);
 
                 // Put agent online in the room.
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                shared_helpers::insert_agent_session(&conn, agent.agent_id(), room.id());
                 room
             };
 

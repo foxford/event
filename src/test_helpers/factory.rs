@@ -59,18 +59,20 @@ impl Room {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct Agent {
+pub(crate) struct AgentSession {
     agent_id: Option<AgentId>,
     room_id: Option<Uuid>,
-    status: Option<db::agent::Status>,
+    status: Option<db::agent_session::Status>,
+    time: Option<db::agent_session::Time>,
 }
 
-impl Agent {
+impl AgentSession {
     pub(crate) fn new() -> Self {
         Self {
             agent_id: None,
             room_id: None,
             status: None,
+            time: None,
         }
     }
 
@@ -88,21 +90,32 @@ impl Agent {
         }
     }
 
-    pub(crate) fn status(self, status: db::agent::Status) -> Self {
+    pub(crate) fn status(self, status: db::agent_session::Status) -> Self {
         Self {
             status: Some(status),
             ..self
         }
     }
 
-    pub(crate) fn insert(self, conn: &PgConnection) -> db::agent::Object {
+    pub(crate) fn time(self, time: db::agent_session::Time) -> Self {
+        Self {
+            time: Some(time),
+            ..self
+        }
+    }
+
+    pub(crate) fn insert(self, conn: &PgConnection) -> db::agent_session::Object {
         let agent_id = self.agent_id.expect("Agent ID not set");
         let room_id = self.room_id.expect("Room ID not set");
 
-        let mut query = db::agent::InsertQuery::new(&agent_id, room_id);
+        let mut query = db::agent_session::InsertQuery::new(&agent_id, room_id);
 
         if let Some(status) = self.status {
             query = query.status(status);
+        }
+
+        if let Some(time) = self.time {
+            query = query.time(time);
         }
 
         query.execute(conn).expect("Failed to insert agent")

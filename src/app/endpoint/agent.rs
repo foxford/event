@@ -57,9 +57,9 @@ impl RequestHandler for ListHandler {
             .await?;
 
         // Get agents list in the room.
-        let agents = db::agent::ListQuery::new()
+        let agents = db::agent_session::ListQuery::new()
             .room_id(payload.room_id)
-            .status(db::agent::Status::Ready)
+            .status(db::agent_session::Status::Started)
             .offset(payload.offset.unwrap_or_else(|| 0))
             .limit(std::cmp::min(
                 payload.limit.unwrap_or_else(|| MAX_LIMIT),
@@ -112,7 +112,7 @@ mod tests {
 
                 // Create room and put the agent online.
                 let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                shared_helpers::insert_agent_session(&conn, agent.agent_id(), room.id());
                 room
             };
 

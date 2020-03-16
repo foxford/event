@@ -70,10 +70,10 @@ impl RequestHandler for CreateHandler {
             })?;
 
         // Check whether the agent has entered the room.
-        let agents = db::agent::ListQuery::new()
+        let agents = db::agent_session::ListQuery::new()
             .agent_id(reqp.as_agent_id())
             .room_id(room.id())
-            .status(db::agent::Status::Ready)
+            .status(db::agent_session::Status::Started)
             .execute(&conn)?;
 
         if agents.len() != 1 {
@@ -334,7 +334,7 @@ mod tests {
 
                 // Create room and put the agent online.
                 let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                shared_helpers::insert_agent_session(&conn, agent.agent_id(), room.id());
                 room
             };
 
@@ -482,7 +482,7 @@ mod tests {
 
                 // Create room and put the agent online.
                 let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                shared_helpers::insert_agent_session(&conn, agent.agent_id(), room.id());
                 room
             };
 
@@ -569,7 +569,7 @@ mod tests {
 
                 // Create room and put the agent online.
                 let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                shared_helpers::insert_agent_session(&conn, agent.agent_id(), room.id());
                 room
             };
 
@@ -649,7 +649,7 @@ mod tests {
 
                 // Create room and put the agent online.
                 let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                shared_helpers::insert_agent_session(&conn, agent.agent_id(), room.id());
                 room
             };
 
@@ -741,7 +741,7 @@ mod tests {
 
                 // Create closed room and put the agent online.
                 let room = shared_helpers::insert_closed_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                shared_helpers::insert_agent_session(&conn, agent.agent_id(), room.id());
                 room
             };
 
