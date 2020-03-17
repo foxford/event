@@ -422,7 +422,7 @@ mod tests {
                     .insert(&conn);
 
                 // Put the agent online.
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                shared_helpers::insert_agent_session(&conn, agent.agent_id(), room.id());
                 room
             };
 

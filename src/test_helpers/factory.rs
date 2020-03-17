@@ -108,7 +108,7 @@ impl AgentSession {
         let agent_id = self.agent_id.expect("Agent ID not set");
         let room_id = self.room_id.expect("Room ID not set");
 
-        let mut query = db::agent_session::InsertQuery::new(&agent_id, room_id);
+        let mut query = db::agent_session::UpsertQuery::new(&agent_id, room_id);
 
         if let Some(status) = self.status {
             query = query.status(status);

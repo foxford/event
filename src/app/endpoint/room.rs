@@ -195,8 +195,8 @@ impl RequestHandler for EnterHandler {
             .authorize(room.audience(), reqp, object.clone(), "subscribe")
             .await?;
 
-        // Register agent in `in_progress` state.
-        agent_session::InsertQuery::new(reqp.as_agent_id(), room.id()).execute(&conn)?;
+        // Register agent in `claimed` state.
+        agent_session::UpsertQuery::new(reqp.as_agent_id(), room.id()).execute(&conn)?;
 
         // Send dynamic subscription creation request to the broker.
         let payload = SubscriptionRequest::new(reqp.as_agent_id().to_owned(), object);
