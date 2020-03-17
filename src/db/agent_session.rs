@@ -167,9 +167,9 @@ impl<'a> FindQuery<'a> {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Insertable)]
+#[derive(Debug, Insertable, AsChangeset)]
 #[table_name = "agent_session"]
-pub(crate) struct InsertQuery<'a> {
+pub(crate) struct UpsertQuery<'a> {
     id: Option<Uuid>,
     agent_id: &'a AgentId,
     room_id: Uuid,
@@ -177,7 +177,7 @@ pub(crate) struct InsertQuery<'a> {
     time: Option<Time>,
 }
 
-impl<'a> InsertQuery<'a> {
+impl<'a> UpsertQuery<'a> {
     pub(crate) fn new(agent_id: &'a AgentId, room_id: Uuid) -> Self {
         Self {
             id: None,
@@ -202,15 +202,26 @@ impl<'a> InsertQuery<'a> {
     }
 
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
-        use crate::schema::agent_session::dsl::*;
+        use diesel::prelude::*;
         use diesel::{ExpressionMethods, RunQueryDsl};
 
-        diesel::insert_into(agent_session)
-            .values(self)
-            .on_conflict((agent_id, room_id))
-            .do_update()
-            .set(status.eq(self.status))
-            .get_result(conn)
+        conn.transaction::<Object, Error, _>(|| {
+            let maybe_object: Result<Option<Object>, Error> = agent_session::table
+                .for_update()
+                .filter(agent_session::status.ne(Status::Finished))
+                .filter(agent_session::room_id.eq(self.room_id))
+                .filter(agent_session::agent_id.eq(self.agent_id))
+                .get_result(conn)
+                .optional();
+
+            match maybe_object {
+                Err(err) => Err(err),
+                Ok(Some(object)) => diesel::update(&object).set(self).get_result(conn),
+                Ok(None) => diesel::insert_into(agent_session::table)
+                    .values(self)
+                    .get_result(conn),
+            }
+        })
     }
 }
 
