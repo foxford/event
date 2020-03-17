@@ -106,16 +106,15 @@ select
         else type
     end as set,
     case type
-        when 'unsubscribe' then data->>'conn_id'
-        when 'subscribe' then data->>'conn_id'
         when 'document' then uuid_generate_v5(uuid_ns_url(), data->>'url')::text
         when 'document-delete' then uuid_generate_v5(uuid_ns_url(), data->>'url')::text
         when 'stream' then id::text
         when 'message' then id::text
-        when 'draw' then id::text
+        when 'draw' then data->'geometry'->>'_id'
         else null
     end as label,
     case type
+        when 'draw' then json_build_object('geometry', data->'geometry')
         when 'document-delete' then data || '{"_removed": true}'::jsonb
         else data
     end as data,
@@ -135,7 +134,7 @@ from dblink('legacy_db', '
         account_id,
         "offset"
     from events
-    where deleted_at is null    
+    where deleted_at is null
 ') as data(
     id uuid,
     type varchar(255),
@@ -146,7 +145,8 @@ from dblink('legacy_db', '
     account_id varchar(1024),
     "offset" bigint
 )
-where nextval('event_tracking') > 0; -- Increment tracking sequence.
+where type in ('document', 'document-delete', 'stream', 'message', 'draw', 'layout', 'leader')
+and   nextval('event_tracking') > 0; -- Increment tracking sequence.
 
 drop sequence event_tracking;
 
