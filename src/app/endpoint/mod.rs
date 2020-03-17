@@ -3,15 +3,12 @@ use chrono::{DateTime, Utc};
 use serde::de::DeserializeOwned;
 use svc_agent::mqtt::{
     compat::IncomingEnvelope, IncomingEventProperties, IncomingRequestProperties,
-    IntoPublishableDump,
 };
 use svc_error::Error as SvcError;
 
-#[allow(unused_imports)]
-use crate::app::{
-    context::Context,
-    message_handler::{EventEnvelopeHandler, RequestEnvelopeHandler},
-};
+use crate::app::context::Context;
+pub(self) use crate::app::message_handler::MessageStream;
+use crate::app::message_handler::{EventEnvelopeHandler, RequestEnvelopeHandler};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -25,7 +22,7 @@ pub(crate) trait RequestHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError>;
+    ) -> Result<MessageStream, SvcError>;
 }
 
 macro_rules! request_routes {
@@ -35,7 +32,7 @@ macro_rules! request_routes {
             envelope: IncomingEnvelope,
             reqp: &IncomingRequestProperties,
             start_timestamp: DateTime<Utc>,
-        ) -> Option<Vec<Box<dyn IntoPublishableDump>>> {
+        ) -> Option<MessageStream> {
             match reqp.method() {
                 $(
                     $m => Some(
@@ -55,7 +52,6 @@ request_routes!(
     "edition.list" => edition::ListHandler,
     "event.create" => event::CreateHandler,
     "event.list" => event::ListHandler,
-    "room.adjust" => room::AdjustHandler,
     "room.create" => room::CreateHandler,
     "room.enter" => room::EnterHandler,
     "room.leave" => room::LeaveHandler,
@@ -74,7 +70,7 @@ pub(crate) trait EventHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError>;
+    ) -> Result<MessageStream, SvcError>;
 }
 
 macro_rules! event_routes {
@@ -85,7 +81,7 @@ macro_rules! event_routes {
             envelope: IncomingEnvelope,
             evp: &IncomingEventProperties,
             start_timestamp: DateTime<Utc>,
-        ) -> Option<Vec<Box<dyn IntoPublishableDump>>> {
+        ) -> Option<MessageStream> {
             match evp.label() {
                 $(
                     Some($l) => Some(

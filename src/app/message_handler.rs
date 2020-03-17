@@ -1,8 +1,11 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use async_std::prelude::*;
+use async_std::stream::{self, Stream};
 use chrono::{DateTime, Utc};
 use failure::{format_err, Error};
+use futures_util::pin_mut;
 use log::{error, info, warn};
 use svc_agent::mqtt::{
     compat, Agent, IncomingEventProperties, IncomingRequestProperties, IntoPublishableDump,
@@ -11,6 +14,9 @@ use svc_agent::mqtt::{
 use svc_error::{extension::sentry, Error as SvcError};
 
 use crate::app::{context::Context, endpoint, API_VERSION};
+
+pub(crate) type MessageStream =
+    Box<dyn Stream<Item = Box<dyn IntoPublishableDump + Send>> + Send + Unpin>;
 
 pub(crate) struct MessageHandler<C: Context> {
     agent: Agent,
@@ -41,9 +47,8 @@ impl<C: Context + Sync> MessageHandler<C> {
                 .detail(&err.to_string())
                 .build();
 
-            sentry::send(svc_error).unwrap_or_else(|err| {
-                warn!("Error sending error to Sentry: {}", err)
-            });
+            sentry::send(svc_error)
+                .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
         }
     }
 
@@ -75,21 +80,22 @@ impl<C: Context + Sync> MessageHandler<C> {
         reqp: IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result<(), Error> {
-        let outgoing_messages =
+        let outgoing_message_stream =
             endpoint::route_request(&self.context, envelope, &reqp, start_timestamp)
                 .await
                 .unwrap_or_else(|| {
                     error_response(
                         ResponseStatus::METHOD_NOT_ALLOWED,
                         "about:blank",
-                        "Uknown method",
+                        "Unknown method",
                         &format!("Unknown method '{}'", reqp.method()),
                         &reqp,
                         start_timestamp,
                     )
                 });
 
-        self.publish_outgoing_messages(outgoing_messages)
+        self.publish_outgoing_messages(outgoing_message_stream)
+            .await
     }
 
     async fn handle_event(
@@ -100,15 +106,16 @@ impl<C: Context + Sync> MessageHandler<C> {
     ) -> Result<(), Error> {
         match evp.label() {
             Some(label) => {
-                let outgoing_messages =
+                let outgoing_message_stream =
                     endpoint::route_event(&self.context, envelope, &evp, start_timestamp)
                         .await
                         .unwrap_or_else(|| {
                             warn!("Unexpected event with label = '{}'", label);
-                            vec![]
+                            Box::new(stream::empty())
                         });
 
-                self.publish_outgoing_messages(outgoing_messages)
+                self.publish_outgoing_messages(outgoing_message_stream)
+                    .await
             }
             None => {
                 warn!("Got event with missing label");
@@ -117,13 +124,11 @@ impl<C: Context + Sync> MessageHandler<C> {
         }
     }
 
-    fn publish_outgoing_messages(
-        &self,
-        messages: Vec<Box<dyn IntoPublishableDump>>,
-    ) -> Result<(), Error> {
+    async fn publish_outgoing_messages(&self, message_stream: MessageStream) -> Result<(), Error> {
         let mut agent = self.agent.clone();
+        pin_mut!(message_stream);
 
-        for message in messages {
+        while let Some(message) = message_stream.next().await {
             publish_message(&mut agent, message)?;
         }
 
@@ -138,7 +143,7 @@ fn error_response(
     detail: &str,
     reqp: &IncomingRequestProperties,
     start_timestamp: DateTime<Utc>,
-) -> Vec<Box<dyn IntoPublishableDump>> {
+) -> MessageStream {
     let err = svc_error::Error::builder()
         .status(status)
         .kind(kind, title)
@@ -148,7 +153,9 @@ fn error_response(
     let timing = ShortTermTimingProperties::until_now(start_timestamp);
     let props = reqp.to_response(status, timing);
     let resp = OutgoingResponse::unicast(err, props, reqp, API_VERSION);
-    vec![Box::new(resp) as Box<dyn IntoPublishableDump>]
+    Box::new(stream::once(
+        Box::new(resp) as Box<dyn IntoPublishableDump + Send>
+    ))
 }
 
 pub(crate) fn publish_message(
@@ -183,7 +190,7 @@ pub(crate) trait RequestEnvelopeHandler<'async_trait> {
         envelope: compat::IncomingEnvelope,
         reqp: &'async_trait IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Pin<Box<dyn Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'async_trait>>;
+    ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>>;
 }
 
 // Can't use `#[async_trait]` macro here because it's not smart enough to add `'async_trait`
@@ -197,7 +204,7 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
         envelope: compat::IncomingEnvelope,
         reqp: &'async_trait IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Pin<Box<dyn Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'async_trait>>
+    ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>>
     where
         Self: Sync + 'async_trait,
     {
@@ -207,7 +214,7 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
             envelope: compat::IncomingEnvelope,
             reqp: &IncomingRequestProperties,
             start_timestamp: DateTime<Utc>,
-        ) -> Vec<Box<dyn IntoPublishableDump>> {
+        ) -> MessageStream {
             // Parse the envelope with the payload type specified in the handler.
             match envelope.payload::<H::Payload>() {
                 // Call handler.
@@ -256,7 +263,7 @@ pub(crate) trait EventEnvelopeHandler<'async_trait> {
         envelope: compat::IncomingEnvelope,
         evp: &'async_trait IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Pin<Box<dyn Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'async_trait>>;
+    ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>>;
 }
 
 // This is the same as with the above.
@@ -268,15 +275,14 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
         envelope: compat::IncomingEnvelope,
         evp: &'async_trait IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Pin<Box<dyn Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'async_trait>>
-    {
+    ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>> {
         // The actual implementation.
         async fn handle_envelope<H: endpoint::EventHandler, C: Context>(
             context: &C,
             envelope: compat::IncomingEnvelope,
             evp: &IncomingEventProperties,
             start_timestamp: DateTime<Utc>,
-        ) -> Vec<Box<dyn IntoPublishableDump>> {
+        ) -> MessageStream {
             // Parse event envelope with the payload from the handler.
             match envelope.payload::<H::Payload>() {
                 // Call handler.
@@ -298,7 +304,7 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                             });
                         }
 
-                        vec![]
+                        Box::new(stream::empty())
                     }),
                 Err(err) => {
                     // Bad envelope or payload format.
@@ -306,7 +312,7 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                         error!("Failed to parse event with label = '{}': {}", label, err);
                     }
 
-                    vec![]
+                    Box::new(stream::empty())
                 }
             }
         }

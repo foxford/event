@@ -1,3 +1,5 @@
+use async_std::prelude::*;
+use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use log::{error, warn};
@@ -14,7 +16,7 @@ use svc_error::{extension::sentry, Error as SvcError};
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{helpers, RequestHandler};
+use crate::app::endpoint::{helpers, MessageStream, RequestHandler};
 use crate::app::operations::adjust_room;
 use crate::db::adjustment::Segment;
 use crate::db::agent_session;
@@ -61,7 +63,7 @@ impl RequestHandler for CreateHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         // Authorize room creation on the tenant.
         let authz_time = context
             .authz()
@@ -97,7 +99,7 @@ impl RequestHandler for CreateHandler {
             start_timestamp,
         );
 
-        Ok(vec![response, notification])
+        Ok(Box::new(stream::from_iter(vec![response, notification])))
     }
 }
 
@@ -120,7 +122,7 @@ impl RequestHandler for ReadHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         let conn = context.db().get()?;
 
         let room = match FindQuery::new(payload.id).execute(&conn)? {
@@ -143,13 +145,13 @@ impl RequestHandler for ReadHandler {
             .authorize(room.audience(), reqp, object, "read")
             .await?;
 
-        Ok(vec![helpers::build_response(
+        Ok(Box::new(stream::once(helpers::build_response(
             ResponseStatus::OK,
             room,
             reqp,
             start_timestamp,
             Some(authz_time),
-        )])
+        ))))
     }
 }
 
@@ -172,7 +174,7 @@ impl RequestHandler for EnterHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         let conn = context.db().get()?;
 
         let room = match FindQuery::new(payload.id).time(now()).execute(&conn)? {
@@ -221,7 +223,8 @@ impl RequestHandler for EnterHandler {
         //        Then we won't need the local state on the broker at all and will be able
         //        to send a multicast request to the broker.
         let outgoing_request = OutgoingRequest::unicast(payload, props, reqp, MQTT_GW_API_VERSION);
-        Ok(vec![Box::new(outgoing_request)])
+        let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableDump + Send>;
+        Ok(Box::new(stream::once(boxed_request)))
     }
 }
 
@@ -244,7 +247,7 @@ impl RequestHandler for LeaveHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         let conn = context.db().get()?;
 
         let room = match FindQuery::new(payload.id).execute(&conn)? {
@@ -299,7 +302,8 @@ impl RequestHandler for LeaveHandler {
         //        Then we won't need the local state on the broker at all and will be able
         //        to send a multicast request to the broker.
         let outgoing_request = OutgoingRequest::unicast(payload, props, reqp, MQTT_GW_API_VERSION);
-        Ok(vec![Box::new(outgoing_request)])
+        let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableDump + Send>;
+        Ok(Box::new(stream::once(boxed_request)))
     }
 }
 
@@ -326,7 +330,7 @@ impl RequestHandler for AdjustHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         let room = {
             let conn = context.db().get()?;
 
@@ -354,7 +358,23 @@ impl RequestHandler for AdjustHandler {
         // Run asynchronous task for adjustment.
         let db = context.db().to_owned();
 
-        context.run_task(async move {
+        // Respond with 202.
+        // The actual task result will be broadcasted to the room topic when finished.
+        let response = stream::once(helpers::build_response(
+            ResponseStatus::ACCEPTED,
+            json!({}),
+            reqp,
+            start_timestamp,
+            Some(authz_time),
+        ));
+
+        let mut task_finished = false;
+
+        let notification = stream::from_fn(move || {
+            if task_finished {
+                return None;
+            }
+
             // Call room adjustment operation.
             let operation_result = adjust_room(
                 &db,
@@ -404,18 +424,12 @@ impl RequestHandler for AdjustHandler {
             let props = OutgoingEventProperties::new("room.adjust", timing);
             let path = format!("audiences/{}/events", room.audience());
             let event = OutgoingEvent::broadcast(notification, props, &path);
-            vec![Box::new(event) as Box<dyn IntoPublishableDump>]
+
+            task_finished = true;
+            Some(Box::new(event) as Box<dyn IntoPublishableDump + Send>)
         });
 
-        // Respond with 202.
-        // The actual task result will be broadcasted to the room topic when finished.
-        Ok(vec![helpers::build_response(
-            ResponseStatus::ACCEPTED,
-            json!({}),
-            reqp,
-            start_timestamp,
-            Some(authz_time),
-        )])
+        Ok(Box::new(response.chain(notification)))
     }
 }
 

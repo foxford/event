@@ -1,7 +1,4 @@
-use std::future::Future;
-
 use serde_json::json;
-use svc_agent::mqtt::IntoPublishableDump;
 use svc_authz::ClientMap as Authz;
 
 use crate::app::context::Context;
@@ -69,12 +66,5 @@ impl Context for TestContext {
 
     fn db(&self) -> &Db {
         self.db.connection_pool()
-    }
-
-    fn run_task(
-        &self,
-        _task: impl Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'static,
-    ) {
-        // Skip running asynchronous tasks in tests.
     }
 }

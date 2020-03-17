@@ -1,15 +1,16 @@
 use std::ops::Bound;
 
+use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::{map::Map as JsonMap, Value as JsonValue};
-use svc_agent::mqtt::{IncomingRequestProperties, IntoPublishableDump, ResponseStatus};
+use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
 use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{helpers, RequestHandler};
+use crate::app::endpoint::{helpers, MessageStream, RequestHandler};
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -37,7 +38,7 @@ impl RequestHandler for ReadHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         // Validate parameters.
         let validation_error = match payload.sets.len() {
             0 => Some("'sets' can't be empty"),
@@ -148,13 +149,13 @@ impl RequestHandler for ReadHandler {
         }
 
         // Respond with state.
-        Ok(vec![helpers::build_response(
+        Ok(Box::new(stream::once(helpers::build_response(
             ResponseStatus::OK,
             JsonValue::Object(state),
             reqp,
             start_timestamp,
             Some(authz_time),
-        )])
+        ))))
     }
 }
 

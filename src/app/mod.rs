@@ -14,7 +14,6 @@ use crate::config;
 use crate::db::ConnectionPool;
 use context::AppContext;
 use message_handler::MessageHandler;
-use task_executor::AppTaskExecutor;
 
 pub(crate) const API_VERSION: &str = "v1";
 
@@ -77,12 +76,7 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
         .map_err(|err| format_err!("Error subscribing to multicast requests: {}", err))?;
 
     // Context
-    let context = AppContext::new(
-        config,
-        authz,
-        db.clone(),
-        AppTaskExecutor::new(agent.clone()),
-    );
+    let context = AppContext::new(config, authz, db.clone());
 
     // Message handler
     let message_handler = Arc::new(MessageHandler::new(agent, context));
@@ -108,4 +102,3 @@ pub(crate) mod context;
 pub(crate) mod endpoint;
 pub(crate) mod message_handler;
 pub(crate) mod operations;
-pub(crate) mod task_executor;

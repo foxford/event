@@ -1,8 +1,9 @@
+use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::{
-    mqtt::{IncomingRequestProperties, IntoPublishableDump, ResponseStatus},
+    mqtt::{IncomingRequestProperties, ResponseStatus},
     Addressable,
 };
 use svc_error::Error as SvcError;
@@ -10,7 +11,7 @@ use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{helpers, RequestHandler};
+use crate::app::endpoint::{helpers, MessageStream, RequestHandler};
 use crate::db;
 
 pub(crate) struct CreateHandler;
@@ -30,7 +31,7 @@ impl RequestHandler for CreateHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         let conn = context.db().get()?;
 
         let room = match db::room::FindQuery::new(payload.room_id).execute(&conn)? {
@@ -73,7 +74,7 @@ impl RequestHandler for CreateHandler {
             start_timestamp,
         );
 
-        Ok(vec![response, notification])
+        Ok(Box::new(stream::from_iter(vec![response, notification])))
     }
 }
 
@@ -96,7 +97,7 @@ impl RequestHandler for ListHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         let conn = context.db().get()?;
 
         let room = match db::room::FindQuery::new(payload.room_id).execute(&conn)? {
@@ -135,13 +136,13 @@ impl RequestHandler for ListHandler {
         let editions = query.execute(&conn)?;
 
         // Respond with events list.
-        Ok(vec![helpers::build_response(
+        Ok(Box::new(stream::once(helpers::build_response(
             ResponseStatus::OK,
             editions,
             reqp,
             start_timestamp,
             Some(authz_time),
-        )])
+        ))))
     }
 }
 
