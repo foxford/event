@@ -87,12 +87,27 @@ impl RequestHandler for CreateHandler {
 
         // Authorize event creation on tenant with cache.
         let room_id = room.id().to_string();
-        let author = reqp.as_account_id().to_string();
 
         let key = match payload.is_claim {
             false => "events",
             true => "claims",
         };
+
+        let author = match payload {
+            // Get author of the original event with the same label if applicable.
+            CreateRequest {
+                set: Some(ref set),
+                label: Some(ref label),
+                ..
+            } => db::event::OriginalEventQuery::new(room.id(), set, label)
+                .execute(&conn)?
+                .map(|original_event| original_event.created_by().as_account_id().to_string()),
+            _ => None,
+        }
+        .unwrap_or_else(|| {
+            // If set & label are not given or there're no events for them use current account.
+            reqp.as_account_id().to_string()
+        });
 
         let object = vec!["rooms", &room_id, key, &payload.kind, "authors", &author];
 
@@ -376,6 +391,80 @@ mod tests {
             assert_eq!(event.set(), "messages");
             assert_eq!(event.label(), Some("message-1"));
             assert_eq!(event.data(), &json!({ "text": "hello" }));
+        });
+    }
+
+    #[test]
+    fn create_next_event() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let original_author = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let agent = TestAgent::new("web", "moderator", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                let room = shared_helpers::insert_room(&conn);
+
+                // Add an event to the room.
+                factory::Event::new()
+                    .room_id(room.id())
+                    .kind("message")
+                    .set("messages")
+                    .label("message-1")
+                    .data(&json!({ "text": "original text" }))
+                    .occurred_at(1_000_000_000)
+                    .created_by(&original_author.agent_id())
+                    .insert(&conn);
+
+                // Put the agent online.
+                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                room
+            };
+
+            // Allow agent to create events of type `message` in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+
+            // Should authorize with the author of the original event.
+            let account_id = original_author.agent_id().as_account_id().to_string();
+
+            let object = vec![
+                "rooms",
+                &room_id,
+                "events",
+                "message",
+                "authors",
+                &account_id,
+            ];
+
+            authz.allow(agent.account_id(), object, "create");
+
+            // Make event.create request with the same set/label as existing event.
+            let context = TestContext::new(db, authz);
+
+            let payload = CreateRequest {
+                room_id: room.id(),
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                data: json!({ "text": "modified text" }),
+                is_claim: false,
+                is_persistent: true,
+            };
+
+            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                .await
+                .expect("Event creation failed");
+
+            // Assert response.
+            let (event, respp) = find_response::<Event>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(event.created_by(), agent.agent_id());
         });
     }
 
