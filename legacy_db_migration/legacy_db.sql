@@ -1,3 +1,6 @@
+create sequence event_tracking start 1;
+create sequence original_occurred_at_tracking start 1;
+
 begin;
 
 create extension if not exists "uuid-ossp";
@@ -5,7 +8,7 @@ create extension if not exists "uuid-ossp";
 -- Connect to the legacy DB.
 create extension if not exists "dblink";
 create foreign data wrapper legacy_db_wrapper validator postgresql_fdw_validator;
-create server legacy_db foreign data wrapper legacy_db_wrapper options (hostaddr '${SOURCE_HOST}', dbname '${SOURCE_DB}');
+create server legacy_db foreign data wrapper legacy_db_wrapper options (hostaddr '${SOURCE_HOST}', port '${SOURCE_PORT}', dbname '${SOURCE_DB}');
 create user mapping for postgres server legacy_db options (user '${SOURCE_USER}', password '${SOURCE_PASSWORD}');
 select dblink_connect('legacy_db');
 grant usage on foreign server legacy_db to postgres;
@@ -80,8 +83,6 @@ from dblink('legacy_db', '
 
 -- Migrate events.
 -- WARNING: Long query. Track progress with `select nextval('event_tracking');`
-create sequence event_tracking start 1;
-
 insert into event (
     id,
     room_id,
@@ -114,7 +115,7 @@ select
         else null
     end as label,
     case type
-        when 'draw' then json_build_object('geometry', data->'geometry')
+        when 'draw' then jsonb_build_object('geometry', data->'geometry')
         when 'document-delete' then data || '{"_removed": true}'::jsonb
         else data
     end as data,
@@ -122,7 +123,7 @@ select
     ('(' || account_id || ',' || audience || ')', 'web')::agent_id as created_by,
     created_at,
     -- Temporary value to pass NOT NULL constraint. The actual value is being calculated below.
-    0 as original_occurred_at,
+    0 as original_occurred_at
 from dblink('legacy_db', '
     select
         id,
@@ -152,8 +153,6 @@ drop sequence event_tracking;
 
 -- Calculate `original_occurred_at`.
 -- WARNING: Long query. Track progress with `select nextval('original_occurred_at_tracking');`
-create sequence original_occurred_at_tracking start 1;
-
 update event as e
 set original_occurred_at = coalesce(oe.occurred_at, e.occurred_at)
 from (
@@ -199,4 +198,8 @@ drop extension "dblink";
 drop extension "uuid-ossp";
 
 commit;
-vacuum analyze;
+
+drop sequence event_tracking;
+drop sequence original_occurred_at_tracking;
+
+vacuum full analyze;
