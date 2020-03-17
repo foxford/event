@@ -3,7 +3,6 @@ use std::future::Future;
 use serde_json::json;
 use svc_agent::mqtt::IntoPublishableDump;
 use svc_authz::ClientMap as Authz;
-use svc_error::Error as SvcError;
 
 use crate::app::context::Context;
 use crate::config::Config;
@@ -75,8 +74,7 @@ impl Context for TestContext {
     fn run_task(
         &self,
         _task: impl Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'static,
-    ) -> Result<(), SvcError> {
+    ) {
         // Skip running asynchronous tasks in tests.
-        Ok(())
     }
 }

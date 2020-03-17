@@ -5,6 +5,7 @@ authors = ["Timofey Martynov <t.martinov@netology-group.ru>"]
 edition = "2018"
 
 [dependencies]
+async-std = {version = "1", features = ["attributes", "unstable"]}
 async-trait = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 config = "0.10"
@@ -13,7 +14,7 @@ diesel-derive-enum = { version = "0.4", features = ["postgres"] }
 dotenv = "0.15"
 env_logger = "0.7"
 failure = "0.1"
-futures = { version = "0.3", features = ["thread-pool"] }
+futures = "0.3"
 futures-channel = "0.3"
 http = "0.1"
 log = "0.4"

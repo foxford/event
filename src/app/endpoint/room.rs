@@ -405,7 +405,7 @@ impl RequestHandler for AdjustHandler {
             let path = format!("audiences/{}/events", room.audience());
             let event = OutgoingEvent::broadcast(notification, props, &path);
             vec![Box::new(event) as Box<dyn IntoPublishableDump>]
-        })?;
+        });
 
         // Respond with 202.
         // The actual task result will be broadcasted to the room topic when finished.

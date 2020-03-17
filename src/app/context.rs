@@ -3,7 +3,6 @@ use std::sync::Arc;
 
 use svc_agent::mqtt::IntoPublishableDump;
 use svc_authz::ClientMap as Authz;
-use svc_error::Error as SvcError;
 
 use crate::app::task_executor::{AppTaskExecutor, TaskExecutor};
 use crate::config::Config;
@@ -41,7 +40,7 @@ pub(crate) trait Context: Sync {
     fn run_task(
         &self,
         task: impl Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'static,
-    ) -> Result<(), SvcError>;
+    );
 }
 
 impl Context for AppContext {
@@ -60,7 +59,7 @@ impl Context for AppContext {
     fn run_task(
         &self,
         task: impl Future<Output = Vec<Box<dyn IntoPublishableDump>>> + Send + 'static,
-    ) -> Result<(), SvcError> {
-        self.task_executor.run(task)
+    ) {
+        self.task_executor.run(task);
     }
 }

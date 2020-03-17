@@ -4,12 +4,13 @@ extern crate diesel;
 extern crate diesel_derive_enum;
 
 use std::env::var;
+use std::io::{Error, ErrorKind};
 
 use dotenv::dotenv;
-use futures::executor;
 use svc_authz::cache::{create_pool, Cache};
 
-fn main() {
+#[async_std::main]
+async fn main() -> std::io::Result<()> {
     dotenv().ok();
     env_logger::init();
 
@@ -65,7 +66,9 @@ fn main() {
         Cache::new(create_pool(&url, size, timeout), expiration_time)
     });
 
-    executor::block_on(app::run(&db, authz_cache)).expect("Error running an executor");
+    app::run(&db, authz_cache)
+        .await
+        .map_err(|err| Error::new(ErrorKind::Other, err))
 }
 
 mod app;
