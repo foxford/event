@@ -6,7 +6,7 @@ use serde_json::json;
 use svc_agent::AgentId;
 use uuid::Uuid;
 
-use crate::db::agent::{Object as Agent, Status as AgentStatus};
+use crate::db::agent_session::{Object as Agent, Status as AgentStatus};
 use crate::db::room::Object as Room;
 
 use super::{factory, USR_AUDIENCE};
@@ -39,10 +39,15 @@ pub(crate) fn insert_closed_room(conn: &PgConnection) -> Room {
         .insert(&conn)
 }
 
-pub(crate) fn insert_agent(conn: &PgConnection, agent_id: &AgentId, room_id: Uuid) -> Agent {
-    factory::Agent::new()
+pub(crate) fn insert_agent_session(
+    conn: &PgConnection,
+    agent_id: &AgentId,
+    room_id: Uuid,
+) -> Agent {
+    factory::AgentSession::new()
         .agent_id(agent_id.to_owned())
         .room_id(room_id)
-        .status(AgentStatus::Ready)
+        .status(AgentStatus::Started)
+        .time((Bound::Included(Utc::now()), Bound::Unbounded))
         .insert(&conn)
 }

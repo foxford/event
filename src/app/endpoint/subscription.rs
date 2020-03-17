@@ -1,3 +1,5 @@
+use std::ops::Bound;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
@@ -13,7 +15,7 @@ use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::EventHandler;
-use crate::db::{agent, room};
+use crate::db::{agent_session, room};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -84,9 +86,10 @@ impl EventHandler for CreateHandler {
                 )
             })?;
 
-        // Update agent state to `ready`.
-        agent::UpdateQuery::new(&payload.subject, room_id)
-            .status(agent::Status::Ready)
+        // Update agent session status to `started`.
+        agent_session::UpdateQuery::new(&payload.subject, room_id)
+            .status(agent_session::Status::Started)
+            .time((Bound::Included(Utc::now()), Bound::Unbounded))
             .execute(&conn)?;
 
         // Send broadcast notification that the agent has entered the room.
@@ -127,19 +130,33 @@ impl EventHandler for DeleteHandler {
             ));
         }
 
-        // Delete agent from the DB.
+        // Update agent session status to `finished`.
         let room_id = payload.try_room_id()?;
         let conn = context.db().get()?;
-        let row_count = agent::DeleteQuery::new(&payload.subject, room_id).execute(&conn)?;
 
-        if row_count != 1 {
-            return Err(svc_error!(
-                ResponseStatus::NOT_FOUND,
-                "the agent is not found for agent_id = '{}', room = '{}'",
-                payload.subject,
-                room_id
-            ));
-        }
+        let session = agent_session::FindQuery::new(room_id, &payload.subject)
+            .execute(&conn)?
+            .ok_or_else(|| {
+                svc_error!(
+                    ResponseStatus::NOT_FOUND,
+                    "the active session is not found or closed, room_id = '{}', agent_id = '{}'",
+                    room_id,
+                    payload.subject,
+                )
+            })?;
+
+        let (started_at, _) = session.time().ok_or_else(|| {
+            svc_error!(
+                ResponseStatus::UNPROCESSABLE_ENTITY,
+                "unexpected empty agent session time, id = '{}'",
+                session.id()
+            )
+        })?;
+
+        agent_session::UpdateQuery::new(&payload.subject, room_id)
+            .status(agent_session::Status::Finished)
+            .time((started_at.to_owned(), Bound::Excluded(Utc::now())))
+            .execute(&conn)?;
 
         // Send broadcast notification that the agent has left the room.
         let outgoing_event_payload = RoomEnterLeaveEvent {
@@ -159,7 +176,9 @@ impl EventHandler for DeleteHandler {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::agent::{ListQuery as AgentListQuery, Status as AgentStatus};
+    use crate::db::agent_session::{
+        ListQuery as AgentSessionListQuery, Status as AgentSessionStatus,
+    };
     use crate::test_helpers::prelude::*;
 
     use super::*;
@@ -182,7 +201,7 @@ mod tests {
                 let room = shared_helpers::insert_room(&conn);
 
                 // Put agent in the room in `in_progress` status.
-                factory::Agent::new()
+                factory::AgentSession::new()
                     .room_id(room.id())
                     .agent_id(agent.agent_id().to_owned())
                     .insert(&conn);
@@ -219,14 +238,14 @@ mod tests {
                 .get()
                 .expect("Failed to get DB connection");
 
-            let db_agents = AgentListQuery::new()
+            let db_agents = AgentSessionListQuery::new()
                 .agent_id(agent.agent_id())
                 .room_id(room.id())
                 .execute(&conn)
                 .expect("Failed to execute agent list query");
 
-            let db_agent = db_agents.first().expect("Missing agent in the DB");
-            assert_eq!(db_agent.status(), AgentStatus::Ready);
+            let db_agent = db_agents.first().expect("Missing agent session in the DB");
+            assert_eq!(db_agent.status(), AgentSessionStatus::Started);
         });
     }
 
@@ -304,7 +323,7 @@ mod tests {
 
                 // Create room and put the agent online.
                 let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                shared_helpers::insert_agent_session(&conn, agent.agent_id(), room.id());
                 room
             };
 
@@ -331,19 +350,20 @@ mod tests {
             assert_eq!(payload.id, room.id());
             assert_eq!(&payload.agent_id, agent.agent_id());
 
-            // Assert agent deleted from the DB.
+            // Assert agent session finished in the DB.
             let conn = db
                 .connection_pool()
                 .get()
                 .expect("Failed to get DB connection");
 
-            let db_agents = AgentListQuery::new()
+            let db_agents = AgentSessionListQuery::new()
                 .agent_id(agent.agent_id())
                 .room_id(room.id())
                 .execute(&conn)
                 .expect("Failed to execute agent list query");
 
-            assert_eq!(db_agents.len(), 0);
+            let db_agent = db_agents.first().expect("Missing agent session in the DB");
+            assert_eq!(db_agent.status(), AgentSessionStatus::Finished);
         });
     }
 

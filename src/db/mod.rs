@@ -24,13 +24,13 @@ pub(crate) fn create_pool(
 }
 
 pub(crate) mod sql {
-    pub use super::agent::Agent_status;
+    pub use super::agent_session::Agent_session_status;
     pub use super::change::Change_type;
     pub use svc_agent::sql::{Account_id, Agent_id};
 }
 
 pub(crate) mod adjustment;
-pub(crate) mod agent;
+pub(crate) mod agent_session;
 pub(crate) mod change;
 pub(crate) mod edition;
 pub(crate) mod event;

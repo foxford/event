@@ -1,3 +1,5 @@
+use std::ops::Bound;
+
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use diesel::{pg::PgConnection, result::Error};
@@ -6,22 +8,25 @@ use svc_agent::AgentId;
 use uuid::Uuid;
 
 use super::room::Object as Room;
-use crate::schema::agent;
+use crate::schema::agent_session;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize, PartialEq)]
 #[serde(rename_all = "snake_case")]
-#[PgType = "agent_status"]
-#[DieselType = "Agent_status"]
+#[PgType = "agent_session_status"]
+#[DieselType = "Agent_session_status"]
 pub(crate) enum Status {
-    InProgress,
-    Ready,
+    Claimed,
+    Started,
+    Finished,
 }
+
+pub(crate) type Time = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
 
 #[derive(Debug, Serialize, Deserialize, Identifiable, Queryable, QueryableByName, Associations)]
 #[belongs_to(Room, foreign_key = "room_id")]
-#[table_name = "agent"]
+#[table_name = "agent_session"]
 pub(crate) struct Object {
     #[serde(skip_serializing)]
     id: Uuid,
@@ -29,14 +34,24 @@ pub(crate) struct Object {
     room_id: Uuid,
     #[serde(skip_serializing)]
     status: Status,
+    #[serde(skip)]
+    time: Option<Time>,
     #[serde(with = "ts_seconds")]
     created_at: DateTime<Utc>,
 }
 
 impl Object {
+    pub(crate) fn id(&self) -> Uuid {
+        self.id
+    }
+
     #[cfg(test)]
     pub(crate) fn status(&self) -> Status {
         self.status
+    }
+
+    pub(crate) fn time(&self) -> Option<&Time> {
+        self.time.as_ref()
     }
 }
 
@@ -99,18 +114,18 @@ impl<'a> ListQuery<'a> {
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
         use diesel::prelude::*;
 
-        let mut q = agent::table.into_boxed();
+        let mut q = agent_session::table.into_boxed();
 
         if let Some(agent_id) = self.agent_id {
-            q = q.filter(agent::agent_id.eq(agent_id));
+            q = q.filter(agent_session::agent_id.eq(agent_id));
         }
 
         if let Some(room_id) = self.room_id {
-            q = q.filter(agent::room_id.eq(room_id));
+            q = q.filter(agent_session::room_id.eq(room_id));
         }
 
         if let Some(status) = self.status {
-            q = q.filter(agent::status.eq(status));
+            q = q.filter(agent_session::status.eq(status));
         }
 
         if let Some(offset) = self.offset {
@@ -121,19 +136,45 @@ impl<'a> ListQuery<'a> {
             q = q.limit(limit);
         }
 
-        q.order_by(agent::created_at.desc()).get_results(conn)
+        q.order_by(agent_session::created_at.desc())
+            .get_results(conn)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+pub(crate) struct FindQuery<'a> {
+    room_id: Uuid,
+    agent_id: &'a AgentId,
+}
+
+impl<'a> FindQuery<'a> {
+    pub(crate) fn new(room_id: Uuid, agent_id: &'a AgentId) -> Self {
+        Self { agent_id, room_id }
+    }
+
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
+        use diesel::prelude::*;
+
+        agent_session::table
+            .filter(agent_session::status.eq(Status::Started))
+            .filter(agent_session::agent_id.eq(self.agent_id))
+            .filter(agent_session::room_id.eq(self.room_id))
+            .get_result(conn)
+            .optional()
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Insertable)]
-#[table_name = "agent"]
+#[table_name = "agent_session"]
 pub(crate) struct InsertQuery<'a> {
     id: Option<Uuid>,
     agent_id: &'a AgentId,
     room_id: Uuid,
     status: Status,
+    time: Option<Time>,
 }
 
 impl<'a> InsertQuery<'a> {
@@ -142,7 +183,8 @@ impl<'a> InsertQuery<'a> {
             id: None,
             agent_id,
             room_id,
-            status: Status::InProgress,
+            status: Status::Claimed,
+            time: None,
         }
     }
 
@@ -151,11 +193,19 @@ impl<'a> InsertQuery<'a> {
         Self { status, ..self }
     }
 
+    #[cfg(test)]
+    pub(crate) fn time(self, time: Time) -> Self {
+        Self {
+            time: Some(time),
+            ..self
+        }
+    }
+
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
-        use crate::schema::agent::dsl::*;
+        use crate::schema::agent_session::dsl::*;
         use diesel::{ExpressionMethods, RunQueryDsl};
 
-        diesel::insert_into(agent)
+        diesel::insert_into(agent_session)
             .values(self)
             .on_conflict((agent_id, room_id))
             .do_update()
@@ -167,11 +217,12 @@ impl<'a> InsertQuery<'a> {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, AsChangeset)]
-#[table_name = "agent"]
+#[table_name = "agent_session"]
 pub(crate) struct UpdateQuery<'a> {
     agent_id: &'a AgentId,
     room_id: Uuid,
     status: Option<Status>,
+    time: Option<Time>,
 }
 
 impl<'a> UpdateQuery<'a> {
@@ -180,6 +231,7 @@ impl<'a> UpdateQuery<'a> {
             agent_id,
             room_id,
             status: None,
+            time: None,
         }
     }
 
@@ -190,36 +242,21 @@ impl<'a> UpdateQuery<'a> {
         }
     }
 
+    pub(crate) fn time(self, time: Time) -> Self {
+        Self {
+            time: Some(time),
+            ..self
+        }
+    }
+
     pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
         use diesel::prelude::*;
 
-        let query = agent::table
-            .filter(agent::agent_id.eq(self.agent_id))
-            .filter(agent::room_id.eq(self.room_id));
+        let query = agent_session::table
+            .filter(agent_session::status.ne(Status::Finished))
+            .filter(agent_session::agent_id.eq(self.agent_id))
+            .filter(agent_session::room_id.eq(self.room_id));
 
         diesel::update(query).set(self).get_result(conn).optional()
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-pub(crate) struct DeleteQuery<'a> {
-    agent_id: &'a AgentId,
-    room_id: Uuid,
-}
-
-impl<'a> DeleteQuery<'a> {
-    pub(crate) fn new(agent_id: &'a AgentId, room_id: Uuid) -> Self {
-        Self { agent_id, room_id }
-    }
-
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<usize, Error> {
-        use diesel::prelude::*;
-
-        let query = agent::table
-            .filter(agent::agent_id.eq(self.agent_id))
-            .filter(agent::room_id.eq(self.room_id));
-
-        diesel::delete(query).execute(conn)
     }
 }
