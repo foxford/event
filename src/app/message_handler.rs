@@ -8,7 +8,7 @@ use svc_agent::mqtt::{
     compat, Agent, IncomingEventProperties, IncomingRequestProperties, IntoPublishableDump,
     OutgoingResponse, ResponseStatus, ShortTermTimingProperties,
 };
-use svc_error::extension::sentry;
+use svc_error::{extension::sentry, Error as SvcError};
 
 use crate::app::{context::Context, endpoint, API_VERSION};
 
@@ -34,6 +34,16 @@ impl<C: Context + Sync> MessageHandler<C> {
                 String::from_utf8_lossy(message_bytes),
                 err,
             );
+
+            let svc_error = SvcError::builder()
+                .status(ResponseStatus::UNPROCESSABLE_ENTITY)
+                .kind("message_handler", "Message handling error")
+                .detail(&err.to_string())
+                .build();
+
+            sentry::send(svc_error).unwrap_or_else(|err| {
+                warn!("Error sending error to Sentry: {}", err)
+            });
         }
     }
 
