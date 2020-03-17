@@ -79,7 +79,21 @@ from dblink('legacy_db', '
 );
 
 -- Migrate events.
-insert into event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
+-- WARNING: Long query. Track progress with `select nextval('event_tracking');`
+create sequence event_tracking start 1;
+
+insert into event (
+    id,
+    room_id,
+    kind,
+    set,
+    label,
+    data,
+    occurred_at,
+    created_by,
+    created_at,
+    original_occurred_at
+)
 select
     id,
     room_id,
@@ -107,7 +121,9 @@ select
     end as data,
     "offset" * 1000000 as occurred_at,
     ('(' || account_id || ',' || audience || ')', 'web')::agent_id as created_by,
-    created_at
+    created_at,
+    -- Temporary value to pass NOT NULL constraint. The actual value is being calculated below.
+    0 as original_occurred_at,
 from dblink('legacy_db', '
     select
         id,
@@ -129,7 +145,33 @@ from dblink('legacy_db', '
     audience varchar(1024),
     account_id varchar(1024),
     "offset" bigint
-);
+)
+where nextval('event_tracking') > 0; -- Increment tracking sequence.
+
+drop sequence event_tracking;
+
+-- Calculate `original_occurred_at`.
+-- WARNING: Long query. Track progress with `select nextval('original_occurred_at_tracking');`
+create sequence original_occurred_at_tracking start 1;
+
+update event as e
+set original_occurred_at = coalesce(oe.occurred_at, e.occurred_at)
+from (
+    select
+        room_id,
+        set,
+        label,
+        min(occurred_at) as occurred_at
+    from event
+    where deleted_at is null
+    group by room_id, set, label
+) as oe
+where e.room_id = oe.room_id
+and   e.set = oe.set
+and   e.label = oe.label
+and   nextval('original_occurred_at_tracking') > 0; -- Increment tracking sequence.
+
+drop sequence original_occurred_at_tracking;
 
 -- Enable triggers.
 alter table room enable trigger all;
@@ -157,3 +199,4 @@ drop extension "dblink";
 drop extension "uuid-ossp";
 
 commit;
+vacuum analyze;

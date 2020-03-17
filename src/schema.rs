@@ -65,6 +65,7 @@ table! {
         created_by -> Agent_id,
         created_at -> Timestamptz,
         deleted_at -> Nullable<Timestamptz>,
+        original_occurred_at -> Int8,
     }
 }
 
