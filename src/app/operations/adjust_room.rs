@@ -12,7 +12,7 @@ use crate::db::event::{
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::ConnectionPool as Db;
 
-const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
+pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 
 pub(crate) fn call(
     db: &Db,
@@ -212,7 +212,7 @@ from (
 
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
 /// adding `offset` (both in nanoseconds).
-fn clone_events(
+pub(crate) fn clone_events(
     conn: &PgConnection,
     room: &Room,
     gaps: &[(i64, i64)],
@@ -252,7 +252,7 @@ fn clone_events(
 }
 
 /// Turns `segments` into gaps.
-fn invert_segments(
+pub(crate) fn invert_segments(
     segments: &[Segment],
     room_duration: Duration,
 ) -> Result<Vec<(i64, i64)>, Error> {
@@ -309,7 +309,7 @@ enum CutEventsToGapsState {
 }
 
 /// Transforms cut-start/stop events ordered list to gaps list with a simple FSM.
-fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>, Error> {
+pub(crate) fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>, Error> {
     let mut gaps = Vec::with_capacity(cut_events.len());
     let mut state: CutEventsToGapsState = CutEventsToGapsState::Stopped;
 

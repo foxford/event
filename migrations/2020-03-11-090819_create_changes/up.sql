@@ -7,7 +7,7 @@ CREATE TABLE change (
     event_id uuid,
 
     event_kind TEXT,
-    event_set TEXT NOT NULL DEFAULT 'type',
+    event_set TEXT,
     event_label TEXT,
     event_data jsonb,
     event_occurred_at BIGINT,
@@ -25,7 +25,6 @@ CREATE TABLE change (
             WHEN 'addition' THEN
                 event_id IS NULL
                 AND event_kind IS NOT NULL
-                AND event_set IS NOT NULL
                 AND event_data IS NOT NULL
                 AND event_occurred_at IS NOT NULL
                 AND event_created_by IS NOT NULL
@@ -33,7 +32,8 @@ CREATE TABLE change (
                 event_id IS NOT NULL
                 AND (
                     event_kind IS NOT NULL
-                    OR event_set  IS NOT NULL
+                    OR event_set IS NOT NULL
+                    OR event_label IS NOT NULL
                     OR event_data IS NOT NULL
                     OR event_occurred_at IS NOT NULL
                     OR event_created_by IS NOT NULL

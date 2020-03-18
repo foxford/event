@@ -34,7 +34,8 @@ pub(crate) struct Object {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     event_kind: Option<String>,
-    event_set: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    event_set: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     event_label: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

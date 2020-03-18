@@ -1,17 +1,26 @@
+use async_std::prelude::*;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use serde_derive::Deserialize;
+use log::{error, warn};
+use serde_derive::{Deserialize, Serialize};
+use serde_json::{json, Value as JsonValue};
 use svc_agent::{
-    mqtt::{IncomingRequestProperties, ResponseStatus},
+    mqtt::{
+        IncomingRequestProperties, IntoPublishableDump, OutgoingEvent, OutgoingEventProperties,
+        ResponseStatus, ShortTermTimingProperties,
+    },
     Addressable,
 };
+use svc_error::{extension::sentry, Error as SvcError};
 
 use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
+use crate::app::operations::commit_edition;
 use crate::db;
+use crate::db::adjustment::Segment;
 
 pub(crate) struct CreateHandler;
 
@@ -183,6 +192,146 @@ impl RequestHandler for DeleteHandler {
         );
 
         Ok(Box::new(stream::from_iter(vec![response])))
+    }
+}
+
+pub(crate) struct CommitHandler;
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct CommitRequest {
+    id: Uuid,
+}
+
+#[async_trait]
+impl RequestHandler for CommitHandler {
+    type Payload = CommitRequest;
+    const ERROR_TITLE: &'static str = "Failed to commit edition";
+
+    async fn handle<C: Context>(
+        context: &C,
+        payload: Self::Payload,
+        reqp: &IncomingRequestProperties,
+        start_timestamp: DateTime<Utc>,
+    ) -> Result {
+        let (edition, room) = {
+            let conn = context.db().get()?;
+
+            match db::edition::FindWithRoomQuery::new(payload.id).execute(&conn)? {
+                Some((edition, room)) => (edition, room),
+                None => {
+                    return Err(format!("Edition not found, id = '{}'", payload.id))
+                        .status(ResponseStatus::NOT_FOUND);
+                }
+            }
+        };
+
+        let room_id = room.id().to_string();
+        let object = vec!["rooms", &room_id];
+
+        let authz_time = context
+            .authz()
+            .authorize(room.audience(), reqp, object, "update")
+            .await?;
+
+        let db = context.db().to_owned();
+
+        // Respond with 202.
+        // The actual task result will be broadcasted to the room topic when finished.
+        let response = stream::once(helpers::build_response(
+            ResponseStatus::ACCEPTED,
+            json!({}),
+            reqp,
+            start_timestamp,
+            Some(authz_time),
+        ));
+
+        let mut task_finished = false;
+
+        let agent_id = reqp.as_agent_id().to_owned();
+
+        let notification = stream::from_fn(move || {
+            if task_finished {
+                return None;
+            }
+
+            let result = commit_edition(&db, &edition, &room, &agent_id);
+
+            // Handle result.
+            let result = match result {
+                Ok((destination, modified_segments)) => EditionCommitResult::Success {
+                    source_room_id: edition.source_room_id(),
+                    committed_room_id: destination.id(),
+                    modified_segments,
+                },
+                Err(err) => {
+                    error!(
+                        "Room adjustment job failed for room_id = '{}': {}",
+                        room.id(),
+                        err
+                    );
+
+                    let error = SvcError::builder()
+                        .status(ResponseStatus::UNPROCESSABLE_ENTITY)
+                        .kind("edition.commit", CommitHandler::ERROR_TITLE)
+                        .detail(&err.to_string())
+                        .build();
+
+                    sentry::send(error.clone())
+                        .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
+
+                    EditionCommitResult::Error { error }
+                }
+            };
+
+            // Publish success/failure notification.
+            let notification = EditionCommitNotification {
+                status: result.status(),
+                tags: room.tags().map(|t| t.to_owned()),
+                result,
+            };
+
+            let timing = ShortTermTimingProperties::new(Utc::now());
+            let props = OutgoingEventProperties::new("edition.commit", timing);
+            let path = format!("audiences/{}/events", room.audience());
+            let event = OutgoingEvent::broadcast(notification, props, &path);
+
+            task_finished = true;
+            Some(Box::new(event) as Box<dyn IntoPublishableDump + Send>)
+        });
+
+        Ok(Box::new(response.chain(notification)))
+    }
+}
+
+#[derive(Serialize)]
+struct EditionCommitNotification {
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tags: Option<JsonValue>,
+    #[serde(flatten)]
+    result: EditionCommitResult,
+}
+
+#[derive(Serialize)]
+#[serde(untagged)]
+enum EditionCommitResult {
+    Success {
+        source_room_id: Uuid,
+        committed_room_id: Uuid,
+        #[serde(with = "crate::serde::milliseconds_bound_tuples")]
+        modified_segments: Vec<Segment>,
+    },
+    Error {
+        error: SvcError,
+    },
+}
+
+impl EditionCommitResult {
+    fn status(&self) -> &'static str {
+        match self {
+            Self::Success { .. } => "success",
+            Self::Error { .. } => "error",
+        }
     }
 }
 

@@ -131,7 +131,6 @@ impl Object {
         self.id
     }
 
-    #[cfg(test)]
     pub(crate) fn source_room_id(&self) -> Uuid {
         self.source_room_id
     }
