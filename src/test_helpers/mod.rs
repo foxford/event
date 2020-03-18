@@ -1,10 +1,12 @@
+use async_std::prelude::*;
 use chrono::Utc;
 use serde::de::DeserializeOwned;
 use serde_json::json;
-use svc_agent::mqtt::{IncomingEventProperties, IncomingRequestProperties, IntoPublishableDump};
+use svc_agent::mqtt::{IncomingEventProperties, IncomingRequestProperties};
 use svc_error::Error as SvcError;
 
 use crate::app::endpoint::{EventHandler, RequestHandler};
+use crate::app::message_handler::MessageStream;
 
 use self::agent::TestAgent;
 use self::context::TestContext;
@@ -45,9 +47,8 @@ pub(crate) async fn handle_request<H: RequestHandler>(
     let reqp = serde_json::from_value::<IncomingRequestProperties>(reqp_json)
         .expect("Failed to parse reqp");
 
-    H::handle(context, payload, &reqp, Utc::now())
-        .await
-        .map(|messages| parse_messages(messages))
+    let messages = H::handle(context, payload, &reqp, Utc::now()).await?;
+    Ok(parse_messages(messages).await)
 }
 
 pub(crate) async fn handle_event<H: EventHandler>(
@@ -75,15 +76,14 @@ pub(crate) async fn handle_event<H: EventHandler>(
     let evp =
         serde_json::from_value::<IncomingEventProperties>(evp_json).expect("Failed to parse evp");
 
-    H::handle(context, payload, &evp, Utc::now())
-        .await
-        .map(|messages| parse_messages(messages))
+    let messages = H::handle(context, payload, &evp, Utc::now()).await?;
+    Ok(parse_messages(messages).await)
 }
 
-fn parse_messages(messages: Vec<Box<dyn IntoPublishableDump>>) -> Vec<OutgoingEnvelope> {
-    let mut parsed_messages = Vec::with_capacity(messages.len());
+async fn parse_messages(mut messages: MessageStream) -> Vec<OutgoingEnvelope> {
+    let mut parsed_messages = vec![];
 
-    for message in messages {
+    while let Some(message) = messages.next().await {
         let dump = message
             .into_dump(TestAgent::new("alpha", "event", SVC_AUDIENCE).address())
             .expect("Failed to dump outgoing message");

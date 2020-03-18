@@ -1,19 +1,20 @@
 use std::ops::Bound;
 
+use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::Value as JsonValue;
 use svc_agent::Authenticable;
 use svc_agent::{
-    mqtt::{IncomingRequestProperties, IntoPublishableDump, ResponseStatus},
+    mqtt::{IncomingRequestProperties, ResponseStatus},
     Addressable,
 };
 use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{helpers, RequestHandler};
+use crate::app::endpoint::{helpers, MessageStream, RequestHandler};
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -54,7 +55,7 @@ impl RequestHandler for CreateHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         let conn = context.db().get()?;
 
         // Check whether the room exists and open.
@@ -212,7 +213,7 @@ impl RequestHandler for CreateHandler {
             start_timestamp,
         ));
 
-        Ok(messages)
+        Ok(Box::new(stream::from_iter(messages)))
     }
 }
 
@@ -245,7 +246,7 @@ impl RequestHandler for ListHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         let conn = context.db().get()?;
 
         // Check whether the room exists.
@@ -296,13 +297,13 @@ impl RequestHandler for ListHandler {
             .execute(&conn)?;
 
         // Respond with events list.
-        Ok(vec![helpers::build_response(
+        Ok(Box::new(stream::once(helpers::build_response(
             ResponseStatus::OK,
             events,
             reqp,
             start_timestamp,
             Some(authz_time),
-        )])
+        ))))
     }
 }
 

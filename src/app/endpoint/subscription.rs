@@ -1,5 +1,6 @@
 use std::ops::Bound;
 
+use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
@@ -14,7 +15,7 @@ use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::EventHandler;
+use crate::app::endpoint::{EventHandler, MessageStream};
 use crate::db::{agent_session, room};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -60,7 +61,7 @@ impl EventHandler for CreateHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
             return Err(svc_error!(
@@ -102,7 +103,8 @@ impl EventHandler for CreateHandler {
         let props = evp.to_event("room.enter", short_term_timing);
         let to_uri = format!("rooms/{}/events", room_id);
         let outgoing_event = OutgoingEvent::broadcast(outgoing_event_payload, props, &to_uri);
-        Ok(vec![Box::new(outgoing_event)])
+        let boxed_event = Box::new(outgoing_event) as Box<dyn IntoPublishableDump + Send>;
+        Ok(Box::new(stream::once(boxed_event)))
     }
 }
 
@@ -119,7 +121,7 @@ impl EventHandler for DeleteHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<Vec<Box<dyn IntoPublishableDump>>, SvcError> {
+    ) -> Result<MessageStream, SvcError> {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
             return Err(svc_error!(
@@ -168,7 +170,8 @@ impl EventHandler for DeleteHandler {
         let props = evp.to_event("room.leave", short_term_timing);
         let to_uri = format!("rooms/{}/events", room_id);
         let outgoing_event = OutgoingEvent::broadcast(outgoing_event_payload, props, &to_uri);
-        Ok(vec![Box::new(outgoing_event)])
+        let boxed_event = Box::new(outgoing_event) as Box<dyn IntoPublishableDump + Send>;
+        Ok(Box::new(stream::once(boxed_event)))
     }
 }
 

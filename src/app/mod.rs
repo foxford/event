@@ -1,8 +1,9 @@
 use std::sync::Arc;
 use std::thread;
 
+use async_std::task;
 use failure::{format_err, Error};
-use futures::{executor::ThreadPoolBuilder, task::SpawnExt, StreamExt};
+use futures::StreamExt;
 use log::{error, info};
 use svc_agent::mqtt::{AgentBuilder, ConnectionMode, Notification, QoS};
 use svc_agent::{AgentId, Authenticable, SharedGroup, Subscription};
@@ -13,7 +14,6 @@ use crate::config;
 use crate::db::ConnectionPool;
 use context::AppContext;
 use message_handler::MessageHandler;
-use task_executor::AppTaskExecutor;
 
 pub(crate) const API_VERSION: &str = "v1";
 
@@ -45,7 +45,6 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
 
     // Message loop for incoming messages of MQTT Agent
     let (mq_tx, mut mq_rx) = futures_channel::mpsc::unbounded::<Notification>();
-    let thread_pool = Arc::new(ThreadPoolBuilder::new().create()?);
 
     thread::spawn(move || {
         for message in rx {
@@ -77,12 +76,7 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
         .map_err(|err| format_err!("Error subscribing to multicast requests: {}", err))?;
 
     // Context
-    let context = AppContext::new(
-        config,
-        authz,
-        db.clone(),
-        AppTaskExecutor::new(agent.clone(), thread_pool.clone()),
-    );
+    let context = AppContext::new(config, authz, db.clone());
 
     // Message handler
     let message_handler = Arc::new(MessageHandler::new(agent, context));
@@ -91,16 +85,14 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
     while let Some(message) = mq_rx.next().await {
         let message_handler = message_handler.clone();
 
-        thread_pool
-            .spawn(async move {
-                match message {
-                    svc_agent::mqtt::Notification::Publish(message) => {
-                        message_handler.handle(&message.payload).await
-                    }
-                    _ => error!("Unsupported notification type = '{:?}'", message),
+        task::spawn(async move {
+            match message {
+                svc_agent::mqtt::Notification::Publish(message) => {
+                    message_handler.handle(&message.payload).await
                 }
-            })
-            .map_err(|err| format_err!("Failed to spawn message handling task: {}", err))?;
+                _ => error!("Unsupported notification type = '{:?}'", message),
+            }
+        });
     }
 
     Ok(())
@@ -110,4 +102,3 @@ pub(crate) mod context;
 pub(crate) mod endpoint;
 pub(crate) mod message_handler;
 pub(crate) mod operations;
-pub(crate) mod task_executor;
