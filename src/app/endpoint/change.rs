@@ -558,7 +558,7 @@ mod tests {
                                 .insert(&conn);
 
                             factory::Change::new(edition.id(), ChangeType::Modification)
-                                .event_id(&event.id())
+                                .event_id(event.id())
                                 .event_data(json![{"key": "value"}])
                                 .insert(&conn)
                         })
@@ -619,7 +619,7 @@ mod tests {
                                 .insert(&conn);
 
                             factory::Change::new(edition.id(), ChangeType::Modification)
-                                .event_id(&event.id())
+                                .event_id(event.id())
                                 .event_data(json![{"key": "value"}])
                                 .insert(&conn)
                         })
@@ -698,7 +698,7 @@ mod tests {
                                 .insert(&conn);
 
                             factory::Change::new(edition.id(), ChangeType::Modification)
-                                .event_id(&event.id())
+                                .event_id(event.id())
                                 .event_data(json![{"key": "value"}])
                                 .insert(&conn)
                         })
@@ -760,7 +760,7 @@ mod tests {
                                 .insert(&conn);
 
                             factory::Change::new(edition.id(), ChangeType::Modification)
-                                .event_id(&event.id())
+                                .event_id(event.id())
                                 .event_data(json![{"key": "value"}])
                                 .insert(&conn)
                         })
@@ -814,7 +814,7 @@ mod tests {
                                 .insert(&conn);
 
                             factory::Change::new(edition.id(), ChangeType::Modification)
-                                .event_id(&event.id())
+                                .event_id(event.id())
                                 .event_data(json![{"key": "value"}])
                                 .insert(&conn)
                         })

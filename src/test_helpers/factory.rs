@@ -229,6 +229,11 @@ pub(crate) struct Change {
     kind: crate::db::change::ChangeType,
     event_id: Option<Uuid>,
     event_data: Option<JsonValue>,
+    event_kind: Option<String>,
+    event_set: Option<String>,
+    event_label: Option<String>,
+    event_occurred_at: Option<i64>,
+    event_created_by: Option<AgentId>,
 }
 
 impl Change {
@@ -236,14 +241,19 @@ impl Change {
         Self {
             event_data: None,
             event_id: None,
+            event_kind: None,
+            event_set: None,
+            event_label: None,
+            event_occurred_at: None,
+            event_created_by: None,
             edition_id,
             kind,
         }
     }
 
-    pub(crate) fn event_id(self, event_id: &Uuid) -> Self {
+    pub(crate) fn event_id(self, event_id: Uuid) -> Self {
         Self {
-            event_id: Some(event_id.to_owned()),
+            event_id: Some(event_id),
             ..self
         }
     }
@@ -251,6 +261,41 @@ impl Change {
     pub(crate) fn event_data(self, data: JsonValue) -> Self {
         Self {
             event_data: Some(data),
+            ..self
+        }
+    }
+
+    pub(crate) fn event_kind(self, kind: &str) -> Self {
+        Self {
+            event_kind: Some(kind.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn event_set(self, set: &str) -> Self {
+        Self {
+            event_set: Some(set.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn event_label(self, label: &str) -> Self {
+        Self {
+            event_label: Some(label.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn event_occurred_at(self, occurred_at: i64) -> Self {
+        Self {
+            event_occurred_at: Some(occurred_at),
+            ..self
+        }
+    }
+
+    pub(crate) fn event_created_by(self, created_by: &AgentId) -> Self {
+        Self {
+            event_created_by: Some(created_by.to_owned()),
             ..self
         }
     }
@@ -266,6 +311,27 @@ impl Change {
 
         let query = if let Some(ref event_data) = self.event_data {
             query.event_data(event_data)
+        } else {
+            query
+        };
+
+        let query = if let Some(ref event_kind) = self.event_kind {
+            query.event_kind(event_kind)
+        } else {
+            query
+        };
+
+        let query = query.event_set(&self.event_set);
+        let query = query.event_label(&self.event_label);
+
+        let query = if let Some(occurred_at) = self.event_occurred_at {
+            query.event_occurred_at(occurred_at)
+        } else {
+            query
+        };
+
+        let query = if let Some(ref created_by) = self.event_created_by {
+            query.event_created_by(created_by)
         } else {
             query
         };

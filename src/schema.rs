@@ -34,7 +34,7 @@ table! {
         kind -> Change_type,
         event_id -> Nullable<Uuid>,
         event_kind -> Nullable<Text>,
-        event_set -> Text,
+        event_set -> Nullable<Text>,
         event_label -> Nullable<Text>,
         event_data -> Nullable<Jsonb>,
         event_occurred_at -> Nullable<Int8>,

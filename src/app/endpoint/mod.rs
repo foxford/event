@@ -55,6 +55,7 @@ request_routes!(
     "change.create" => change::CreateHandler,
     "change.delete" => change::DeleteHandler,
     "change.list" => change::ListHandler,
+    "edition.commit" => edition::CommitHandler,
     "edition.create" => edition::CreateHandler,
     "edition.list" => edition::ListHandler,
     "event.create" => event::CreateHandler,
