@@ -6,11 +6,6 @@ broker_id = "mqtt-gateway.dev.svc.example.org"
 algorithm = "ES256"
 key = "data/keys/svc.private_key.p8.der.sample"
 
-[authn."iam.dev.usr.example.org"]
-audience = ["dev.usr.example.org"]
-algorithm = "HS256"
-key = "data/keys/svc.private_key.p8.der.sample"
-
 [authz."dev.usr.example.org"]
 type = "local"
 trusted = ["test.dev.usr.example.org"]

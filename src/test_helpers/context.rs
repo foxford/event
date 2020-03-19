@@ -23,7 +23,6 @@ fn build_config() -> Config {
             "algorithm": "ES256",
             "key": "data/keys/svc.private_key.p8.der.sample",
         },
-        "authn": {},
         "authz": {},
         "mqtt": {
             "uri": "mqtt://0.0.0.0:1883",
