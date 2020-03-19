@@ -111,7 +111,7 @@ select
         else null
     end as label,
     case type
-        when 'draw' then jsonb_build_object('geometry', data->'geometry')
+        when 'draw' then data->'geometry'
         when 'document-delete' then data || '{"_removed": true}'::jsonb
         else data
     end as data,
