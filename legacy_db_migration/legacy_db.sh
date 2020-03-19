@@ -5,6 +5,7 @@ function REPORT_ERROR() { >&2 echo ${@}; }
 if [[ ! ${SOURCE_DB} ]]; then $(REPORT_ERROR "SOURCE_DB isn't specified"); exit 1; fi
 if [[ ! ${TARGET_DB} ]]; then $(REPORT_ERROR "TARGET_DB isn't specified"); exit 1; fi
 
+SCRIPT=${1:-'primary'}
 PSQL=${PSQL:-'psql'}
 
 SOURCE_HOST=${SOURCE_HOST:-'127.0.0.1'}
@@ -19,6 +20,6 @@ TARGET_PASSWORD=${TARGET_PASSWORD:-''}
 
 set -xe
 
-cat ./legacy_db.sql |
+cat ./${SCRIPT}.sql |
   envsubst |
   PGPASSWORD=${TARGET_PASSWORD} ${PSQL} -h ${TARGET_HOST} -p ${TARGET_PORT} -U ${TARGET_USER} ${TARGET_DB}

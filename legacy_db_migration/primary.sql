@@ -1,6 +1,3 @@
-create sequence event_tracking start 1;
-create sequence original_occurred_at_tracking start 1;
-
 begin;
 
 create extension if not exists "uuid-ossp";
@@ -82,7 +79,6 @@ from dblink('legacy_db', '
 );
 
 -- Migrate events.
--- WARNING: Long query. Track progress with `select nextval('event_tracking');`
 insert into event (
     id,
     room_id,
@@ -115,7 +111,7 @@ select
         else null
     end as label,
     case type
-        when 'draw' then jsonb_build_object('geometry', data->'geometry')
+        when 'draw' then data->'geometry'
         when 'document-delete' then data || '{"_removed": true}'::jsonb
         else data
     end as data,
@@ -146,13 +142,9 @@ from dblink('legacy_db', '
     account_id varchar(1024),
     "offset" bigint
 )
-where type in ('document', 'document-delete', 'stream', 'message', 'draw', 'layout', 'leader')
-and   nextval('event_tracking') > 0; -- Increment tracking sequence.
-
-drop sequence event_tracking;
+where type in ('document', 'document-delete', 'stream', 'message', 'draw', 'layout', 'leader');
 
 -- Calculate `original_occurred_at`.
--- WARNING: Long query. Track progress with `select nextval('original_occurred_at_tracking');`
 update event as e
 set original_occurred_at = coalesce(oe.occurred_at, e.occurred_at)
 from (
@@ -167,10 +159,7 @@ from (
 ) as oe
 where e.room_id = oe.room_id
 and   e.set = oe.set
-and   e.label = oe.label
-and   nextval('original_occurred_at_tracking') > 0; -- Increment tracking sequence.
-
-drop sequence original_occurred_at_tracking;
+and   e.label = oe.label;
 
 -- Enable triggers.
 alter table room enable trigger all;
@@ -198,8 +187,5 @@ drop extension "dblink";
 drop extension "uuid-ossp";
 
 commit;
-
-drop sequence event_tracking;
-drop sequence original_occurred_at_tracking;
 
 vacuum full analyze;
