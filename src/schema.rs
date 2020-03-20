@@ -15,12 +15,11 @@ table! {
     use diesel::sql_types::*;
     use crate::db::sql::*;
 
-    agent_session (id) {
+    agent (id) {
         id -> Uuid,
         agent_id -> Agent_id,
         room_id -> Uuid,
-        status -> Agent_session_status,
-        time -> Nullable<Tstzrange>,
+        status -> Agent_status,
         created_at -> Timestamptz,
     }
 }
@@ -85,10 +84,10 @@ table! {
 }
 
 joinable!(adjustment -> room (room_id));
-joinable!(agent_session -> room (room_id));
+joinable!(agent -> room (room_id));
 joinable!(change -> edition (edition_id));
 joinable!(change -> event (event_id));
 joinable!(edition -> room (source_room_id));
 joinable!(event -> room (room_id));
 
-allow_tables_to_appear_in_same_query!(adjustment, agent_session, change, edition, event, room,);
+allow_tables_to_appear_in_same_query!(adjustment, agent, change, edition, event, room,);
