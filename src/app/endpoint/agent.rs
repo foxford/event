@@ -1,7 +1,6 @@
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::format_err;
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
 use uuid::Uuid;
@@ -40,7 +39,7 @@ impl RequestHandler for ListHandler {
         let room = db::room::FindQuery::new(payload.room_id)
             .time(db::room::now())
             .execute(&conn)?
-            .ok_or_else(|| format_err!("the room = '{}' is not found or closed", payload.room_id))
+            .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
             .status(ResponseStatus::NOT_FOUND)?;
 
         // Authorize agents listing in the room.

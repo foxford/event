@@ -2,10 +2,9 @@ use std::result::Result as StdResult;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::Error;
 use serde::de::DeserializeOwned;
 use svc_agent::mqtt::{
-    compat::IncomingEnvelope, IncomingEventProperties, IncomingRequestProperties, ResponseStatus,
+    compat::IncomingEnvelope, IncomingEventProperties, IncomingRequestProperties,
 };
 use svc_error::Error as SvcError;
 
@@ -14,6 +13,8 @@ pub(self) use crate::app::message_handler::MessageStream;
 use crate::app::message_handler::{EventEnvelopeHandler, RequestEnvelopeHandler};
 
 ///////////////////////////////////////////////////////////////////////////////
+
+pub(crate) type Result = StdResult<MessageStream, SvcError>;
 
 #[async_trait]
 pub(crate) trait RequestHandler {
@@ -105,25 +106,6 @@ event_routes!(
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) type Result = StdResult<MessageStream, SvcError>;
-
-pub(crate) trait SvcErrorSugar<T> {
-    fn status(self, status: ResponseStatus) -> StdResult<T, SvcError>;
-}
-
-impl<T> SvcErrorSugar<T> for StdResult<T, Error> {
-    fn status(self, status: ResponseStatus) -> StdResult<T, SvcError> {
-        self.map_err(|err| {
-            SvcError::builder()
-                .status(status)
-                .detail(&err.to_string())
-                .build()
-        })
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
 pub(self) mod helpers;
 mod agent;
 mod edition;
@@ -133,5 +115,6 @@ mod state;
 mod subscription;
 
 pub(self) mod prelude {
-    pub(super) use super::{helpers, EventHandler, RequestHandler, Result, SvcErrorSugar};
+    pub(super) use super::{helpers, EventHandler, RequestHandler, Result};
+    pub(super) use crate::app::message_handler::SvcErrorSugar;
 }

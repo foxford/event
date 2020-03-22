@@ -3,7 +3,6 @@ use std::ops::Bound;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::format_err;
 use serde_derive::Deserialize;
 use serde_json::Value as JsonValue;
 use svc_agent::Authenticable;
@@ -62,7 +61,7 @@ impl RequestHandler for CreateHandler {
         let room = db::room::FindQuery::new(payload.room_id)
             .time(db::room::now())
             .execute(&conn)?
-            .ok_or_else(|| format_err!("the room = '{}' is not found or closed", payload.room_id))
+            .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
             .status(ResponseStatus::NOT_FOUND)?;
 
         // Check whether the agent has entered the room.
@@ -73,7 +72,7 @@ impl RequestHandler for CreateHandler {
             .execute(&conn)?;
 
         if agents.len() != 1 {
-            return Err(format_err!(
+            return Err(format!(
                 "agent = '{}' has not entered the room = '{}'",
                 reqp.as_agent_id(),
                 room.id()
@@ -118,7 +117,7 @@ impl RequestHandler for CreateHandler {
                 .num_nanoseconds()
                 .unwrap_or(std::i64::MAX),
             _ => {
-                return Err(format_err!("invalid time for room = '{}'", room.id()))
+                return Err(format!("invalid time for room = '{}'", room.id()))
                     .status(ResponseStatus::UNPROCESSABLE_ENTITY);
             }
         };
@@ -143,7 +142,7 @@ impl RequestHandler for CreateHandler {
 
             query
                 .execute(&conn)
-                .map_err(|err| format_err!("failed to create event: {}", err))
+                .map_err(|err| format!("failed to create event: {}", err))
                 .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
         } else {
             // Build transient event.
@@ -164,7 +163,7 @@ impl RequestHandler for CreateHandler {
 
             builder
                 .build()
-                .map_err(|err| format_err!("Error building transient event: {}", err,))
+                .map_err(|err| format!("Error building transient event: {}", err,))
                 .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
         };
 
@@ -238,7 +237,7 @@ impl RequestHandler for ListHandler {
         // Check whether the room exists.
         let room = db::room::FindQuery::new(payload.room_id)
             .execute(&conn)?
-            .ok_or_else(|| format_err!("the room = '{}' is not found", payload.room_id))
+            .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
             .status(ResponseStatus::NOT_FOUND)?;
 
         // Authorize room events listing.

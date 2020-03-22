@@ -3,7 +3,6 @@ use std::ops::Bound;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::{err_msg, format_err};
 use serde_derive::Deserialize;
 use serde_json::{map::Map as JsonMap, Value as JsonValue};
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
@@ -41,8 +40,8 @@ impl RequestHandler for ReadHandler {
     ) -> Result {
         // Validate parameters.
         let validation_error = match payload.sets.len() {
-            0 => Some(err_msg("'sets' can't be empty")),
-            len if len > MAX_SETS => Some(err_msg("too many 'sets'")),
+            0 => Some("'sets' can't be empty"),
+            len if len > MAX_SETS => Some("too many 'sets'"),
             _ => None,
         };
 
@@ -61,7 +60,7 @@ impl RequestHandler for ReadHandler {
 
         let room = db::room::FindQuery::new(payload.room_id)
             .execute(&conn)?
-            .ok_or_else(|| format_err!("the room = '{}' is not found", payload.room_id))
+            .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
             .status(ResponseStatus::NOT_FOUND)?;
 
         // Authorize room events listing.
@@ -82,7 +81,7 @@ impl RequestHandler for ReadHandler {
                 .map(|n| n + 1)
                 .unwrap_or(std::i64::MAX)
         } else {
-            return Err(err_msg("Bad room time")).status(ResponseStatus::UNPROCESSABLE_ENTITY);
+            return Err("Bad room time").status(ResponseStatus::UNPROCESSABLE_ENTITY);
         };
 
         // Retrieve state for each set from the DB and put them into a map.
@@ -98,10 +97,9 @@ impl RequestHandler for ReadHandler {
                 let total_count = query
                     .total_count(&conn)
                     .map_err(|err| {
-                        format_err!(
+                        format!(
                             "failed to query state total count for set = '{}': {}",
-                            set,
-                            err
+                            set, err
                         )
                     })
                     .status(ResponseStatus::UNPROCESSABLE_ENTITY)?;
@@ -113,14 +111,12 @@ impl RequestHandler for ReadHandler {
             // Limit the query and retrieve the state.
             let set_state = query
                 .execute(&conn)
-                .map_err(|err| format_err!("failed to query state for set = '{}': {}", set, err))
+                .map_err(|err| format!("failed to query state for set = '{}': {}", set, err))
                 .status(ResponseStatus::UNPROCESSABLE_ENTITY)?;
 
             // Serialize to JSON and add to the state map.
             let serialized_set_state = serde_json::to_value(set_state)
-                .map_err(|err| {
-                    format_err!("failed to serialize state for set = '{}': {}", set, err)
-                })
+                .map_err(|err| format!("failed to serialize state for set = '{}': {}", set, err))
                 .status(ResponseStatus::UNPROCESSABLE_ENTITY)?;
 
             match serialized_set_state.as_array().and_then(|a| a.first()) {

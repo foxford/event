@@ -1,7 +1,6 @@
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::format_err;
 use serde_derive::Deserialize;
 use svc_agent::{
     mqtt::{IncomingRequestProperties, ResponseStatus},
@@ -36,7 +35,7 @@ impl RequestHandler for CreateHandler {
 
         let room = db::room::FindQuery::new(payload.room_id)
             .execute(&conn)?
-            .ok_or_else(|| format_err!("Room not found, id = '{}'", payload.room_id))
+            .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
             .status(ResponseStatus::NOT_FOUND)?;
 
         let authz_time = context
@@ -96,7 +95,7 @@ impl RequestHandler for ListHandler {
 
         let room = db::room::FindQuery::new(payload.room_id)
             .execute(&conn)?
-            .ok_or_else(|| format_err!("Room not found, id = '{}'", payload.room_id))
+            .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
             .status(ResponseStatus::NOT_FOUND)?;
 
         let room_id = room.id();

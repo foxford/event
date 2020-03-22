@@ -2,7 +2,6 @@ use async_std::prelude::*;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::format_err;
 use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -128,7 +127,7 @@ impl RequestHandler for ReadHandler {
 
         let room = FindQuery::new(payload.id)
             .execute(&conn)?
-            .ok_or_else(|| format_err!("Room not found, id = '{}'", payload.id))
+            .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
             .status(ResponseStatus::NOT_FOUND)?;
 
         // Authorize room reading on the tenant.
@@ -175,7 +174,7 @@ impl RequestHandler for EnterHandler {
         let room = FindQuery::new(payload.id)
             .time(now())
             .execute(&conn)?
-            .ok_or_else(|| format_err!("Room not found or closed, id = '{}'", payload.id))
+            .ok_or_else(|| format!("Room not found or closed, id = '{}'", payload.id))
             .status(ResponseStatus::NOT_FOUND)?;
 
         // Authorize subscribing to the room's events.
@@ -242,7 +241,7 @@ impl RequestHandler for LeaveHandler {
 
         let room = FindQuery::new(payload.id)
             .execute(&conn)?
-            .ok_or_else(|| format_err!("Room not found, id = '{}'", payload.id))
+            .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
             .status(ResponseStatus::NOT_FOUND)?;
 
         // Check room presence.
@@ -253,7 +252,7 @@ impl RequestHandler for LeaveHandler {
             .execute(&conn)?;
 
         if results.len() == 0 {
-            return Err(format_err!(
+            return Err(format!(
                 "agent = '{}' is not online in the room = '{}'",
                 reqp.as_agent_id(),
                 room.id()
@@ -320,7 +319,7 @@ impl RequestHandler for AdjustHandler {
 
             FindQuery::new(payload.id)
                 .execute(&conn)?
-                .ok_or_else(|| format_err!("Room not found, id = '{}'", payload.id))
+                .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
 

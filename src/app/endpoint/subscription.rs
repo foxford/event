@@ -3,7 +3,6 @@ use std::result::Result as StdResult;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use failure::format_err;
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::{
     mqtt::{
@@ -33,10 +32,10 @@ impl SubscriptionEvent {
 
         match object.as_slice() {
             ["rooms", room_id, "events"] => {
-                Uuid::parse_str(room_id).map_err(|err| format_err!("UUID parse error: {}", err))
+                Uuid::parse_str(room_id).map_err(|err| format!("UUID parse error: {}", err))
             }
-            _ => Err(format_err!(
-                "Bad 'object' format; expected [\"room\", <ROOM_ID>, \"events\"]"
+            _ => Err(String::from(
+                "Bad 'object' format; expected [\"room\", <ROOM_ID>, \"events\"]",
             )),
         }
         .status(ResponseStatus::BAD_REQUEST)
@@ -65,7 +64,7 @@ impl EventHandler for CreateHandler {
     ) -> Result {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
-            return Err(format_err!(
+            return Err(format!(
                 "Expected subscription.create event to be sent from the broker account '{}', got '{}'",
                 context.config().broker_id,
                 evp.as_account_id()
@@ -79,7 +78,7 @@ impl EventHandler for CreateHandler {
         room::FindQuery::new(room_id)
             .time(room::now())
             .execute(&conn)?
-            .ok_or_else(|| format_err!("the room = '{}' is not found or closed", room_id))
+            .ok_or_else(|| format!("the room = '{}' is not found or closed", room_id))
             .status(ResponseStatus::NOT_FOUND)?;
 
         // Update agent state to `ready`.
@@ -118,7 +117,7 @@ impl EventHandler for DeleteHandler {
     ) -> Result {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
-            return Err(format_err!(
+            return Err(format!(
                 "Expected subscription.delete event to be sent from the broker account '{}', got '{}'",
                 context.config().broker_id,
                 evp.as_account_id()
@@ -131,10 +130,9 @@ impl EventHandler for DeleteHandler {
         let row_count = agent::DeleteQuery::new(&payload.subject, room_id).execute(&conn)?;
 
         if row_count != 1 {
-            return Err(format_err!(
+            return Err(format!(
                 "the agent is not found for agent_id = '{}', room = '{}'",
-                payload.subject,
-                room_id
+                payload.subject, room_id
             ))
             .status(ResponseStatus::NOT_FOUND);
         }
