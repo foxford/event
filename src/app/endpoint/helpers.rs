@@ -38,12 +38,3 @@ pub(crate) fn build_notification(
     props.set_tracking(reqp.tracking().to_owned());
     Box::new(OutgoingEvent::broadcast(payload, props, path))
 }
-
-macro_rules! svc_error {
-    ($status: expr, $($arg:tt)*) => {
-        svc_error::Error::builder()
-            .status($status)
-            .detail(&format!($($arg)*))
-            .build()
-    }
-}

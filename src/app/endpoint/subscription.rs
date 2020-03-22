@@ -1,6 +1,9 @@
+use std::result::Result as StdResult;
+
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use failure::format_err;
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::{
     mqtt::{
@@ -13,7 +16,7 @@ use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{EventHandler, MessageStream};
+use crate::app::endpoint::prelude::*;
 use crate::db::{agent, room};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -25,18 +28,18 @@ pub(crate) struct SubscriptionEvent {
 }
 
 impl SubscriptionEvent {
-    fn try_room_id(&self) -> Result<Uuid, SvcError> {
+    fn try_room_id(&self) -> StdResult<Uuid, SvcError> {
         let object: Vec<&str> = self.object.iter().map(AsRef::as_ref).collect();
 
         match object.as_slice() {
-            ["rooms", room_id, "events"] => Uuid::parse_str(room_id).map_err(|err| {
-                svc_error!(ResponseStatus::BAD_REQUEST, "UUID parse error: {}", err)
-            }),
-            _ => Err(svc_error!(
-                ResponseStatus::BAD_REQUEST,
+            ["rooms", room_id, "events"] => {
+                Uuid::parse_str(room_id).map_err(|err| format_err!("UUID parse error: {}", err))
+            }
+            _ => Err(format_err!(
                 "Bad 'object' format; expected [\"room\", <ROOM_ID>, \"events\"]"
             )),
         }
+        .status(ResponseStatus::BAD_REQUEST)
     }
 }
 
@@ -59,15 +62,14 @@ impl EventHandler for CreateHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
-            return Err(svc_error!(
-                ResponseStatus::FORBIDDEN,
+            return Err(format_err!(
                 "Expected subscription.create event to be sent from the broker account '{}', got '{}'",
                 context.config().broker_id,
                 evp.as_account_id()
-            ));
+            )).status(ResponseStatus::FORBIDDEN);
         }
 
         // Find room.
@@ -77,13 +79,8 @@ impl EventHandler for CreateHandler {
         room::FindQuery::new(room_id)
             .time(room::now())
             .execute(&conn)?
-            .ok_or_else(|| {
-                svc_error!(
-                    ResponseStatus::NOT_FOUND,
-                    "the room = '{}' is not found or closed",
-                    room_id
-                )
-            })?;
+            .ok_or_else(|| format_err!("the room = '{}' is not found or closed", room_id))
+            .status(ResponseStatus::NOT_FOUND)?;
 
         // Update agent state to `ready`.
         agent::UpdateQuery::new(&payload.subject, room_id)
@@ -118,15 +115,14 @@ impl EventHandler for DeleteHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
-            return Err(svc_error!(
-                ResponseStatus::FORBIDDEN,
+            return Err(format_err!(
                 "Expected subscription.delete event to be sent from the broker account '{}', got '{}'",
                 context.config().broker_id,
                 evp.as_account_id()
-            ));
+            )).status(ResponseStatus::FORBIDDEN);
         }
 
         // Delete agent from the DB.
@@ -135,12 +131,12 @@ impl EventHandler for DeleteHandler {
         let row_count = agent::DeleteQuery::new(&payload.subject, room_id).execute(&conn)?;
 
         if row_count != 1 {
-            return Err(svc_error!(
-                ResponseStatus::NOT_FOUND,
+            return Err(format_err!(
                 "the agent is not found for agent_id = '{}', room = '{}'",
                 payload.subject,
                 room_id
-            ));
+            ))
+            .status(ResponseStatus::NOT_FOUND);
         }
 
         // Send broadcast notification that the agent has left the room.

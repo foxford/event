@@ -3,6 +3,7 @@ use std::ops::Bound;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use failure::format_err;
 use serde_derive::Deserialize;
 use serde_json::Value as JsonValue;
 use svc_agent::Authenticable;
@@ -10,11 +11,10 @@ use svc_agent::{
     mqtt::{IncomingRequestProperties, ResponseStatus},
     Addressable,
 };
-use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{helpers, MessageStream, RequestHandler};
+use crate::app::endpoint::prelude::*;
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -55,20 +55,15 @@ impl RequestHandler for CreateHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         let conn = context.db().get()?;
 
         // Check whether the room exists and open.
         let room = db::room::FindQuery::new(payload.room_id)
             .time(db::room::now())
             .execute(&conn)?
-            .ok_or_else(|| {
-                svc_error!(
-                    ResponseStatus::NOT_FOUND,
-                    "the room = '{}' is not found or closed",
-                    payload.room_id
-                )
-            })?;
+            .ok_or_else(|| format_err!("the room = '{}' is not found or closed", payload.room_id))
+            .status(ResponseStatus::NOT_FOUND)?;
 
         // Check whether the agent has entered the room.
         let agents = db::agent::ListQuery::new()
@@ -78,12 +73,12 @@ impl RequestHandler for CreateHandler {
             .execute(&conn)?;
 
         if agents.len() != 1 {
-            return Err(svc_error!(
-                ResponseStatus::FORBIDDEN,
+            return Err(format_err!(
                 "agent = '{}' has not entered the room = '{}'",
                 reqp.as_agent_id(),
                 room.id()
-            ));
+            ))
+            .status(ResponseStatus::FORBIDDEN);
         }
 
         // Authorize event creation on tenant with cache.
@@ -123,11 +118,8 @@ impl RequestHandler for CreateHandler {
                 .num_nanoseconds()
                 .unwrap_or(std::i64::MAX),
             _ => {
-                return Err(svc_error!(
-                    ResponseStatus::UNPROCESSABLE_ENTITY,
-                    "invalid time for room = '{}'",
-                    room.id()
-                ))
+                return Err(format_err!("invalid time for room = '{}'", room.id()))
+                    .status(ResponseStatus::UNPROCESSABLE_ENTITY);
             }
         };
 
@@ -149,13 +141,10 @@ impl RequestHandler for CreateHandler {
                 query = query.label(label);
             }
 
-            query.execute(&conn).map_err(|err| {
-                svc_error!(
-                    ResponseStatus::UNPROCESSABLE_ENTITY,
-                    "failed to create event: {}",
-                    err
-                )
-            })?
+            query
+                .execute(&conn)
+                .map_err(|err| format_err!("failed to create event: {}", err))
+                .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
         } else {
             // Build transient event.
             let mut builder = db::event::Builder::new()
@@ -173,13 +162,10 @@ impl RequestHandler for CreateHandler {
                 builder = builder.label(label)
             }
 
-            builder.build().map_err(|err| {
-                svc_error!(
-                    ResponseStatus::UNPROCESSABLE_ENTITY,
-                    "Error building transient event: {}",
-                    err,
-                )
-            })?
+            builder
+                .build()
+                .map_err(|err| format_err!("Error building transient event: {}", err,))
+                .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
         };
 
         let mut messages = Vec::with_capacity(3);
@@ -246,19 +232,14 @@ impl RequestHandler for ListHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         let conn = context.db().get()?;
 
         // Check whether the room exists.
         let room = db::room::FindQuery::new(payload.room_id)
             .execute(&conn)?
-            .ok_or_else(|| {
-                svc_error!(
-                    ResponseStatus::NOT_FOUND,
-                    "the room = '{}' is not found",
-                    payload.room_id
-                )
-            })?;
+            .ok_or_else(|| format_err!("the room = '{}' is not found", payload.room_id))
+            .status(ResponseStatus::NOT_FOUND)?;
 
         // Authorize room events listing.
         let room_id = room.id().to_string();

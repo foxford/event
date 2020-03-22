@@ -1,8 +1,11 @@
+use std::result::Result as StdResult;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use failure::Error;
 use serde::de::DeserializeOwned;
 use svc_agent::mqtt::{
-    compat::IncomingEnvelope, IncomingEventProperties, IncomingRequestProperties,
+    compat::IncomingEnvelope, IncomingEventProperties, IncomingRequestProperties, ResponseStatus,
 };
 use svc_error::Error as SvcError;
 
@@ -22,7 +25,7 @@ pub(crate) trait RequestHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError>;
+    ) -> Result;
 }
 
 macro_rules! request_routes {
@@ -70,7 +73,7 @@ pub(crate) trait EventHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError>;
+    ) -> Result;
 }
 
 macro_rules! event_routes {
@@ -102,10 +105,33 @@ event_routes!(
 
 ///////////////////////////////////////////////////////////////////////////////
 
-mod helpers;
+pub(crate) type Result = StdResult<MessageStream, SvcError>;
+
+pub(crate) trait SvcErrorSugar<T> {
+    fn status(self, status: ResponseStatus) -> StdResult<T, SvcError>;
+}
+
+impl<T> SvcErrorSugar<T> for StdResult<T, Error> {
+    fn status(self, status: ResponseStatus) -> StdResult<T, SvcError> {
+        self.map_err(|err| {
+            SvcError::builder()
+                .status(status)
+                .detail(&err.to_string())
+                .build()
+        })
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+pub(self) mod helpers;
 mod agent;
 mod edition;
 mod event;
 mod room;
 mod state;
 mod subscription;
+
+pub(self) mod prelude {
+    pub(super) use super::{helpers, EventHandler, RequestHandler, Result, SvcErrorSugar};
+}

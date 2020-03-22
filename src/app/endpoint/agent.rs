@@ -1,13 +1,13 @@
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use failure::format_err;
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
-use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{helpers, MessageStream, RequestHandler};
+use crate::app::endpoint::prelude::*;
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -33,20 +33,15 @@ impl RequestHandler for ListHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         let conn = context.db().get()?;
 
         // Check whether the room exists and open.
         let room = db::room::FindQuery::new(payload.room_id)
             .time(db::room::now())
             .execute(&conn)?
-            .ok_or_else(|| {
-                svc_error!(
-                    ResponseStatus::NOT_FOUND,
-                    "the room = '{}' is not found or closed",
-                    payload.room_id
-                )
-            })?;
+            .ok_or_else(|| format_err!("the room = '{}' is not found or closed", payload.room_id))
+            .status(ResponseStatus::NOT_FOUND)?;
 
         // Authorize agents listing in the room.
         let room_id = room.id().to_string();
