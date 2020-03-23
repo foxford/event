@@ -1,6 +1,3 @@
-create sequence event_tracking start 1;
-create sequence original_occurred_at_tracking start 1;
-
 begin;
 
 create extension if not exists "uuid-ossp";
@@ -74,7 +71,7 @@ do nothing;
 
 -- Add missing events.
 -- Ensure to create an index in the legacy DB before running to speed up this query:
--- create index events_created_at_idx on events (created_at) where deleted_at is null;
+-- `create index events_created_at_idx on events (created_at) where deleted_at is null`;
 insert into event (
     id,
     room_id,
@@ -116,30 +113,29 @@ select
     created_at,
     -- Temporary value to pass NOT NULL constraint. The actual value is being calculated below.
     -1 as original_occurred_at
-from
-  dblink('legacy_db', '
-      select
-          id,
-          type,
-          room_id,
-          created_at, 
-          data,
-          audience,
-          account_id,
-          "offset"
-      from events
-      where deleted_at is null
-      and created_at > (''' || (select max(created_at)::text from event) || ''')::timestamptz
-  ') as data(
-      id uuid,
-      type varchar(255),
-      room_id uuid,
-      created_at timestamptz,
-      data jsonb,
-      audience varchar(1024),
-      account_id varchar(1024),
-      "offset" bigint
-  )
+from dblink('legacy_db', '
+    select
+        id,
+        type,
+        room_id,
+        created_at, 
+        data,
+        audience,
+        account_id,
+        "offset"
+    from events
+    where deleted_at is null
+    and created_at > (''' || (select max(created_at)::text from event) || ''')::timestamptz
+') as data(
+    id uuid,
+    type varchar(255),
+    room_id uuid,
+    created_at timestamptz,
+    data jsonb,
+    audience varchar(1024),
+    account_id varchar(1024),
+    "offset" bigint
+)
 where type in ('document', 'document-delete', 'stream', 'message', 'draw', 'layout', 'leader');
 
 -- Cleanup.
