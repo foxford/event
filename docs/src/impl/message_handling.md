@@ -38,9 +38,11 @@ signature but the point is the same.
 In case of error, endpoint handlers return `Error` structure from [svc_error][svc_error] crate
 usually aliased as `SvcError`. This structure represents an RFC7808 Problem Details object containing
 both error description and response status code. In can be built with
-[SvcError::builder][svc_error_builder] or with a handy `svc_error!` macro.
+[SvcError::builder][svc_error_builder] or casted from a [failure::Error][failure_error] struct
+with `status` method on `Result<T, failure::Error>`.
 
 The returned error is being used by `MessageHandler` to construct an error response message.
 
 [svc_error]:https://github.com/netology-group/svc-error-rs
 [svc_error_builder]:https://docs.rs/svc-error/0.1.8/svc_error/struct.Builder.html
+[failure_error]:https://docs.rs/failure/0.1.7/failure/struct.Error.html

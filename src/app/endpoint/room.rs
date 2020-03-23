@@ -16,7 +16,7 @@ use svc_error::{extension::sentry, Error as SvcError};
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{helpers, MessageStream, RequestHandler};
+use crate::app::endpoint::prelude::*;
 use crate::app::operations::adjust_room;
 use crate::db::adjustment::Segment;
 use crate::db::agent;
@@ -63,7 +63,7 @@ impl RequestHandler for CreateHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         // Authorize room creation on the tenant.
         let authz_time = context
             .authz()
@@ -122,19 +122,13 @@ impl RequestHandler for ReadHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         let conn = context.db().get()?;
 
-        let room = match FindQuery::new(payload.id).execute(&conn)? {
-            Some(room) => room,
-            None => {
-                return Err(svc_error!(
-                    ResponseStatus::NOT_FOUND,
-                    "Room not found, id = '{}'",
-                    payload.id
-                ))
-            }
-        };
+        let room = FindQuery::new(payload.id)
+            .execute(&conn)?
+            .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
+            .status(ResponseStatus::NOT_FOUND)?;
 
         // Authorize room reading on the tenant.
         let room_id = room.id().to_string();
@@ -174,19 +168,14 @@ impl RequestHandler for EnterHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         let conn = context.db().get()?;
 
-        let room = match FindQuery::new(payload.id).time(now()).execute(&conn)? {
-            Some(room) => room,
-            None => {
-                return Err(svc_error!(
-                    ResponseStatus::NOT_FOUND,
-                    "Room not found, id = '{}'",
-                    payload.id
-                ))
-            }
-        };
+        let room = FindQuery::new(payload.id)
+            .time(now())
+            .execute(&conn)?
+            .ok_or_else(|| format!("Room not found or closed, id = '{}'", payload.id))
+            .status(ResponseStatus::NOT_FOUND)?;
 
         // Authorize subscribing to the room's events.
         let room_id = room.id().to_string();
@@ -247,19 +236,13 @@ impl RequestHandler for LeaveHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         let conn = context.db().get()?;
 
-        let room = match FindQuery::new(payload.id).execute(&conn)? {
-            Some(room) => room,
-            None => {
-                return Err(svc_error!(
-                    ResponseStatus::NOT_FOUND,
-                    "Room not found, id = '{}'",
-                    payload.id
-                ))
-            }
-        };
+        let room = FindQuery::new(payload.id)
+            .execute(&conn)?
+            .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
+            .status(ResponseStatus::NOT_FOUND)?;
 
         // Check room presence.
         let results = agent::ListQuery::new()
@@ -269,12 +252,12 @@ impl RequestHandler for LeaveHandler {
             .execute(&conn)?;
 
         if results.len() == 0 {
-            return Err(svc_error!(
-                ResponseStatus::NOT_FOUND,
+            return Err(format!(
                 "agent = '{}' is not online in the room = '{}'",
                 reqp.as_agent_id(),
                 room.id()
-            ));
+            ))
+            .status(ResponseStatus::NOT_FOUND);
         }
 
         // Send dynamic subscription deletion request to the broker.
@@ -330,20 +313,14 @@ impl RequestHandler for AdjustHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         let room = {
             let conn = context.db().get()?;
 
-            match FindQuery::new(payload.id).execute(&conn)? {
-                Some(room) => room,
-                None => {
-                    return Err(svc_error!(
-                        ResponseStatus::NOT_FOUND,
-                        "Room not found, id = '{}'",
-                        payload.id
-                    ))
-                }
-            }
+            FindQuery::new(payload.id)
+                .execute(&conn)?
+                .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
+                .status(ResponseStatus::NOT_FOUND)?
         };
 
         // Authorize trusted account for the room's audience.

@@ -2,7 +2,6 @@ use std::sync::Arc;
 use std::thread;
 
 use async_std::task;
-use failure::{format_err, Error};
 use futures::StreamExt;
 use log::{error, info};
 use svc_agent::mqtt::{AgentBuilder, ConnectionMode, Notification, QoS};
@@ -19,9 +18,12 @@ pub(crate) const API_VERSION: &str = "v1";
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) -> Result<(), Error> {
+pub(crate) async fn run(
+    db: &ConnectionPool,
+    authz_cache: Option<AuthzCache>,
+) -> Result<(), String> {
     // Config
-    let config = config::load().map_err(|err| format_err!("Failed to load config: {}", err))?;
+    let config = config::load().map_err(|err| format!("Failed to load config: {}", err))?;
     info!("App config: {:?}", config);
 
     // Agent
@@ -33,7 +35,7 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
         .subject(&agent_id)
         .key(config.id_token.algorithm, config.id_token.key.as_slice())
         .build()
-        .map_err(|err| format_err!("Error creating an id token: {}", err))?;
+        .map_err(|err| format!("Error creating an id token: {}", err))?;
 
     let mut agent_config = config.mqtt.clone();
     agent_config.set_password(&token);
@@ -41,7 +43,7 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
     let (mut agent, rx) = AgentBuilder::new(agent_id.clone(), API_VERSION)
         .connection_mode(ConnectionMode::Service)
         .start(&agent_config)
-        .map_err(|err| format_err!("Failed to create an agent: {}", err))?;
+        .map_err(|err| format!("Failed to create an agent: {}", err))?;
 
     // Message loop for incoming messages of MQTT Agent
     let (mq_tx, mut mq_rx) = futures_channel::mpsc::unbounded::<Notification>();
@@ -56,7 +58,7 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
 
     // Authz
     let authz = svc_authz::ClientMap::new(&config.id, authz_cache, config.authz.clone())
-        .map_err(|err| format_err!("Error converting authz config to clients: {}", err))?;
+        .map_err(|err| format!("Error converting authz config to clients: {}", err))?;
 
     // Sentry
     if let Some(sentry_config) = config.sentry.as_ref() {
@@ -73,7 +75,7 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
                 agent_id.as_account_id().clone(),
             )),
         )
-        .map_err(|err| format_err!("Error subscribing to multicast requests: {}", err))?;
+        .map_err(|err| format!("Error subscribing to multicast requests: {}", err))?;
 
     // Context
     let context = AppContext::new(config, authz, db.clone());

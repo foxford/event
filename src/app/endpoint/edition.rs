@@ -6,12 +6,11 @@ use svc_agent::{
     mqtt::{IncomingRequestProperties, ResponseStatus},
     Addressable,
 };
-use svc_error::Error as SvcError;
 
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{helpers, MessageStream, RequestHandler};
+use crate::app::endpoint::prelude::*;
 use crate::db;
 
 pub(crate) struct CreateHandler;
@@ -31,19 +30,13 @@ impl RequestHandler for CreateHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         let conn = context.db().get()?;
 
-        let room = match db::room::FindQuery::new(payload.room_id).execute(&conn)? {
-            Some(room) => room,
-            None => {
-                return Err(svc_error!(
-                    ResponseStatus::NOT_FOUND,
-                    "Room not found, id = '{}'",
-                    payload.room_id
-                ))
-            }
-        };
+        let room = db::room::FindQuery::new(payload.room_id)
+            .execute(&conn)?
+            .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
+            .status(ResponseStatus::NOT_FOUND)?;
 
         let authz_time = context
             .authz()
@@ -97,19 +90,13 @@ impl RequestHandler for ListHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError> {
+    ) -> Result {
         let conn = context.db().get()?;
 
-        let room = match db::room::FindQuery::new(payload.room_id).execute(&conn)? {
-            Some(room) => room,
-            None => {
-                return Err(svc_error!(
-                    ResponseStatus::NOT_FOUND,
-                    "Room not found, id = '{}'",
-                    payload.room_id
-                ))
-            }
-        };
+        let room = db::room::FindQuery::new(payload.room_id)
+            .execute(&conn)?
+            .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
+            .status(ResponseStatus::NOT_FOUND)?;
 
         let room_id = room.id();
 

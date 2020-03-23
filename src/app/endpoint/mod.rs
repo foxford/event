@@ -1,3 +1,5 @@
+use std::result::Result as StdResult;
+
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::de::DeserializeOwned;
@@ -12,6 +14,8 @@ use crate::app::message_handler::{EventEnvelopeHandler, RequestEnvelopeHandler};
 
 ///////////////////////////////////////////////////////////////////////////////
 
+pub(crate) type Result = StdResult<MessageStream, SvcError>;
+
 #[async_trait]
 pub(crate) trait RequestHandler {
     type Payload: Send + DeserializeOwned;
@@ -22,7 +26,7 @@ pub(crate) trait RequestHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError>;
+    ) -> Result;
 }
 
 macro_rules! request_routes {
@@ -70,7 +74,7 @@ pub(crate) trait EventHandler {
         payload: Self::Payload,
         evp: &IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<MessageStream, SvcError>;
+    ) -> Result;
 }
 
 macro_rules! event_routes {
@@ -102,10 +106,15 @@ event_routes!(
 
 ///////////////////////////////////////////////////////////////////////////////
 
-mod helpers;
+pub(self) mod helpers;
 mod agent;
 mod edition;
 mod event;
 mod room;
 mod state;
 mod subscription;
+
+pub(self) mod prelude {
+    pub(super) use super::{helpers, EventHandler, RequestHandler, Result};
+    pub(super) use crate::app::message_handler::SvcErrorSugar;
+}

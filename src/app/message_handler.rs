@@ -4,7 +4,6 @@ use std::pin::Pin;
 use async_std::prelude::*;
 use async_std::stream::{self, Stream};
 use chrono::{DateTime, Utc};
-use failure::{format_err, Error};
 use futures_util::pin_mut;
 use log::{error, info, warn};
 use svc_agent::mqtt::{
@@ -52,9 +51,12 @@ impl<C: Context + Sync> MessageHandler<C> {
         }
     }
 
-    async fn handle_message(&self, message_bytes: &[u8]) -> Result<(), Error> {
+    async fn handle_message(&self, message_bytes: &[u8]) -> Result<(), SvcError> {
         let start_timestamp = Utc::now();
-        let envelope = serde_json::from_slice::<compat::IncomingEnvelope>(message_bytes)?;
+
+        let envelope = serde_json::from_slice::<compat::IncomingEnvelope>(message_bytes)
+            .map_err(|err| format!("Failed to parse incoming envelope: {}", err))
+            .status(ResponseStatus::BAD_REQUEST)?;
 
         match envelope.properties() {
             compat::IncomingEnvelopeProperties::Request(ref reqp) => {
@@ -79,7 +81,7 @@ impl<C: Context + Sync> MessageHandler<C> {
         envelope: compat::IncomingEnvelope,
         reqp: IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), SvcError> {
         let outgoing_message_stream =
             endpoint::route_request(&self.context, envelope, &reqp, start_timestamp)
                 .await
@@ -103,7 +105,7 @@ impl<C: Context + Sync> MessageHandler<C> {
         envelope: compat::IncomingEnvelope,
         evp: IncomingEventProperties,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), SvcError> {
         match evp.label() {
             Some(label) => {
                 let outgoing_message_stream =
@@ -124,7 +126,10 @@ impl<C: Context + Sync> MessageHandler<C> {
         }
     }
 
-    async fn publish_outgoing_messages(&self, message_stream: MessageStream) -> Result<(), Error> {
+    async fn publish_outgoing_messages(
+        &self,
+        message_stream: MessageStream,
+    ) -> Result<(), SvcError> {
         let mut agent = self.agent.clone();
         pin_mut!(message_stream);
 
@@ -144,7 +149,7 @@ fn error_response(
     reqp: &IncomingRequestProperties,
     start_timestamp: DateTime<Utc>,
 ) -> MessageStream {
-    let err = svc_error::Error::builder()
+    let err = SvcError::builder()
         .status(status)
         .kind(kind, title)
         .detail(detail)
@@ -161,10 +166,11 @@ fn error_response(
 pub(crate) fn publish_message(
     agent: &mut Agent,
     message: Box<dyn IntoPublishableDump>,
-) -> Result<(), Error> {
+) -> Result<(), SvcError> {
     let dump = message
         .into_dump(agent.address())
-        .map_err(|err| format_err!("Failed to dump message: {}", err))?;
+        .map_err(|err| format!("Failed to dump message: {}", err))
+        .status(ResponseStatus::UNPROCESSABLE_ENTITY)?;
 
     info!(
         "Outgoing message = '{}' sending to the topic = '{}'",
@@ -174,7 +180,8 @@ pub(crate) fn publish_message(
 
     agent
         .publish_dump(dump)
-        .map_err(|err| format_err!("Failed to publish message: {}", err))
+        .map_err(|err| format!("Failed to publish message: {}", err))
+        .status(ResponseStatus::UNPROCESSABLE_ENTITY)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -323,5 +330,22 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
             evp,
             start_timestamp,
         ))
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+pub(crate) trait SvcErrorSugar<T> {
+    fn status(self, status: ResponseStatus) -> Result<T, SvcError>;
+}
+
+impl<T, E: AsRef<str>> SvcErrorSugar<T> for Result<T, E> {
+    fn status(self, status: ResponseStatus) -> Result<T, SvcError> {
+        self.map_err(|err| {
+            SvcError::builder()
+                .status(status)
+                .detail(err.as_ref())
+                .build()
+        })
     }
 }

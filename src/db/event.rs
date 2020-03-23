@@ -1,7 +1,6 @@
 use chrono::serde::{ts_milliseconds, ts_milliseconds_option};
 use chrono::{DateTime, Utc};
 use diesel::{pg::PgConnection, result::Error};
-use failure::err_msg;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use svc_agent::AgentId;
@@ -157,19 +156,13 @@ impl Builder {
         }
     }
 
-    pub(crate) fn build(self) -> Result<Object, failure::Error> {
-        let room_id = self.room_id.ok_or_else(|| err_msg("Missing `room_id`"))?;
-        let kind = self.kind.ok_or_else(|| err_msg("Missing `kind`"))?;
+    pub(crate) fn build(self) -> Result<Object, &'static str> {
+        let room_id = self.room_id.ok_or("Missing `room_id`")?;
+        let kind = self.kind.ok_or("Missing `kind`")?;
         let set = self.set.unwrap_or_else(|| kind.clone());
-        let data = self.data.ok_or_else(|| err_msg("Missing `data`"))?;
-
-        let occurred_at = self
-            .occurred_at
-            .ok_or_else(|| err_msg("Missing `occurred_at`"))?;
-
-        let created_by = self
-            .created_by
-            .ok_or_else(|| err_msg("Missing `created_by`"))?;
+        let data = self.data.ok_or("Missing `data`")?;
+        let occurred_at = self.occurred_at.ok_or("Missing `occurred_at`")?;
+        let created_by = self.created_by.ok_or("Missing `created_by`")?;
 
         Ok(Object {
             id: Uuid::new_v4(),
