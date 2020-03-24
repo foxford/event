@@ -45,14 +45,14 @@ impl<'a> InsertQuery<'a> {
     }
 }
 
-pub(crate) struct ListQuery<'a> {
-    source_room_id: &'a Uuid,
-    last_created_at: Option<&'a DateTime<Utc>>,
+pub(crate) struct ListQuery {
+    source_room_id: Uuid,
+    last_created_at: Option<DateTime<Utc>>,
     limit: i64,
 }
 
-impl<'a> ListQuery<'a> {
-    pub(crate) fn new(source_room_id: &'a Uuid) -> Self {
+impl ListQuery {
+    pub(crate) fn new(source_room_id: Uuid) -> Self {
         Self {
             source_room_id: source_room_id,
             limit: 25,
@@ -67,7 +67,7 @@ impl<'a> ListQuery<'a> {
         }
     }
 
-    pub(crate) fn last_created_at(self, last_created_at: &'a DateTime<Utc>) -> Self {
+    pub(crate) fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
         Self {
             last_created_at: Some(last_created_at),
             ..self
@@ -90,8 +90,44 @@ impl<'a> ListQuery<'a> {
     }
 }
 
+pub(crate) struct FindQuery {
+    id: Uuid,
+}
+
+impl FindQuery {
+    pub(crate) fn new(id: Uuid) -> Self {
+        Self { id }
+    }
+
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<(Object, Room)>, Error> {
+        use crate::schema::room;
+        use diesel::prelude::*;
+
+        let q = edition::table
+            .inner_join(room::table)
+            .filter(edition::id.eq(self.id));
+        q.get_result(conn).optional()
+    }
+}
+
+pub(crate) struct DeleteQuery {
+    id: Uuid,
+}
+
+impl DeleteQuery {
+    pub(crate) fn new(id: Uuid) -> Self {
+        Self { id }
+    }
+
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<usize, Error> {
+        use diesel::prelude::*;
+
+        let q = edition::table.filter(edition::id.eq(self.id));
+        diesel::delete(q).execute(conn)
+    }
+}
+
 impl Object {
-    #[cfg(test)]
     pub(crate) fn id(&self) -> Uuid {
         self.id
     }

@@ -110,9 +110,9 @@ impl RequestHandler for ListHandler {
             )
             .await?;
 
-        let mut query = db::edition::ListQuery::new(&room_id);
+        let mut query = db::edition::ListQuery::new(room_id);
 
-        if let Some(ref last_created_at) = payload.last_created_at {
+        if let Some(last_created_at) = payload.last_created_at {
             query = query.last_created_at(last_created_at);
         }
 
@@ -130,6 +130,58 @@ impl RequestHandler for ListHandler {
             start_timestamp,
             Some(authz_time),
         ))))
+    }
+}
+
+pub(crate) struct DeleteHandler;
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct DeleteRequest {
+    id: Uuid,
+}
+
+#[async_trait]
+impl RequestHandler for DeleteHandler {
+    type Payload = DeleteRequest;
+    const ERROR_TITLE: &'static str = "Failed to delete edition";
+
+    async fn handle<C: Context>(
+        context: &C,
+        payload: Self::Payload,
+        reqp: &IncomingRequestProperties,
+        start_timestamp: DateTime<Utc>,
+    ) -> Result {
+        let conn = context.db().get()?;
+
+        let (edition, room) = match db::edition::FindQuery::new(payload.id).execute(&conn)? {
+            Some((edition, room)) => (edition, room),
+            None => {
+                return Err(format!("Change not found, id = '{}'", payload.id))
+                    .status(ResponseStatus::NOT_FOUND);
+            }
+        };
+
+        let authz_time = context
+            .authz()
+            .authorize(
+                room.audience(),
+                reqp,
+                vec!["rooms", &room.id().to_string()],
+                "update",
+            )
+            .await?;
+
+        db::edition::DeleteQuery::new(edition.id()).execute(&conn)?;
+
+        let response = helpers::build_response(
+            ResponseStatus::OK,
+            edition,
+            reqp,
+            start_timestamp,
+            Some(authz_time),
+        );
+
+        Ok(Box::new(stream::from_iter(vec![response])))
     }
 }
 
@@ -332,6 +384,124 @@ mod tests {
                 };
 
                 let resp = handle_request::<ListHandler>(&context, &agent, payload)
+                    .await
+                    .expect_err("Unexpected success listing editions for no room");
+
+                assert_eq!(resp.status_code(), ResponseStatus::NOT_FOUND);
+            });
+        }
+    }
+
+    mod delete {
+        use super::super::*;
+        use crate::db::edition::Object as Edition;
+        use crate::test_helpers::prelude::*;
+
+        #[test]
+        fn delete_edition() {
+            futures::executor::block_on(async {
+                let db = TestDb::new();
+                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+                let (room, editions) = {
+                    let conn = db
+                        .connection_pool()
+                        .get()
+                        .expect("Failed to get DB connection");
+
+                    let room = shared_helpers::insert_room(&conn);
+
+                    let editions = (1..4)
+                        .map(|_idx| {
+                            factory::Edition::new(room.id(), agent.agent_id()).insert(&conn)
+                        })
+                        .collect::<Vec<Edition>>();
+
+                    (room, editions)
+                };
+
+                let mut authz = TestAuthz::new();
+                let room_id = room.id().to_string();
+
+                let object = vec!["rooms", &room_id];
+
+                authz.allow(agent.account_id(), object, "update");
+
+                let context = TestContext::new(db, authz);
+
+                let payload = DeleteRequest {
+                    id: editions[0].id(),
+                };
+
+                let messages = handle_request::<DeleteHandler>(&context, &agent, payload)
+                    .await
+                    .expect("Failed to find deleted edition");
+
+                let (resp_edition, resp) = find_response::<Edition>(messages.as_slice());
+                assert_eq!(resp.status(), ResponseStatus::OK);
+                assert_eq!(resp_edition.id(), editions[0].id());
+
+                let conn = context.db().get().expect("Failed to get DB connection");
+                let db_editions = db::edition::ListQuery::new(room.id())
+                    .execute(&conn)
+                    .expect("Failed to fetch editions");
+                assert_eq!(db_editions.len(), editions.len() - 1);
+            });
+        }
+
+        #[test]
+        fn delete_edition_not_authorized() {
+            futures::executor::block_on(async {
+                let db = TestDb::new();
+                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+                let (room, editions) = {
+                    let conn = db
+                        .connection_pool()
+                        .get()
+                        .expect("Failed to get DB connection");
+
+                    let room = shared_helpers::insert_room(&conn);
+
+                    let editions = (1..4)
+                        .map(|_idx| {
+                            factory::Edition::new(room.id(), agent.agent_id()).insert(&conn)
+                        })
+                        .collect::<Vec<Edition>>();
+
+                    (room, editions)
+                };
+
+                let context = TestContext::new(db, TestAuthz::new());
+
+                let payload = DeleteRequest {
+                    id: editions[0].id(),
+                };
+
+                let resp = handle_request::<DeleteHandler>(&context, &agent, payload)
+                    .await
+                    .expect_err("Unexpected success without authorization on editions list");
+
+                assert_eq!(resp.status_code(), ResponseStatus::FORBIDDEN);
+
+                let conn = context.db().get().expect("Failed to get DB connection");
+                let db_editions = db::edition::ListQuery::new(room.id())
+                    .execute(&conn)
+                    .expect("Failed to fetch editions");
+                assert_eq!(db_editions.len(), editions.len());
+            });
+        }
+
+        #[test]
+        fn delete_editions_missing_room() {
+            futures::executor::block_on(async {
+                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+
+                let payload = DeleteRequest { id: Uuid::new_v4() };
+
+                let resp = handle_request::<DeleteHandler>(&context, &agent, payload)
                     .await
                     .expect_err("Unexpected success listing editions for no room");
 
