@@ -75,6 +75,7 @@ mod app;
 mod config;
 mod db;
 #[allow(unused_imports)]
+#[rustfmt::skip]
 mod schema;
 mod serde;
 #[cfg(test)]

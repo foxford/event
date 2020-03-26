@@ -12,6 +12,16 @@ use crate::schema::room;
 
 pub(crate) type Time = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
 
+/// Use to filter by not expired room allowing time before room opening.
+///
+///    [-----room.time-----]
+/// [---------------------------- OK
+///              [--------------- OK
+///                           [-- NOT OK
+pub(crate) fn since_now() -> Time {
+    (Bound::Included(Utc::now()), Bound::Unbounded)
+}
+
 /// Use to filter strictly by room time range.
 ///
 ///    [-----room.time-----]
@@ -136,5 +146,45 @@ impl InsertQuery {
         use crate::schema::room::dsl::room;
 
         diesel::insert_into(room).values(self).get_result(conn)
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug, Identifiable, AsChangeset, Deserialize)]
+#[table_name = "room"]
+pub(crate) struct UpdateQuery {
+    id: Uuid,
+    time: Option<Time>,
+    tags: Option<JsonValue>,
+}
+
+impl UpdateQuery {
+    pub(crate) fn new(id: Uuid) -> Self {
+        Self {
+            id,
+            time: None,
+            tags: None,
+        }
+    }
+
+    pub(crate) fn time(self, time: Time) -> Self {
+        Self {
+            time: Some(time),
+            ..self
+        }
+    }
+
+    pub(crate) fn tags(self, tags: JsonValue) -> Self {
+        Self {
+            tags: Some(tags),
+            ..self
+        }
+    }
+
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
+        use diesel::prelude::*;
+
+        diesel::update(self).set(self).get_result(conn)
     }
 }

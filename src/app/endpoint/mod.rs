@@ -63,6 +63,7 @@ request_routes!(
     "room.enter" => room::EnterHandler,
     "room.leave" => room::LeaveHandler,
     "room.read" => room::ReadHandler,
+    "room.update" => room::UpdateHandler,
     "state.read" => state::ReadHandler
 );
 

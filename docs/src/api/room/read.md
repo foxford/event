@@ -1,6 +1,6 @@
 # room.read
 
-Retrieves the [room](../room.md#room) object.
+Retrieve the [room](../room.md#room) object.
 
 ## Authorization
 

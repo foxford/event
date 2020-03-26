@@ -176,11 +176,57 @@ pub(crate) mod milliseconds_bound_tuples {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+pub(crate) mod ts_seconds_option_bound_tuple {
+    use chrono::{DateTime, Utc};
+    use serde::de;
+    use std::fmt;
+    use std::ops::Bound;
+
+    pub fn deserialize<'de, D>(
+        d: D,
+    ) -> Result<Option<(Bound<DateTime<Utc>>, Bound<DateTime<Utc>>)>, D::Error>
+    where
+        D: de::Deserializer<'de>,
+    {
+        d.deserialize_option(TupleSecondsTimestampVisitor)
+    }
+
+    pub struct TupleSecondsTimestampVisitor;
+
+    impl<'de> de::Visitor<'de> for TupleSecondsTimestampVisitor {
+        type Value = Option<(Bound<DateTime<Utc>>, Bound<DateTime<Utc>>)>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter
+                .write_str("none or a [lt, rt) range of unix time (seconds) or null (unbounded)")
+        }
+
+        fn visit_none<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
+
+        fn visit_some<D>(self, d: D) -> Result<Self::Value, D::Error>
+        where
+            D: de::Deserializer<'de>,
+        {
+            let interval = super::ts_seconds_bound_tuple::deserialize(d)?;
+            Ok(Some(interval))
+        }
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod test {
     use std::ops::Bound;
 
+    use chrono::{DateTime, NaiveDateTime, Utc};
     use serde_derive::{Deserialize, Serialize};
+    use serde_json::json;
 
     #[test]
     fn serialize_milliseconds_bound_tuples() {
@@ -219,5 +265,36 @@ mod test {
         ];
 
         assert_eq!(data.segments, expected);
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct TestOptionData {
+        #[serde(default)]
+        #[serde(with = "crate::serde::ts_seconds_option_bound_tuple")]
+        time: Option<(Bound<DateTime<Utc>>, Bound<DateTime<Utc>>)>,
+    }
+
+    #[test]
+    fn ts_seconds_option_bound_tuple() {
+        let now = now();
+
+        let val = json!({
+            "time": (now.timestamp(), now.timestamp()),
+        });
+
+        let data: TestOptionData = dbg!(serde_json::from_value(val).unwrap());
+        let (start, end) = data.time.unwrap();
+        assert_eq!(start, Bound::Included(now));
+        assert_eq!(end, Bound::Excluded(now));
+
+        let val = json!({});
+        let data: TestOptionData = dbg!(serde_json::from_value(val).unwrap());
+        assert!(data.time.is_none());
+    }
+
+    fn now() -> DateTime<Utc> {
+        let now = Utc::now();
+        let now = NaiveDateTime::from_timestamp(now.timestamp(), 0);
+        DateTime::from_utc(now, Utc)
     }
 }

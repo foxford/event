@@ -95,4 +95,11 @@ joinable!(change -> event (event_id));
 joinable!(edition -> room (source_room_id));
 joinable!(event -> room (room_id));
 
-allow_tables_to_appear_in_same_query!(adjustment, agent, change, edition, event, room,);
+allow_tables_to_appear_in_same_query!(
+    adjustment,
+    agent,
+    change,
+    edition,
+    event,
+    room,
+);
