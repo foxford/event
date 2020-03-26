@@ -1,7 +1,14 @@
+use std::ops::Bound;
+
+use chrono::{DateTime, Utc};
+
+type BoundedDatetimeTuple = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
+
 pub(crate) mod ts_seconds_bound_tuple {
     use std::fmt;
     use std::ops::Bound;
 
+    use super::BoundedDatetimeTuple;
     use chrono::{DateTime, NaiveDateTime, Utc};
     use serde::{de, ser};
 
@@ -52,9 +59,7 @@ pub(crate) mod ts_seconds_bound_tuple {
         tup.end()
     }
 
-    pub fn deserialize<'de, D>(
-        d: D,
-    ) -> Result<(Bound<DateTime<Utc>>, Bound<DateTime<Utc>>), D::Error>
+    pub fn deserialize<'de, D>(d: D) -> Result<BoundedDatetimeTuple, D::Error>
     where
         D: de::Deserializer<'de>,
     {
@@ -64,7 +69,7 @@ pub(crate) mod ts_seconds_bound_tuple {
     struct TupleSecondsTimestampVisitor;
 
     impl<'de> de::Visitor<'de> for TupleSecondsTimestampVisitor {
-        type Value = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
+        type Value = BoundedDatetimeTuple;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             formatter.write_str("a [lt, rt) range of unix time (seconds) or null (unbounded)")
@@ -93,7 +98,7 @@ pub(crate) mod ts_seconds_bound_tuple {
                 None => return Err(de::Error::invalid_length(2, &self)),
             };
 
-            return Ok((lt, rt));
+            Ok((lt, rt))
         }
     }
 }
@@ -107,7 +112,7 @@ pub(crate) mod milliseconds_bound_tuples {
     use serde::{de, ser};
 
     pub(crate) fn serialize<S>(
-        value: &Vec<(Bound<i64>, Bound<i64>)>,
+        value: &[(Bound<i64>, Bound<i64>)],
         serializer: S,
     ) -> Result<S::Ok, S::Error>
     where
@@ -134,9 +139,8 @@ pub(crate) mod milliseconds_bound_tuples {
         seq.end()
     }
 
-    pub(crate) fn deserialize<'de, D>(
-        deserializer: D,
-    ) -> Result<Vec<(Bound<i64>, Bound<i64>)>, D::Error>
+    type BoundedI64Tuple = (Bound<i64>, Bound<i64>);
+    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<BoundedI64Tuple>, D::Error>
     where
         D: de::Deserializer<'de>,
     {
@@ -177,14 +181,12 @@ pub(crate) mod milliseconds_bound_tuples {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) mod ts_seconds_option_bound_tuple {
-    use chrono::{DateTime, Utc};
     use serde::de;
     use std::fmt;
-    use std::ops::Bound;
 
-    pub fn deserialize<'de, D>(
-        d: D,
-    ) -> Result<Option<(Bound<DateTime<Utc>>, Bound<DateTime<Utc>>)>, D::Error>
+    use super::BoundedDatetimeTuple;
+
+    pub fn deserialize<'de, D>(d: D) -> Result<Option<BoundedDatetimeTuple>, D::Error>
     where
         D: de::Deserializer<'de>,
     {
@@ -194,7 +196,7 @@ pub(crate) mod ts_seconds_option_bound_tuple {
     pub struct TupleSecondsTimestampVisitor;
 
     impl<'de> de::Visitor<'de> for TupleSecondsTimestampVisitor {
-        type Value = Option<(Bound<DateTime<Utc>>, Bound<DateTime<Utc>>)>;
+        type Value = Option<BoundedDatetimeTuple>;
 
         fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
             formatter
