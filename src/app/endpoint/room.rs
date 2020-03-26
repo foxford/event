@@ -26,7 +26,7 @@ use crate::db::room::{now, since_now, FindQuery, InsertQuery, Time, UpdateQuery}
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const MQTT_GW_API_VERSION: &'static str = "v1";
+const MQTT_GW_API_VERSION: &str = "v1";
 
 #[derive(Debug, Serialize)]
 struct SubscriptionRequest {
@@ -69,8 +69,7 @@ impl RequestHandler for CreateHandler {
         // Validate opening time.
         if let (Bound::Included(opened_at), _) = payload.time {
             if opened_at < Utc::now() {
-                return Err("Can't open the room in the past")
-                    .status(ResponseStatus::BAD_REQUEST);
+                return Err("Can't open the room in the past").status(ResponseStatus::BAD_REQUEST);
             }
         }
 
@@ -205,8 +204,7 @@ impl RequestHandler for UpdateHandler {
             let now = Utc::now();
 
             if new_opened_at < now {
-                return Err("Can't open the room in the past")
-                    .status(ResponseStatus::BAD_REQUEST);
+                return Err("Can't open the room in the past").status(ResponseStatus::BAD_REQUEST);
             }
 
             if let (Bound::Included(opened_at), _) = room.time() {
@@ -355,7 +353,7 @@ impl RequestHandler for LeaveHandler {
             .status(agent::Status::Ready)
             .execute(&conn)?;
 
-        if results.len() == 0 {
+        if results.is_empty() {
             return Err(format!(
                 "agent = '{}' is not online in the room = '{}'",
                 reqp.as_agent_id(),

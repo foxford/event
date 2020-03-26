@@ -83,10 +83,7 @@ impl RequestHandler for CreateHandler {
         // Authorize event creation on tenant with cache.
         let room_id = room.id().to_string();
 
-        let key = match payload.is_claim {
-            false => "events",
-            true => "claims",
-        };
+        let key = if payload.is_claim { "claims" } else { "events" };
 
         let author = match payload {
             // Get author of the original event with the same label if applicable.

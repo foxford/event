@@ -50,7 +50,7 @@ pub(crate) async fn run(
 
     thread::spawn(move || {
         for message in rx {
-            if let Err(_) = mq_tx.unbounded_send(message) {
+            if mq_tx.unbounded_send(message).is_err() {
                 error!("Error sending message to the internal channel");
             }
         }

@@ -162,7 +162,7 @@ fn create_room(conn: &PgConnection, source_room: &Room) -> Result<Room, Error> {
         .map_err(|err| format_err!("failed to insert room: {}", err))
 }
 
-const SHIFT_CLONE_EVENTS_SQL: &'static str = r#"
+const SHIFT_CLONE_EVENTS_SQL: &str = r#"
 WITH
     gap_starts AS (
         SELECT start, ROW_NUMBER() OVER () AS row_number
@@ -195,7 +195,7 @@ from (
         $3 AS room_id,
         kind,
         set,
-        label, 
+        label,
         data,
         occurred_at - (
             SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
@@ -348,7 +348,7 @@ mod tests {
     use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
     use crate::test_helpers::db::TestDb;
 
-    const AUDIENCE: &'static str = "dev.svc.example.org";
+    const AUDIENCE: &str = "dev.svc.example.org";
 
     #[test]
     fn adjust_room() {
