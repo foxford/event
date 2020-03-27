@@ -2,6 +2,8 @@
 
 Create a [room](../room.md#room).
 
+Opening time must not be in the past.
+
 ## Authorization
 
 The tenant authorizes the current _agent_ for `create` action on `["rooms"]` object.
@@ -11,7 +13,7 @@ The tenant authorizes the current _agent_ for `create` action on `["rooms"]` obj
 Name     | Type       | Default    | Description
 -------- | ---------- | ---------- | ------------------------------------------------------------
 audience | string     | _required_ | The room audience.
-time     | [int, int] | _required_ | A [lt, rt) range of unix time (seconds) or null (unbounded).
+time     | [int, int] | _required_ | A [lt, rt) range of unix time (seconds).
 tags     | json       | _optional_ | Tenant-specific JSON object associated with the room.
 
 ## Unicast response

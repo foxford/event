@@ -1,3 +1,5 @@
+use std::ops::Bound;
+
 use async_std::prelude::*;
 use async_std::stream;
 use async_trait::async_trait;
@@ -64,6 +66,14 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
+        // Validate opening time.
+        if let (Bound::Included(opened_at), _) = payload.time {
+            if opened_at < Utc::now() {
+                return Err("Can't open the room in the past")
+                    .status(ResponseStatus::BAD_REQUEST);
+            }
+        }
+
         // Authorize room creation on the tenant.
         let authz_time = context
             .authz()
@@ -189,6 +199,23 @@ impl RequestHandler for UpdateHandler {
             .authz()
             .authorize(room.audience(), reqp, object, "update")
             .await?;
+
+        // Validate opening time.
+        if let Some((Bound::Included(new_opened_at), _)) = payload.time {
+            let now = Utc::now();
+
+            if new_opened_at < now {
+                return Err("Can't open the room in the past")
+                    .status(ResponseStatus::BAD_REQUEST);
+            }
+
+            if let (Bound::Included(opened_at), _) = room.time() {
+                if opened_at <= &now && &new_opened_at != opened_at {
+                    return Err("Can't change opening time in opened room")
+                        .status(ResponseStatus::BAD_REQUEST);
+                }
+            }
+        }
 
         // Update room.
         let room = {
@@ -557,8 +584,8 @@ mod tests {
                 let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
-                    Bound::Included(now),
-                    Bound::Excluded(now + Duration::hours(1)),
+                    Bound::Included(now + Duration::hours(1)),
+                    Bound::Excluded(now + Duration::hours(2)),
                 );
 
                 let tags = json!({ "webinar_id": "123" });
@@ -600,8 +627,8 @@ mod tests {
                 let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
-                    Bound::Included(now),
-                    Bound::Excluded(now + Duration::hours(1)),
+                    Bound::Included(now + Duration::hours(1)),
+                    Bound::Excluded(now + Duration::hours(2)),
                 );
 
                 let payload = CreateRequest {
@@ -615,6 +642,37 @@ mod tests {
                     .expect_err("Unexpected success on room creation");
 
                 assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+            });
+        }
+
+        #[test]
+        fn create_room_opened_in_the_past() {
+            futures::executor::block_on(async {
+                // Allow agent to create rooms.
+                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+                let mut authz = TestAuthz::new();
+                authz.allow(agent.account_id(), vec!["rooms"], "create");
+
+                // Make room.create request.
+                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let now = Utc::now().trunc_subsecs(0);
+
+                let time = (
+                    Bound::Included(now - Duration::hours(1)),
+                    Bound::Excluded(now + Duration::hours(2)),
+                );
+
+                let payload = CreateRequest {
+                    time: time.clone(),
+                    audience: USR_AUDIENCE.to_owned(),
+                    tags: None,
+                };
+
+                let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                    .await
+                    .expect_err("Unexpected success on room creation");
+
+                assert_eq!(err.status_code(), ResponseStatus::BAD_REQUEST);
             });
         }
     }
@@ -721,6 +779,7 @@ mod tests {
         fn update_room() {
             futures::executor::block_on(async {
                 let db = TestDb::new();
+                let now = Utc::now().trunc_subsecs(0);
 
                 let room = {
                     let conn = db
@@ -729,7 +788,14 @@ mod tests {
                         .expect("Failed to get DB connection");
 
                     // Create room.
-                    shared_helpers::insert_room(&conn)
+                    factory::Room::new()
+                        .audience(USR_AUDIENCE)
+                        .time((
+                            Bound::Included(now + Duration::hours(1)),
+                            Bound::Excluded(now + Duration::hours(2)),
+                        ))
+                        .tags(&json!({ "webinar_id": "123" }))
+                        .insert(&conn)
                 };
 
                 // Allow agent to update the room.
@@ -740,11 +806,10 @@ mod tests {
 
                 // Make room.update request.
                 let context = TestContext::new(db, authz);
-                let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
-                    Bound::Included(now),
-                    Bound::Excluded(now + Duration::hours(2)),
+                    Bound::Included(now + Duration::hours(2)),
+                    Bound::Excluded(now + Duration::hours(3)),
                 );
 
                 let tags = json!({"webinar_id": "456789"});
@@ -766,6 +831,106 @@ mod tests {
                 assert_eq!(resp_room.audience(), room.audience());
                 assert_eq!(resp_room.time(), &time);
                 assert_eq!(resp_room.tags(), Some(&tags));
+            });
+        }
+
+        #[test]
+        fn update_opened_room_opening_time() {
+            futures::executor::block_on(async {
+                let db = TestDb::new();
+                let now = Utc::now().trunc_subsecs(0);
+
+                let room = {
+                    let conn = db
+                        .connection_pool()
+                        .get()
+                        .expect("Failed to get DB connection");
+
+                    // Create room.
+                    factory::Room::new()
+                        .audience(USR_AUDIENCE)
+                        .time((
+                            Bound::Included(now - Duration::hours(1)),
+                            Bound::Excluded(now + Duration::hours(2)),
+                        ))
+                        .insert(&conn)
+                };
+
+                // Allow agent to update the room.
+                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+                let mut authz = TestAuthz::new();
+                let room_id = room.id().to_string();
+                authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+
+                // Make room.update request.
+                let context = TestContext::new(db, authz);
+
+                let time = (
+                    Bound::Included(now + Duration::hours(1)),
+                    Bound::Excluded(now + Duration::hours(2)),
+                );
+
+                let payload = UpdateRequest {
+                    id: room.id(),
+                    time: Some(time),
+                    tags: None,
+                };
+
+                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                    .await
+                    .expect_err("Unexpected success on room update");
+
+                assert_eq!(err.status_code(), ResponseStatus::BAD_REQUEST);
+            });
+        }
+
+        #[test]
+        fn update_room_open_the_past() {
+            futures::executor::block_on(async {
+                let db = TestDb::new();
+                let now = Utc::now().trunc_subsecs(0);
+
+                let room = {
+                    let conn = db
+                        .connection_pool()
+                        .get()
+                        .expect("Failed to get DB connection");
+
+                    // Create room.
+                    factory::Room::new()
+                        .audience(USR_AUDIENCE)
+                        .time((
+                            Bound::Included(now + Duration::hours(1)),
+                            Bound::Excluded(now + Duration::hours(2)),
+                        ))
+                        .insert(&conn)
+                };
+
+                // Allow agent to update the room.
+                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+                let mut authz = TestAuthz::new();
+                let room_id = room.id().to_string();
+                authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+
+                // Make room.update request.
+                let context = TestContext::new(db, authz);
+
+                let time = (
+                    Bound::Included(now - Duration::hours(1)),
+                    Bound::Excluded(now + Duration::hours(2)),
+                );
+
+                let payload = UpdateRequest {
+                    id: room.id(),
+                    time: Some(time),
+                    tags: None,
+                };
+
+                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                    .await
+                    .expect_err("Unexpected success on room update");
+
+                assert_eq!(err.status_code(), ResponseStatus::BAD_REQUEST);
             });
         }
 
