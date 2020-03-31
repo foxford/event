@@ -7,12 +7,12 @@
    and sends `subscription.create` request to the broker[^1].
    That occurres at `endpoint::room::EnterHandler`.
 3. The broker subscribes the _agent_ to the _room_ _events'_ topic specified at the request and
-   sends a `subscription.create` broadcast event to the event service.
+   sends a `subscription.create` multicast event to the event service.
 4. Also, the broker sends 202 response for the request (1) that the entrance process started.
    So for the _agent_, all this scheme is a "black box": it just sends a request and receives
    a response.
 5. The event service:
-   - handles the broadcast event (3),
+   - handles the multicast event (3),
    - updates _agent_ status from (2) to `ready`,
    - sends a broadcast event to the _room_ _events'_ topic so other _agents_ could know
    that this _agent_ becomes online. This _agent_ also receives this notification (the confirmation that it has entered the room).
