@@ -67,10 +67,9 @@ impl RequestHandler for CreateHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Validate opening time.
-        if let (Bound::Included(opened_at), _) = payload.time {
-            if opened_at < Utc::now() {
-                return Err("Can't open the room in the past").status(ResponseStatus::BAD_REQUEST);
-            }
+        match payload.time {
+            (Bound::Included(opened_at), Bound::Excluded(closed_at)) if closed_at > opened_at => (),
+            _ => return Err("Invalid room time").status(ResponseStatus::BAD_REQUEST),
         }
 
         // Authorize room creation on the tenant.
@@ -200,18 +199,19 @@ impl RequestHandler for UpdateHandler {
             .await?;
 
         // Validate opening time.
-        if let Some((Bound::Included(new_opened_at), _)) = payload.time {
-            let now = Utc::now();
-
-            if new_opened_at < now {
-                return Err("Can't open the room in the past").status(ResponseStatus::BAD_REQUEST);
-            }
-
-            if let (Bound::Included(opened_at), _) = room.time() {
-                if opened_at <= &now && &new_opened_at != opened_at {
-                    return Err("Can't change opening time in opened room")
-                        .status(ResponseStatus::BAD_REQUEST);
+        if let Some(new_time) = payload.time {
+            match new_time {
+                (Bound::Included(new_opened_at), Bound::Excluded(new_closed_at))
+                    if new_closed_at > new_opened_at =>
+                {
+                    if let (Bound::Included(opened_at), _) = room.time() {
+                        if *opened_at <= Utc::now() && new_opened_at != *opened_at {
+                            return Err("Can't change opening time in opened room")
+                                .status(ResponseStatus::BAD_REQUEST);
+                        }
+                    }
                 }
+                _ => return Err("Invalid room time").status(ResponseStatus::BAD_REQUEST),
             }
         }
 
@@ -644,7 +644,7 @@ mod tests {
         }
 
         #[test]
-        fn create_room_opened_in_the_past() {
+        fn create_room_invalid_time() {
             futures::executor::block_on(async {
                 // Allow agent to create rooms.
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
@@ -653,15 +653,9 @@ mod tests {
 
                 // Make room.create request.
                 let context = TestContext::new(TestDb::new(), TestAuthz::new());
-                let now = Utc::now().trunc_subsecs(0);
-
-                let time = (
-                    Bound::Included(now - Duration::hours(1)),
-                    Bound::Excluded(now + Duration::hours(2)),
-                );
 
                 let payload = CreateRequest {
-                    time: time.clone(),
+                    time: (Bound::Unbounded, Bound::Unbounded),
                     audience: USR_AUDIENCE.to_owned(),
                     tags: None,
                 };
@@ -883,7 +877,7 @@ mod tests {
         }
 
         #[test]
-        fn update_room_open_the_past() {
+        fn update_room_invalid_time() {
             futures::executor::block_on(async {
                 let db = TestDb::new();
                 let now = Utc::now().trunc_subsecs(0);
@@ -914,8 +908,8 @@ mod tests {
                 let context = TestContext::new(db, authz);
 
                 let time = (
-                    Bound::Included(now - Duration::hours(1)),
-                    Bound::Excluded(now + Duration::hours(2)),
+                    Bound::Included(now + Duration::hours(1)),
+                    Bound::Excluded(now - Duration::hours(2)),
                 );
 
                 let payload = UpdateRequest {

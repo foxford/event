@@ -4,8 +4,6 @@ Update a [room](../room.md#room).
 
 The room must not be closed. Opened and not yet opened rooms are fine.
 
-Opening time must not be in the past.
-
 Opening time can't be changed if the room is already opened.
 
 ## Authorization
