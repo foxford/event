@@ -20,7 +20,7 @@ _room's_ _audience_.
 Name       | Type         | Default    | Description
 ---------- | ------------ | ---------- | --------------------------------------------------------
 id         | uuid         | _required_ | The real-time room identifier.
-started_at | int          | _required_ | The conference room's opening time for error compensation in seconds.
+started_at | int          | _required_ | The conference room's opening time for error compensation in milliseconds.
 segments   | [[int, int]] | _required_ | Start/stop millisecond timestamp pairs relative to video segments's `started_at`
 offset     | int          | _required_ | Pre-roll length in milliseconds.
 

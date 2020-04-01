@@ -397,6 +397,7 @@ impl RequestHandler for LeaveHandler {
 #[derive(Debug, Deserialize)]
 pub(crate) struct AdjustRequest {
     id: Uuid,
+    #[serde(with = "chrono::serde::ts_milliseconds")]
     started_at: DateTime<Utc>,
     #[serde(with = "crate::serde::milliseconds_bound_tuples")]
     segments: Vec<Segment>,
