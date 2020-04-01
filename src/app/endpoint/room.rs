@@ -432,7 +432,7 @@ impl RequestHandler for AdjustHandler {
 
         let authz_time = context
             .authz()
-            .authorize(room.audience(), reqp, object, "adjust")
+            .authorize(room.audience(), reqp, object, "update")
             .await?;
 
         // Run asynchronous task for adjustment.

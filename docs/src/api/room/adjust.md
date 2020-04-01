@@ -12,8 +12,7 @@ This endpoint is intended for calling only a tenant.
 
 ## Authorization
 
-The current _agent's_ _account_ must be a configured _trusted account_ of the tenant for the
-_room's_ _audience_.
+The tenant authorizes the current _agent_ for `update` action on `["rooms", room_id]` object.
 
 ## Multicast request
 
