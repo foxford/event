@@ -59,6 +59,7 @@ request_routes!(
     "edition.list" => edition::ListHandler,
     "event.create" => event::CreateHandler,
     "event.list" => event::ListHandler,
+    "room.adjust" => room::AdjustHandler,
     "room.create" => room::CreateHandler,
     "room.enter" => room::EnterHandler,
     "room.leave" => room::LeaveHandler,
