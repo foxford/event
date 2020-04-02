@@ -162,6 +162,7 @@ impl RequestHandler for ReadHandler {
 #[derive(Debug, Deserialize)]
 pub(crate) struct UpdateRequest {
     id: Uuid,
+    #[serde(default)]
     #[serde(with = "crate::serde::ts_seconds_option_bound_tuple")]
     time: Option<Time>,
     tags: Option<JsonValue>,
@@ -183,8 +184,13 @@ impl RequestHandler for UpdateHandler {
         let conn = context.db().get()?;
 
         // Find not closed room.
-        let room = FindQuery::new(payload.id)
-            .time(since_now())
+        let mut query = FindQuery::new(payload.id);
+
+        if payload.time.is_some() {
+            query = query.time(since_now());
+        }
+
+        let room = query
             .execute(&conn)?
             .ok_or_else(|| format!("Room not found, id = '{}' or closed", payload.id))
             .status(ResponseStatus::NOT_FOUND)?;

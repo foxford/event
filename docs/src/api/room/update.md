@@ -2,7 +2,7 @@
 
 Update a [room](../room.md#room).
 
-The room must not be closed. Opened and not yet opened rooms are fine.
+The room must not be closed if `time` parameter specified. Opened and not yet opened rooms are fine.
 
 Opening time can't be changed if the room is already opened.
 
