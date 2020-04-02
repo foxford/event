@@ -49,3 +49,41 @@ modified_segments | [[int, int]] | _required_ | Segments edited with stream edit
 Name  | Type                         | Default    | Description
 ----- | ---------------------------- | ---------- | ---------------------------------
 error | rfc7807 problem details json | _required_ | Error description.
+
+
+## Request example
+
+    ```json
+    {
+        "edition_id": "123e4567-e89b-4296-99a5-9f8acc922799"
+    }
+    ```
+
+## Broadcast event example
+
+    ```bash
+    "gateway-type": "event"
+    "gateway-label": "edition.commit"
+    "gateway-agent-id": "event-0.event.svc.netology-group.services"
+    ```
+
+    - Success
+
+        ```json
+        {
+            "tags": {"webinar_id": "12345"},
+            "status": "success",
+            "source_room_id": "198b8e6b-80af-4296-99a5-9f8acc922788",
+            "committed_room_id": "208b8e6b-80af-4296-99a5-0a1e45283199",
+            "modified_segments": [[0, 200], [800, 4000]],
+        }
+        ```
+
+    - Failure
+
+        ```json
+        {
+            "tags": {"webinar_id": "12345"},
+            "status": "failure",
+            "error": ...
+        }

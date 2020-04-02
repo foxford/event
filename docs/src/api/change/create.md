@@ -51,3 +51,17 @@ event_id        | uuid         | _required_ | Event identifier to skip during co
 **Status:** 201.
 
 **Payload:** [change](../change.md#change) object.
+
+## Example
+
+    Creates change that will delete event with id = "654e2131-e89b-4296-99a5-9f8acc432465"
+
+    ```json
+    {
+        "edition_id": "123e4567-e89b-4296-99a5-9f8acc922799",
+        "type": "removal",
+        "event": {
+            "event_id": "654e2131-e89b-4296-99a5-9f8acc432465",
+        }
+    }
+    ```

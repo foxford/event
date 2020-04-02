@@ -17,3 +17,11 @@ room_id  | uuid       | _required_ | The room audience.
 **Status:** 201.
 
 **Payload:** [edition](../edition.md#edition) object.
+
+## Example
+
+    ```json
+    {
+        "room_id": "123e4567-e89b-4296-99a5-9f8acc922799"
+    }
+    ```
