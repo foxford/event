@@ -2,8 +2,6 @@
 
 Create a [room](../room.md#room).
 
-Opening time must not be in the past.
-
 ## Authorization
 
 The tenant authorizes the current _agent_ for `create` action on `["rooms"]` object.
