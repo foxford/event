@@ -405,17 +405,26 @@ impl<'a> DeleteQuery<'a> {
 pub(crate) struct SetStateQuery<'a> {
     room_id: Uuid,
     set: &'a str,
-    occurred_at: i64,
+    occurred_at: Option<i64>,
+    original_occurred_at: i64,
     limit: i64,
 }
 
 impl<'a> SetStateQuery<'a> {
-    pub(crate) fn new(room_id: Uuid, set: &'a str, occurred_at: i64, limit: i64) -> Self {
+    pub(crate) fn new(room_id: Uuid, set: &'a str, original_occurred_at: i64, limit: i64) -> Self {
         Self {
             room_id,
             set,
-            occurred_at,
+            occurred_at: None,
+            original_occurred_at,
             limit,
+        }
+    }
+
+    pub(crate) fn occurred_at(self, occurred_at: i64) -> Self {
+        Self {
+            occurred_at: Some(occurred_at),
+            ..self
         }
     }
 
@@ -423,12 +432,19 @@ impl<'a> SetStateQuery<'a> {
         use crate::diesel::RunQueryDsl;
         use diesel::prelude::*;
 
-        event::table
+        let mut query = event::table
             .distinct_on((event::original_occurred_at, event::label))
             .filter(event::deleted_at.is_null())
             .filter(event::room_id.eq(self.room_id))
             .filter(event::set.eq(self.set))
-            .filter(event::original_occurred_at.lt(self.occurred_at))
+            .filter(event::original_occurred_at.lt(self.original_occurred_at))
+            .into_boxed();
+
+        if let Some(occurred_at) = self.occurred_at {
+            query = query.filter(event::occurred_at.lt(occurred_at));
+        }
+
+        query
             .order_by((
                 event::original_occurred_at.desc(),
                 event::label,
@@ -443,11 +459,18 @@ impl<'a> SetStateQuery<'a> {
         use diesel::dsl::sql;
         use diesel::prelude::*;
 
-        event::table
+        let mut query = event::table
             .filter(event::deleted_at.is_null())
             .filter(event::room_id.eq(self.room_id))
             .filter(event::set.eq(self.set))
-            .filter(event::original_occurred_at.lt(self.occurred_at))
+            .filter(event::original_occurred_at.lt(self.original_occurred_at))
+            .into_boxed();
+
+        if let Some(occurred_at) = self.occurred_at {
+            query = query.filter(event::occurred_at.lt(occurred_at));
+        }
+
+        query
             .select(sql("COUNT(DISTINCT label) AS total"))
             .get_result(conn)
     }
