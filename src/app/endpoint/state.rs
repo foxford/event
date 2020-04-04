@@ -22,6 +22,7 @@ pub(crate) struct ReadRequest {
     room_id: Uuid,
     sets: Vec<String>,
     occurred_at: Option<i64>,
+    original_occurred_at: Option<i64>,
     limit: Option<i64>,
 }
 
@@ -73,8 +74,8 @@ impl RequestHandler for ReadHandler {
             .await?;
 
         // Default `occurred_at`: closing time of the room.
-        let occurred_at = if let Some(occurred_at) = payload.occurred_at {
-            occurred_at
+        let original_occurred_at = if let Some(original_occurred_at) = payload.original_occurred_at {
+            original_occurred_at
         } else if let (Bound::Included(opened_at), Bound::Excluded(closed_at)) = room.time() {
             (*closed_at - *opened_at)
                 .num_nanoseconds()
@@ -89,7 +90,11 @@ impl RequestHandler for ReadHandler {
 
         for set in payload.sets.iter() {
             // Build a query for the particular set state.
-            let query = db::event::SetStateQuery::new(room.id(), &set, occurred_at, limit);
+            let mut query = db::event::SetStateQuery::new(room.id(), &set, original_occurred_at, limit);
+
+            if let Some(occurred_at) = payload.occurred_at {
+                query = query.occurred_at(occurred_at);
+            }
 
             // If it is the only set specified at first execute a total count query and
             // add `has_next` pagination flag to the state.
@@ -213,6 +218,7 @@ mod tests {
                 room_id: room.id(),
                 sets: vec![String::from("messages"), String::from("layout")],
                 occurred_at: None,
+                original_occurred_at: None,
                 limit: None,
             };
 
@@ -282,7 +288,8 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages")],
-                occurred_at: None,
+                occurred_at: Some(2001),
+                original_occurred_at: None,
                 limit: Some(2),
             };
 
@@ -294,15 +301,16 @@ mod tests {
             let (state, respp) = find_response::<CollectionState>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(state.messages.len(), 2);
-            assert_eq!(state.messages[0].id(), db_events[5].id());
-            assert_eq!(state.messages[1].id(), db_events[4].id());
+            assert_eq!(state.messages[0].id(), db_events[2].id());
+            assert_eq!(state.messages[1].id(), db_events[1].id());
             assert_eq!(state.has_next, true);
 
             // Request the next page.
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages")],
-                occurred_at: Some(state.messages[1].original_occurred_at()),
+                occurred_at: Some(1),
+                original_occurred_at: Some(state.messages[1].original_occurred_at()),
                 limit: Some(2),
             };
 
@@ -314,7 +322,93 @@ mod tests {
             let (state, respp) = find_response::<CollectionState>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(state.messages.len(), 1);
-            assert_eq!(state.messages[0].id(), db_events[3].id());
+            assert_eq!(state.messages[0].id(), db_events[0].id());
+            assert_eq!(state.has_next, false);
+        });
+    }
+
+    #[test]
+    fn read_state_collection_with_occurred_at_filter() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let (room, db_events) = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                let room = shared_helpers::insert_room(&conn);
+
+                // Create events in the room.
+                let events = (0..6)
+                    .map(|i| {
+                        factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .set("messages")
+                            .label(&format!("message-{}", i % 3 + 1))
+                            .data(&json!({
+                                "text": format!("message {}, version {}", i % 3 + 1, i / 3 + 1),
+                            }))
+                            .occurred_at(i * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&conn)
+                    })
+                    .collect::<Vec<Event>>();
+
+                (room, events)
+            };
+
+            // Allow agent to list events in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id, "events"];
+            authz.allow(agent.account_id(), object, "list");
+
+            // Make state.read request.
+            let context = TestContext::new(db, authz);
+
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages")],
+                occurred_at: Some(2001),
+                original_occurred_at: None,
+                limit: Some(2),
+            };
+
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect("State reading failed (page 1)");
+
+            // Assert last two events response.
+            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(state.messages.len(), 2);
+            assert_eq!(state.messages[0].id(), db_events[2].id());
+            assert_eq!(state.messages[1].id(), db_events[1].id());
+            assert_eq!(state.has_next, true);
+
+            // Request the next page.
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages")],
+                occurred_at: Some(1),
+                original_occurred_at: Some(state.messages[1].original_occurred_at()),
+                limit: Some(2),
+            };
+
+            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                .await
+                .expect("State reading failed (page 2)");
+
+            // Assert the first event.
+            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(state.messages.len(), 1);
+            assert_eq!(state.messages[0].id(), db_events[0].id());
             assert_eq!(state.has_next, false);
         });
     }
@@ -340,6 +434,7 @@ mod tests {
                 room_id: room.id(),
                 sets: vec![String::from("messages"), String::from("layout")],
                 occurred_at: None,
+                original_occurred_at: None,
                 limit: None,
             };
 
@@ -361,6 +456,7 @@ mod tests {
                 room_id: Uuid::new_v4(),
                 sets: vec![String::from("messages"), String::from("layout")],
                 occurred_at: None,
+                original_occurred_at: None,
                 limit: None,
             };
 
