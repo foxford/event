@@ -74,7 +74,8 @@ impl RequestHandler for ReadHandler {
             .await?;
 
         // Default `occurred_at`: closing time of the room.
-        let original_occurred_at = if let Some(original_occurred_at) = payload.original_occurred_at {
+        let original_occurred_at = if let Some(original_occurred_at) = payload.original_occurred_at
+        {
             original_occurred_at
         } else if let (Bound::Included(opened_at), Bound::Excluded(closed_at)) = room.time() {
             (*closed_at - *opened_at)
@@ -90,7 +91,8 @@ impl RequestHandler for ReadHandler {
 
         for set in payload.sets.iter() {
             // Build a query for the particular set state.
-            let mut query = db::event::SetStateQuery::new(room.id(), &set, original_occurred_at, limit);
+            let mut query =
+                db::event::SetStateQuery::new(room.id(), &set, original_occurred_at, limit);
 
             if let Some(occurred_at) = payload.occurred_at {
                 query = query.occurred_at(occurred_at);
