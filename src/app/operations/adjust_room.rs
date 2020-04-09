@@ -1,3 +1,4 @@
+use std::cmp;
 use std::ops::Bound;
 
 use chrono::{DateTime, Duration, Utc};
@@ -35,7 +36,7 @@ pub(crate) fn call(
 
     ///////////////////////////////////////////////////////////////////////////
 
-    // Get room duration.
+    // Get room opening time and duration.
     let (room_opening, room_duration) = match real_time_room.time() {
         (Bound::Included(start), Bound::Excluded(stop)) if stop > start => {
             (*start, stop.signed_duration_since(*start))
@@ -43,25 +44,24 @@ pub(crate) fn call(
         _ => bail!("invalid duration for room = '{}'", real_time_room.id()),
     };
 
+    // Calculate RTC offset as the difference between event room opening and RTC start.
+    let rtc_offset = (started_at - room_opening).num_milliseconds();
+
     // Convert segments to nanoseconds.
     let mut nano_segments = Vec::with_capacity(segments.len());
 
     for segment in segments {
-        match segment {
-            (Bound::Included(start), Bound::Excluded(stop)) => {
-                let nano_start = Bound::Included(start * NANOSECONDS_IN_MILLISECOND);
-                let nano_stop = Bound::Excluded(stop * NANOSECONDS_IN_MILLISECOND);
-                nano_segments.push((nano_start, nano_stop));
-            }
-            _ => bail!("invalid segment"),
+        if let (Bound::Included(start), Bound::Excluded(stop)) = segment {
+            let nano_start = (start + rtc_offset) * NANOSECONDS_IN_MILLISECOND;
+            let nano_stop = (stop + rtc_offset) * NANOSECONDS_IN_MILLISECOND;
+            nano_segments.push((Bound::Included(nano_start), Bound::Excluded(nano_stop)));
+        } else {
+            bail!("invalid segment");
         }
     }
 
     // Invert segments to gaps.
     let segment_gaps = invert_segments(&nano_segments, room_duration)?;
-
-    // Calculate the difference between opening rooms in conference and event services.
-    let room_opening_diff = (room_opening - started_at).num_milliseconds();
 
     // Create original room with events shifted according to segments.
     let original_room = create_room(&conn, &real_time_room)?;
@@ -70,7 +70,7 @@ pub(crate) fn call(
         &conn,
         &original_room,
         &segment_gaps,
-        (offset - room_opening_diff) * NANOSECONDS_IN_MILLISECOND,
+        (offset - rtc_offset) * NANOSECONDS_IN_MILLISECOND,
     )?;
 
     ///////////////////////////////////////////////////////////////////////////
@@ -90,7 +90,7 @@ pub(crate) fn call(
 
     let cut_gaps = cut_events_to_gaps(&cut_events)?;
 
-    // Сreate modified room with events shifted again according to cut events this time.
+    // Create modified room with events shifted again according to cut events this time.
     let modified_room = create_room(&conn, &original_room)?;
     clone_events(&conn, &modified_room, &cut_gaps, 0)?;
 
@@ -107,34 +107,32 @@ pub(crate) fn call(
 
     ///////////////////////////////////////////////////////////////////////////
 
-    // Calculate modified segments by inverting cut gaps.
+    // Calculate total duration of initial segments.
+    let mut total_segments_millis = 0;
+
+    for segment in segments {
+        if let (Bound::Included(start), Bound::Excluded(stop)) = segment {
+            total_segments_millis += stop - start
+        }
+    }
+
+    let total_segments_duration = Duration::milliseconds(total_segments_millis);
+
+    // Calculate modified segments by inverting cut gaps limited by total initial segments duration.
     let bounded_cut_gaps = cut_gaps
         .into_iter()
         .map(|(start, stop)| (Bound::Included(start), Bound::Excluded(stop)))
         .collect::<Vec<Segment>>();
 
-    let mut modified_segments = invert_segments(&bounded_cut_gaps, room_duration)?
+    let modified_segments = invert_segments(&bounded_cut_gaps, total_segments_duration)?
         .into_iter()
         .map(|(start, stop)| {
             (
-                Bound::Included(start / NANOSECONDS_IN_MILLISECOND),
+                Bound::Included(cmp::max(start / NANOSECONDS_IN_MILLISECOND, 0)),
                 Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
             )
         })
         .collect::<Vec<Segment>>();
-
-    // Correct the last segment stop to be a sum of initial segments' lengths.
-    if let Some((last_segment_start, _)) = modified_segments.pop() {
-        let mut total_segments_length = 0;
-
-        for segment in segments {
-            if let (Bound::Included(start), Bound::Excluded(stop)) = segment {
-                total_segments_length += stop - start
-            }
-        }
-
-        modified_segments.push((last_segment_start, Bound::Excluded(total_segments_length)));
-    }
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -186,22 +184,26 @@ SELECT
     label,
     data,
     -- Monotonization
-    occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1,
+    occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at ORDER BY created_at) - 1,
     created_by,
     created_at
-from (
-    select
+FROM (
+    SELECT
         gen_random_uuid() AS id,
         $3 AS room_id,
         kind,
         set,
         label,
         data,
-        occurred_at - (
+        CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)
+        WHEN TRUE THEN (SELECT stop FROM gaps WHERE start = 0)
+        ELSE occurred_at - (
             SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
             FROM gaps
             WHERE start < occurred_at
-        ) + $4 AS occurred_at,
+            AND   start > 0
+        )
+        END + $4 AS occurred_at,
         created_by,
         created_at
     FROM event
@@ -212,7 +214,7 @@ from (
 
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
 /// adding `offset` (both in nanoseconds).
-pub(crate) fn clone_events(
+fn clone_events(
     conn: &PgConnection,
     room: &Room,
     gaps: &[(i64, i64)],
@@ -256,7 +258,7 @@ pub(crate) fn invert_segments(
     segments: &[Segment],
     room_duration: Duration,
 ) -> Result<Vec<(i64, i64)>, Error> {
-    if segments.len() == 0 {
+    if segments.is_empty() {
         let total_nanos = room_duration.num_nanoseconds().unwrap_or(std::i64::MAX);
         return Ok(vec![(0, total_nanos)]);
     }
@@ -367,7 +369,7 @@ mod tests {
 
             // Create room.
             let opened_at = DateTime::from_utc(NaiveDateTime::from_timestamp(1582002673, 0), Utc);
-            let closed_at = opened_at + Duration::seconds(15);
+            let closed_at = opened_at + Duration::seconds(50);
             let time = (Bound::Included(opened_at), Bound::Excluded(closed_at));
 
             let room = RoomInsertQuery::new(AUDIENCE, time)
@@ -386,7 +388,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                2_000_000_000,
+                12_000_000_000,
                 "message",
                 json!({"message": "m2"}),
             );
@@ -394,7 +396,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                3_000_000_000,
+                13_000_000_000,
                 "stream",
                 json!({"cut": "start"}),
             );
@@ -402,7 +404,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                4_000_000_000,
+                14_000_000_000,
                 "message",
                 json!({"message": "m4"}),
             );
@@ -410,7 +412,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                5_000_000_000,
+                15_000_000_000,
                 "stream",
                 json!({"cut": "stop"}),
             );
@@ -418,7 +420,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                6_000_000_000,
+                16_000_000_000,
                 "message",
                 json!({"message": "m6"}),
             );
@@ -426,7 +428,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                7_000_000_000,
+                17_000_000_000,
                 "message",
                 json!({"message": "m7"}),
             );
@@ -434,7 +436,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                8_000_000_000,
+                18_000_000_000,
                 "stream",
                 json!({"cut": "start"}),
             );
@@ -442,7 +444,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                9_000_000_000,
+                19_000_000_000,
                 "message",
                 json!({"message": "m9"}),
             );
@@ -450,7 +452,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                10_000_000_000,
+                20_000_000_000,
                 "stream",
                 json!({"cut": "stop"}),
             );
@@ -458,7 +460,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                11_000_000_000,
+                21_000_000_000,
                 "message",
                 json!({"message": "m11"}),
             );
@@ -466,7 +468,7 @@ mod tests {
             create_event(
                 &conn,
                 &room,
-                12_000_000_000,
+                22_000_000_000,
                 "message",
                 json!({"message": "m12"}),
             );
@@ -475,12 +477,12 @@ mod tests {
 
             // Video segments.
             let segments = vec![
-                (Bound::Included(1500), Bound::Excluded(6500)),
+                (Bound::Included(0), Bound::Excluded(6500)),
                 (Bound::Included(8500), Bound::Excluded(11500)),
             ];
 
-            // Conference room was opened 50 ms earlier and preroll is 3 s long.
-            let started_at = opened_at - Duration::milliseconds(50);
+            // RTC started 10 seconds after the room opened and preroll is 3 seconds long.
+            let started_at = opened_at + Duration::seconds(10);
             let offset = 3000;
 
             // Call room adjustment.
@@ -507,94 +509,99 @@ mod tests {
 
             assert_eq!(events.len(), 12);
 
-            // 0 + 3_000_000_000 (offset) - 50_000_000 (diff)
             assert_event(
                 &events[0],
-                2_950_000_000,
+                // Bump to the first segment beginning because it's before the first segment.
+                // 3e9 (offset)
+                3_000_000_000,
                 "message",
                 &json!({"message": "m1"}),
             );
 
-            // 2_000_000_000 - 1_500_000_000 (gap 1) + 3_000_000_000 (offset) - 50_000_000 (diff)
             assert_event(
                 &events[1],
-                3_450_000_000,
+                // 12e9 - 10e9 (rtc offset) + 3e9 (offset)
+                5_000_000_000,
                 "message",
                 &json!({"message": "m2"}),
             );
 
-            // 3_000_000_000 - 1_500_000_000 (gap 1) + 3_000_000_000 (offset) - 50_000_000 (diff)
             assert_event(
                 &events[2],
-                4_450_000_000,
+                // 13e9 - 10e9 (rtc offset) + 3e9 (offset)
+                6_000_000_000,
                 "stream",
                 &json!({"cut": "start"}),
             );
 
-            // 4_000_000_000 - 1_500_000_000 (gap 1) + 3_000_000_000 (offset) - 50_000_000 (diff)
             assert_event(
                 &events[3],
-                5_450_000_000,
+                // 14e9 - 10e9 (rtc offset) + 3e9 (offset)
+                7_000_000_000,
                 "message",
                 &json!({"message": "m4"}),
             );
 
-            // 5000 - 1_500_000_000 (gap 1) + 3_000_000_000 (offset) - 50_000_000 (diff)
-            assert_event(&events[4], 6_450_000_000, "stream", &json!({"cut": "stop"}));
+            assert_event(
+                &events[4],
+                // 15e9 - 10e9 (rtc offset) + 3e9 (offset)
+                8_000_000_000,
+                "stream",
+                &json!({"cut": "stop"}),
+            );
 
-            // 6_000_000_000 - 1_500_000_000 (gap 1) + 3_000_000_000 (offset) - 50_000_000 (diff)
             assert_event(
                 &events[5],
-                7_450_000_000,
+                // 16e9 - 10e9 (rtc offset) + 3e9 (offset)
+                9_000_000_000,
                 "message",
                 &json!({"message": "m6"}),
             );
 
-            // 7_000_000_000 - 1_500_000_000 (gap 1) - (7_000_000_000 - 6_500_000_000) (gap 2 part)
-            //     + 3_000_000_000 (offset) - 50_000_000 (diff)
             assert_event(
                 &events[6],
-                7_950_000_000,
+                // 17e9 - (17e9 - 16.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset)
+                9_500_000_000,
                 "message",
                 &json!({"message": "m7"}),
             );
 
-            // 8_000_000_000 - 1_500_000_000 (gap 1) - (8_000_000_000 - 6_500_000_000) (gap 2 part)
-            //     + 3_000_000_000 (offset) - 50_000_000 (diff) + 1 (monotonize)
             assert_event(
                 &events[7],
-                7_950_000_001,
+                // 18e9 - (18e9 - 16.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset) + 1 (monotonize)
+                9_500_000_001,
                 "stream",
                 &json!({"cut": "start"}),
             );
 
-            // 7_000_000_000 - 1_500_000_000 (gap 1) - 2_000_000_000 (gap 2)
-            //     + 3_000_000_000 (offset) - 50_000_000 (diff)
             assert_event(
                 &events[8],
-                8_450_000_000,
+                // 19e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
+                10_000_000_000,
                 "message",
                 &json!({"message": "m9"}),
             );
 
-            // 9_000_000_000 - 1_500_000_000 (gap 1) - 2_000_000_000 (gap 2)
-            //     + 3_000_000_000 (offset) - 50_000_000 (diff)
-            assert_event(&events[9], 9_450_000_000, "stream", &json!({"cut": "stop"}));
+            assert_event(
+                &events[9],
+                // 20e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
+                11_000_000_000,
+                "stream",
+                &json!({"cut": "stop"}),
+            );
 
-            // 10_000_000_000 - 1_500_000_000 (gap 1) - 2_000_000_000 (gap 2)
-            //     + 3_000_000_000 (offset) - 50_000_000 (diff)
             assert_event(
                 &events[10],
-                10_450_000_000,
+                // 21e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
+                12_000_000_000,
                 "message",
                 &json!({"message": "m11"}),
             );
 
-            // 11_500_000_000 (last segment stop) - 1_500_000_000 (gap 1)
-            //     - 2_000_000_000 (gap 2) + 3_000_000_000 (offset) - 50_000_000 (diff)
             assert_event(
                 &events[11],
-                10_950_000_000,
+                // 22e9 - 2e9 (gap) - (22e9 - 21.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset)
+                12_500_000_000,
                 "message",
                 &json!({"message": "m12"}),
             );
@@ -613,67 +620,66 @@ mod tests {
 
             assert_eq!(events.len(), 8);
 
-            // 2_950_000_000
             assert_event(
                 &events[0],
-                2_950_000_000,
+                // No change
+                3_000_000_000,
                 "message",
                 &json!({"message": "m1"}),
             );
 
-            // 3_450_000_000
             assert_event(
                 &events[1],
-                3_450_000_000,
+                // No change
+                5_000_000_000,
                 "message",
                 &json!({"message": "m2"}),
             );
 
-            // 5_450_000_000 - (2_500_000_000 - 1_500_000_000) (cut 1 part) + 1 (monotonize)
             assert_event(
                 &events[2],
-                4_450_000_001,
+                // 7e9 - (17e9 - 16e9) (cut 1 part) + 1 (monotonize)
+                6_000_000_001,
                 "message",
                 &json!({"message": "m4"}),
             );
 
-            // 7_450_000_000 - 2_000_000_000 (cut 1)
             assert_event(
                 &events[3],
-                5_450_000_000,
+                // 9e9 - 2e9 (cut 1)
+                7_000_000_000,
                 "message",
                 &json!({"message": "m6"}),
             );
 
-            // 7_950_000_000 - 2_000_000_000 (cut 1)
             assert_event(
                 &events[4],
-                5_950_000_000,
+                // 9.5e9 - 2e9 (cut 1)
+                7_500_000_000,
                 "message",
                 &json!({"message": "m7"}),
             );
 
-            // 8_450_000_000 - 2_000_000_000 (cut 1) - (3_500_000_000 - 3_000_000_000) (cut 2 part)
-            //     + 2 (monotonize)
             assert_event(
                 &events[5],
-                5_950_000_002,
+                // 10e9 - 2e9 (cut 1) - (20e9 - 19.5e9) (cut 2 part) + 2 (monotonize)
+                7_500_000_002,
                 "message",
                 &json!({"message": "m9"}),
             );
 
-            // 10_450_000_000 - 2_000_000_000 (cut 1) - 1_500_000_000 (cut 2) + 1 (monotonize)
             assert_event(
                 &events[6],
-                6_950_000_001,
+                // 12e9 - 2e9 (cut 1) - 1.5e9 (cut 2) + 1 (monotonize)
+                8_500_000_001,
                 "message",
                 &json!({"message": "m11"}),
             );
 
-            // 10_950_000_000 - 2_000_000_000 (cut 1) - 1_500_000_000 (cut 2) + 1 (monotonize)
             assert_event(
                 &events[7],
-                7_450_000_001,
+                // 12.5e9 - 2e9 (cut 1) - 1.5e9 (cut 2) + 1 (monotonize)
+                9_000_000_001,
                 "message",
                 &json!({"message": "m12"}),
             );
@@ -682,10 +688,8 @@ mod tests {
             assert_eq!(
                 modified_segments,
                 vec![
-                    (Bound::Included(0), Bound::Excluded(4450)),
-                    (Bound::Included(6450), Bound::Excluded(7950)),
-                    // 8000 = (6500 - 1500) + (11500 - 8500) (segments' lengths sum) + 3000 (offset)
-                    (Bound::Included(9450), Bound::Excluded(8000)),
+                    (Bound::Included(0), Bound::Excluded(6000)),
+                    (Bound::Included(8000), Bound::Excluded(9500)),
                 ]
             )
         });
