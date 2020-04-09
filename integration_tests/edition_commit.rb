@@ -12,7 +12,7 @@ def main
   event_ids = create_events(room_id)
   edition_id = create_edition(room_id)
   create_changes(edition_id, event_ids)
-  new_room_id = commit_edition(edition_id)
+  new_room_id = commit_edition(edition_id, room_id)
 
   response = @conn.make_request 'event.list', to: @event, payload: {
     room_id: new_room_id,
@@ -132,7 +132,7 @@ def create_changes(edition_id, event_ids)
   assert response.properties['status'] == '201'
 end
 
-def commit_edition(id)
+def commit_edition(id, source_room_id)
   response = @conn.make_request 'edition.commit', to: @event, payload: {
     id: id
   }
@@ -140,10 +140,10 @@ def commit_edition(id)
   msg = @conn.receive do |msg|
     msg.properties['type'] == "event" &&
       msg.properties['label'] == 'edition.commit' &&
-      msg.payload['edition_id'] == id
+      msg.payload['source_room_id'] == source_room_id
   end
 
-  msg.payload['commited_room_id']
+  msg.payload['committed_room_id']
 end
 
 main()
