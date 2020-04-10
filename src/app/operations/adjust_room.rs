@@ -256,7 +256,7 @@ pub(crate) fn invert_segments(
     segments: &[Segment],
     room_duration: Duration,
 ) -> Result<Vec<(i64, i64)>, Error> {
-    if segments.len() == 0 {
+    if segments.is_empty() {
         let total_nanos = room_duration.num_nanoseconds().unwrap_or(std::i64::MAX);
         return Ok(vec![(0, total_nanos)]);
     }

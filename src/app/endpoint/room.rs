@@ -205,15 +205,16 @@ impl RequestHandler for UpdateHandler {
             .await?;
 
         // Validate opening time.
-        if let Some(new_time) = payload.time {
+        let mut time = payload.time;
+        if let Some(new_time) = time {
             match new_time {
                 (Bound::Included(new_opened_at), Bound::Excluded(new_closed_at))
                     if new_closed_at > new_opened_at =>
                 {
                     if let (Bound::Included(opened_at), _) = room.time() {
-                        if *opened_at <= Utc::now() && new_opened_at != *opened_at {
-                            return Err("Can't change opening time in opened room")
-                                .status(ResponseStatus::BAD_REQUEST);
+                        if *opened_at <= Utc::now() {
+                            time =
+                                Some((Bound::Included(*opened_at), Bound::Excluded(new_closed_at)));
                         }
                     }
                 }
@@ -225,7 +226,7 @@ impl RequestHandler for UpdateHandler {
         let room = {
             let mut query = UpdateQuery::new(room.id());
 
-            if let Some(time) = payload.time {
+            if let Some(time) = time {
                 query = query.time(time);
             }
 
@@ -767,7 +768,7 @@ mod tests {
     mod update {
         use std::ops::Bound;
 
-        use chrono::{Duration, SubsecRound, Utc};
+        use chrono::{Duration, SubsecRound, TimeZone, Utc};
 
         use crate::db::room::Object as Room;
         use crate::test_helpers::prelude::*;
@@ -834,7 +835,7 @@ mod tests {
         }
 
         #[test]
-        fn update_opened_room_opening_time() {
+        fn update_closed_at_in_open_room() {
             futures::executor::block_on(async {
                 let db = TestDb::new();
                 let now = Utc::now().trunc_subsecs(0);
@@ -850,7 +851,7 @@ mod tests {
                         .audience(USR_AUDIENCE)
                         .time((
                             Bound::Included(now - Duration::hours(1)),
-                            Bound::Excluded(now + Duration::hours(2)),
+                            Bound::Excluded(now + Duration::hours(1)),
                         ))
                         .insert(&conn)
                 };
@@ -865,8 +866,8 @@ mod tests {
                 let context = TestContext::new(db, authz);
 
                 let time = (
-                    Bound::Included(now + Duration::hours(1)),
-                    Bound::Excluded(now + Duration::hours(2)),
+                    Bound::Included(Utc.timestamp_millis(0)),
+                    Bound::Excluded(now + Duration::hours(3)),
                 );
 
                 let payload = UpdateRequest {
@@ -875,11 +876,21 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let messages = handle_request::<UpdateHandler>(&context, &agent, payload)
                     .await
-                    .expect_err("Unexpected success on room update");
+                    .expect("Room update failed");
 
-                assert_eq!(err.status_code(), ResponseStatus::BAD_REQUEST);
+                let (resp_room, respp) = find_response::<Room>(messages.as_slice());
+                assert_eq!(respp.status(), ResponseStatus::OK);
+                assert_eq!(resp_room.id(), room.id());
+                assert_eq!(resp_room.audience(), room.audience());
+                assert_eq!(
+                    resp_room.time(),
+                    &(
+                        Bound::Included(now - Duration::hours(1)),
+                        Bound::Excluded(now + Duration::hours(3)),
+                    )
+                );
             });
         }
 
