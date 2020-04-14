@@ -64,7 +64,7 @@ pub(crate) fn call(
     let segment_gaps = invert_segments(&nano_segments, room_duration)?;
 
     // Create original room with events shifted according to segments.
-    let original_room = create_room(&conn, &real_time_room)?;
+    let original_room = create_room(&conn, &real_time_room, started_at)?;
 
     clone_events(
         &conn,
@@ -91,7 +91,7 @@ pub(crate) fn call(
     let cut_gaps = cut_events_to_gaps(&cut_events)?;
 
     // Create modified room with events shifted again according to cut events this time.
-    let modified_room = create_room(&conn, &original_room)?;
+    let modified_room = create_room(&conn, &original_room, started_at)?;
     clone_events(&conn, &modified_room, &cut_gaps, 0)?;
 
     // Delete cut events from the modified room.
@@ -147,8 +147,13 @@ pub(crate) fn call(
 }
 
 /// Creates a derived room from the source room.
-fn create_room(conn: &PgConnection, source_room: &Room) -> Result<Room, Error> {
-    let mut query = RoomInsertQuery::new(&source_room.audience(), source_room.time().to_owned());
+fn create_room(
+    conn: &PgConnection,
+    source_room: &Room,
+    started_at: DateTime<Utc>,
+) -> Result<Room, Error> {
+    let time = (Bound::Included(started_at), source_room.time().1.to_owned());
+    let mut query = RoomInsertQuery::new(&source_room.audience(), time);
     query = query.source_room_id(source_room.id());
 
     if let Some(tags) = source_room.tags() {
@@ -493,7 +498,8 @@ mod tests {
             // Assert original room.
             assert_eq!(original_room.source_room_id(), Some(room.id()));
             assert_eq!(original_room.audience(), room.audience());
-            assert_eq!(original_room.time(), room.time());
+            assert_eq!(original_room.time().0, Bound::Included(started_at));
+            assert_eq!(original_room.time().1, room.time().1);
             assert_eq!(original_room.tags(), room.tags());
 
             // Assert original room events.
