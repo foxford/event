@@ -6,6 +6,7 @@ The room must not be closed if `time` parameter specified. Opened and not yet op
 
 Opening time can't be changed if the room is already opened.
 Closing time can be changed if the room is not yet closed (submitted opening time will be silently ignored if the room is already opened).
+If closing time is in the past the room will be updated with current moment as closing time.
 
 ## Authorization
 
@@ -27,9 +28,9 @@ tags | json       | _optional_ | Tenant-specific JSON object associated with the
 
 ## Broadcast event
 
-A notification is being sent to the _room_ topic.
+A notification is being sent to the _audience_ topic.
 
-**URI:** `rooms/:room_id/events`
+**URI:** `audiences/:audience/events`
 
 **Label:** `room.update`.
 

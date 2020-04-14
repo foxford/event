@@ -213,6 +213,12 @@ impl RequestHandler for UpdateHandler {
                 {
                     if let (Bound::Included(opened_at), _) = room.time() {
                         if *opened_at <= Utc::now() {
+                            let new_closed_at = if new_closed_at < Utc::now() {
+                                Utc::now()
+                            } else {
+                                new_closed_at
+                            };
+
                             time =
                                 Some((Bound::Included(*opened_at), Bound::Excluded(new_closed_at)));
                         }
@@ -247,8 +253,8 @@ impl RequestHandler for UpdateHandler {
         );
 
         let notification = helpers::build_notification(
-            "room.create",
-            &format!("rooms/{}/events", room.id()),
+            "room.update",
+            &format!("audiences/{}/events", room.audience()),
             room,
             reqp,
             start_timestamp,
@@ -768,7 +774,7 @@ mod tests {
     mod update {
         use std::ops::Bound;
 
-        use chrono::{Duration, SubsecRound, TimeZone, Utc};
+        use chrono::{Duration, SubsecRound, Utc};
 
         use crate::db::room::Object as Room;
         use crate::test_helpers::prelude::*;
@@ -866,7 +872,7 @@ mod tests {
                 let context = TestContext::new(db, authz);
 
                 let time = (
-                    Bound::Included(Utc.timestamp_millis(0)),
+                    Bound::Included(now + Duration::hours(1)),
                     Bound::Excluded(now + Duration::hours(3)),
                 );
 
@@ -889,6 +895,66 @@ mod tests {
                     &(
                         Bound::Included(now - Duration::hours(1)),
                         Bound::Excluded(now + Duration::hours(3)),
+                    )
+                );
+            });
+        }
+
+        #[test]
+        fn update_closed_at_in_the_past_in_already_open_room() {
+            futures::executor::block_on(async {
+                let db = TestDb::new();
+                let now = Utc::now().trunc_subsecs(0);
+
+                let room = {
+                    let conn = db
+                        .connection_pool()
+                        .get()
+                        .expect("Failed to get DB connection");
+
+                    // Create room.
+                    factory::Room::new()
+                        .audience(USR_AUDIENCE)
+                        .time((
+                            Bound::Included(now - Duration::hours(2)),
+                            Bound::Excluded(now + Duration::hours(2)),
+                        ))
+                        .insert(&conn)
+                };
+
+                // Allow agent to update the room.
+                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+                let mut authz = TestAuthz::new();
+                let room_id = room.id().to_string();
+                authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+
+                // Make room.update request.
+                let context = TestContext::new(db, authz);
+
+                let time = (
+                    Bound::Included(now - Duration::hours(2)),
+                    Bound::Excluded(now - Duration::hours(1)),
+                );
+
+                let payload = UpdateRequest {
+                    id: room.id(),
+                    time: Some(time),
+                    tags: None,
+                };
+
+                let messages = handle_request::<UpdateHandler>(&context, &agent, payload)
+                    .await
+                    .expect("Room update failed");
+
+                let (resp_room, respp) = find_response::<Room>(messages.as_slice());
+                assert_eq!(respp.status(), ResponseStatus::OK);
+                assert_eq!(resp_room.id(), room.id());
+                assert_eq!(resp_room.audience(), room.audience());
+                assert_eq!(
+                    resp_room.time(),
+                    &(
+                        Bound::Included(now - Duration::hours(2)),
+                        Bound::Excluded(now),
                     )
                 );
             });
