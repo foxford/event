@@ -1,6 +1,6 @@
 [package]
 name = "event_benchmark"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Timofey Martynov <t.martinov@netology-group.ru>"]
 edition = "2018"
 
