@@ -58,6 +58,7 @@ request_routes!(
     "edition.commit" => edition::CommitHandler,
     "edition.create" => edition::CreateHandler,
     "edition.list" => edition::ListHandler,
+    "edition.delete" => edition::DeleteHandler,
     "event.create" => event::CreateHandler,
     "event.list" => event::ListHandler,
     "room.adjust" => room::AdjustHandler,
