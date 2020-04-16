@@ -1,2 +1,2 @@
-DROP TABLE change;
-DROP TYPE change_type;
+DROP TABLE IF EXISTS change;
+DROP TYPE IF EXISTS change_type;
