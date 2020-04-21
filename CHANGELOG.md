@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.1 (April 21, 2020)
+
+### Changes
+- svc-agent was updated to v0.12.0 ([c775ffd](https://github.com/netology-group/event/commit/c775ffd6b6cc3677c905cdbd090a7983dd87d7fc))
+
+### Fixes
+- `edition.delete` was added to routes ([0d9a43f](https://github.com/netology-group/event/commit/0d9a43f3b10bae16c02250f444a761110ea9609c))
+
 ## v0.2.0 (April 14, 2020)
 
 ### Breaking changes
