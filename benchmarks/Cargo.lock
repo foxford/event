@@ -1112,9 +1112,9 @@ checksum = "8ea5119cdb4c55b55d432abb513a0429384878c15dde60cc77b1c99de1a95a6a"
 
 [[package]]
 name = "svc-agent"
-version = "0.11.2"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24f80dd9292e8558069bb5c7daafacbe264bb06374b16b1c8de83c922d5d9e50"
+checksum = "589535f2eaa8aea7a4ea2459cce876b1e0ec4453111e08e70a564aac5fc41620"
 dependencies = [
  "base64",
  "chrono",
