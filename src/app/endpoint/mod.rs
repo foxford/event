@@ -107,6 +107,7 @@ macro_rules! event_routes {
 
 // Event routes configuration: label => EventHandler
 event_routes!(
+    "metric.pull" => metric::PullHandler,
     "subscription.delete" => subscription::DeleteHandler,
     "subscription.create" => subscription::CreateHandler
 );
@@ -118,6 +119,7 @@ mod agent;
 mod change;
 mod edition;
 mod event;
+mod metric;
 mod room;
 mod state;
 mod subscription;
