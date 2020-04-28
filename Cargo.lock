@@ -552,6 +552,7 @@ dependencies = [
  "futures-util",
  "http",
  "log",
+ "rand 0.7.3",
  "serde 1.0.104",
  "serde_derive",
  "serde_json",

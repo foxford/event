@@ -28,3 +28,4 @@ svc-authz = "0.10"
 svc-error = { version = "0.1", features = ["diesel", "r2d2", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
 url = "2.1"
 uuid = { version = "0.6", features = ["v4", "serde"] }
+rand = "0.7"

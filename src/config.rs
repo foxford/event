@@ -14,7 +14,9 @@ pub(crate) struct Config {
     pub(crate) authz: Authz,
     pub(crate) mqtt: AgentConfig,
     pub(crate) sentry: Option<SentryConfig>,
-    pub(crate) telemetry: Option<TelemetryConfig>,
+    #[serde(default)]
+    pub(crate) telemetry: TelemetryConfig,
+    pub(crate) kruonis_id: Option<AccountId>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -54,7 +56,7 @@ impl<'de> Deserialize<'de> for TelemetryConfig {
         #[serde(field_identifier, rename_all = "snake_case")]
         enum Field {
             Enabled,
-            TelemetryId,
+            Id,
         }
 
         struct TelemetryConfigVisitor;
@@ -71,7 +73,7 @@ impl<'de> Deserialize<'de> for TelemetryConfig {
                 V: MapAccess<'de>,
             {
                 let mut enabled = None;
-                let mut telemetry_id = None;
+                let mut id = None;
                 while let Some(key) = map.next_key()? {
                     match key {
                         Field::Enabled => {
@@ -80,19 +82,19 @@ impl<'de> Deserialize<'de> for TelemetryConfig {
                             }
                             enabled = Some(map.next_value()?);
                         }
-                        Field::TelemetryId => {
-                            if telemetry_id.is_some() {
-                                return Err(de::Error::duplicate_field("telemetry_id"));
+                        Field::Id => {
+                            if id.is_some() {
+                                return Err(de::Error::duplicate_field("id"));
                             }
-                            telemetry_id = Some(map.next_value()?);
+                            id = Some(map.next_value()?);
                         }
                     }
                 }
                 if let Some(enabled) = enabled {
                     if enabled {
-                        let telemetry_id =
-                            telemetry_id.ok_or_else(|| de::Error::missing_field("telemetry_id"))?;
-                        Ok(TelemetryConfig::Enabled(telemetry_id))
+                        let id =
+                            id.ok_or_else(|| de::Error::missing_field("id"))?;
+                        Ok(TelemetryConfig::Enabled(id))
                     } else {
                         Ok(TelemetryConfig::Disabled)
                     }
@@ -102,7 +104,7 @@ impl<'de> Deserialize<'de> for TelemetryConfig {
             }
         }
 
-        const FIELDS: &'static [&'static str] = &["enabled", "telemetry_id"];
+        const FIELDS: &[&str] = &["enabled", "id"];
         deserializer.deserialize_struct("TelemetryConfig", FIELDS, TelemetryConfigVisitor)
     }
 }
