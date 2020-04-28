@@ -2,10 +2,15 @@ use std::sync::Arc;
 use std::thread;
 
 use async_std::task;
+use chrono::Utc;
 use futures::StreamExt;
 use log::{error, info};
-use svc_agent::mqtt::{AgentBuilder, ConnectionMode, Notification, QoS};
-use svc_agent::{AgentId, Authenticable, SharedGroup, Subscription};
+use serde_json::json;
+use svc_agent::mqtt::{
+    Agent, AgentBuilder, ConnectionMode, IntoPublishableDump, Notification, OutgoingRequest,
+    OutgoingRequestProperties, QoS, ShortTermTimingProperties,
+};
+use svc_agent::{AccountId, AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
 use svc_authz::cache::Cache as AuthzCache;
 
@@ -66,16 +71,19 @@ pub(crate) async fn run(
     }
 
     // Subscribe to requests
+    let group = SharedGroup::new("loadbalancer", agent_id.as_account_id().clone());
+
     agent
         .subscribe(
             &Subscription::multicast_requests(Some(API_VERSION)),
             QoS::AtMostOnce,
-            Some(&SharedGroup::new(
-                "loadbalancer",
-                agent_id.as_account_id().clone(),
-            )),
+            Some(&group),
         )
         .map_err(|err| format!("Error subscribing to multicast requests: {}", err))?;
+
+    if let Some(ref kruonis_id) = config.kruonis_id {
+        send_subscribe_to_kruonis(kruonis_id, &mut agent)?;
+    }
 
     // Context
     let context = AppContext::new(config, authz, db.clone());
@@ -97,6 +105,33 @@ pub(crate) async fn run(
         });
     }
 
+    Ok(())
+}
+
+fn send_subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<(), String> {
+    let timing = ShortTermTimingProperties::new(Utc::now());
+    let props = OutgoingRequestProperties::new(
+        "kruonis.subscribe",
+        "kruonis.create",
+        "",
+        timing,
+    );
+    let event = OutgoingRequest::multicast(json!({}), props, kruonis_id);
+    let message = Box::new(event) as Box<dyn IntoPublishableDump + Send>;
+
+    let dump = message
+        .into_dump(agent.address())
+        .map_err(|err| format!("Failed to dump message: {}", err))?;
+
+    info!(
+        "Outgoing message = '{}' sending to the topic = '{}'",
+        dump.payload(),
+        dump.topic(),
+    );
+
+    agent
+        .publish_dump(dump)
+        .map_err(|err| format!("Failed to publish message: {}", err))?;
     Ok(())
 }
 
