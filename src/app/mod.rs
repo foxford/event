@@ -14,7 +14,7 @@ use svc_agent::{AccountId, AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
 use svc_authz::cache::Cache as AuthzCache;
 
-use crate::config;
+use crate::config::{self, KruonisConfig};
 use crate::db::ConnectionPool;
 use context::AppContext;
 use message_handler::MessageHandler;
@@ -81,8 +81,11 @@ pub(crate) async fn run(
         )
         .map_err(|err| format!("Error subscribing to multicast requests: {}", err))?;
 
-    if let Some(ref kruonis_id) = config.kruonis_id {
-        send_subscribe_to_kruonis(kruonis_id, &mut agent)?;
+    if let KruonisConfig {
+        id: Some(ref kruonis_id),
+    } = config.kruonis
+    {
+        subscribe_to_kruonis(kruonis_id, &mut agent)?;
     }
 
     // Context
@@ -108,14 +111,9 @@ pub(crate) async fn run(
     Ok(())
 }
 
-fn send_subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<(), String> {
+fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<(), String> {
     let timing = ShortTermTimingProperties::new(Utc::now());
-    let props = OutgoingRequestProperties::new(
-        "kruonis.subscribe",
-        "kruonis.create",
-        "",
-        timing,
-    );
+    let props = OutgoingRequestProperties::new("kruonis.subscribe", "kruonis.create", "", timing);
     let event = OutgoingRequest::multicast(json!({}), props, kruonis_id);
     let message = Box::new(event) as Box<dyn IntoPublishableDump + Send>;
 

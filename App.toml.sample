@@ -15,5 +15,7 @@ uri = "mqtt://0.0.0.0:1883"
 clean_session = false
 
 [telemetry]
-enabled = true
-telemetry_id = "telemetry.dev.svc.example.org"
+id = "telemetry.dev.svc.example.org"
+
+[kruonis]
+id = "kruonis.dev.svc.example.org"

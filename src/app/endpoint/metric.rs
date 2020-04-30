@@ -46,7 +46,9 @@ impl EventHandler for PullHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         match context.config().telemetry {
-            TelemetryConfig::Enabled(ref account_id) => {
+            TelemetryConfig {
+                id: Some(ref account_id),
+            } => {
                 let outgoing_event_payload = MetricsEvent {
                     metrics: vec![Metric::DbConnections(MetricValue {
                         value: context.db().state().connections as u64,
