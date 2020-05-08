@@ -32,7 +32,7 @@ pub(crate) struct Object {
     kind: ChangeType,
     event_id: Option<Uuid>,
 
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", rename = "event_type")]
     event_kind: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     event_set: Option<String>,
