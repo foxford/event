@@ -30,6 +30,7 @@ pub(crate) struct MetricValue {
 pub(crate) enum Metric {
     //IncomingQueue(MetricValue),
     //OutgoingQueue(MetricValue),
+    #[serde(rename(serialize = "apps.event.db_connections_total"))]
     DbConnections(MetricValue),
 }
 
