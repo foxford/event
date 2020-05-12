@@ -328,6 +328,9 @@ mod tests {
                     edition_id: edition.id(),
                     changeset: Changeset::Removal(RemovalData {
                         event_id: events[0].id(),
+                        kind: None,
+                        occurred_at: None,
+                        set: None,
                     }),
                 };
 
@@ -449,6 +452,9 @@ mod tests {
                     edition_id: edition.id(),
                     changeset: Changeset::Removal(RemovalData {
                         event_id: Uuid::new_v4(),
+                        kind: None,
+                        occurred_at: None,
+                        set: None,
                     }),
                 };
 
