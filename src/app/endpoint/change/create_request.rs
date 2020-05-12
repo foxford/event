@@ -57,4 +57,10 @@ pub(crate) struct ModificationData {
 #[derive(Debug, Deserialize)]
 pub(crate) struct RemovalData {
     pub(crate) event_id: Uuid,
+    // these fields arent really needed for Removal
+    // they exists solely for frontend convenience
+    #[serde(rename = "type")]
+    pub(crate) kind: Option<String>,
+    pub(crate) set: Option<String>,
+    pub(crate) occurred_at: Option<i64>,
 }
