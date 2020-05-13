@@ -7,12 +7,13 @@ use failure::{bail, format_err, Error};
 use log::info;
 use svc_agent::AgentId;
 
-use crate::app::operations::adjust_room::{
-    cut_events_to_gaps, invert_segments, NANOSECONDS_IN_MILLISECOND,
-};
+use crate::app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND};
 use crate::db::adjustment::Segment;
+use crate::db::change::{ListQuery as ChangeListQuery, Object as Change};
 use crate::db::edition::Object as Edition;
-use crate::db::event::{DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery};
+use crate::db::event::{
+    DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event,
+};
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::ConnectionPool as Db;
 
@@ -51,7 +52,18 @@ pub(crate) fn call(
                 )
             })?;
 
-        let cut_gaps = cut_events_to_gaps(&cut_events)?;
+        let cut_changes = ChangeListQuery::new(edition.id())
+            .kind("stream")
+            .execute(&conn)
+            .map_err(|err| {
+                format_err!(
+                    "failed to fetch cut changes for room_id = '{}': {}",
+                    source.id(),
+                    err
+                )
+            })?;
+
+        let cut_gaps = collect_gaps(&cut_events, &cut_changes)?;
 
         let destination = clone_room(&conn, &source)?;
         clone_events(&conn, &source, &destination, &edition, agent_id, &cut_gaps)?;
@@ -223,6 +235,90 @@ fn clone_events(
         })
 }
 
+#[derive(Clone, Copy, Debug)]
+enum CutEventsToGapsState {
+    Started(i64, u64),
+    Stopped,
+}
+
+enum EventOrChangeAtDur<'a> {
+    Event(&'a Event, i64),
+    Change(&'a Change, i64),
+}
+
+// Transforms cut start-stop events and changes into a vec of (start, end) tuples.
+fn collect_gaps(cut_events: &[Event], cut_changes: &[Change]) -> Result<Vec<(i64, i64)>, Error> {
+    let mut cut_vec = vec![];
+    cut_events
+        .iter()
+        .for_each(|ev| cut_vec.push(EventOrChangeAtDur::Event(&ev, ev.occurred_at())));
+
+    cut_changes.iter().for_each(|ch| {
+        cut_vec.push(EventOrChangeAtDur::Change(
+            &ch,
+            ch.event_occurred_at().expect("must have occurred_at"),
+        ))
+    });
+
+    cut_vec.sort_by_key(|v| match v {
+        EventOrChangeAtDur::Event(_, ref k) => *k,
+        EventOrChangeAtDur::Change(_, ref k) => *k,
+    });
+
+    let mut gaps = Vec::with_capacity(cut_events.len());
+    let mut state: CutEventsToGapsState = CutEventsToGapsState::Stopped;
+
+    for cut in cut_vec {
+        let (command, occurred_at) = match cut {
+            EventOrChangeAtDur::Event(ref event, _) => (
+                event.data().get("cut").and_then(|v| v.as_str()),
+                event.occurred_at(),
+            ),
+            EventOrChangeAtDur::Change(ref change, _) => (
+                change
+                    .event_data()
+                    .as_ref()
+                    .expect("must have event_data")
+                    .get("cut")
+                    .and_then(|v| v.as_str()),
+                change.event_occurred_at().expect("must have occurred_at"),
+            ),
+        };
+
+        match (command, &mut state) {
+            (Some("start"), CutEventsToGapsState::Stopped) => {
+                state = CutEventsToGapsState::Started(occurred_at, 0);
+            }
+            (Some("start"), CutEventsToGapsState::Started(_start, ref mut nest_lvl)) => {
+                *nest_lvl += 1;
+            }
+            (Some("stop"), CutEventsToGapsState::Started(start, 0)) => {
+                gaps.push((*start, occurred_at));
+                state = CutEventsToGapsState::Stopped;
+            }
+            (Some("stop"), CutEventsToGapsState::Started(_start, ref mut nest_lvl)) => {
+                *nest_lvl -= 1;
+            }
+            _ => match cut {
+                EventOrChangeAtDur::Event(ref event, _) => bail!(
+                    "invalid cut event, id = '{}', command = {:?}, state = {:?}",
+                    event.id(),
+                    command,
+                    state
+                ),
+                EventOrChangeAtDur::Change(ref change, _) => bail!(
+                    "invalid cut change, id = '{}', command = {:?}, state = {:?}",
+                    change.id(),
+                    command,
+                    state
+                ),
+            },
+        }
+    }
+
+    Ok(gaps)
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Bound;
@@ -371,6 +467,212 @@ mod tests {
 
             assert_eq!(events[4].occurred_at(), 4_000_000_000);
             assert_eq!(events[4].data()["message"], "m5");
+        });
+    }
+
+    #[test]
+    fn commit_edition_with_cut_changes() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let conn = db
+                .connection_pool()
+                .get()
+                .expect("Failed to get db connection");
+
+            let room = shared_helpers::insert_room(&conn);
+
+            create_event(
+                &conn,
+                &room,
+                2_500_000_000,
+                "message",
+                json!({"message": "passthrough"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                3_500_000_000,
+                "message",
+                json!({"message": "cutted out"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                4_200_000_000,
+                "stream",
+                json!({"cut": "start"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                4_500_000_000,
+                "message",
+                json!({"message": "some message"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                4_800_000_000,
+                "stream",
+                json!({"cut": "stop"}),
+            );
+
+            let edition = factory::Edition::new(room.id(), agent.agent_id()).insert(&conn);
+
+            factory::Change::new(edition.id(), ChangeType::Addition)
+                .event_data(json!({"cut": "start"}))
+                .event_kind("stream")
+                .event_set("stream")
+                .event_occurred_at(3_000_000_000)
+                .event_created_by(agent.agent_id())
+                .insert(&conn);
+
+            factory::Change::new(edition.id(), ChangeType::Addition)
+                .event_data(json!({"cut": "stop"}))
+                .event_kind("stream")
+                .event_set("stream")
+                .event_occurred_at(4_000_000_000)
+                .event_created_by(agent.agent_id())
+                .insert(&conn);
+
+            drop(conn);
+            let (destination, segments) =
+                super::call(db.connection_pool(), &edition, &room, agent.agent_id())
+                    .expect("edition commit failed");
+
+            // Assert original room.
+            assert_eq!(destination.source_room_id().unwrap(), room.id());
+            assert_eq!(room.audience(), destination.audience());
+            assert_eq!(room.tags(), destination.tags());
+            assert_eq!(segments.len(), 3);
+
+            let conn = db
+                .connection_pool()
+                .get()
+                .expect("Failed to get db connection");
+
+            let events = EventListQuery::new()
+                .room_id(destination.id())
+                .execute(&conn)
+                .expect("Failed to fetch events");
+
+            assert_eq!(events.len(), 3);
+
+            assert_eq!(events[0].data()["message"], "passthrough");
+            assert_eq!(events[0].occurred_at(), 2_500_000_000);
+            assert_eq!(events[1].data()["message"], "cutted out");
+            assert_eq!(events[1].occurred_at(), 3_000_000_001);
+            assert_eq!(events[2].data()["message"], "some message");
+            assert_eq!(events[2].occurred_at(), 3_200_000_001);
+        });
+    }
+
+    #[test]
+    fn commit_edition_with_intersecting_gaps() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let conn = db
+                .connection_pool()
+                .get()
+                .expect("Failed to get db connection");
+
+            let room = shared_helpers::insert_room(&conn);
+
+            create_event(
+                &conn,
+                &room,
+                2_500_000_000,
+                "message",
+                json!({"message": "passthrough"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                3_000_000_000,
+                "stream",
+                json!({"cut": "start"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                3_500_000_000,
+                "message",
+                json!({"message": "cutted out"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                4_000_000_000,
+                "stream",
+                json!({"cut": "stop"}),
+            );
+
+            create_event(
+                &conn,
+                &room,
+                5_000_000_000,
+                "message",
+                json!({"message": "passthrough2"}),
+            );
+
+            let edition = factory::Edition::new(room.id(), agent.agent_id()).insert(&conn);
+
+            factory::Change::new(edition.id(), ChangeType::Addition)
+                .event_data(json!({"cut": "start"}))
+                .event_kind("stream")
+                .event_set("stream")
+                .event_occurred_at(3_200_000_000)
+                .event_created_by(agent.agent_id())
+                .insert(&conn);
+
+            factory::Change::new(edition.id(), ChangeType::Addition)
+                .event_data(json!({"cut": "stop"}))
+                .event_kind("stream")
+                .event_set("stream")
+                .event_occurred_at(4_500_000_000)
+                .event_created_by(agent.agent_id())
+                .insert(&conn);
+
+            drop(conn);
+            let (destination, segments) =
+                super::call(db.connection_pool(), &edition, &room, agent.agent_id())
+                    .expect("edition commit failed");
+
+            // Assert original room.
+            assert_eq!(destination.source_room_id().unwrap(), room.id());
+            assert_eq!(room.audience(), destination.audience());
+            assert_eq!(room.tags(), destination.tags());
+            assert_eq!(segments.len(), 2);
+
+            let conn = db
+                .connection_pool()
+                .get()
+                .expect("Failed to get db connection");
+
+            let events = EventListQuery::new()
+                .room_id(destination.id())
+                .execute(&conn)
+                .expect("Failed to fetch events");
+
+            assert_eq!(events.len(), 3);
+
+            assert_eq!(events[0].data()["message"], "passthrough");
+            assert_eq!(events[0].occurred_at(), 2_500_000_000);
+            assert_eq!(events[1].data()["message"], "cutted out");
+            assert_eq!(events[1].occurred_at(), 3_000_000_001);
+            assert_eq!(events[2].data()["message"], "passthrough2");
+            assert_eq!(events[2].occurred_at(), 3_500_000_000);
         });
     }
 

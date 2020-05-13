@@ -163,6 +163,7 @@ impl<'a> InsertQuery<'a> {
 pub(crate) struct ListQuery {
     id: Uuid,
     last_created_at: Option<DateTime<Utc>>,
+    kind: Option<String>,
     limit: i64,
 }
 
@@ -172,11 +173,19 @@ impl ListQuery {
             limit: 25,
             last_created_at: None,
             id,
+            kind: None,
         }
     }
 
     pub(crate) fn limit(self, limit: i64) -> Self {
         Self { limit, ..self }
+    }
+
+    pub(crate) fn kind(self, kind: &str) -> Self {
+        Self {
+            kind: Some(kind.to_owned()),
+            ..self
+        }
     }
 
     pub(crate) fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
@@ -192,6 +201,10 @@ impl ListQuery {
         let mut q = change::table
             .filter(change::edition_id.eq(self.id))
             .into_boxed();
+
+        if let Some(ref kind) = self.kind {
+            q = q.filter(change::event_kind.eq(kind));
+        }
 
         if let Some(last_created_at) = self.last_created_at {
             q = q.filter(change::created_at.ge(last_created_at));
@@ -242,8 +255,11 @@ impl Object {
         self.event_id
     }
 
-    #[cfg(test)]
     pub(crate) fn event_data(&self) -> &Option<JsonValue> {
         &self.event_data
+    }
+
+    pub(crate) fn event_occurred_at(&self) -> Option<i64> {
+        self.event_occurred_at
     }
 }
