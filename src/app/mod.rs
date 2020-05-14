@@ -81,6 +81,14 @@ pub(crate) async fn run(
         )
         .map_err(|err| format!("Error subscribing to multicast requests: {}", err))?;
 
+    agent
+        .subscribe(
+            &Subscription::unicast_requests(),
+            QoS::AtMostOnce,
+            Some(&group),
+        )
+        .map_err(|err| format!("Error subscribing to unicast requests: {}", err))?;
+
     if let KruonisConfig {
         id: Some(ref kruonis_id),
     } = config.kruonis
@@ -113,7 +121,7 @@ pub(crate) async fn run(
 
 fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<(), String> {
     let timing = ShortTermTimingProperties::new(Utc::now());
-    let topic = Subscription::unicast_responses_from(kruonis_id)
+    let topic = Subscription::unicast_requests_from(kruonis_id)
         .subscription_topic(agent.id(), API_VERSION)
         .map_err(|err| format!("Failed to build subscription topic: {:?}", err))?;
     let props = OutgoingRequestProperties::new("kruonis.subscribe", &topic, "", timing);
