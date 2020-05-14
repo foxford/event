@@ -8,7 +8,7 @@ use log::{error, info};
 use serde_json::json;
 use svc_agent::mqtt::{
     Agent, AgentBuilder, ConnectionMode, IntoPublishableDump, Notification, OutgoingRequest,
-    OutgoingRequestProperties, QoS, ShortTermTimingProperties,
+    OutgoingRequestProperties, QoS, ShortTermTimingProperties, SubscriptionTopic,
 };
 use svc_agent::{AccountId, AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
@@ -113,7 +113,10 @@ pub(crate) async fn run(
 
 fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<(), String> {
     let timing = ShortTermTimingProperties::new(Utc::now());
-    let props = OutgoingRequestProperties::new("kruonis.subscribe", "kruonis.create", "", timing);
+    let topic = Subscription::unicast_responses_from(kruonis_id)
+        .subscription_topic(agent.id(), API_VERSION)
+        .map_err(|err| format!("Failed to build subscription topic: {:?}", err))?;
+    let props = OutgoingRequestProperties::new("kruonis.subscribe", &topic, "", timing);
     let event = OutgoingRequest::multicast(json!({}), props, kruonis_id);
     let message = Box::new(event) as Box<dyn IntoPublishableDump + Send>;
 
