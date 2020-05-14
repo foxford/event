@@ -247,14 +247,12 @@ impl RequestHandler for CommitHandler {
 
         let mut task_finished = false;
 
-        let agent_id = reqp.as_agent_id().to_owned();
-
         let notification = stream::from_fn(move || {
             if task_finished {
                 return None;
             }
 
-            let result = commit_edition(&db, &edition, &room, &agent_id);
+            let result = commit_edition(&db, &edition, &room);
 
             // Handle result.
             let result = match result {

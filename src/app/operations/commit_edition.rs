@@ -5,7 +5,6 @@ use diesel::connection::Connection;
 use diesel::pg::PgConnection;
 use failure::{bail, format_err, Error};
 use log::info;
-use svc_agent::AgentId;
 
 use crate::app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND};
 use crate::db::adjustment::Segment;
@@ -21,7 +20,6 @@ pub(crate) fn call(
     db: &Db,
     edition: &Edition,
     source: &Room,
-    agent_id: &AgentId,
 ) -> Result<(Room, Vec<Segment>), Error> {
     info!(
         "Edition commit task started for edition_id = '{}', source room id = {}",
@@ -66,7 +64,7 @@ pub(crate) fn call(
         let cut_gaps = collect_gaps(&cut_events, &cut_changes)?;
 
         let destination = clone_room(&conn, &source)?;
-        clone_events(&conn, &source, &destination, &edition, agent_id, &cut_gaps)?;
+        clone_events(&conn, &source, &destination, &edition, &cut_gaps)?;
 
         EventDeleteQuery::new(destination.id(), "stream")
             .execute(&conn)
@@ -123,11 +121,11 @@ const CLONE_EVENTS_SQL: &str = r#"
 WITH
     gap_starts AS (
         SELECT start, ROW_NUMBER() OVER () AS row_number
-        FROM UNNEST($5::BIGINT[]) AS start
+        FROM UNNEST($4::BIGINT[]) AS start
     ),
     gap_stops AS (
         SELECT stop, ROW_NUMBER() OVER () AS row_number
-        FROM UNNEST($6::BIGINT[]) AS stop
+        FROM UNNEST($5::BIGINT[]) AS stop
     ),
     gaps AS (
         SELECT start, stop
@@ -185,14 +183,18 @@ FROM (
                 WHERE start < occurred_at
             )
         ) AS occurred_at,
-        $3 AS created_by,
+        (CASE change.kind
+            WHEN 'addition' THEN change.event_created_by
+            ELSE event.created_by
+            END
+        ) AS created_by,
         COALESCE(event.created_at, NOW()) as created_at
     FROM event
         FULL OUTER JOIN change ON change.event_id = event.id
     WHERE
         ((event.room_id = $1 AND deleted_at IS NULL) OR event.id IS NULL)
         AND
-        ((change.edition_id = $4 AND change.kind <> 'removal') OR change.id IS NULL)
+        ((change.edition_id = $3 AND change.kind <> 'removal') OR change.id IS NULL)
 ) AS subquery;
 "#;
 
@@ -201,12 +203,10 @@ fn clone_events(
     source: &Room,
     destination: &Room,
     edition: &Edition,
-    agent_id: &AgentId,
     gaps: &[(i64, i64)],
 ) -> Result<(), Error> {
     use diesel::prelude::*;
     use diesel::sql_types::{Array, Int8, Uuid};
-    use svc_agent::sql::Agent_id;
 
     let mut starts = Vec::with_capacity(gaps.len());
     let mut stops = Vec::with_capacity(gaps.len());
@@ -219,7 +219,6 @@ fn clone_events(
     diesel::sql_query(CLONE_EVENTS_SQL)
         .bind::<Uuid, _>(source.id())
         .bind::<Uuid, _>(destination.id())
-        .bind::<Agent_id, _>(agent_id)
         .bind::<Uuid, _>(edition.id())
         .bind::<Array<Int8>, _>(&starts)
         .bind::<Array<Int8>, _>(&stops)
@@ -327,6 +326,7 @@ mod tests {
     use diesel::pg::PgConnection;
     use serde_json::{json, Value as JsonValue};
     use svc_agent::{AccountId, AgentId};
+    use svc_authn::Authenticable;
 
     use crate::db::event::{
         InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,
@@ -417,7 +417,7 @@ mod tests {
                 .event_set("type")
                 .event_label("mylabel")
                 .event_occurred_at(3_000_000_000)
-                .event_created_by(agent.agent_id())
+                .event_created_by(&AgentId::new("barbaz", AccountId::new("foo", USR_AUDIENCE)))
                 .insert(&conn);
 
             factory::Change::new(edition.id(), ChangeType::Modification)
@@ -432,8 +432,7 @@ mod tests {
 
             drop(conn);
             let (destination, segments) =
-                super::call(db.connection_pool(), &edition, &room, agent.agent_id())
-                    .expect("edition commit failed");
+                super::call(db.connection_pool(), &edition, &room).expect("edition commit failed");
 
             // Assert original room.
             assert_eq!(destination.source_room_id().unwrap(), room.id());
@@ -461,6 +460,9 @@ mod tests {
 
             assert_eq!(events[2].occurred_at(), 3_000_000_000);
             assert_eq!(events[2].data()["message"], "newmessage");
+            let aid = events[2].created_by();
+            assert_eq!(aid.label(), "barbaz");
+            assert_eq!(aid.as_account_id().label(), "foo");
 
             assert_eq!(events[3].occurred_at(), 3_000_000_002);
             assert_eq!(events[3].data()["message"], "m4");
@@ -543,8 +545,7 @@ mod tests {
 
             drop(conn);
             let (destination, segments) =
-                super::call(db.connection_pool(), &edition, &room, agent.agent_id())
-                    .expect("edition commit failed");
+                super::call(db.connection_pool(), &edition, &room).expect("edition commit failed");
 
             // Assert original room.
             assert_eq!(destination.source_room_id().unwrap(), room.id());
@@ -646,8 +647,7 @@ mod tests {
 
             drop(conn);
             let (destination, segments) =
-                super::call(db.connection_pool(), &edition, &room, agent.agent_id())
-                    .expect("edition commit failed");
+                super::call(db.connection_pool(), &edition, &room).expect("edition commit failed");
 
             // Assert original room.
             assert_eq!(destination.source_room_id().unwrap(), room.id());
