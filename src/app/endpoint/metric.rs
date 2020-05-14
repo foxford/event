@@ -14,11 +14,6 @@ use crate::config::TelemetryConfig;
 pub(crate) struct PullPayload {}
 
 #[derive(Serialize)]
-pub(crate) struct MetricsEvent {
-    metrics: Vec<Metric>,
-}
-
-#[derive(Serialize)]
 pub(crate) struct MetricValue {
     value: u64,
     #[serde(with = "ts_seconds")]
@@ -50,15 +45,13 @@ impl EventHandler for PullHandler {
             TelemetryConfig {
                 id: Some(ref account_id),
             } => {
-                let outgoing_event_payload = MetricsEvent {
-                    metrics: vec![Metric::DbConnections(MetricValue {
-                        value: context.db().state().connections as u64,
-                        timestamp: Utc::now(),
-                    })],
-                };
+                let outgoing_event_payload = vec![Metric::DbConnections(MetricValue {
+                    value: context.db().state().connections as u64,
+                    timestamp: Utc::now(),
+                })];
 
                 let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
-                let props = evp.to_event("metric.push", short_term_timing);
+                let props = evp.to_event("metric.create", short_term_timing);
                 let outgoing_event =
                     OutgoingEvent::multicast(outgoing_event_payload, props, account_id);
                 let boxed_event = Box::new(outgoing_event) as Box<dyn IntoPublishableDump + Send>;
