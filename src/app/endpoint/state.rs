@@ -57,12 +57,14 @@ impl RequestHandler for ReadHandler {
         );
 
         // Check whether the room exists.
-        let conn = context.db().get()?;
+        let room = {
+            let conn = context.db().get()?;
 
-        let room = db::room::FindQuery::new(payload.room_id)
-            .execute(&conn)?
-            .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
-            .status(ResponseStatus::NOT_FOUND)?;
+            db::room::FindQuery::new(payload.room_id)
+                .execute(&conn)?
+                .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
+                .status(ResponseStatus::NOT_FOUND)?
+        };
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
@@ -88,6 +90,7 @@ impl RequestHandler for ReadHandler {
 
         // Retrieve state for each set from the DB and put them into a map.
         let mut state = JsonMap::new();
+        let conn = context.db().get()?;
 
         for set in payload.sets.iter() {
             // Build a query for the particular set state.

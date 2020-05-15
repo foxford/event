@@ -71,20 +71,23 @@ impl EventHandler for CreateHandler {
             )).status(ResponseStatus::FORBIDDEN);
         }
 
-        // Find room.
         let room_id = payload.try_room_id()?;
-        let conn = context.db().get()?;
 
-        room::FindQuery::new(room_id)
-            .time(room::now())
-            .execute(&conn)?
-            .ok_or_else(|| format!("the room = '{}' is not found or closed", room_id))
-            .status(ResponseStatus::NOT_FOUND)?;
+        {
+            let conn = context.db().get()?;
 
-        // Update agent state to `ready`.
-        agent::UpdateQuery::new(&payload.subject, room_id)
-            .status(agent::Status::Ready)
-            .execute(&conn)?;
+            // Find room.
+            room::FindQuery::new(room_id)
+                .time(room::now())
+                .execute(&conn)?
+                .ok_or_else(|| format!("the room = '{}' is not found or closed", room_id))
+                .status(ResponseStatus::NOT_FOUND)?;
+
+            // Update agent state to `ready`.
+            agent::UpdateQuery::new(&payload.subject, room_id)
+                .status(agent::Status::Ready)
+                .execute(&conn)?;
+        }
 
         // Send broadcast notification that the agent has entered the room.
         let outgoing_event_payload = RoomEnterLeaveEvent {
@@ -126,8 +129,11 @@ impl EventHandler for DeleteHandler {
 
         // Delete agent from the DB.
         let room_id = payload.try_room_id()?;
-        let conn = context.db().get()?;
-        let row_count = agent::DeleteQuery::new(&payload.subject, room_id).execute(&conn)?;
+
+        let row_count = {
+            let conn = context.db().get()?;
+            agent::DeleteQuery::new(&payload.subject, room_id).execute(&conn)?
+        };
 
         if row_count != 1 {
             return Err(format!(
