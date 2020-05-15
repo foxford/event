@@ -55,52 +55,54 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let conn = context.db().get()?;
+        let (room, author) = {
+            let conn = context.db().get()?;
 
-        // Check whether the room exists and open.
-        let room = db::room::FindQuery::new(payload.room_id)
-            .time(db::room::now())
-            .execute(&conn)?
-            .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
-            .status(ResponseStatus::NOT_FOUND)?;
+            // Check whether the room exists and open.
+            let room = db::room::FindQuery::new(payload.room_id)
+                .time(db::room::now())
+                .execute(&conn)?
+                .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
+                .status(ResponseStatus::NOT_FOUND)?;
 
-        // Check whether the agent has entered the room.
-        let agents = db::agent::ListQuery::new()
-            .agent_id(reqp.as_agent_id())
-            .room_id(room.id())
-            .status(db::agent::Status::Ready)
-            .execute(&conn)?;
+            // Check whether the agent has entered the room.
+            let agents = db::agent::ListQuery::new()
+                .agent_id(reqp.as_agent_id())
+                .room_id(room.id())
+                .status(db::agent::Status::Ready)
+                .execute(&conn)?;
 
-        if agents.len() != 1 {
-            return Err(format!(
-                "agent = '{}' has not entered the room = '{}'",
-                reqp.as_agent_id(),
-                room.id()
-            ))
-            .status(ResponseStatus::FORBIDDEN);
-        }
+            if agents.len() != 1 {
+                return Err(format!(
+                    "agent = '{}' has not entered the room = '{}'",
+                    reqp.as_agent_id(),
+                    room.id()
+                ))
+                .status(ResponseStatus::FORBIDDEN);
+            }
+
+            let author = match payload {
+                // Get author of the original event with the same label if applicable.
+                CreateRequest {
+                    set: Some(ref set),
+                    label: Some(ref label),
+                    ..
+                } => db::event::OriginalEventQuery::new(room.id(), set, label)
+                    .execute(&conn)?
+                    .map(|original_event| original_event.created_by().as_account_id().to_string()),
+                _ => None,
+            }
+            .unwrap_or_else(|| {
+                // If set & label are not given or there're no events for them use current account.
+                reqp.as_account_id().to_string()
+            });
+
+            (room, author)
+        };
 
         // Authorize event creation on tenant with cache.
         let room_id = room.id().to_string();
-
         let key = if payload.is_claim { "claims" } else { "events" };
-
-        let author = match payload {
-            // Get author of the original event with the same label if applicable.
-            CreateRequest {
-                set: Some(ref set),
-                label: Some(ref label),
-                ..
-            } => db::event::OriginalEventQuery::new(room.id(), set, label)
-                .execute(&conn)?
-                .map(|original_event| original_event.created_by().as_account_id().to_string()),
-            _ => None,
-        }
-        .unwrap_or_else(|| {
-            // If set & label are not given or there're no events for them use current account.
-            reqp.as_account_id().to_string()
-        });
-
         let object = vec!["rooms", &room_id, key, &payload.kind, "authors", &author];
 
         let authz_time = context
@@ -137,10 +139,14 @@ impl RequestHandler for CreateHandler {
                 query = query.label(label);
             }
 
-            query
-                .execute(&conn)
-                .map_err(|err| format!("failed to create event: {}", err))
-                .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
+            {
+                let conn = context.db().get()?;
+
+                query
+                    .execute(&conn)
+                    .map_err(|err| format!("failed to create event: {}", err))
+                    .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
+            }
         } else {
             // Build transient event.
             let mut builder = db::event::Builder::new()
@@ -229,13 +235,15 @@ impl RequestHandler for ListHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let conn = context.db().get()?;
-
         // Check whether the room exists.
-        let room = db::room::FindQuery::new(payload.room_id)
-            .execute(&conn)?
-            .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
-            .status(ResponseStatus::NOT_FOUND)?;
+        let room = {
+            let conn = context.db().get()?;
+
+            db::room::FindQuery::new(payload.room_id)
+                .execute(&conn)?
+                .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
+                .status(ResponseStatus::NOT_FOUND)?
+        };
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
@@ -265,13 +273,17 @@ impl RequestHandler for ListHandler {
             query = query.last_occurred_at(last_occurred_at);
         }
 
-        let events = query
-            .direction(payload.direction)
-            .limit(std::cmp::min(
-                payload.limit.unwrap_or_else(|| MAX_LIMIT),
-                MAX_LIMIT,
-            ))
-            .execute(&conn)?;
+        let events = {
+            let conn = context.db().get()?;
+
+            query
+                .direction(payload.direction)
+                .limit(std::cmp::min(
+                    payload.limit.unwrap_or_else(|| MAX_LIMIT),
+                    MAX_LIMIT,
+                ))
+                .execute(&conn)?
+        };
 
         // Respond with events list.
         Ok(Box::new(stream::once(helpers::build_response(

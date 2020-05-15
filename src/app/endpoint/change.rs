@@ -24,13 +24,15 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let conn = context.db().get()?;
+        let room = {
+            let conn = context.db().get()?;
 
-        let room = match db::edition::FindWithRoomQuery::new(payload.edition_id).execute(&conn)? {
-            Some((_edition, room)) => room,
-            None => {
-                return Err(format!("Edition not found, id = '{}'", payload.edition_id))
-                    .status(ResponseStatus::NOT_FOUND)?;
+            match db::edition::FindWithRoomQuery::new(payload.edition_id).execute(&conn)? {
+                Some((_edition, room)) => room,
+                None => {
+                    return Err(format!("Edition not found, id = '{}'", payload.edition_id))
+                        .status(ResponseStatus::NOT_FOUND)?;
+                }
             }
         };
 
@@ -84,7 +86,10 @@ impl RequestHandler for CreateHandler {
             Changeset::Removal(ref event) => query.event_id(event.event_id),
         };
 
-        let change = query.execute(&conn)?;
+        let change = {
+            let conn = context.db().get()?;
+            query.execute(&conn)?
+        };
 
         let response = helpers::build_response(
             ResponseStatus::CREATED,
@@ -118,16 +123,17 @@ impl RequestHandler for ListHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let conn = context.db().get()?;
+        let (edition, room) = {
+            let conn = context.db().get()?;
 
-        let (edition, room) =
             match db::edition::FindWithRoomQuery::new(payload.id).execute(&conn)? {
                 Some((edition, room)) => (edition, room),
                 None => {
                     return Err(format!("Edition not found, id = '{}'", payload.id))
                         .status(ResponseStatus::NOT_FOUND)?;
                 }
-            };
+            }
+        };
 
         let authz_time = context
             .authz()
@@ -149,7 +155,10 @@ impl RequestHandler for ListHandler {
             query = query.limit(limit);
         }
 
-        let changes = query.execute(&conn)?;
+        let changes = {
+            let conn = context.db().get()?;
+            query.execute(&conn)?
+        };
 
         Ok(Box::new(stream::from_iter(vec![helpers::build_response(
             ResponseStatus::OK,
@@ -179,15 +188,17 @@ impl RequestHandler for DeleteHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let conn = context.db().get()?;
-        let (change, room) =
+        let (change, room) = {
+            let conn = context.db().get()?;
+
             match db::change::FindWithEditionAndRoomQuery::new(payload.id).execute(&conn)? {
                 Some((change, (_edition, room))) => (change, room),
                 None => {
                     return Err(format!("Change not found, id = '{}'", payload.id))
                         .status(ResponseStatus::NOT_FOUND)?;
                 }
-            };
+            }
+        };
 
         let authz_time = context
             .authz()
@@ -199,7 +210,10 @@ impl RequestHandler for DeleteHandler {
             )
             .await?;
 
-        db::change::DeleteQuery::new(change.id()).execute(&conn)?;
+        {
+            let conn = context.db().get()?;
+            db::change::DeleteQuery::new(change.id()).execute(&conn)?;
+        }
 
         let response = helpers::build_response(
             ResponseStatus::OK,
