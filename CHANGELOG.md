@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.2.3 (May 18, 2020)
+
+### Changes
+- Switch runtime to smol ([56625aa](https://github.com/netology-group/event/commit/56625aa29c8ce60ba83a7a30eb784df9b14c833c))
+- Optimize DB connection usage ([6c672a7](https://github.com/netology-group/event/commit/6c672a7a6deb6aca70ca88f7ee15d77130e1d931))
+
+
+## v0.2.2 (May 15, 2020)
+
+### Features
+- Telemetry metrics handler, Kruonis subscription ([399d94b](https://github.com/netology-group/event/commit/399d94b4754fef5a9643af28de89578012d2f058), [d790943](https://github.com/netology-group/event/commit/d790943a3896fda593ad4008e54ca99f068ded57), [a73374e](https://github.com/netology-group/event/commit/a73374ee6500db00dda66ce5e0d8fd352b202e20), [ba175b9](https://github.com/netology-group/event/commit/ba175b9caf6476d101c4ee4d4c5d4ffc786ecacf), [299080d](https://github.com/netology-group/event/commit/299080d4cec1abac21c7c4494c1e0c407df226ec), [9487763](https://github.com/netology-group/event/commit/94877637d1d424b09512b24fcaf61b9bc64392f1), [98b791d](https://github.com/netology-group/event/commit/98b791dcb7ffef97e49de73037d454bdd50188d5))
+
+### Changes
+- Rename `event_kind` ([a09a213](https://github.com/netology-group/event/commit/a09a213de1b69651fee71b084126f6141366a9de))
+- Expose `type`, `set` and `occurred_at` on `RemovalData` ([936a884](https://github.com/netology-group/event/commit/936a884798ea5a83563d35c8afe850f4b3f3573b))
+
+
+### Fixes
+- Use cut changes in edition commit modified segments ([6e81dfd](https://github.com/netology-group/event/commit/6e81dfd4300b200fe1091c99f6707ff90d418e06))
+- Fix `change.event_created_by` not being applied to edition commit ([cb23ae9](https://github.com/netology-group/event/commit/cb23ae9ea1b6ef0ac5bc334f0e2dfcad41851ac6))
+
+
 ## v0.2.1 (April 21, 2020)
 
 ### Changes
