@@ -4,7 +4,7 @@ use std::thread;
 use async_std::task;
 use chrono::Utc;
 use futures::StreamExt;
-use log::{error, info};
+use log::{error, info, warn};
 use serde_json::json;
 use svc_agent::mqtt::{
     Agent, AgentBuilder, ConnectionMode, IntoPublishableDump, Notification, OutgoingRequest,
@@ -13,8 +13,10 @@ use svc_agent::mqtt::{
 use svc_agent::{AccountId, AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
 use svc_authz::cache::Cache as AuthzCache;
+use svc_error::{extension::sentry, Error as SvcError};
 
-use crate::config::{self, KruonisConfig};
+use crate::app::context::Context;
+use crate::config::{self, Config, KruonisConfig};
 use crate::db::ConnectionPool;
 use context::AppContext;
 use message_handler::MessageHandler;
@@ -70,31 +72,8 @@ pub(crate) async fn run(
         svc_error::extension::sentry::init(sentry_config);
     }
 
-    // Subscribe to requests
-    let group = SharedGroup::new("loadbalancer", agent_id.as_account_id().clone());
-
-    agent
-        .subscribe(
-            &Subscription::multicast_requests(Some(API_VERSION)),
-            QoS::AtMostOnce,
-            Some(&group),
-        )
-        .map_err(|err| format!("Error subscribing to multicast requests: {}", err))?;
-
-    agent
-        .subscribe(
-            &Subscription::unicast_requests(),
-            QoS::AtMostOnce,
-            Some(&group),
-        )
-        .map_err(|err| format!("Error subscribing to unicast requests: {}", err))?;
-
-    if let KruonisConfig {
-        id: Some(ref kruonis_id),
-    } = config.kruonis
-    {
-        subscribe_to_kruonis(kruonis_id, &mut agent)?;
-    }
+    // Subscribe to topics
+    subscribe(&mut agent, &agent_id, &config)?;
 
     // Context
     let context = AppContext::new(config, authz, db.clone());
@@ -111,9 +90,53 @@ pub(crate) async fn run(
                 svc_agent::mqtt::Notification::Publish(message) => {
                     message_handler.handle(&message.payload).await
                 }
+                svc_agent::mqtt::Notification::Disconnection => {
+                    error!("Disconnected from broker");
+                }
+                svc_agent::mqtt::Notification::Reconnection => {
+                    error!("Reconnected to broker");
+
+                    resubscribe(
+                        &mut message_handler.agent().to_owned(),
+                        message_handler.context().agent_id(),
+                        message_handler.context().config(),
+                    );
+                }
                 _ => error!("Unsupported notification type = '{:?}'", message),
             }
         });
+    }
+
+    Ok(())
+}
+
+fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<(), String> {
+    let group = SharedGroup::new("loadbalancer", agent_id.as_account_id().clone());
+
+    // Multicast requests
+    agent
+        .subscribe(
+            &Subscription::multicast_requests(Some(API_VERSION)),
+            QoS::AtMostOnce,
+            Some(&group),
+        )
+        .map_err(|err| format!("Error subscribing to multicast requests: {}", err))?;
+
+    // Unicast requests
+    agent
+        .subscribe(
+            &Subscription::unicast_requests(),
+            QoS::AtMostOnce,
+            Some(&group),
+        )
+        .map_err(|err| format!("Error subscribing to unicast requests: {}", err))?;
+
+    // Kruonis
+    if let KruonisConfig {
+        id: Some(ref kruonis_id),
+    } = config.kruonis
+    {
+        subscribe_to_kruonis(kruonis_id, agent)?;
     }
 
     Ok(())
@@ -142,6 +165,21 @@ fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<(),
         .publish_dump(dump)
         .map_err(|err| format!("Failed to publish message: {}", err))?;
     Ok(())
+}
+
+fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
+    if let Err(err) = subscribe(agent, agent_id, config) {
+        let err = format!("Failed to resubscribe after reconnection: {}", err);
+        error!("{}", err);
+
+        let svc_error = SvcError::builder()
+            .kind("resubscription_error", "Resubscription error")
+            .detail(&err)
+            .build();
+
+        sentry::send(svc_error)
+            .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
+    }
 }
 
 pub(crate) mod context;
