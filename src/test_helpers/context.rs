@@ -1,4 +1,5 @@
 use serde_json::json;
+use svc_agent::AgentId;
 use svc_authz::ClientMap as Authz;
 
 use crate::app::context::Context;
@@ -40,16 +41,19 @@ pub(crate) struct TestContext {
     config: Config,
     authz: Authz,
     db: TestDb,
+    agent_id: AgentId,
 }
 
 impl TestContext {
     pub(crate) fn new(db: TestDb, authz: TestAuthz) -> Self {
         let config = build_config();
+        let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 
         Self {
             config,
             authz: authz.into(),
             db,
+            agent_id,
         }
     }
 }
@@ -65,5 +69,9 @@ impl Context for TestContext {
 
     fn db(&self) -> &Db {
         self.db.connection_pool()
+    }
+
+    fn agent_id(&self) -> &AgentId {
+        &self.agent_id
     }
 }
