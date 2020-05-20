@@ -7,7 +7,7 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
     mqtt::{
-        IncomingRequestProperties, IntoPublishableDump, OutgoingEvent, OutgoingEventProperties,
+        IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
         ResponseStatus, ShortTermTimingProperties,
     },
     Addressable,
@@ -309,7 +309,7 @@ impl RequestHandler for CommitHandler {
             let event = OutgoingEvent::broadcast(notification, props, &path);
 
             task_finished = true;
-            Some(Box::new(event) as Box<dyn IntoPublishableDump + Send>)
+            Some(Box::new(event) as Box<dyn IntoPublishableMessage + Send>)
         });
 
         Ok(Box::new(response.chain(notification)))

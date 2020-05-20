@@ -9,7 +9,7 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
     mqtt::{
-        IncomingRequestProperties, IntoPublishableDump, OutgoingEvent, OutgoingEventProperties,
+        IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
         OutgoingRequest, ResponseStatus, ShortTermTimingProperties,
     },
     Addressable, AgentId,
@@ -337,7 +337,7 @@ impl RequestHandler for EnterHandler {
         //        Then we won't need the local state on the broker at all and will be able
         //        to send a multicast request to the broker.
         let outgoing_request = OutgoingRequest::unicast(payload, props, reqp, MQTT_GW_API_VERSION);
-        let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableDump + Send>;
+        let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableMessage + Send>;
         Ok(Box::new(stream::once(boxed_request)))
     }
 }
@@ -414,7 +414,7 @@ impl RequestHandler for LeaveHandler {
         //        Then we won't need the local state on the broker at all and will be able
         //        to send a multicast request to the broker.
         let outgoing_request = OutgoingRequest::unicast(payload, props, reqp, MQTT_GW_API_VERSION);
-        let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableDump + Send>;
+        let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableMessage + Send>;
         Ok(Box::new(stream::once(boxed_request)))
     }
 }
@@ -533,7 +533,7 @@ impl RequestHandler for AdjustHandler {
             let event = OutgoingEvent::broadcast(notification, props, &path);
 
             task_finished = true;
-            Some(Box::new(event) as Box<dyn IntoPublishableDump + Send>)
+            Some(Box::new(event) as Box<dyn IntoPublishableMessage + Send>)
         });
 
         Ok(Box::new(response.chain(notification)))
