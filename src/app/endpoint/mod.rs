@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::de::DeserializeOwned;
 use svc_agent::mqtt::{
-    compat::IncomingEnvelope, IncomingEventProperties, IncomingRequestProperties,
+    IncomingEvent, IncomingEventProperties, IncomingRequest, IncomingRequestProperties,
 };
 use svc_error::Error as SvcError;
 
@@ -33,14 +33,13 @@ macro_rules! request_routes {
     ($($m: pat => $h: ty),*) => {
         pub(crate) async fn route_request<C: Context>(
             context: &C,
-            envelope: IncomingEnvelope,
-            reqp: &IncomingRequestProperties,
+            request: &IncomingRequest<String>,
             start_timestamp: DateTime<Utc>,
         ) -> Option<MessageStream> {
-            match reqp.method() {
+            match request.properties().method() {
                 $(
                     $m => Some(
-                        <$h>::handle_envelope::<C>(context, envelope, reqp, start_timestamp).await
+                        <$h>::handle_envelope::<C>(context, request, start_timestamp).await
                     ),
                 )*
                 _ => None,
@@ -89,14 +88,13 @@ macro_rules! event_routes {
         #[allow(unused_variables)]
         pub(crate) async fn route_event<C: Context>(
             context: &C,
-            envelope: IncomingEnvelope,
-            evp: &IncomingEventProperties,
+            event: &IncomingEvent<String>,
             start_timestamp: DateTime<Utc>,
         ) -> Option<MessageStream> {
-            match evp.label() {
+            match event.properties().label() {
                 $(
                     Some($l) => Some(
-                        <$h>::handle_envelope::<C>(context, envelope, evp, start_timestamp).await
+                        <$h>::handle_envelope::<C>(context, event, start_timestamp).await
                     ),
                 )*
                 _ => None,

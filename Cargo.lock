@@ -2180,16 +2180,18 @@ dependencies = [
 
 [[package]]
 name = "svc-agent"
-version = "0.12.1"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8abcffbd2a13078e3cf90474756e9af6a267f804e93eef5e0885863b155d5860"
+checksum = "c326eff0bdb1c511f701c34054eda44e68b3b4aee1e83be182719e959e796342"
 dependencies = [
  "base64 0.10.1",
  "chrono",
+ "crossbeam-channel 0.3.9",
  "diesel",
  "futures 0.3.5",
  "futures-channel",
  "http 0.1.21",
+ "log",
  "rumqtt",
  "serde 1.0.110",
  "serde_derive",

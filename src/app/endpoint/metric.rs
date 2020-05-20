@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::mqtt::{
-    IncomingEventProperties, IntoPublishableDump, OutgoingEvent, ShortTermTimingProperties,
+    IncomingEventProperties, IntoPublishableMessage, OutgoingEvent, ShortTermTimingProperties,
 };
 
 use crate::app::context::Context;
@@ -11,7 +11,14 @@ use crate::app::endpoint::prelude::*;
 use crate::config::TelemetryConfig;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct PullPayload {}
+pub(crate) struct PullPayload {
+    #[serde(default = "default_duration")]
+    duration: u64,
+}
+
+fn default_duration() -> u64 {
+    5
+}
 
 #[derive(Serialize)]
 pub(crate) struct MetricValue {
@@ -23,8 +30,6 @@ pub(crate) struct MetricValue {
 #[derive(Serialize)]
 #[serde(tag = "metric")]
 pub(crate) enum Metric {
-    //IncomingQueue(MetricValue),
-    //OutgoingQueue(MetricValue),
     #[serde(rename(serialize = "apps.event.db_connections_total"))]
     DbConnections(MetricValue),
 }
@@ -45,16 +50,19 @@ impl EventHandler for PullHandler {
             TelemetryConfig {
                 id: Some(ref account_id),
             } => {
+                let now = Utc::now();
+
                 let outgoing_event_payload = vec![Metric::DbConnections(MetricValue {
                     value: context.db().state().connections as u64,
-                    timestamp: Utc::now(),
+                    timestamp: now,
                 })];
 
                 let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
                 let props = evp.to_event("metric.create", short_term_timing);
                 let outgoing_event =
                     OutgoingEvent::multicast(outgoing_event_payload, props, account_id);
-                let boxed_event = Box::new(outgoing_event) as Box<dyn IntoPublishableDump + Send>;
+                let boxed_event =
+                    Box::new(outgoing_event) as Box<dyn IntoPublishableMessage + Send>;
                 Ok(Box::new(stream::once(boxed_event)))
             }
 
