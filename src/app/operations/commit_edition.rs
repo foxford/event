@@ -1,9 +1,9 @@
 use std::ops::Bound;
 
+use anyhow::{bail, Context, Error, Result};
 use chrono::Utc;
 use diesel::connection::Connection;
 use diesel::pg::PgConnection;
-use failure::{bail, format_err, Error};
 use log::info;
 
 use crate::app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND};
@@ -16,18 +16,14 @@ use crate::db::event::{
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::ConnectionPool as Db;
 
-pub(crate) fn call(
-    db: &Db,
-    edition: &Edition,
-    source: &Room,
-) -> Result<(Room, Vec<Segment>), Error> {
+pub(crate) fn call(db: &Db, edition: &Edition, source: &Room) -> Result<(Room, Vec<Segment>)> {
     info!(
         "Edition commit task started for edition_id = '{}', source room id = {}",
         edition.id(),
         source.id()
     );
-    let start_timestamp = Utc::now();
 
+    let start_timestamp = Utc::now();
     let conn = db.get()?;
 
     let result = conn.transaction::<(Room, Vec<Segment>), Error, _>(|| {
@@ -42,22 +38,17 @@ pub(crate) fn call(
             .room_id(source.id())
             .kind("stream")
             .execute(&conn)
-            .map_err(|err| {
-                format_err!(
-                    "failed to fetch cut events for room_id = '{}': {}",
-                    source.id(),
-                    err
-                )
+            .with_context(|| {
+                format!("failed to fetch cut events for room_id = '{}'", source.id())
             })?;
 
         let cut_changes = ChangeListQuery::new(edition.id())
             .kind("stream")
             .execute(&conn)
-            .map_err(|err| {
-                format_err!(
-                    "failed to fetch cut changes for room_id = '{}': {}",
+            .with_context(|| {
+                format!(
+                    "failed to fetch cut changes for room_id = '{}'",
                     source.id(),
-                    err
                 )
             })?;
 
@@ -68,11 +59,10 @@ pub(crate) fn call(
 
         EventDeleteQuery::new(destination.id(), "stream")
             .execute(&conn)
-            .map_err(|err| {
-                format_err!(
-                    "failed to delete cut events for room_id = '{}': {}",
-                    destination.id(),
-                    err
+            .with_context(|| {
+                format!(
+                    "failed to delete cut events for room_id = '{}'",
+                    destination.id()
                 )
             })?;
 
@@ -103,7 +93,7 @@ pub(crate) fn call(
     Ok(result)
 }
 
-fn clone_room(conn: &PgConnection, source: &Room) -> Result<Room, Error> {
+fn clone_room(conn: &PgConnection, source: &Room) -> Result<Room> {
     let mut query = RoomInsertQuery::new(&source.audience(), source.time().to_owned());
 
     query = query.source_room_id(source.id());
@@ -112,9 +102,7 @@ fn clone_room(conn: &PgConnection, source: &Room) -> Result<Room, Error> {
         query = query.tags(tags.to_owned());
     }
 
-    query
-        .execute(conn)
-        .map_err(|err| format_err!("Failed to insert room: {}", err))
+    query.execute(conn).context("Failed to insert room")
 }
 
 const CLONE_EVENTS_SQL: &str = r#"
@@ -204,7 +192,7 @@ fn clone_events(
     destination: &Room,
     edition: &Edition,
     gaps: &[(i64, i64)],
-) -> Result<(), Error> {
+) -> Result<()> {
     use diesel::prelude::*;
     use diesel::sql_types::{Array, Int8, Uuid};
 
@@ -224,12 +212,11 @@ fn clone_events(
         .bind::<Array<Int8>, _>(&stops)
         .execute(conn)
         .map(|_| ())
-        .map_err(|err| {
-            format_err!(
-                "Failed cloning events from room = '{}' to room = {}, reason: {}",
+        .with_context(|| {
+            format!(
+                "Failed cloning events from room = '{}' to room = {}",
                 source.id(),
                 destination.id(),
-                err
             )
         })
 }
@@ -246,7 +233,7 @@ enum EventOrChangeAtDur<'a> {
 }
 
 // Transforms cut start-stop events and changes into a vec of (start, end) tuples.
-fn collect_gaps(cut_events: &[Event], cut_changes: &[Change]) -> Result<Vec<(i64, i64)>, Error> {
+fn collect_gaps(cut_events: &[Event], cut_changes: &[Change]) -> Result<Vec<(i64, i64)>> {
     let mut cut_vec = vec![];
     cut_events
         .iter()

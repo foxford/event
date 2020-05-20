@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::thread;
 
+use anyhow::{Context as AnyhowContext, Result};
 use async_std::task;
 use chrono::Utc;
 use futures::StreamExt;
@@ -25,12 +26,9 @@ pub(crate) const API_VERSION: &str = "v1";
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) async fn run(
-    db: &ConnectionPool,
-    authz_cache: Option<AuthzCache>,
-) -> Result<(), String> {
+pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) -> Result<()> {
     // Config
-    let config = config::load().map_err(|err| format!("Failed to load config: {}", err))?;
+    let config = config::load().context("Failed to load config")?;
     info!("App config: {:?}", config);
 
     // Agent
@@ -42,7 +40,7 @@ pub(crate) async fn run(
         .subject(&agent_id)
         .key(config.id_token.algorithm, config.id_token.key.as_slice())
         .build()
-        .map_err(|err| format!("Error creating an id token: {}", err))?;
+        .context("Error creating an id token")?;
 
     let mut agent_config = config.mqtt.clone();
     agent_config.set_password(&token);
@@ -50,7 +48,7 @@ pub(crate) async fn run(
     let (mut agent, rx) = AgentBuilder::new(agent_id.clone(), API_VERSION)
         .connection_mode(ConnectionMode::Service)
         .start(&agent_config)
-        .map_err(|err| format!("Failed to create an agent: {}", err))?;
+        .context("Failed to create an agent")?;
 
     // Message loop for incoming messages of MQTT Agent
     let (mq_tx, mut mq_rx) = futures_channel::mpsc::unbounded::<Notification>();
@@ -65,7 +63,7 @@ pub(crate) async fn run(
 
     // Authz
     let authz = svc_authz::ClientMap::new(&config.id, authz_cache, config.authz.clone())
-        .map_err(|err| format!("Error converting authz config to clients: {}", err))?;
+        .context("Error converting authz config to clients")?;
 
     // Sentry
     if let Some(sentry_config) = config.sentry.as_ref() {
@@ -110,7 +108,7 @@ pub(crate) async fn run(
     Ok(())
 }
 
-fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<(), String> {
+fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<()> {
     let group = SharedGroup::new("loadbalancer", agent_id.as_account_id().clone());
 
     // Multicast requests
@@ -120,7 +118,7 @@ fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<(
             QoS::AtMostOnce,
             Some(&group),
         )
-        .map_err(|err| format!("Error subscribing to multicast requests: {}", err))?;
+        .context("Error subscribing to multicast requests")?;
 
     // Unicast requests
     agent
@@ -129,7 +127,7 @@ fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<(
             QoS::AtMostOnce,
             Some(&group),
         )
-        .map_err(|err| format!("Error subscribing to unicast requests: {}", err))?;
+        .context("Error subscribing to unicast requests")?;
 
     // Kruonis
     if let KruonisConfig {
@@ -142,18 +140,20 @@ fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<(
     Ok(())
 }
 
-fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<(), String> {
+fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<()> {
     let timing = ShortTermTimingProperties::new(Utc::now());
+
     let topic = Subscription::unicast_requests_from(kruonis_id)
         .subscription_topic(agent.id(), API_VERSION)
-        .map_err(|err| format!("Failed to build subscription topic: {:?}", err))?;
+        .context("Failed to build subscription topic")?;
+
     let props = OutgoingRequestProperties::new("kruonis.subscribe", &topic, "", timing);
     let event = OutgoingRequest::multicast(json!({}), props, kruonis_id);
     let message = Box::new(event) as Box<dyn IntoPublishableDump + Send>;
 
     let dump = message
         .into_dump(agent.address())
-        .map_err(|err| format!("Failed to dump message: {}", err))?;
+        .context("Failed to dump message")?;
 
     info!(
         "Outgoing message = '{}' sending to the topic = '{}'",
@@ -163,7 +163,8 @@ fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<(),
 
     agent
         .publish_dump(dump)
-        .map_err(|err| format!("Failed to publish message: {}", err))?;
+        .context("Failed to publish message")?;
+
     Ok(())
 }
 

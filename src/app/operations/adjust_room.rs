@@ -1,9 +1,9 @@
 use std::cmp;
 use std::ops::Bound;
 
+use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use diesel::pg::PgConnection;
-use failure::{bail, format_err, Error};
 use log::info;
 
 use crate::db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segment};
@@ -21,7 +21,7 @@ pub(crate) fn call(
     started_at: DateTime<Utc>,
     segments: &[Segment],
     offset: i64,
-) -> Result<(Room, Room, Vec<Segment>), Error> {
+) -> Result<(Room, Room, Vec<Segment>)> {
     info!(
         "Room adjustment task started for room_id = '{}'",
         real_time_room.id()
@@ -80,11 +80,10 @@ pub(crate) fn call(
         .room_id(original_room.id())
         .kind("stream")
         .execute(&conn)
-        .map_err(|err| {
-            format_err!(
-                "failed to fetch cut events for room_id = '{}': {}",
-                original_room.id(),
-                err
+        .with_context(|| {
+            format!(
+                "failed to fetch cut events for room_id = '{}'",
+                original_room.id()
             )
         })?;
 
@@ -97,11 +96,10 @@ pub(crate) fn call(
     // Delete cut events from the modified room.
     EventDeleteQuery::new(modified_room.id(), "stream")
         .execute(&conn)
-        .map_err(|err| {
-            format_err!(
-                "failed to delete cut events for room_id = '{}': {}",
-                modified_room.id(),
-                err
+        .with_context(|| {
+            format!(
+                "failed to delete cut events for room_id = '{}'",
+                modified_room.id()
             )
         })?;
 
@@ -147,11 +145,7 @@ pub(crate) fn call(
 }
 
 /// Creates a derived room from the source room.
-fn create_room(
-    conn: &PgConnection,
-    source_room: &Room,
-    started_at: DateTime<Utc>,
-) -> Result<Room, Error> {
+fn create_room(conn: &PgConnection, source_room: &Room, started_at: DateTime<Utc>) -> Result<Room> {
     let time = (Bound::Included(started_at), source_room.time().1.to_owned());
     let mut query = RoomInsertQuery::new(&source_room.audience(), time);
     query = query.source_room_id(source_room.id());
@@ -160,9 +154,7 @@ fn create_room(
         query = query.tags(tags.to_owned());
     }
 
-    query
-        .execute(conn)
-        .map_err(|err| format_err!("failed to insert room: {}", err))
+    query.execute(conn).context("failed to insert room")
 }
 
 const SHIFT_CLONE_EVENTS_SQL: &str = r#"
@@ -219,12 +211,7 @@ FROM (
 
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
 /// adding `offset` (both in nanoseconds).
-fn clone_events(
-    conn: &PgConnection,
-    room: &Room,
-    gaps: &[(i64, i64)],
-    offset: i64,
-) -> Result<(), Error> {
+fn clone_events(conn: &PgConnection, room: &Room, gaps: &[(i64, i64)], offset: i64) -> Result<()> {
     use diesel::prelude::*;
     use diesel::sql_types::{Array, Int8, Uuid};
 
@@ -249,11 +236,10 @@ fn clone_events(
         .bind::<Uuid, _>(source_room_id)
         .execute(conn)
         .map(|_| ())
-        .map_err(|err| {
-            format_err!(
-                "failed to shift clone events from to room = '{}': {}",
-                room.id(),
-                err
+        .with_context(|| {
+            format!(
+                "failed to shift clone events from to room = '{}'",
+                room.id()
             )
         })
 }
@@ -262,7 +248,7 @@ fn clone_events(
 pub(crate) fn invert_segments(
     segments: &[Segment],
     room_duration: Duration,
-) -> Result<Vec<(i64, i64)>, Error> {
+) -> Result<Vec<(i64, i64)>> {
     if segments.is_empty() {
         let total_nanos = room_duration.num_nanoseconds().unwrap_or(std::i64::MAX);
         return Ok(vec![(0, total_nanos)]);
@@ -316,7 +302,7 @@ enum CutEventsToGapsState {
 }
 
 /// Transforms cut-start/stop events ordered list to gaps list with a simple FSM.
-pub(crate) fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>, Error> {
+pub(crate) fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>> {
     let mut gaps = Vec::with_capacity(cut_events.len());
     let mut state: CutEventsToGapsState = CutEventsToGapsState::Stopped;
 
