@@ -4,13 +4,13 @@ extern crate diesel;
 extern crate diesel_derive_enum;
 
 use std::env::var;
-use std::io::{Error, ErrorKind};
 
+use anyhow::Result;
 use dotenv::dotenv;
 use svc_authz::cache::{create_pool, Cache};
 
 #[async_std::main]
-async fn main() -> std::io::Result<()> {
+async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::init();
 
@@ -66,9 +66,7 @@ async fn main() -> std::io::Result<()> {
         Cache::new(create_pool(&url, size, timeout), expiration_time)
     });
 
-    app::run(&db, authz_cache)
-        .await
-        .map_err(|err| Error::new(ErrorKind::Other, err))
+    app::run(&db, authz_cache).await
 }
 
 mod app;
