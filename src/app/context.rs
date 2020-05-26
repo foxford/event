@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use svc_agent::AgentId;
+use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::ClientMap as Authz;
 
 use crate::config::Config;
@@ -12,6 +12,7 @@ pub(crate) struct AppContext {
     authz: Authz,
     db: Db,
     agent_id: AgentId,
+    queue_counter: Option<QueueCounterHandle>,
 }
 
 impl AppContext {
@@ -19,10 +20,18 @@ impl AppContext {
         let agent_id = AgentId::new(&config.agent_label, config.id.to_owned());
 
         Self {
+            queue_counter: None,
             config: Arc::new(config),
             authz,
             db,
             agent_id,
+        }
+    }
+
+    pub(crate) fn add_queue_counter(self, qc: QueueCounterHandle) -> Self {
+        Self {
+            queue_counter: Some(qc),
+            ..self
         }
     }
 }
@@ -32,6 +41,7 @@ pub(crate) trait Context: Sync {
     fn config(&self) -> &Config;
     fn db(&self) -> &Db;
     fn agent_id(&self) -> &AgentId;
+    fn queue_counter(&self) -> &Option<QueueCounterHandle>;
 }
 
 impl Context for AppContext {
@@ -49,5 +59,9 @@ impl Context for AppContext {
 
     fn agent_id(&self) -> &AgentId {
         &self.agent_id
+    }
+
+    fn queue_counter(&self) -> &Option<QueueCounterHandle> {
+        &self.queue_counter
     }
 }

@@ -212,7 +212,6 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
             start_timestamp: DateTime<Utc>,
         ) -> MessageStream {
             // Parse the envelope with the payload type specified in the handler.
-            //match envelope.payload::<H::Payload>() {
             let payload = IncomingRequest::convert_payload::<H::Payload>(request);
             let reqp = request.properties();
             match payload {

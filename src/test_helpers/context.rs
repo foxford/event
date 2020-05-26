@@ -1,5 +1,5 @@
 use serde_json::json;
-use svc_agent::AgentId;
+use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::ClientMap as Authz;
 
 use crate::app::context::Context;
@@ -73,5 +73,9 @@ impl Context for TestContext {
 
     fn agent_id(&self) -> &AgentId {
         &self.agent_id
+    }
+
+    fn queue_counter(&self) -> &Option<QueueCounterHandle> {
+        &None
     }
 }
