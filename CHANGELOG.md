@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.4 (May 27, 2020)
+
+### Changes
+- Added resubscription on reconnect ([1609031](https://github.com/netology-group/event/commit/160903112414c18936740f67ffaf6b54d66ddedf))
+- Made a switch from anyhow to failure ([6487dd0](https://github.com/netology-group/event/commit/6487dd0bc28c59d0f47a6603bda525e38997399b))
+- Moved to new version of svc-agent ([abec10b](https://github.com/netology-group/event/commit/abec10b52e2ef7318ce057f102f49a59feca0b8b))
+- Added queues length metrics ([11003a8](https://github.com/netology-group/event/commit/11003a8fdb46194f1b42c745e1ffb86af37fb7c5))
+
 ## v0.2.3 (May 18, 2020)
 
 ### Changes
