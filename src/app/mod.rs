@@ -74,7 +74,8 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
     subscribe(&mut agent, &agent_id, &config)?;
 
     // Context
-    let context = AppContext::new(config, authz, db.clone());
+    let context =
+        AppContext::new(config, authz, db.clone()).add_queue_counter(agent.get_queue_counter());
 
     // Message handler
     let message_handler = Arc::new(MessageHandler::new(agent, context));
@@ -148,9 +149,7 @@ fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<()>
     let props = OutgoingRequestProperties::new("kruonis.subscribe", &topic, "", timing);
     let event = OutgoingRequest::multicast(json!({}), props, kruonis_id);
 
-    agent
-        .publish(event)
-        .context("Failed to publish message")?;
+    agent.publish(event).context("Failed to publish message")?;
     Ok(())
 }
 
