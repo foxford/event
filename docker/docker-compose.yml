@@ -1,7 +1,7 @@
 version: '3'
 services:
   vernemq:
-    image: netologygroup/mqtt-gateway:1840b0
+    image: netologygroup/mqtt-gateway:v0.13.3
     ports:
       - "1883:1883"
       - "8080:8080"

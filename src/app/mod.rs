@@ -86,10 +86,8 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
 
         task::spawn(async move {
             match message {
-                AgentNotification::Message(ref message) => message_handler.handle(message).await,
-                AgentNotification::Disconnection => {
-                    error!("Disconnected from broker");
-                }
+                AgentNotification::Message(ref message, _) => message_handler.handle(message).await,
+                AgentNotification::Disconnection => error!("Disconnected from broker"),
                 AgentNotification::Reconnection => {
                     error!("Reconnected to broker");
 
@@ -99,7 +97,15 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
                         message_handler.context().config(),
                     );
                 }
-                _ => error!("Unsupported notification type = '{:?}'", message),
+                AgentNotification::Puback(_) => (),
+                AgentNotification::Pubrec(_) => (),
+                AgentNotification::Pubcomp(_) => (),
+                AgentNotification::Suback(_) => (),
+                AgentNotification::Unsuback(_) => (),
+                AgentNotification::Abort(err) => {
+                    error!("MQTT client aborted: {}", err);
+                    return;
+                }
             }
         });
     }
