@@ -12,8 +12,8 @@ use quantiles::ckms::CKMS;
 use serde_json::json;
 use svc_agent::{
     mqtt::{
-        compat, AgentBuilder, AgentConfig, ConnectionMode, IncomingEvent, Notification, QoS,
-        ResponseStatus,
+        AgentBuilder, AgentConfig, AgentNotification, ConnectionMode, IncomingEvent,
+        IncomingMessage, QoS, ResponseStatus,
     },
     AccountId, AgentId, Subscription,
 };
@@ -59,42 +59,37 @@ impl StatsAgent {
         let mut processing_times = self.processing_times.lock().expect("Failed to obtain lock");
 
         while self.is_running.load(Ordering::SeqCst) {
-            if let Ok(Notification::Publish(message)) = rx.try_recv() {
-                // Parse event properties.
-                let bytes = message.payload.as_slice();
-
-                let envelope = serde_json::from_slice::<compat::IncomingEnvelope>(bytes)
-                    .expect("Failed to parse incoming message");
-
-                if let compat::IncomingEnvelopeProperties::Event(evp) = envelope.properties() {
-                    // Remember processing time for event.create notification.
-                    if evp.label() == Some("event.create") {
-                        let evp_value =
-                            serde_json::to_value(evp).expect("Failed to dump event properties");
-
-                        let broker_timestamp = evp_value
-                            .get("broker_timestamp")
-                            .expect("Missing broker timestamp in event properties")
-                            .as_str()
-                            .expect("Failed to cast broker timestamp as string")
-                            .parse::<u64>()
-                            .expect("Failed to parse broker timestamp");
-
-                        let initial_timestamp = evp_value
-                            .get("initial_timestamp")
-                            .expect("Missing initial timestamp in event properties")
-                            .as_str()
-                            .expect("Failed to cast initial timestamp as string")
-                            .parse::<u64>()
-                            .expect("Failed to parse initial timestamp");
-
-                        if initial_timestamp > broker_timestamp {
-                            println!("{} {}", broker_timestamp, initial_timestamp);
-                        }
-
-                        (*processing_times).insert((broker_timestamp - initial_timestamp) as u32);
-                    }
+            if let Ok(AgentNotification::Message(Ok(IncomingMessage::Event(ev)), _)) = rx.try_recv()
+            {
+                // Remember processing time for event.create notification.
+                if ev.properties().label() != Some("event.create") {
+                    continue;
                 }
+
+                let evp_value =
+                    serde_json::to_value(ev.properties()).expect("Failed to dump event properties");
+
+                let broker_timestamp = evp_value
+                    .get("broker_timestamp")
+                    .expect("Missing broker timestamp in event properties")
+                    .as_str()
+                    .expect("Failed to cast broker timestamp as string")
+                    .parse::<u64>()
+                    .expect("Failed to parse broker timestamp");
+
+                let initial_timestamp = evp_value
+                    .get("initial_timestamp")
+                    .expect("Missing initial timestamp in event properties")
+                    .as_str()
+                    .expect("Failed to cast initial timestamp as string")
+                    .parse::<u64>()
+                    .expect("Failed to parse initial timestamp");
+
+                if initial_timestamp > broker_timestamp {
+                    println!("{} {}", broker_timestamp, initial_timestamp);
+                }
+
+                (*processing_times).insert((broker_timestamp - initial_timestamp) as u32);
             }
         }
     }
