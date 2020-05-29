@@ -71,10 +71,6 @@ impl EventHandler for PullHandler {
                         .status(ResponseStatus::BAD_REQUEST)?;
 
                     vec![
-                        Metric::DbConnections(MetricValue {
-                            value: context.db().state().connections as u64,
-                            timestamp: now,
-                        }),
                         Metric::IncomingQueueRequests(MetricValue {
                             value: stats.incoming_requests,
                             timestamp: now,
