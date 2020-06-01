@@ -65,22 +65,6 @@ impl RequestHandler for CreateHandler {
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
-            // Check whether the agent has entered the room.
-            let agents = db::agent::ListQuery::new()
-                .agent_id(reqp.as_agent_id())
-                .room_id(room.id())
-                .status(db::agent::Status::Ready)
-                .execute(&conn)?;
-
-            if agents.len() != 1 {
-                return Err(format!(
-                    "agent = '{}' has not entered the room = '{}'",
-                    reqp.as_agent_id(),
-                    room.id()
-                ))
-                .status(ResponseStatus::FORBIDDEN);
-            }
-
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
                 CreateRequest {
@@ -709,11 +693,11 @@ mod tests {
                 is_persistent: true,
             };
 
-            let err = handle_request::<CreateHandler>(&context, &agent, payload)
+            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
                 .await
-                .expect_err("Unexpected success on event creation");
+                .expect("Event creation failed");
 
-            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+            assert_eq!(messages.len(), 2);
         });
     }
 
