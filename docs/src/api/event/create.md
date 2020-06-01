@@ -6,8 +6,6 @@ The _room_ must be opened.
 
 ## Authorization
 
-The current _agent_ must [be in](../room/enter.md) the _room_.
-
 The tenant authorizes the current _agent_ for `create` action on
 `["rooms", room_id, "events", type, "authors", current_account_id]`.
 
