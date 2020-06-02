@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.2.5 (June 3, 2020)
+
+### Fixes
+- Fixed duplicate db_connections_total metric ([181b66b](https://github.com/netology-group/event/commit/181b66bbf49f520d03abc79d718b4c0ef4be6d17))
+
+### Changes
+- Disabled room presence check for event creation ([1b9467d](https://github.com/netology-group/event/commit/1b9467daaa52bed52f1b80768edbc5055445407d))
+
 ## v0.2.4 (May 27, 2020)
 
 ### Changes
