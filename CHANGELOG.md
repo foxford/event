@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.6 (June 4, 2020)
+
+### Changes
+- Upgrade async-std ([663b129](https://github.com/netology-group/event/commit/663b12903e347f87a0517809d6e4eca15ef78829))
+- Upgrade svc-agent ([4cb0db8](https://github.com/netology-group/event/commit/4cb0db8c95c86a95697e9c17205f7fe44be24423), [dd4fee8](https://github.com/netology-group/event/commit/dd4fee89d55722239ab5ec2429dd020b9125a978))
+
+
 ## v0.2.5 (June 3, 2020)
 
 ### Fixes
