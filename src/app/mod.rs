@@ -53,13 +53,16 @@ pub(crate) async fn run(db: &ConnectionPool, authz_cache: Option<AuthzCache>) ->
     // Message loop for incoming messages of MQTT Agent
     let (mq_tx, mut mq_rx) = futures_channel::mpsc::unbounded::<AgentNotification>();
 
-    thread::spawn(move || {
-        for message in rx {
-            if mq_tx.unbounded_send(message).is_err() {
-                error!("Error sending message to the internal channel");
+    thread::Builder::new()
+        .name("event-notifications-loop".to_owned())
+        .spawn(move || {
+            for message in rx {
+                if mq_tx.unbounded_send(message).is_err() {
+                    error!("Error sending message to the internal channel");
+                }
             }
-        }
-    });
+        })
+        .expect("Failed to start event notifications loop");
 
     // Authz
     let authz = svc_authz::ClientMap::new(&config.id, authz_cache, config.authz.clone())
