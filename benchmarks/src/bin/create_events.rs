@@ -30,6 +30,7 @@ struct StatsAgent {
     is_running: AtomicBool,
     processing_times: Mutex<CKMS<u32>>,
     processing_times_proc: Mutex<CKMS<u32>>,
+    processing_times_send: Mutex<CKMS<u32>>,
 }
 
 impl StatsAgent {
@@ -38,6 +39,7 @@ impl StatsAgent {
             is_running: AtomicBool::new(false),
             processing_times: Mutex::new(CKMS::<u32>::new(CKMS_ERROR)),
             processing_times_proc: Mutex::new(CKMS::<u32>::new(CKMS_ERROR)),
+            processing_times_send: Mutex::new(CKMS::<u32>::new(CKMS_ERROR)),
         }
     }
 
@@ -64,6 +66,11 @@ impl StatsAgent {
             .lock()
             .expect("Failed to obtain lock");
 
+        let mut processing_times_send = self
+            .processing_times_send
+            .lock()
+            .expect("Failed to obtain lock");
+
         while self.is_running.load(Ordering::SeqCst) {
             if let Ok(AgentNotification::Message(Ok(IncomingMessage::Event(ev)), _)) = rx.try_recv()
             {
@@ -75,29 +82,45 @@ impl StatsAgent {
                 let evp_value =
                     serde_json::to_value(ev.properties()).expect("Failed to dump event properties");
 
+                let broker_processing_timestamp = evp_value
+                    .get("broker_processing_timestamp")
+                    .expect("Missing broker_processing_timestamp in event properties")
+                    .as_str()
+                    .expect("Failed to cast broker_processing_timestamp as string")
+                    .parse::<u64>()
+                    .expect("Failed to parse broker_processing_timestamp");
+
                 let broker_timestamp = evp_value
                     .get("broker_timestamp")
-                    .expect("Missing broker timestamp in event properties")
+                    .expect("Missing broker_timestamp in event properties")
                     .as_str()
-                    .expect("Failed to cast broker timestamp as string")
+                    .expect("Failed to cast broker_timestamp as string")
                     .parse::<u64>()
-                    .expect("Failed to parse broker timestamp");
+                    .expect("Failed to parse broker_timestamp");
 
                 let initial_timestamp = evp_value
                     .get("initial_timestamp")
-                    .expect("Missing initial timestamp in event properties")
+                    .expect("Missing initial_timestamp in event properties")
                     .as_str()
-                    .expect("Failed to cast initial timestamp as string")
+                    .expect("Failed to cast initial_timestamp as string")
                     .parse::<u64>()
-                    .expect("Failed to parse initial timestamp");
+                    .expect("Failed to parse initial_timestamp");
+
+                let timestamp = evp_value
+                    .get("timestamp")
+                    .expect("Missing timestamp in event properties")
+                    .as_str()
+                    .expect("Failed to cast timestamp as string")
+                    .parse::<u64>()
+                    .expect("Failed to parse timestamp");
 
                 let processing_time = evp_value
                     .get("processing_time")
-                    .expect("Missing initial timestamp in event properties")
+                    .expect("Missing processing_time in event properties")
                     .as_str()
-                    .expect("Failed to cast initial timestamp as string")
+                    .expect("Failed to cast processing_time as string")
                     .parse::<u64>()
-                    .expect("Failed to parse initial timestamp");
+                    .expect("Failed to parse processing_time");
 
                 if initial_timestamp > broker_timestamp {
                     println!("{} {}", broker_timestamp, initial_timestamp);
@@ -105,6 +128,7 @@ impl StatsAgent {
 
                 (*processing_times).insert((broker_timestamp - initial_timestamp) as u32);
                 (*processing_times_proc).insert(processing_time as u32);
+                (*processing_times_send).insert((broker_processing_timestamp - timestamp) as u32);
             }
         }
     }
@@ -131,6 +155,18 @@ impl StatsAgent {
     {
         let processing_times = self
             .processing_times_proc
+            .lock()
+            .expect("Failed to obtain lock because stats agent failed during data collection");
+
+        fun(&*processing_times)
+    }
+
+    fn with_processing_times_send<F, R>(&self, fun: F) -> R
+    where
+        F: FnOnce(&CKMS<u32>) -> R,
+    {
+        let processing_times = self
+            .processing_times_send
             .lock()
             .expect("Failed to obtain lock because stats agent failed during data collection");
 
@@ -421,13 +457,28 @@ fn main() {
         }
     });
 
-    println!("\n\nprocessing time:\n");
+    println!("\n\n processing time:\n");
 
     stats_agent.with_processing_times_proc(|times| {
         if times.count() > 0 {
             for q in vec![0.5, 0.75, 0.9, 0.95, 0.99, 1.0] {
                 if let Some((a, b)) = times.query(q) {
-                    println!("PROC{}: {}, {}", q, a, b);
+                    println!("Q{}: {}, {}", q, a, b);
+                }
+            }
+        } else {
+            println!("No events captured");
+        }
+    });
+
+
+    println!("\n\n time between app and broker:\n");
+
+    stats_agent.with_processing_times_send(|times| {
+        if times.count() > 0 {
+            for q in vec![0.5, 0.75, 0.9, 0.95, 0.99, 1.0] {
+                if let Some((a, b)) = times.query(q) {
+                    println!("Q{}: {}, {}", q, a, b);
                 }
             }
         } else {
