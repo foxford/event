@@ -193,6 +193,7 @@ fn main() {
                         data: json!({
                             "text": format!("Message {}, version {}", label_idx, event_idx)
                         }),
+                        is_persistent: true,
                     },
                 );
 

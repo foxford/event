@@ -112,11 +112,11 @@ event_routes!(
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(self) mod helpers;
 mod agent;
 mod change;
 mod edition;
 mod event;
+pub(self) mod helpers;
 mod metric;
 mod room;
 mod state;

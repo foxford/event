@@ -42,6 +42,7 @@ pub struct EventCreateRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     pub data: JsonValue,
+    pub is_persistent: bool,
 }
 
 #[derive(Debug, Deserialize)]

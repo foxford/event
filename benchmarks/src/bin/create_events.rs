@@ -29,6 +29,7 @@ const CKMS_ERROR: f64 = 0.001;
 struct StatsAgent {
     is_running: AtomicBool,
     processing_times: Mutex<CKMS<u32>>,
+    processing_times_proc: Mutex<CKMS<u32>>,
 }
 
 impl StatsAgent {
@@ -36,6 +37,7 @@ impl StatsAgent {
         Self {
             is_running: AtomicBool::new(false),
             processing_times: Mutex::new(CKMS::<u32>::new(CKMS_ERROR)),
+            processing_times_proc: Mutex::new(CKMS::<u32>::new(CKMS_ERROR)),
         }
     }
 
@@ -57,6 +59,10 @@ impl StatsAgent {
         // Set running and wait for notifications until stop.
         self.is_running.store(true, Ordering::SeqCst);
         let mut processing_times = self.processing_times.lock().expect("Failed to obtain lock");
+        let mut processing_times_proc = self
+            .processing_times_proc
+            .lock()
+            .expect("Failed to obtain lock");
 
         while self.is_running.load(Ordering::SeqCst) {
             if let Ok(AgentNotification::Message(Ok(IncomingMessage::Event(ev)), _)) = rx.try_recv()
@@ -85,11 +91,20 @@ impl StatsAgent {
                     .parse::<u64>()
                     .expect("Failed to parse initial timestamp");
 
+                let processing_time = evp_value
+                    .get("processing_time")
+                    .expect("Missing initial timestamp in event properties")
+                    .as_str()
+                    .expect("Failed to cast initial timestamp as string")
+                    .parse::<u64>()
+                    .expect("Failed to parse initial timestamp");
+
                 if initial_timestamp > broker_timestamp {
                     println!("{} {}", broker_timestamp, initial_timestamp);
                 }
 
                 (*processing_times).insert((broker_timestamp - initial_timestamp) as u32);
+                (*processing_times_proc).insert(processing_time as u32);
             }
         }
     }
@@ -104,6 +119,18 @@ impl StatsAgent {
     {
         let processing_times = self
             .processing_times
+            .lock()
+            .expect("Failed to obtain lock because stats agent failed during data collection");
+
+        fun(&*processing_times)
+    }
+
+    fn with_processing_times_proc<F, R>(&self, fun: F) -> R
+    where
+        F: FnOnce(&CKMS<u32>) -> R,
+    {
+        let processing_times = self
+            .processing_times_proc
             .lock()
             .expect("Failed to obtain lock because stats agent failed during data collection");
 
@@ -188,6 +215,11 @@ fn main() {
                 .help("Tag value to mark rooms for this run")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("persistent")
+                .long("persistent")
+                .help("Events persistance")
+        )
         .get_matches();
 
     let mqtt_host = matches.value_of("mqtt-host").unwrap_or("0.0.0.0");
@@ -216,6 +248,7 @@ fn main() {
     let agents_per_room = value_t!(matches, "agents", usize).unwrap_or(1);
     let rate = value_t!(matches, "rate", u64).unwrap_or(1);
     let tag = matches.value_of("tag").unwrap_or("benchmark");
+    let persistance = value_t!(matches, "persistance", bool).unwrap_or(true);
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -342,6 +375,7 @@ fn main() {
                                 set: None,
                                 label: None,
                                 data: json!({ "text": "hello" }),
+                                is_persistent: persistance,
                             },
                         )
                     })
@@ -380,6 +414,20 @@ fn main() {
             for q in vec![0.5, 0.75, 0.9, 0.95, 0.99, 1.0] {
                 if let Some((a, b)) = times.query(q) {
                     println!("Q{}: {}, {}", q, a, b);
+                }
+            }
+        } else {
+            println!("No events captured");
+        }
+    });
+
+    println!("\n\nprocessing time:\n");
+
+    stats_agent.with_processing_times_proc(|times| {
+        if times.count() > 0 {
+            for q in vec![0.5, 0.75, 0.9, 0.95, 0.99, 1.0] {
+                if let Some((a, b)) = times.query(q) {
+                    println!("PROC{}: {}, {}", q, a, b);
                 }
             }
         } else {
