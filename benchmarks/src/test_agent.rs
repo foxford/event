@@ -68,23 +68,25 @@ impl TestAgent {
         let event_dispatcher_clone = event_dispatcher.clone();
 
         pool.spawn_ok(async move {
-            while let Ok(AgentNotification::Message(Ok(message), _)) = rx.recv() {
-                match message {
-                    IncomingMessage::Request(_) => (),
-                    IncomingMessage::Response(resp) => {
-                        if resp.properties().correlation_data() != IGNORE {
-                            let json = serde_json::from_str(resp.payload())
-                                .expect("Failed to parse response");
+            loop {
+                if let Ok(AgentNotification::Message(Ok(message), _)) = rx.recv() {
+                    match message {
+                        IncomingMessage::Request(_) => (),
+                        IncomingMessage::Response(resp) => {
+                            if resp.properties().correlation_data() != IGNORE {
+                                let json = serde_json::from_str(resp.payload())
+                                    .expect("Failed to parse response");
 
-                            let respp = resp.properties().to_owned();
+                                let respp = resp.properties().to_owned();
 
-                            request_dispatcher_clone
-                                .response(IncomingResponse::new(json, respp))
-                                .await
-                                .expect("Failed to dispatch response");
+                                request_dispatcher_clone
+                                    .response(IncomingResponse::new(json, respp))
+                                    .await
+                                    .expect("Failed to dispatch response");
+                            }
                         }
-                    }
-                    ev @ IncomingMessage::Event(_) => event_dispatcher_clone.dispatch(ev),
+                        ev @ IncomingMessage::Event(_) => event_dispatcher_clone.dispatch(ev),
+                    };
                 }
             }
         });
