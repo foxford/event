@@ -1790,8 +1790,7 @@ dependencies = [
 [[package]]
 name = "rumq-client"
 version = "0.1.0-alpha.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac62c2ceeedd62c2e492fd91b5e555a6f1cb5008be0c7d87f2ea691b6c5443ef"
+source = "git+https://github.com/tekjar/rumq?rev=f765dc8#f765dc8505f71a1ae3597f4b27f27bcc43ee985f"
 dependencies = [
  "async-stream",
  "futures-util",
@@ -1807,8 +1806,7 @@ dependencies = [
 [[package]]
 name = "rumq-core"
 version = "0.1.0-alpha.10"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a9e1af4026f37c89a92e70f0e80208515917990b50128943f6110117a9540af"
+source = "git+https://github.com/tekjar/rumq?rev=f765dc8#f765dc8505f71a1ae3597f4b27f27bcc43ee985f"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -2186,9 +2184,8 @@ dependencies = [
 
 [[package]]
 name = "svc-agent"
-version = "0.14.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "923171d44038335bddacdce3763b7536f389b9f3d99bbe073acee307678b6b16"
+version = "0.14.1"
+source = "git+https://github.com/netology-group/svc-agent-rs?tag=v0.14.1#bbcfa5152d61594fb432ac1a1ab787c8fa0bd903"
 dependencies = [
  "base64 0.10.1",
  "chrono",
