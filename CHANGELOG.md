@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.7 (June 11, 2020)
+
+### Changes
+- Notification loop thread now has a name ([7f67611](https://github.com/netology-group/event/commit/7f676113dea31bbd186c5b11cdb3fd73e37cb38d))
+- svc-agent update to fix rumq not handling max_packet_size properly ([9660af4](https://github.com/netology-group/event/commit/9660af4018f90a95e61c4c1b4354fde950e61d0f))
+
 ## v0.2.6 (June 4, 2020)
 
 ### Changes
