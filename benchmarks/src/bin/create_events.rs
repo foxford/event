@@ -6,7 +6,6 @@ use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use clap::{value_t, App, Arg};
-use futures::executor::ThreadPool;
 use log::info;
 use quantiles::ckms::CKMS;
 use serde_json::json;
@@ -175,8 +174,8 @@ impl StatsAgent {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
-fn main() {
+#[async_std::main]
+async fn main() {
     env_logger::init();
 
     let matches = App::new("event.create benchmark")
@@ -288,7 +287,6 @@ fn main() {
 
     ///////////////////////////////////////////////////////////////////////////
 
-    let pool = Arc::new(ThreadPool::new().expect("Failed to build thread pool"));
 
     let agent_config_json = json!({
         "uri": format!("{}:{}", mqtt_host, mqtt_port),
@@ -310,7 +308,7 @@ fn main() {
     let agent_config_clone = agent_config.clone();
     let service_account_id_clone = service_account_id.clone();
 
-    pool.spawn_ok(async move {
+    async_std::task::spawn(async move {
         stats_agent_clone
             .start(
                 &agent_config_clone,
@@ -331,7 +329,7 @@ fn main() {
                     // Start agent with service subscription.
                     let agent_label = format!("bench-{}-{}", room_idx, agent_idx);
                     let agent_id = AgentId::new(&agent_label, account_id.clone());
-                    TestAgent::start(&agent_config, agent_id, pool.clone(), &service_account_id)
+                    TestAgent::start(&agent_config, agent_id, &service_account_id)
                 })
                 .collect::<Vec<TestAgent>>()
         })
@@ -343,7 +341,7 @@ fn main() {
 
     let registry = rooms_agents
         .into_iter()
-        .map(|room_agents| {
+        .map(|room_agents| async {
             // Create room as the first agent.
             let now = Utc::now().timestamp();
 
@@ -354,7 +352,7 @@ fn main() {
                     time: (now, now + ROOM_DURATION),
                     tags: json!({ "benchmark": tag }),
                 },
-            );
+            ).await;
 
             if response.properties().status() != ResponseStatus::CREATED {
                 panic!("Failed to create room");
@@ -367,7 +365,7 @@ fn main() {
                 let response = agent.request::<RoomEnterRequest, RoomEnterResponse>(
                     "room.enter",
                     RoomEnterRequest { id: room_id },
-                );
+                ).await;
 
                 if response.properties().status() != ResponseStatus::ACCEPTED {
                     panic!("Failed to enter room");
@@ -380,8 +378,9 @@ fn main() {
             }
 
             (room_id, room_agents)
-        })
-        .collect::<Vec<(Uuid, Vec<TestAgent>)>>();
+        });
+
+    let registry: Vec<(Uuid, Vec<TestAgent>)> = futures::future::join_all(registry).await;
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -389,6 +388,8 @@ fn main() {
         "Creating {} events per second for each agent. Stop with Ctrl+C.",
         rate
     );
+
+    println!("Starting bench");
 
     let mut intervals = Vec::with_capacity(rooms_count * agents_per_room);
 
@@ -398,7 +399,7 @@ fn main() {
             let interval = Arc::new(Interval::new(rate));
             let interval_clone = interval.clone();
 
-            pool.spawn_ok(async move {
+            async_std::task::spawn(async move {
                 interval_clone
                     .run(|| {
                         info!("Create event");
@@ -433,11 +434,14 @@ fn main() {
             interval.stop();
         }
 
-        is_running_clone.store(false, Ordering::SeqCst);
+        let old_running = is_running_clone.swap(false, Ordering::SeqCst);
+        if old_running {
+            println!("Stopping, please wait a bit");
+        }
     })
     .expect("Failed to set Ctrl+C handler");
 
-    while is_running.load(Ordering::SeqCst) {}
+    async_std::task::sleep(std::time::Duration::from_secs(30)).await;
 
     ///////////////////////////////////////////////////////////////////////////
 
