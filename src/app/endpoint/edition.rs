@@ -2,6 +2,7 @@ use async_std::prelude::*;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use futures::future::FutureExt;
 use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -260,13 +261,7 @@ impl RequestHandler for CommitHandler {
             Some(authz_time),
         ));
 
-        let mut task_finished = false;
-
-        let notification = stream::from_fn(move || {
-            if task_finished {
-                return None;
-            }
-
+        let notification_future = async_std::task::spawn_blocking(move || {
             let result = commit_edition(&db, &edition, &room);
 
             // Handle result.
@@ -308,9 +303,9 @@ impl RequestHandler for CommitHandler {
             let path = format!("audiences/{}/events", room.audience());
             let event = OutgoingEvent::broadcast(notification, props, &path);
 
-            task_finished = true;
-            Some(Box::new(event) as Box<dyn IntoPublishableMessage + Send>)
+            Box::new(event) as Box<dyn IntoPublishableMessage + Send>
         });
+        let notification = notification_future.into_stream();
 
         Ok(Box::new(response.chain(notification)))
     }
