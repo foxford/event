@@ -177,8 +177,13 @@ FROM (
             END
         ) AS created_by,
         COALESCE(event.created_at, NOW()) as created_at
-    FROM event
-        FULL OUTER JOIN change ON change.event_id = event.id
+    FROM
+        (SELECT * FROM event WHERE event.room_id = $1 AND deleted_at IS NULL)
+        AS event
+        FULL OUTER JOIN
+        (SELECT * FROM change WHERE change.edition_id = $3)
+        AS change
+        ON change.event_id = event.id
     WHERE
         ((event.room_id = $1 AND deleted_at IS NULL) OR event.id IS NULL)
         AND
