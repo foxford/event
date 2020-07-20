@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.2.9 (July 21, 2020)
+
+### Changes
+- Significantly improved commit edition query ([d68585a](https://github.com/netology-group/event/commit/d68585a43784bd63c71fee958ce9ce4a5519b505))
+
+### Fixes
+-  Moved blocking call to separate futures thread pool ([f18ae19](https://github.com/netology-group/event/commit/f18ae198ef43d9307a3406f7eba535a61ae5c5c9))
+
+### Features
+-  Added `redis_connections_total` metric ([dba89bc](https://github.com/netology-group/event/commit/dba89bc338266a4b264bda82d1e8e1da9ce42cb9))
+
+
+## v0.2.8
+
 ## v0.2.7 (June 11, 2020)
 
 ### Changes
