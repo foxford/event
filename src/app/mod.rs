@@ -96,28 +96,28 @@ pub(crate) async fn run(
     while let Some(message) = mq_rx.next().await {
         let message_handler = message_handler.clone();
 
-        task::spawn(async move {
-            match message {
-                AgentNotification::Message(ref message, _) => message_handler.handle(message).await,
-                AgentNotification::Disconnection => error!("Disconnected from broker"),
-                AgentNotification::Reconnection => {
-                    error!("Reconnected to broker");
+        task::spawn_blocking(move || match message {
+            AgentNotification::Message(ref message, _) => {
+                async_std::task::block_on(message_handler.handle(message));
+            }
+            AgentNotification::Disconnection => error!("Disconnected from broker"),
+            AgentNotification::Reconnection => {
+                error!("Reconnected to broker");
 
-                    resubscribe(
-                        &mut message_handler.agent().to_owned(),
-                        message_handler.context().agent_id(),
-                        message_handler.context().config(),
-                    );
-                }
-                AgentNotification::Puback(_) => (),
-                AgentNotification::Pubrec(_) => (),
-                AgentNotification::Pubcomp(_) => (),
-                AgentNotification::Suback(_) => (),
-                AgentNotification::Unsuback(_) => (),
-                AgentNotification::Abort(err) => {
-                    error!("MQTT client aborted: {}", err);
-                    return;
-                }
+                resubscribe(
+                    &mut message_handler.agent().to_owned(),
+                    message_handler.context().agent_id(),
+                    message_handler.context().config(),
+                );
+            }
+            AgentNotification::Puback(_) => (),
+            AgentNotification::Pubrec(_) => (),
+            AgentNotification::Pubcomp(_) => (),
+            AgentNotification::Suback(_) => (),
+            AgentNotification::Unsuback(_) => (),
+            AgentNotification::Abort(err) => {
+                error!("MQTT client aborted: {}", err);
+                return;
             }
         });
     }
