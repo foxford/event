@@ -1997,25 +1997,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "rumq-client"
-version = "0.1.0-alpha.10"
-source = "git+https://github.com/tekjar/rumq?rev=f765dc8#f765dc8505f71a1ae3597f4b27f27bcc43ee985f"
-dependencies = [
- "async-stream",
- "futures-util",
- "log",
- "rumq-core",
- "thiserror",
- "tokio",
- "tokio-rustls",
- "tokio-util",
- "webpki",
-]
-
-[[package]]
 name = "rumq-core"
 version = "0.1.0-alpha.10"
-source = "git+https://github.com/tekjar/rumq?rev=f765dc8#f765dc8505f71a1ae3597f4b27f27bcc43ee985f"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7a9e1af4026f37c89a92e70f0e80208515917990b50128943f6110117a9540af"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -2504,8 +2489,9 @@ dependencies = [
 
 [[package]]
 name = "svc-agent"
-version = "0.14.1"
-source = "git+https://github.com/netology-group/svc-agent-rs?tag=v0.14.1#bbcfa5152d61594fb432ac1a1ab787c8fa0bd903"
+version = "0.14.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c9766035c318505560a625d17129dc7f587424e71f6811c0ffb1108bcf24a60"
 dependencies = [
  "base64 0.10.1",
  "chrono",
@@ -2515,11 +2501,11 @@ dependencies = [
  "futures-channel",
  "http 0.1.21",
  "log",
- "rumq-client",
  "serde 1.0.114",
  "serde_derive",
  "serde_json",
  "svc-authn",
+ "svc-rumq-client",
  "tokio",
  "uuid 0.8.1",
 ]
@@ -2577,6 +2563,23 @@ dependencies = [
  "svc-agent",
  "svc-authn",
  "svc-authz",
+]
+
+[[package]]
+name = "svc-rumq-client"
+version = "0.1.0-alpha.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c34437fee65675f17afcdbbda414068a101dfab942afac9e452e476cd5546b64"
+dependencies = [
+ "async-stream",
+ "futures-util",
+ "log",
+ "rumq-core",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "tokio-util",
+ "webpki",
 ]
 
 [[package]]
