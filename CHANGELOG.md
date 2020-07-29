@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.10 (July 30, 2020)
+
+### Fixes
+- Moved MessageHandler `handle()` invocation to separate blocking executor ([ab39474](https://github.com/netology-group/event/commit/ab39474df5439b413f48f7fb8dd59ab3f409295a))
+
+### Changes
+- Added unix signals handlers ([675a2ef](https://github.com/netology-group/event/commit/675a2ef9f85747244efc6d715fdb8af8259647fb))
+- Svc agent update ([06ce6df](https://github.com/netology-group/event/commit/06ce6df11c2af48071089819b82f0526ec90d526))
+
 ## v0.2.9 (July 21, 2020)
 
 ### Changes
