@@ -41,7 +41,9 @@ async fn main() -> Result<()> {
         crate::db::create_pool(&url, size, idle_size, timeout)
     };
 
-    let (redis_pool, authz_cache) = if let Some(url) = var("CACHE_URL").ok() {
+    let (redis_pool, authz_cache) = if let Some("1") = var("CACHE_ENABLED").ok().as_deref() {
+        let url = var("CACHE_URL").expect("CACHE_URL must be specified");
+
         let size = var("CACHE_POOL_SIZE")
             .map(|val| {
                 val.parse::<u32>()
