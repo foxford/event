@@ -125,10 +125,7 @@ pub(crate) async fn run(
                 AgentNotification::Pubcomp(_) => (),
                 AgentNotification::Suback(_) => (),
                 AgentNotification::Unsuback(_) => (),
-                AgentNotification::Abort(err) => {
-                    error!("MQTT client aborted: {}", err);
-                    return;
-                }
+                AgentNotification::Abort(err) => error!("MQTT client aborted: {}", err),
             });
         }
     }

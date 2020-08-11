@@ -148,7 +148,7 @@ impl RequestHandler for ListHandler {
         let mut query = db::change::ListQuery::new(edition.id());
 
         if let Some(last_created_at) = payload.last_created_at {
-            query = query.last_created_at(last_created_at.clone());
+            query = query.last_created_at(last_created_at);
         }
 
         if let Some(limit) = payload.limit {
