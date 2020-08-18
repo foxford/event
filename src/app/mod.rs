@@ -149,11 +149,7 @@ fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<(
 
     // Unicast requests
     agent
-        .subscribe(
-            &Subscription::unicast_requests(),
-            QoS::AtMostOnce,
-            Some(&group),
-        )
+        .subscribe(&Subscription::unicast_requests(), QoS::AtMostOnce, None)
         .context("Error subscribing to unicast requests")?;
 
     // Kruonis
