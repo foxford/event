@@ -193,11 +193,18 @@ impl RequestHandler for CreateHandler {
 
 const MAX_LIMIT: i64 = 100;
 
+#[derive(Debug, Deserialize, PartialEq)]
+#[serde(untagged)]
+enum ListTypesFilter {
+    Single(String),
+    Multiple(Vec<String>),
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct ListRequest {
     room_id: Uuid,
     #[serde(rename = "type")]
-    kind: Option<String>,
+    kind: Option<ListTypesFilter>,
     set: Option<String>,
     label: Option<String>,
     last_occurred_at: Option<i64>,
@@ -241,9 +248,11 @@ impl RequestHandler for ListHandler {
         // Retrieve events from the DB.
         let mut query = db::event::ListQuery::new().room_id(room.id());
 
-        if let Some(ref kind) = payload.kind {
-            query = query.kind(kind);
-        }
+        query = match payload.kind {
+            Some(ListTypesFilter::Single(ref kind)) => query.kind(kind),
+            Some(ListTypesFilter::Multiple(ref kinds)) => query.kinds(kinds),
+            None => query,
+        };
 
         if let Some(ref set) = payload.set {
             query = query.set(set);
@@ -867,6 +876,87 @@ mod tests {
     }
 
     #[test]
+    fn list_events_filtered_by_kinds() {
+        futures::executor::block_on(async {
+            let db = TestDb::new();
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                let conn = db
+                    .connection_pool()
+                    .get()
+                    .expect("Failed to get DB connection");
+
+                // Create room.
+                let room = shared_helpers::insert_room(&conn);
+
+                // Create events in the room.
+                ["A", "B", "A", "C"].iter().enumerate().for_each(|(i, s)| {
+                    factory::Event::new()
+                        .room_id(room.id())
+                        .kind(s)
+                        .data(&json!({ "text": format!("message {}", i) }))
+                        .occurred_at(i as i64 * 1000)
+                        .created_by(&agent.agent_id())
+                        .insert(&conn);
+                });
+
+                room
+            };
+
+            // Allow agent to list events in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id, "events"];
+            authz.allow(agent.account_id(), object, "list");
+
+            // Make event.list request.
+            let context = TestContext::new(db, authz);
+
+            let payload = ListRequest {
+                room_id: room.id(),
+                kind: Some(ListTypesFilter::Single("B".to_string())),
+                set: None,
+                label: None,
+                last_occurred_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            };
+
+            let messages = handle_request::<ListHandler>(&context, &agent, payload)
+                .await
+                .expect("Events listing failed");
+
+            // we have only two kind=B events
+            let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(events.len(), 1);
+
+            let payload = ListRequest {
+                room_id: room.id(),
+                kind: Some(ListTypesFilter::Multiple(vec![
+                    "B".to_string(),
+                    "A".to_string(),
+                ])),
+                set: None,
+                label: None,
+                last_occurred_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            };
+
+            let messages = handle_request::<ListHandler>(&context, &agent, payload)
+                .await
+                .expect("Events listing failed");
+
+            // we have two kind=B events and one kind=A event
+            let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(events.len(), 3);
+        });
+    }
+
+    #[test]
     fn list_events_not_authorized() {
         futures::executor::block_on(async {
             let db = TestDb::new();
@@ -923,5 +1013,65 @@ mod tests {
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
         });
+    }
+
+    #[test]
+    fn parse_list_request() {
+        let x: ListRequest = serde_json::from_str(
+            r#"
+            {
+                "room_id": "c1e48d94-8c7e-49bc-af1c-fc77a63f72e6"
+            }
+        "#,
+        )
+        .unwrap();
+
+        assert_eq!(x.kind, None);
+
+        let x: ListRequest = serde_json::from_str(
+            r#"
+            {
+                "room_id": "c1e48d94-8c7e-49bc-af1c-fc77a63f72e6",
+                "type": ["a", "c", "x"]
+            }
+        "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            x.kind,
+            Some(ListTypesFilter::Multiple(vec![
+                "a".to_string(),
+                "c".to_string(),
+                "x".to_string()
+            ]))
+        );
+
+        let x: ListRequest = serde_json::from_str(
+            r#"
+            {
+                "room_id": "c1e48d94-8c7e-49bc-af1c-fc77a63f72e6",
+                "type": "test"
+            }
+        "#,
+        )
+        .unwrap();
+
+        assert_eq!(x.kind, Some(ListTypesFilter::Single("test".to_string())));
+
+        let x: ListRequest = serde_json::from_str(
+            r#"
+            {
+                "room_id": "c1e48d94-8c7e-49bc-af1c-fc77a63f72e6",
+                "type": ["test"]
+            }
+        "#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            x.kind,
+            Some(ListTypesFilter::Multiple(vec!["test".to_string()]))
+        );
     }
 }
