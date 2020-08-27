@@ -196,10 +196,14 @@ impl Default for Direction {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+enum KindFilter<'a> {
+    Single(&'a str),
+    Multiple(&'a [String]),
+}
 
 pub(crate) struct ListQuery<'a> {
     room_id: Option<Uuid>,
-    kind: Option<&'a str>,
+    kind: Option<KindFilter<'a>>,
     set: Option<&'a str>,
     label: Option<&'a str>,
     last_occurred_at: Option<i64>,
@@ -229,7 +233,14 @@ impl<'a> ListQuery<'a> {
 
     pub(crate) fn kind(self, kind: &'a str) -> Self {
         Self {
-            kind: Some(kind),
+            kind: Some(KindFilter::Single(kind)),
+            ..self
+        }
+    }
+
+    pub(crate) fn kinds(self, kinds: &'a [String]) -> Self {
+        Self {
+            kind: Some(KindFilter::Multiple(kinds)),
             ..self
         }
     }
@@ -277,9 +288,11 @@ impl<'a> ListQuery<'a> {
             q = q.filter(event::room_id.eq(room_id));
         }
 
-        if let Some(ref kind) = self.kind {
-            q = q.filter(event::kind.eq(kind));
-        }
+        q = match self.kind {
+            Some(KindFilter::Single(kind)) => q.filter(event::kind.eq(kind)),
+            Some(KindFilter::Multiple(kinds)) => q.filter(event::kind.eq_any(kinds.iter())),
+            None => q,
+        };
 
         if let Some(ref set) = self.set {
             q = q.filter(event::set.eq(set));
