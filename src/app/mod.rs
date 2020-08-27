@@ -21,7 +21,7 @@ use svc_error::{extension::sentry, Error as SvcError};
 use crate::app::context::Context;
 use crate::config::{self, Config, KruonisConfig};
 use crate::db::ConnectionPool;
-use context::AppContext;
+use context::AppContextBuilder;
 use message_handler::MessageHandler;
 
 pub(crate) const API_VERSION: &str = "v1";
@@ -29,7 +29,8 @@ pub(crate) const API_VERSION: &str = "v1";
 ////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) async fn run(
-    db: &ConnectionPool,
+    db: ConnectionPool,
+    ro_db: Option<ConnectionPool>,
     redis_pool: Option<RedisConnectionPool>,
     authz_cache: Option<AuthzCache>,
 ) -> Result<()> {
@@ -83,13 +84,21 @@ pub(crate) async fn run(
     subscribe(&mut agent, &agent_id, &config)?;
 
     // Context
-    let context =
-        AppContext::new(config, authz, db.clone()).add_queue_counter(agent.get_queue_counter());
+    let context_builder = AppContextBuilder::new(config, authz, db);
 
-    let context = match redis_pool {
-        Some(pool) => context.add_redis_pool(pool),
-        None => context,
+    let context_builder = match ro_db {
+        Some(db) => context_builder.ro_db(db),
+        None => context_builder,
     };
+
+    let context_builder = match redis_pool {
+        Some(pool) => context_builder.redis_pool(pool),
+        None => context_builder,
+    };
+
+    let context = context_builder
+        .queue_counter(agent.get_queue_counter())
+        .build();
 
     // Message handler
     let message_handler = Arc::new(MessageHandler::new(agent, context));

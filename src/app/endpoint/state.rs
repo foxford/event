@@ -58,7 +58,7 @@ impl RequestHandler for ReadHandler {
 
         // Check whether the room exists.
         let room = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             db::room::FindQuery::new(payload.room_id)
                 .execute(&conn)?
@@ -90,7 +90,7 @@ impl RequestHandler for ReadHandler {
 
         // Retrieve state for each set from the DB and put them into a map.
         let mut state = JsonMap::new();
-        let conn = context.db().get()?;
+        let conn = context.ro_db().get()?;
 
         for set in payload.sets.iter() {
             // Build a query for the particular set state.

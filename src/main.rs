@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::init();
 
-    let db = {
+    let (db, maybe_ro_db) = {
         let url = var("DATABASE_URL").expect("DATABASE_URL must be specified");
 
         let size = var("DATABASE_POOL_SIZE")
@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
                 val.parse::<u32>()
                     .expect("Error converting DATABASE_POOL_SIZE variable into u32")
             })
-            .unwrap_or_else(|_| 5);
+            .unwrap_or(5);
 
         let idle_size = var("DATABASE_POOL_IDLE_SIZE")
             .map(|val| {
@@ -36,9 +36,15 @@ async fn main() -> Result<()> {
                 val.parse::<u64>()
                     .expect("Error converting DATABASE_POOL_TIMEOUT variable into u64")
             })
-            .unwrap_or_else(|_| 5);
+            .unwrap_or(5);
 
-        crate::db::create_pool(&url, size, idle_size, timeout)
+        let db = crate::db::create_pool(&url, size, idle_size, timeout);
+
+        let maybe_ro_db = var("READONLY_DATABASE_URL")
+            .ok()
+            .map(|ro_url| crate::db::create_pool(&ro_url, size, idle_size, timeout));
+
+        (db, maybe_ro_db)
     };
 
     let (redis_pool, authz_cache) = if let Some("1") = var("CACHE_ENABLED").ok().as_deref() {
@@ -72,7 +78,7 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
-    app::run(&db, redis_pool, authz_cache).await
+    app::run(db, maybe_ro_db, redis_pool, authz_cache).await
 }
 
 mod app;
