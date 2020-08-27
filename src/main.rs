@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::init();
 
-    let (db, maybe_ro_db) = {
+    let ((db, db_pool_stats), maybe_ro_db) = {
         let url = var("DATABASE_URL").expect("DATABASE_URL must be specified");
 
         let size = var("DATABASE_POOL_SIZE")
@@ -38,11 +38,11 @@ async fn main() -> Result<()> {
             })
             .unwrap_or(5);
 
-        let db = crate::db::create_pool(&url, size, idle_size, timeout);
+        let db = crate::db::create_pool(&url, size, idle_size, timeout, true);
 
         let maybe_ro_db = var("READONLY_DATABASE_URL")
             .ok()
-            .map(|ro_url| crate::db::create_pool(&ro_url, size, idle_size, timeout));
+            .map(|ro_url| crate::db::create_pool(&ro_url, size, idle_size, timeout, true));
 
         (db, maybe_ro_db)
     };
@@ -78,7 +78,20 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
-    app::run(db, maybe_ro_db, redis_pool, authz_cache).await
+    let (maybe_ro_db, maybe_ro_db_pool_stats) = match maybe_ro_db {
+        Some((db, pool_stats)) => (Some(db), Some(pool_stats)),
+        None => (None, None),
+    };
+
+    app::run(
+        db,
+        maybe_ro_db,
+        redis_pool,
+        authz_cache,
+        db_pool_stats,
+        maybe_ro_db_pool_stats,
+    )
+    .await
 }
 
 mod app;

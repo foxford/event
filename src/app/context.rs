@@ -5,6 +5,7 @@ use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
 use crate::app::endpoint::metric::ProfilerKeys;
+use crate::app::metrics::StatsCollector;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
 use crate::profiler::Profiler;
@@ -20,6 +21,8 @@ pub(crate) trait Context: Sync {
     fn queue_counter(&self) -> &Option<QueueCounterHandle>;
     fn redis_pool(&self) -> &Option<RedisConnectionPool>;
     fn profiler(&self) -> &Profiler<ProfilerKeys>;
+    fn db_pool_stats(&self) -> &Option<StatsCollector>;
+    fn ro_db_pool_stats(&self) -> &Option<StatsCollector>;
 }
 
 impl Context for AppContext {
@@ -54,6 +57,14 @@ impl Context for AppContext {
     fn profiler(&self) -> &Profiler<ProfilerKeys> {
         &self.profiler
     }
+
+    fn db_pool_stats(&self) -> &Option<StatsCollector> {
+        &self.db_pool_stats
+    }
+
+    fn ro_db_pool_stats(&self) -> &Option<StatsCollector> {
+        &self.ro_db_pool_stats
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -68,6 +79,8 @@ pub(crate) struct AppContext {
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
     profiler: Arc<Profiler<ProfilerKeys>>,
+    db_pool_stats: Option<StatsCollector>,
+    ro_db_pool_stats: Option<StatsCollector>,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -80,6 +93,8 @@ pub(crate) struct AppContextBuilder {
     ro_db: Option<Db>,
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
+    db_pool_stats: Option<StatsCollector>,
+    ro_db_pool_stats: Option<StatsCollector>,
 }
 
 impl AppContextBuilder {
@@ -94,6 +109,8 @@ impl AppContextBuilder {
             ro_db: None,
             queue_counter: None,
             redis_pool: None,
+            db_pool_stats: None,
+            ro_db_pool_stats: None,
         }
     }
 
@@ -118,6 +135,20 @@ impl AppContextBuilder {
         }
     }
 
+    pub(crate) fn db_pool_stats(self, stats: StatsCollector) -> Self {
+        Self {
+            db_pool_stats: Some(stats),
+            ..self
+        }
+    }
+
+    pub(crate) fn ro_db_pool_stats(self, stats: StatsCollector) -> Self {
+        Self {
+            ro_db_pool_stats: Some(stats),
+            ..self
+        }
+    }
+
     pub(crate) fn build(self) -> AppContext {
         AppContext {
             config: Arc::new(self.config),
@@ -128,6 +159,8 @@ impl AppContextBuilder {
             queue_counter: self.queue_counter,
             redis_pool: self.redis_pool,
             profiler: Arc::new(Profiler::<ProfilerKeys>::start()),
+            db_pool_stats: self.db_pool_stats,
+            ro_db_pool_stats: self.ro_db_pool_stats,
         }
     }
 }
