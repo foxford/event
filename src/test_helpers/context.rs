@@ -7,6 +7,7 @@ use svc_authz::ClientMap as Authz;
 
 use crate::app::context::Context;
 use crate::app::endpoint::metric::ProfilerKeys;
+use crate::app::metrics::StatsCollector;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
 use crate::profiler::Profiler;
@@ -96,5 +97,13 @@ impl Context for TestContext {
 
     fn profiler(&self) -> &Profiler<ProfilerKeys> {
         &self.profiler
+    }
+
+    fn db_pool_stats(&self) -> &Option<StatsCollector> {
+        &None
+    }
+
+    fn ro_db_pool_stats(&self) -> &Option<StatsCollector> {
+        &None
     }
 }

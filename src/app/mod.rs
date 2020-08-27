@@ -19,6 +19,7 @@ use svc_authz::cache::{Cache as AuthzCache, ConnectionPool as RedisConnectionPoo
 use svc_error::{extension::sentry, Error as SvcError};
 
 use crate::app::context::Context;
+use crate::app::metrics::StatsCollector;
 use crate::config::{self, Config, KruonisConfig};
 use crate::db::ConnectionPool;
 use context::AppContextBuilder;
@@ -33,6 +34,8 @@ pub(crate) async fn run(
     ro_db: Option<ConnectionPool>,
     redis_pool: Option<RedisConnectionPool>,
     authz_cache: Option<AuthzCache>,
+    db_pool_stats: StatsCollector,
+    ro_db_pool_stats: Option<StatsCollector>,
 ) -> Result<()> {
     // Config
     let config = config::load().context("Failed to load config")?;
@@ -93,6 +96,13 @@ pub(crate) async fn run(
 
     let context_builder = match redis_pool {
         Some(pool) => context_builder.redis_pool(pool),
+        None => context_builder,
+    };
+
+    let context_builder = context_builder.db_pool_stats(db_pool_stats);
+
+    let context_builder = match ro_db_pool_stats {
+        Some(stats) => context_builder.ro_db_pool_stats(stats),
         None => context_builder,
     };
 
@@ -204,4 +214,5 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
 pub(crate) mod context;
 pub(crate) mod endpoint;
 pub(crate) mod message_handler;
+pub(crate) mod metrics;
 pub(crate) mod operations;
