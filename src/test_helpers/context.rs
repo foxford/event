@@ -1,11 +1,15 @@
+use std::sync::Arc;
+
 use serde_json::json;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
 use crate::app::context::Context;
+use crate::app::endpoint::metric::ProfilerKeys;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
+use crate::profiler::Profiler;
 
 use super::authz::TestAuthz;
 use super::db::TestDb;
@@ -43,6 +47,7 @@ pub(crate) struct TestContext {
     authz: Authz,
     db: TestDb,
     agent_id: AgentId,
+    profiler: Arc<Profiler<ProfilerKeys>>,
 }
 
 impl TestContext {
@@ -55,6 +60,7 @@ impl TestContext {
             authz: authz.into(),
             db,
             agent_id,
+            profiler: Arc::new(Profiler::<ProfilerKeys>::start()),
         }
     }
 }
@@ -86,5 +92,9 @@ impl Context for TestContext {
 
     fn redis_pool(&self) -> &Option<RedisConnectionPool> {
         &None
+    }
+
+    fn profiler(&self) -> &Profiler<ProfilerKeys> {
+        &self.profiler
     }
 }

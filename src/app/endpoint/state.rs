@@ -9,7 +9,7 @@ use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::prelude::*;
+use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -104,8 +104,11 @@ impl RequestHandler for ReadHandler {
             // If it is the only set specified at first execute a total count query and
             // add `has_next` pagination flag to the state.
             if payload.sets.len() == 1 {
-                let total_count = query
-                    .total_count(&conn)
+                let total_count = context
+                    .profiler()
+                    .measure(ProfilerKeys::StateTotalCountQuery, || {
+                        query.total_count(&conn)
+                    })
                     .map_err(|err| {
                         format!(
                             "failed to query state total count for set = '{}': {}",
@@ -119,8 +122,9 @@ impl RequestHandler for ReadHandler {
             }
 
             // Limit the query and retrieve the state.
-            let set_state = query
-                .execute(&conn)
+            let set_state = context
+                .profiler()
+                .measure(ProfilerKeys::StateQuery, || query.execute(&conn))
                 .map_err(|err| format!("failed to query state for set = '{}': {}", set, err))
                 .status(ResponseStatus::UNPROCESSABLE_ENTITY)?;
 
