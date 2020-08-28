@@ -4,8 +4,10 @@ use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
+use crate::app::endpoint::metric::ProfilerKeys;
 use crate::config::Config;
 use crate::db::ConnectionPool as Db;
+use crate::profiler::Profiler;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -17,6 +19,7 @@ pub(crate) trait Context: Sync {
     fn agent_id(&self) -> &AgentId;
     fn queue_counter(&self) -> &Option<QueueCounterHandle>;
     fn redis_pool(&self) -> &Option<RedisConnectionPool>;
+    fn profiler(&self) -> &Profiler<ProfilerKeys>;
 }
 
 impl Context for AppContext {
@@ -47,6 +50,10 @@ impl Context for AppContext {
     fn redis_pool(&self) -> &Option<RedisConnectionPool> {
         &self.redis_pool
     }
+
+    fn profiler(&self) -> &Profiler<ProfilerKeys> {
+        &self.profiler
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -60,6 +67,7 @@ pub(crate) struct AppContext {
     agent_id: AgentId,
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
+    profiler: Arc<Profiler<ProfilerKeys>>,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -119,6 +127,7 @@ impl AppContextBuilder {
             agent_id: self.agent_id,
             queue_counter: self.queue_counter,
             redis_pool: self.redis_pool,
+            profiler: Arc::new(Profiler::<ProfilerKeys>::start()),
         }
     }
 }

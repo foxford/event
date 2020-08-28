@@ -1,3 +1,5 @@
+use std::hash::Hash;
+
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{serde::ts_seconds, DateTime, Utc};
@@ -10,6 +12,12 @@ use svc_agent::mqtt::{
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::config::TelemetryConfig;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ProfilerKeys {
+    StateQuery,
+    StateTotalCountQuery,
+}
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct PullPayload {
@@ -26,6 +34,12 @@ pub(crate) struct MetricValue {
     value: u64,
     #[serde(with = "ts_seconds")]
     timestamp: DateTime<Utc>,
+}
+
+impl MetricValue {
+    fn new(value: u64, timestamp: DateTime<Utc>) -> Self {
+        Self { value, timestamp }
+    }
 }
 
 #[derive(Serialize)]
@@ -51,6 +65,18 @@ pub(crate) enum Metric {
     RedisConnections(MetricValue),
     #[serde(rename(serialize = "apps.event.idle_redis_connections_total"))]
     IdleRedisConnections(MetricValue),
+    #[serde(rename(serialize = "apps.event.state_total_count_query_p95_microseconds"))]
+    StateTotalCountQueryP95(MetricValue),
+    #[serde(rename(serialize = "apps.event.state_total_count_query_p99_microseconds"))]
+    StateTotalCountQueryP99(MetricValue),
+    #[serde(rename(serialize = "apps.event.state_total_count_query_max_microseconds"))]
+    StateTotalCountQueryMax(MetricValue),
+    #[serde(rename(serialize = "apps.event.state_query_p95_microseconds"))]
+    StateQueryP95(MetricValue),
+    #[serde(rename(serialize = "apps.event.state_query_p99_microseconds"))]
+    StateQueryP99(MetricValue),
+    #[serde(rename(serialize = "apps.event.state_query_max_microseconds"))]
+    StateQueryMax(MetricValue),
 }
 
 pub(crate) struct PullHandler;
@@ -77,57 +103,70 @@ impl EventHandler for PullHandler {
                         .status(ResponseStatus::BAD_REQUEST)?;
 
                     vec![
-                        Metric::IncomingQueueRequests(MetricValue {
-                            value: stats.incoming_requests,
-                            timestamp: now,
-                        }),
-                        Metric::IncomingQueueResponses(MetricValue {
-                            value: stats.incoming_responses,
-                            timestamp: now,
-                        }),
-                        Metric::IncomingQueueEvents(MetricValue {
-                            value: stats.incoming_events,
-                            timestamp: now,
-                        }),
-                        Metric::OutgoingQueueRequests(MetricValue {
-                            value: stats.outgoing_requests,
-                            timestamp: now,
-                        }),
-                        Metric::OutgoingQueueResponses(MetricValue {
-                            value: stats.outgoing_responses,
-                            timestamp: now,
-                        }),
-                        Metric::OutgoingQueueEvents(MetricValue {
-                            value: stats.outgoing_events,
-                            timestamp: now,
-                        }),
+                        Metric::IncomingQueueRequests(MetricValue::new(
+                            stats.incoming_requests,
+                            now,
+                        )),
+                        Metric::IncomingQueueResponses(MetricValue::new(
+                            stats.incoming_responses,
+                            now,
+                        )),
+                        Metric::IncomingQueueEvents(MetricValue::new(stats.incoming_events, now)),
+                        Metric::OutgoingQueueRequests(MetricValue::new(
+                            stats.outgoing_requests,
+                            now,
+                        )),
+                        Metric::OutgoingQueueResponses(MetricValue::new(
+                            stats.outgoing_responses,
+                            now,
+                        )),
+                        Metric::OutgoingQueueEvents(MetricValue::new(stats.outgoing_events, now)),
                     ]
                 } else {
                     vec![]
                 };
 
                 let db_state = context.db().state();
-                metrics.push(Metric::DbConnections(MetricValue {
-                    value: db_state.connections as u64,
-                    timestamp: now,
-                }));
 
-                metrics.push(Metric::IdleDbConnections(MetricValue {
-                    value: db_state.idle_connections as u64,
-                    timestamp: now,
-                }));
+                let metric_value = MetricValue::new(db_state.connections as u64, now);
+                metrics.push(Metric::DbConnections(metric_value));
+
+                let metric_value = MetricValue::new(db_state.idle_connections as u64, now);
+                metrics.push(Metric::IdleDbConnections(metric_value));
 
                 if let Some(pool) = context.redis_pool() {
                     let pool_state = pool.state();
-                    metrics.push(Metric::RedisConnections(MetricValue {
-                        value: pool_state.connections as u64,
-                        timestamp: now,
-                    }));
 
-                    metrics.push(Metric::IdleRedisConnections(MetricValue {
-                        value: pool_state.idle_connections as u64,
-                        timestamp: now,
-                    }));
+                    let metric_value = MetricValue::new(pool_state.connections as u64, now);
+                    metrics.push(Metric::RedisConnections(metric_value));
+
+                    let metric_value = MetricValue::new(pool_state.idle_connections as u64, now);
+                    metrics.push(Metric::IdleRedisConnections(metric_value));
+                }
+
+                let profiler_report = context
+                    .profiler()
+                    .flush()
+                    .map_err(|err| err.to_string())
+                    .status(ResponseStatus::INTERNAL_SERVER_ERROR)?;
+
+                for (key, entry_report) in profiler_report {
+                    let metric_value_p95 = MetricValue::new(entry_report.p95 as u64, now);
+                    let metric_value_p99 = MetricValue::new(entry_report.p99 as u64, now);
+                    let metric_value_max = MetricValue::new(entry_report.max as u64, now);
+
+                    match key {
+                        ProfilerKeys::StateQuery => {
+                            metrics.push(Metric::StateQueryP95(metric_value_p95));
+                            metrics.push(Metric::StateQueryP99(metric_value_p99));
+                            metrics.push(Metric::StateQueryMax(metric_value_max));
+                        }
+                        ProfilerKeys::StateTotalCountQuery => {
+                            metrics.push(Metric::StateTotalCountQueryP95(metric_value_p95));
+                            metrics.push(Metric::StateTotalCountQueryP99(metric_value_p99));
+                            metrics.push(Metric::StateTotalCountQueryMax(metric_value_max));
+                        }
+                    }
                 }
 
                 let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);

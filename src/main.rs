@@ -84,6 +84,7 @@ async fn main() -> Result<()> {
 mod app;
 mod config;
 mod db;
+mod profiler;
 #[allow(unused_imports)]
 #[rustfmt::skip]
 mod schema;

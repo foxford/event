@@ -117,7 +117,7 @@ mod change;
 mod edition;
 mod event;
 pub(self) mod helpers;
-mod metric;
+pub(crate) mod metric;
 mod room;
 mod state;
 mod subscription;
