@@ -132,7 +132,7 @@ impl RequestHandler for ReadHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             FindQuery::new(payload.id)
                 .execute(&conn)?
@@ -191,7 +191,7 @@ impl RequestHandler for UpdateHandler {
         }
 
         let room = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             query
                 .execute(&conn)?
@@ -290,7 +290,7 @@ impl RequestHandler for EnterHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             FindQuery::new(payload.id)
                 .time(now())
@@ -363,7 +363,7 @@ impl RequestHandler for LeaveHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, presence) = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             let room = FindQuery::new(payload.id)
                 .execute(&conn)?
@@ -445,7 +445,7 @@ impl RequestHandler for AdjustHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             FindQuery::new(payload.id)
                 .execute(&conn)?

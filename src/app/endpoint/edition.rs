@@ -42,7 +42,7 @@ impl RequestHandler for CreateHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             db::room::FindQuery::new(payload.room_id)
                 .execute(&conn)?
@@ -108,7 +108,7 @@ impl RequestHandler for ListHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             db::room::FindQuery::new(payload.room_id)
                 .execute(&conn)?
@@ -139,7 +139,7 @@ impl RequestHandler for ListHandler {
         }
 
         let editions = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
             query.execute(&conn)?
         };
 
@@ -173,7 +173,7 @@ impl RequestHandler for DeleteHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (edition, room) = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             match db::edition::FindWithRoomQuery::new(payload.id).execute(&conn)? {
                 Some((edition, room)) => (edition, room),
@@ -230,7 +230,7 @@ impl RequestHandler for CommitHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (edition, room) = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             match db::edition::FindWithRoomQuery::new(payload.id).execute(&conn)? {
                 Some((edition, room)) => (edition, room),

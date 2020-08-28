@@ -34,7 +34,7 @@ impl RequestHandler for ListHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             // Check whether the room exists and open.
             db::room::FindQuery::new(payload.room_id)
@@ -55,7 +55,7 @@ impl RequestHandler for ListHandler {
 
         // Get agents list in the room.
         let agents = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             db::agent::ListQuery::new()
                 .room_id(payload.room_id)

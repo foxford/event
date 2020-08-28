@@ -72,6 +72,10 @@ impl Context for TestContext {
         self.db.connection_pool()
     }
 
+    fn ro_db(&self) -> &Db {
+        self.db.connection_pool()
+    }
+
     fn agent_id(&self) -> &AgentId {
         &self.agent_id
     }

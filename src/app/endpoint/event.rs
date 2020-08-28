@@ -228,7 +228,7 @@ impl RequestHandler for ListHandler {
     ) -> Result {
         // Check whether the room exists.
         let room = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             db::room::FindQuery::new(payload.room_id)
                 .execute(&conn)?
@@ -267,7 +267,7 @@ impl RequestHandler for ListHandler {
         }
 
         let events = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             query
                 .direction(payload.direction)
