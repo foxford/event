@@ -13,7 +13,7 @@ use svc_agent::{
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::prelude::*;
+use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -59,9 +59,11 @@ impl RequestHandler for CreateHandler {
             let conn = context.db().get()?;
 
             // Check whether the room exists and open.
-            let room = db::room::FindQuery::new(payload.room_id)
-                .time(db::room::now())
-                .execute(&conn)?
+            let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
+
+            let room = context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
@@ -71,9 +73,18 @@ impl RequestHandler for CreateHandler {
                     set: Some(ref set),
                     label: Some(ref label),
                     ..
-                } => db::event::OriginalEventQuery::new(room.id(), set, label)
-                    .execute(&conn)?
-                    .map(|original_event| original_event.created_by().as_account_id().to_string()),
+                } => {
+                    let query = db::event::OriginalEventQuery::new(room.id(), set, label);
+
+                    context
+                        .profiler()
+                        .measure(ProfilerKeys::EventOriginalEventQuery, || {
+                            query.execute(&conn)
+                        })?
+                        .map(|original_event| {
+                            original_event.created_by().as_account_id().to_string()
+                        })
+                }
                 _ => None,
             }
             .unwrap_or_else(|| {
@@ -126,8 +137,9 @@ impl RequestHandler for CreateHandler {
             {
                 let conn = context.db().get()?;
 
-                query
-                    .execute(&conn)
+                context
+                    .profiler()
+                    .measure(ProfilerKeys::EventInsertQuery, || query.execute(&conn))
                     .map_err(|err| format!("failed to create event: {}", err))
                     .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
             }
@@ -229,9 +241,11 @@ impl RequestHandler for ListHandler {
         // Check whether the room exists.
         let room = {
             let conn = context.ro_db().get()?;
+            let query = db::room::FindQuery::new(payload.room_id);
 
-            db::room::FindQuery::new(payload.room_id)
-                .execute(&conn)?
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -269,13 +283,14 @@ impl RequestHandler for ListHandler {
         let events = {
             let conn = context.ro_db().get()?;
 
-            query
-                .direction(payload.direction)
-                .limit(std::cmp::min(
-                    payload.limit.unwrap_or_else(|| MAX_LIMIT),
-                    MAX_LIMIT,
-                ))
-                .execute(&conn)?
+            query = query.direction(payload.direction).limit(std::cmp::min(
+                payload.limit.unwrap_or_else(|| MAX_LIMIT),
+                MAX_LIMIT,
+            ));
+
+            context
+                .profiler()
+                .measure(ProfilerKeys::EventListQuery, || query.execute(&conn))?
         };
 
         // Respond with events list.

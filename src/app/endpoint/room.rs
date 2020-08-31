@@ -18,7 +18,7 @@ use svc_error::{extension::sentry, Error as SvcError};
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::prelude::*;
+use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::app::operations::adjust_room;
 use crate::db::adjustment::Segment;
 use crate::db::agent;
@@ -87,7 +87,10 @@ impl RequestHandler for CreateHandler {
             }
 
             let conn = context.db().get()?;
-            query.execute(&conn)?
+
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomInsertQuery, || query.execute(&conn))?
         };
 
         // Respond and broadcast to the audience topic.
@@ -132,10 +135,12 @@ impl RequestHandler for ReadHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
+            let query = FindQuery::new(payload.id);
             let conn = context.ro_db().get()?;
 
-            FindQuery::new(payload.id)
-                .execute(&conn)?
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -193,8 +198,9 @@ impl RequestHandler for UpdateHandler {
         let room = {
             let conn = context.ro_db().get()?;
 
-            query
-                .execute(&conn)?
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("Room not found, id = '{}' or closed", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -245,7 +251,10 @@ impl RequestHandler for UpdateHandler {
             }
 
             let conn = context.db().get()?;
-            query.execute(&conn)?
+
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomUpdateQuery, || query.execute(&conn))?
         };
 
         // Respond and broadcast to the audience topic.
@@ -290,11 +299,12 @@ impl RequestHandler for EnterHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
+            let query = FindQuery::new(payload.id).time(now());
             let conn = context.ro_db().get()?;
 
-            FindQuery::new(payload.id)
-                .time(now())
-                .execute(&conn)?
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("Room not found or closed, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -311,7 +321,11 @@ impl RequestHandler for EnterHandler {
         // Register agent in `in_progress` state.
         {
             let conn = context.db().get()?;
-            agent::InsertQuery::new(reqp.as_agent_id(), room.id()).execute(&conn)?;
+            let query = agent::InsertQuery::new(reqp.as_agent_id(), room.id());
+
+            context
+                .profiler()
+                .measure(ProfilerKeys::AgentInsertQuery, || query.execute(&conn))?;
         }
 
         // Send dynamic subscription creation request to the broker.
@@ -363,19 +377,24 @@ impl RequestHandler for LeaveHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, presence) = {
+            let query = FindQuery::new(payload.id);
             let conn = context.ro_db().get()?;
 
-            let room = FindQuery::new(payload.id)
-                .execute(&conn)?
+            let room = context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
             // Check room presence.
-            let presence = agent::ListQuery::new()
+            let query = agent::ListQuery::new()
                 .room_id(room.id())
                 .agent_id(reqp.as_agent_id())
-                .status(agent::Status::Ready)
-                .execute(&conn)?;
+                .status(agent::Status::Ready);
+
+            let presence = context
+                .profiler()
+                .measure(ProfilerKeys::AgentListQuery, || query.execute(&conn))?;
 
             (room, presence)
         };
@@ -445,10 +464,12 @@ impl RequestHandler for AdjustHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
+            let query = FindQuery::new(payload.id);
             let conn = context.ro_db().get()?;
 
-            FindQuery::new(payload.id)
-                .execute(&conn)?
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
         };

@@ -15,8 +15,24 @@ use crate::config::TelemetryConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ProfilerKeys {
-    StateQuery,
+    AgentInsertQuery,
+    AgentListQuery,
+    ChangeDeleteQuery,
+    ChangeInsertQuery,
+    ChangeListQuery,
+    EditionDeleteQuery,
+    EditionFindWithRoomQuery,
+    EditionFindQuery,
+    EditionInsertQuery,
+    EditionListQuery,
+    EventInsertQuery,
+    EventListQuery,
+    EventOriginalEventQuery,
+    RoomFindQuery,
+    RoomInsertQuery,
+    RoomUpdateQuery,
     StateTotalCountQuery,
+    StateQuery,
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,6 +97,102 @@ pub(crate) enum Metric {
     RedisConnections(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.idle_redis_connections_total"))]
     IdleRedisConnections(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_insert_query_p95_microseconds"))]
+    AgentInsertQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_insert_query_p99_microseconds"))]
+    AgentInsertQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_insert_query_max_microseconds"))]
+    AgentInsertQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_list_query_p95_microseconds"))]
+    AgentListQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_list_query_p99_microseconds"))]
+    AgentListQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_list_query_max_microseconds"))]
+    AgentListQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.change_delete_query_p95_microseconds"))]
+    ChangeDeleteQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.change_delete_query_p99_microseconds"))]
+    ChangeDeleteQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.change_delete_query_max_microseconds"))]
+    ChangeDeleteQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.change_insert_query_p95_microseconds"))]
+    ChangeInsertQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.change_insert_query_p99_microseconds"))]
+    ChangeInsertQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.change_insert_query_max_microseconds"))]
+    ChangeInsertQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.change_list_query_p95_microseconds"))]
+    ChangeListQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.change_list_query_p99_microseconds"))]
+    ChangeListQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.change_list_query_max_microseconds"))]
+    ChangeListQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_delete_query_p95_microseconds"))]
+    EditionDeleteQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_delete_query_p99_microseconds"))]
+    EditionDeleteQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_delete_query_max_microseconds"))]
+    EditionDeleteQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_find_with_room_query_p95_microseconds"))]
+    EditionFindWithRoomQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_find_with_room_query_p99_microseconds"))]
+    EditionFindWithRoomQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_find_with_room_query_max_microseconds"))]
+    EditionFindWithRoomQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_find_query_p95_microseconds"))]
+    EditionFindQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_find_query_p99_microseconds"))]
+    EditionFindQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_find_query_max_microseconds"))]
+    EditionFindQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_insert_query_p95_microseconds"))]
+    EditionInsertQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_insert_query_p99_microseconds"))]
+    EditionInsertQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_insert_query_max_microseconds"))]
+    EditionInsertQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_list_query_p95_microseconds"))]
+    EditionListQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_list_query_p99_microseconds"))]
+    EditionListQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_list_query_max_microseconds"))]
+    EditionListQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_insert_query_p95_microseconds"))]
+    EventInsertQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_insert_query_p99_microseconds"))]
+    EventInsertQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_insert_query_max_microseconds"))]
+    EventInsertQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_list_query_p95_microseconds"))]
+    EventListQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_list_query_p99_microseconds"))]
+    EventListQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_list_query_max_microseconds"))]
+    EventListQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_original_query_p95_microseconds"))]
+    EventOriginalQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_original_query_p99_microseconds"))]
+    EventOriginalQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_original_query_max_microseconds"))]
+    EventOriginalQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.room_find_query_p95_microseconds"))]
+    RoomFindQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.room_find_query_p99_microseconds"))]
+    RoomFindQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.room_find_query_max_microseconds"))]
+    RoomFindQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.room_insert_query_p95_microseconds"))]
+    RoomInsertQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.room_insert_query_p99_microseconds"))]
+    RoomInsertQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.room_insert_query_max_microseconds"))]
+    RoomInsertQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.room_update_query_p95_microseconds"))]
+    RoomUpdateQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.room_update_query_p99_microseconds"))]
+    RoomUpdateQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.room_update_query_max_microseconds"))]
+    RoomUpdateQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.state_total_count_query_p95_microseconds"))]
     StateTotalCountQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.state_total_count_query_p99_microseconds"))]
@@ -268,15 +380,95 @@ fn append_profiler_stats(
         let metric_value_max = MetricValue::new(entry_report.max as u64, now);
 
         match key {
-            ProfilerKeys::StateQuery => {
-                metrics.push(Metric::StateQueryP95(metric_value_p95));
-                metrics.push(Metric::StateQueryP99(metric_value_p99));
-                metrics.push(Metric::StateQueryMax(metric_value_max));
+            ProfilerKeys::AgentInsertQuery => {
+                metrics.push(Metric::AgentInsertQueryP95(metric_value_p95));
+                metrics.push(Metric::AgentInsertQueryP99(metric_value_p99));
+                metrics.push(Metric::AgentInsertQueryMax(metric_value_max));
+            }
+            ProfilerKeys::AgentListQuery => {
+                metrics.push(Metric::AgentListQueryP95(metric_value_p95));
+                metrics.push(Metric::AgentListQueryP99(metric_value_p99));
+                metrics.push(Metric::AgentListQueryMax(metric_value_max));
+            }
+            ProfilerKeys::ChangeDeleteQuery => {
+                metrics.push(Metric::ChangeDeleteQueryP95(metric_value_p95));
+                metrics.push(Metric::ChangeDeleteQueryP99(metric_value_p99));
+                metrics.push(Metric::ChangeDeleteQueryMax(metric_value_max));
+            }
+            ProfilerKeys::ChangeInsertQuery => {
+                metrics.push(Metric::ChangeInsertQueryP95(metric_value_p95));
+                metrics.push(Metric::ChangeInsertQueryP99(metric_value_p99));
+                metrics.push(Metric::ChangeInsertQueryMax(metric_value_max));
+            }
+            ProfilerKeys::ChangeListQuery => {
+                metrics.push(Metric::ChangeListQueryP95(metric_value_p95));
+                metrics.push(Metric::ChangeListQueryP99(metric_value_p99));
+                metrics.push(Metric::ChangeListQueryMax(metric_value_max));
+            }
+            ProfilerKeys::EditionDeleteQuery => {
+                metrics.push(Metric::EditionDeleteQueryP95(metric_value_p95));
+                metrics.push(Metric::EditionDeleteQueryP99(metric_value_p99));
+                metrics.push(Metric::EditionDeleteQueryMax(metric_value_max));
+            }
+            ProfilerKeys::EditionFindWithRoomQuery => {
+                metrics.push(Metric::EditionFindWithRoomQueryP95(metric_value_p95));
+                metrics.push(Metric::EditionFindWithRoomQueryP99(metric_value_p99));
+                metrics.push(Metric::EditionFindWithRoomQueryMax(metric_value_max));
+            }
+            ProfilerKeys::EditionFindQuery => {
+                metrics.push(Metric::EditionFindQueryP95(metric_value_p95));
+                metrics.push(Metric::EditionFindQueryP99(metric_value_p99));
+                metrics.push(Metric::EditionFindQueryMax(metric_value_max));
+            }
+            ProfilerKeys::EditionInsertQuery => {
+                metrics.push(Metric::EditionInsertQueryP95(metric_value_p95));
+                metrics.push(Metric::EditionInsertQueryP99(metric_value_p99));
+                metrics.push(Metric::EditionInsertQueryMax(metric_value_max));
+            }
+            ProfilerKeys::EditionListQuery => {
+                metrics.push(Metric::EditionListQueryP95(metric_value_p95));
+                metrics.push(Metric::EditionListQueryP99(metric_value_p99));
+                metrics.push(Metric::EditionListQueryMax(metric_value_max));
+            }
+            ProfilerKeys::EventInsertQuery => {
+                metrics.push(Metric::EventInsertQueryP95(metric_value_p95));
+                metrics.push(Metric::EventInsertQueryP99(metric_value_p99));
+                metrics.push(Metric::EventInsertQueryMax(metric_value_max));
+            }
+            ProfilerKeys::EventListQuery => {
+                metrics.push(Metric::EventListQueryP95(metric_value_p95));
+                metrics.push(Metric::EventListQueryP99(metric_value_p99));
+                metrics.push(Metric::EventListQueryMax(metric_value_max));
+            }
+            ProfilerKeys::EventOriginalEventQuery => {
+                metrics.push(Metric::EventOriginalQueryP95(metric_value_p95));
+                metrics.push(Metric::EventOriginalQueryP99(metric_value_p99));
+                metrics.push(Metric::EventOriginalQueryMax(metric_value_max));
+            }
+            ProfilerKeys::RoomFindQuery => {
+                metrics.push(Metric::RoomFindQueryP95(metric_value_p95));
+                metrics.push(Metric::RoomFindQueryP99(metric_value_p99));
+                metrics.push(Metric::RoomFindQueryMax(metric_value_max));
+            }
+            ProfilerKeys::RoomInsertQuery => {
+                metrics.push(Metric::RoomInsertQueryP95(metric_value_p95));
+                metrics.push(Metric::RoomInsertQueryP99(metric_value_p99));
+                metrics.push(Metric::RoomInsertQueryMax(metric_value_max));
+            }
+            ProfilerKeys::RoomUpdateQuery => {
+                metrics.push(Metric::RoomUpdateQueryP95(metric_value_p95));
+                metrics.push(Metric::RoomUpdateQueryP99(metric_value_p99));
+                metrics.push(Metric::RoomUpdateQueryMax(metric_value_max));
             }
             ProfilerKeys::StateTotalCountQuery => {
                 metrics.push(Metric::StateTotalCountQueryP95(metric_value_p95));
                 metrics.push(Metric::StateTotalCountQueryP99(metric_value_p99));
                 metrics.push(Metric::StateTotalCountQueryMax(metric_value_max));
+            }
+            ProfilerKeys::StateQuery => {
+                metrics.push(Metric::StateQueryP95(metric_value_p95));
+                metrics.push(Metric::StateQueryP99(metric_value_p99));
+                metrics.push(Metric::StateQueryMax(metric_value_max));
             }
         }
     }

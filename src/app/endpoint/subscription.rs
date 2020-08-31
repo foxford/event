@@ -15,7 +15,7 @@ use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::prelude::*;
+use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::db::{agent, room};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -74,12 +74,13 @@ impl EventHandler for CreateHandler {
         let room_id = payload.try_room_id()?;
 
         {
+            // Find room.
+            let query = room::FindQuery::new(room_id).time(room::now());
             let conn = context.db().get()?;
 
-            // Find room.
-            room::FindQuery::new(room_id)
-                .time(room::now())
-                .execute(&conn)?
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", room_id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
@@ -131,8 +132,12 @@ impl EventHandler for DeleteHandler {
         let room_id = payload.try_room_id()?;
 
         let row_count = {
+            let query = agent::DeleteQuery::new(&payload.subject, room_id);
             let conn = context.db().get()?;
-            agent::DeleteQuery::new(&payload.subject, room_id).execute(&conn)?
+
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
         };
 
         if row_count != 1 {
