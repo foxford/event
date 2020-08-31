@@ -174,7 +174,7 @@ fn append_mqtt_stats(
             Metric::OutgoingQueueEvents(MetricValue::new(stats.outgoing_events, now)),
         ];
 
-        metrics.copy_from_slice(&m);
+        metrics.extend_from_slice(&m);
     }
 
     Ok(())
@@ -234,7 +234,7 @@ fn append_db_pool_stats(metrics: &mut Vec<Metric>, context: &dyn Context, now: D
             Metric::MaxDbPoolRelease(MetricValue::new(stats.max_release, now)),
         ];
 
-        metrics.copy_from_slice(&m);
+        metrics.extend_from_slice(&m);
     }
 
     if let Some(db_pool_stats) = context.ro_db_pool_stats() {
@@ -251,7 +251,7 @@ fn append_db_pool_stats(metrics: &mut Vec<Metric>, context: &dyn Context, now: D
             Metric::MaxRoDbPoolRelease(MetricValue::new(stats.max_release, now)),
         ];
 
-        metrics.copy_from_slice(&m);
+        metrics.extend_from_slice(&m);
     }
 }
 
