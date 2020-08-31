@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.2.13 (August 31, 2020)
+
+### Features
+- Add readonly replica DB connection pool ([4f040ea](https://github.com/netology-group/event/commit/4f040ea0c0d4cddfa2ee843f744e40f4d868287a))
+- Add query time profiling ([f193fbb](https://github.com/netology-group/event/commit/f193fbb846674e01f276a6eb5460b797a39e473c), [c3bac8c](https://github.com/netology-group/event/commit/c3bac8ce965bd89e04023473aa1342f698f4c2ea))
+- Add avg and max checkin and checkout metrics for db pools ([a146389](https://github.com/netology-group/event/commit/a1463893814443c1f099eab56fff9c72c9069bc6), [6260794](https://github.com/netology-group/event/commit/6260794a0683bbeb7ae7485d317efe5d13ae05a0))
+
+
+## v0.2.12 (August 28, 2020)
+
+### Features
+- Allow event list filtering by type or multiple types ([8328c61](https://github.com/netology-group/event/commit/8328c61a319ec48b6970d5af41a200749cd382d7))
+
+
+## v0.2.11 (August 27, 2020)
+
+### Features
+- Add CACHE_ENABLED envvar check ([9fd18b0](https://github.com/netology-group/event/commit/9fd18b05b6e10e2595da19bddfe1b8e9bbd7efb7))
+- Transmit idle connections metrics both for redis and pg pools ([47c2cd1](https://github.com/netology-group/event/commit/47c2cd1da6d428050b296010fbecbff2b11974e0))
+
+### Fixes
+- Subscribe to unicast requests without shared group ([9c9005a](https://github.com/netology-group/event/commit/9c9005a7a8938afc7419ec511be19c54ea849e72))
+
+
 ## v0.2.10 (July 30, 2020)
 
 ### Fixes

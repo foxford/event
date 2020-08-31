@@ -685,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "event"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "anyhow",
  "async-std",
