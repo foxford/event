@@ -58,10 +58,12 @@ impl RequestHandler for ReadHandler {
 
         // Check whether the room exists.
         let room = {
+            let query = db::room::FindQuery::new(payload.room_id);
             let conn = context.ro_db().get()?;
 
-            db::room::FindQuery::new(payload.room_id)
-                .execute(&conn)?
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
         };

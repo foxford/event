@@ -18,7 +18,7 @@ use svc_error::{extension::sentry, Error as SvcError};
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::prelude::*;
+use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::app::operations::commit_edition;
 use crate::db;
 use crate::db::adjustment::Segment;
@@ -42,10 +42,12 @@ impl RequestHandler for CreateHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
+            let query = db::room::FindQuery::new(payload.room_id);
             let conn = context.ro_db().get()?;
 
-            db::room::FindQuery::new(payload.room_id)
-                .execute(&conn)?
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -60,11 +62,13 @@ impl RequestHandler for CreateHandler {
             )
             .await?;
 
-        let query = db::edition::InsertQuery::new(payload.room_id, reqp.as_agent_id());
-
         let edition = {
+            let query = db::edition::InsertQuery::new(payload.room_id, reqp.as_agent_id());
             let conn = context.db().get()?;
-            query.execute(&conn)?
+
+            context
+                .profiler()
+                .measure(ProfilerKeys::EditionInsertQuery, || query.execute(&conn))?
         };
 
         let response = helpers::build_response(
@@ -108,10 +112,12 @@ impl RequestHandler for ListHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
+            let query = db::room::FindQuery::new(payload.room_id);
             let conn = context.ro_db().get()?;
 
-            db::room::FindQuery::new(payload.room_id)
-                .execute(&conn)?
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -140,7 +146,10 @@ impl RequestHandler for ListHandler {
 
         let editions = {
             let conn = context.ro_db().get()?;
-            query.execute(&conn)?
+
+            context
+                .profiler()
+                .measure(ProfilerKeys::EditionListQuery, || query.execute(&conn))?
         };
 
         // Respond with events list.
@@ -173,9 +182,16 @@ impl RequestHandler for DeleteHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (edition, room) = {
+            let query = db::edition::FindWithRoomQuery::new(payload.id);
             let conn = context.ro_db().get()?;
 
-            match db::edition::FindWithRoomQuery::new(payload.id).execute(&conn)? {
+            let maybe_edition_and_room = context
+                .profiler()
+                .measure(ProfilerKeys::EditionFindWithRoomQuery, || {
+                    query.execute(&conn)
+                })?;
+
+            match maybe_edition_and_room {
                 Some((edition, room)) => (edition, room),
                 None => {
                     return Err(format!("Change not found, id = '{}'", payload.id))
@@ -195,8 +211,12 @@ impl RequestHandler for DeleteHandler {
             .await?;
 
         {
+            let query = db::edition::DeleteQuery::new(edition.id());
             let conn = context.db().get()?;
-            db::edition::DeleteQuery::new(edition.id()).execute(&conn)?;
+
+            context
+                .profiler()
+                .measure(ProfilerKeys::EditionDeleteQuery, || query.execute(&conn))?;
         }
 
         let response = helpers::build_response(
@@ -230,9 +250,16 @@ impl RequestHandler for CommitHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (edition, room) = {
+            let query = db::edition::FindWithRoomQuery::new(payload.id);
             let conn = context.ro_db().get()?;
 
-            match db::edition::FindWithRoomQuery::new(payload.id).execute(&conn)? {
+            let maybe_edition_and_room = context
+                .profiler()
+                .measure(ProfilerKeys::EditionFindWithRoomQuery, || {
+                    query.execute(&conn)
+                })?;
+
+            match maybe_edition_and_room {
                 Some((edition, room)) => (edition, room),
                 None => {
                     return Err(format!("Edition not found, id = '{}'", payload.id))
@@ -305,8 +332,8 @@ impl RequestHandler for CommitHandler {
 
             Box::new(event) as Box<dyn IntoPublishableMessage + Send>
         });
-        let notification = notification_future.into_stream();
 
+        let notification = notification_future.into_stream();
         Ok(Box::new(response.chain(notification)))
     }
 }

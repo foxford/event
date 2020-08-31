@@ -6,7 +6,7 @@ use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::prelude::*;
+use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -34,12 +34,13 @@ impl RequestHandler for ListHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = {
+            // Check whether the room exists and open.
+            let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
             let conn = context.ro_db().get()?;
 
-            // Check whether the room exists and open.
-            db::room::FindQuery::new(payload.room_id)
-                .time(db::room::now())
-                .execute(&conn)?
+            context
+                .profiler()
+                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -57,15 +58,18 @@ impl RequestHandler for ListHandler {
         let agents = {
             let conn = context.ro_db().get()?;
 
-            db::agent::ListQuery::new()
+            let query = db::agent::ListQuery::new()
                 .room_id(payload.room_id)
                 .status(db::agent::Status::Ready)
                 .offset(payload.offset.unwrap_or_else(|| 0))
                 .limit(std::cmp::min(
                     payload.limit.unwrap_or_else(|| MAX_LIMIT),
                     MAX_LIMIT,
-                ))
-                .execute(&conn)?
+                ));
+
+            context
+                .profiler()
+                .measure(ProfilerKeys::AgentListQuery, || query.execute(&conn))?
         };
 
         // Respond with agents list.
