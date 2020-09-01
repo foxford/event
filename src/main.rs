@@ -38,11 +38,18 @@ async fn main() -> Result<()> {
             })
             .unwrap_or(5);
 
-        let db = crate::db::create_pool(&url, size, idle_size, timeout, true);
+        let max_lifetime = var("DATABASE_POOL_MAX_LIFETIME")
+            .map(|val| {
+                val.parse::<u64>()
+                    .expect("Error converting DATABASE_POOL_MAX_LIFETIME variable into u64")
+            })
+            .unwrap_or(1800);
 
-        let maybe_ro_db = var("READONLY_DATABASE_URL")
-            .ok()
-            .map(|ro_url| crate::db::create_pool(&ro_url, size, idle_size, timeout, true));
+        let db = crate::db::create_pool(&url, size, idle_size, timeout, max_lifetime, true);
+
+        let maybe_ro_db = var("READONLY_DATABASE_URL").ok().map(|ro_url| {
+            crate::db::create_pool(&ro_url, size, idle_size, timeout, max_lifetime, true)
+        });
 
         (db, maybe_ro_db)
     };

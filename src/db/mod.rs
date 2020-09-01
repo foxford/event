@@ -12,14 +12,17 @@ pub(crate) fn create_pool(
     size: u32,
     idle_size: Option<u32>,
     timeout: u64,
+    max_lifetime: u64,
     enable_stats: bool,
 ) -> (ConnectionPool, StatsCollector) {
     let manager = ConnectionManager::<PgConnection>::new(url);
     let (collector, transmitter) = StatsCollector::new();
+
     let builder = Pool::builder()
         .max_size(size)
         .min_idle(idle_size)
-        .connection_timeout(Duration::from_secs(timeout));
+        .connection_timeout(Duration::from_secs(timeout))
+        .max_lifetime(Some(Duration::from_secs(max_lifetime)));
 
     let builder = if enable_stats {
         builder.event_handler(Box::new(transmitter) as Box<dyn HandleEvent>)
