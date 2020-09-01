@@ -1,6 +1,9 @@
+use std::env::var;
 use std::future::Future;
 use std::pin::Pin;
+use std::time::Duration;
 
+use async_std::future;
 use async_std::prelude::*;
 use async_std::stream::{self, Stream};
 use chrono::{DateTime, Utc};
@@ -13,6 +16,17 @@ use svc_agent::mqtt::{
 use svc_error::{extension::sentry, Error as SvcError};
 
 use crate::app::{context::Context, endpoint, API_VERSION};
+
+lazy_static! {
+    static ref HANDLE_TIMEOUT: Duration = Duration::from_secs(
+        var("HANDLE_TIMEOUT")
+            .map(|val| {
+                val.parse::<u64>()
+                    .expect("Error converting HANDLE_TIMEOUT variable into u64")
+            })
+            .unwrap_or_else(|_| 5)
+    );
+}
 
 pub(crate) type MessageStream =
     Box<dyn Stream<Item = Box<dyn IntoPublishableMessage + Send>> + Send + Unpin>;
@@ -38,30 +52,21 @@ impl<C: Context + Sync> MessageHandler<C> {
     pub(crate) async fn handle(&self, message: &Result<IncomingMessage<String>, String>) {
         match message {
             Ok(ref message) => {
-                if let Err(err) = self.handle_message(message).await {
-                    error!("Error processing a message = '{:?}': {}", message, err,);
-
-                    let svc_error = SvcError::builder()
-                        .status(ResponseStatus::UNPROCESSABLE_ENTITY)
-                        .kind("message_handler", "Message handling error")
-                        .detail(&err.to_string())
-                        .build();
-
-                    sentry::send(svc_error)
-                        .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
+                match future::timeout(*HANDLE_TIMEOUT, self.handle_message(message)).await {
+                    Ok(Ok(_)) => (),
+                    Ok(Err(err)) => {
+                        error!("Error handling a message = '{:?}': {}", message, err);
+                        send_error_to_sentry(err);
+                    }
+                    Err(err) => {
+                        error!("Message handling timeout = '{:?}': {}", message, err);
+                        send_error_to_sentry(err);
+                    }
                 }
             }
-            Err(e) => {
-                error!("Error processing a message = '{:?}': {}", message, e,);
-
-                let svc_error = SvcError::builder()
-                    .status(ResponseStatus::UNPROCESSABLE_ENTITY)
-                    .kind("message_handler", "Message handling error")
-                    .detail(&e.to_string())
-                    .build();
-
-                sentry::send(svc_error)
-                    .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
+            Err(err) => {
+                error!("Error parsing a message = '{:?}': {}", message, err);
+                send_error_to_sentry(err);
             }
         }
     }
@@ -174,6 +179,16 @@ pub(crate) fn publish_message(
         .publish_publishable(message)
         .map_err(|err| format!("Failed to publish message: {}", err))
         .status(ResponseStatus::UNPROCESSABLE_ENTITY)
+}
+
+fn send_error_to_sentry(err: impl ToString) {
+    let svc_error = SvcError::builder()
+        .status(ResponseStatus::UNPROCESSABLE_ENTITY)
+        .kind("message_handler", "Message handling error")
+        .detail(&err.to_string())
+        .build();
+
+    sentry::send(svc_error).unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
 }
 
 ///////////////////////////////////////////////////////////////////////////////

@@ -701,6 +701,7 @@ dependencies = [
  "futures-channel",
  "futures-util",
  "http 0.1.21",
+ "lazy_static",
  "log",
  "serde 1.0.114",
  "serde_derive",
