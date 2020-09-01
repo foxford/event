@@ -41,6 +41,7 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
+        std::thread::sleep(std::time::Duration::from_secs(10));
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
             let conn = context.ro_db().get()?;

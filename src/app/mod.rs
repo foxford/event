@@ -1,3 +1,4 @@
+use std::env::var;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -26,6 +27,17 @@ use context::AppContextBuilder;
 use message_handler::MessageHandler;
 
 pub(crate) const API_VERSION: &str = "v1";
+
+lazy_static! {
+    static ref HANDLE_TIMEOUT: Duration = Duration::from_secs(
+        var("HANDLE_TIMEOUT")
+            .map(|val| {
+                val.parse::<u64>()
+                    .expect("Error converting HANDLE_TIMEOUT variable into u64")
+            })
+            .unwrap_or_else(|_| 5)
+    );
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -127,7 +139,31 @@ pub(crate) async fn run(
 
             task::spawn_blocking(move || match message {
                 AgentNotification::Message(ref message, _) => {
-                    async_std::task::block_on(message_handler.handle(message));
+                    //
+                    /*
+                    Err(err) => {
+                        error!("Message handling timeout = '{:?}': {}", message, err);
+                        send_error_to_sentry(err);
+                    }
+                    */
+                    let message_ = message.clone();
+                    let handle = task::spawn_blocking(move || {
+                        async_std::task::block_on(message_handler.handle(&message_))
+                    });
+                    async_std::task::block_on(async {
+                        match async_std::future::timeout(
+                            *HANDLE_TIMEOUT,
+                            async_std::future::pending::<()>(),
+                        )
+                        .await
+                        {
+                            Ok(_) => {}
+                            Err(err) => {
+                                handle.cancel().await;
+                                error!("Message handling timeout = '{:?}': {}", message, err);
+                            }
+                        };
+                    });
                 }
                 AgentNotification::Disconnection => error!("Disconnected from broker"),
                 AgentNotification::Reconnection => {

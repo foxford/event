@@ -17,17 +17,6 @@ use svc_error::{extension::sentry, Error as SvcError};
 
 use crate::app::{context::Context, endpoint, API_VERSION};
 
-lazy_static! {
-    static ref HANDLE_TIMEOUT: Duration = Duration::from_secs(
-        var("HANDLE_TIMEOUT")
-            .map(|val| {
-                val.parse::<u64>()
-                    .expect("Error converting HANDLE_TIMEOUT variable into u64")
-            })
-            .unwrap_or_else(|_| 5)
-    );
-}
-
 pub(crate) type MessageStream =
     Box<dyn Stream<Item = Box<dyn IntoPublishableMessage + Send>> + Send + Unpin>;
 
@@ -51,19 +40,13 @@ impl<C: Context + Sync> MessageHandler<C> {
 
     pub(crate) async fn handle(&self, message: &Result<IncomingMessage<String>, String>) {
         match message {
-            Ok(ref message) => {
-                match future::timeout(*HANDLE_TIMEOUT, self.handle_message(message)).await {
-                    Ok(Ok(_)) => (),
-                    Ok(Err(err)) => {
-                        error!("Error handling a message = '{:?}': {}", message, err);
-                        send_error_to_sentry(err);
-                    }
-                    Err(err) => {
-                        error!("Message handling timeout = '{:?}': {}", message, err);
-                        send_error_to_sentry(err);
-                    }
+            Ok(ref message) => match self.handle_message(message).await {
+                Ok(_) => (),
+                Err(err) => {
+                    error!("Error handling a message = '{:?}': {}", message, err);
+                    send_error_to_sentry(err);
                 }
-            }
+            },
             Err(err) => {
                 error!("Error parsing a message = '{:?}': {}", message, err);
                 send_error_to_sentry(err);
