@@ -46,13 +46,13 @@ impl FindWithRoomQuery {
 
 #[derive(Debug, Insertable)]
 #[table_name = "edition"]
-pub(crate) struct InsertQuery<'a> {
+pub(crate) struct InsertQuery {
     source_room_id: Uuid,
-    created_by: &'a AgentId,
+    created_by: AgentId,
 }
 
-impl<'a> InsertQuery<'a> {
-    pub(crate) fn new(source_room_id: Uuid, created_by: &'a AgentId) -> Self {
+impl InsertQuery {
+    pub(crate) fn new(source_room_id: Uuid, created_by: AgentId) -> Self {
         Self {
             source_room_id,
             created_by,

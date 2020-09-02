@@ -1,4 +1,5 @@
 use async_std::stream;
+use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
@@ -30,7 +31,11 @@ impl RequestHandler for CreateHandler {
 
             let maybe_edition_with_room = context
                 .profiler()
-                .measure(ProfilerKeys::EditionFindQuery, || query.execute(&conn))?;
+                .measure(
+                    ProfilerKeys::EditionFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?;
 
             match maybe_edition_with_room {
                 Some((_edition, room)) => room,
@@ -55,26 +60,26 @@ impl RequestHandler for CreateHandler {
             db::change::InsertQuery::new(payload.edition_id, payload.changeset.as_changetype());
 
         let query = match payload.changeset {
-            Changeset::Addition(ref event) => query
-                .event_kind(&event.kind)
-                .event_set(&event.set)
-                .event_label(&event.label)
-                .event_data(&event.data)
+            Changeset::Addition(event) => query
+                .event_kind(event.kind)
+                .event_set(event.set)
+                .event_label(event.label)
+                .event_data(event.data)
                 .event_occurred_at(event.occurred_at)
-                .event_created_by(&event.created_by),
-            Changeset::Modification(ref event) => {
+                .event_created_by(event.created_by),
+            Changeset::Modification(event) => {
                 let query = query.event_id(event.event_id);
 
                 let query = match event.kind {
-                    Some(ref kind) => query.event_kind(kind),
+                    Some(kind) => query.event_kind(kind),
                     None => query,
                 };
 
-                let query = query.event_set(&event.set);
-                let query = query.event_label(&event.label);
+                let query = query.event_set(event.set);
+                let query = query.event_label(event.label);
 
                 let query = match event.data {
-                    Some(ref data) => query.event_data(data),
+                    Some(data) => query.event_data(data),
                     None => query,
                 };
 
@@ -84,11 +89,11 @@ impl RequestHandler for CreateHandler {
                 };
 
                 match event.created_by {
-                    Some(ref agent_id) => query.event_created_by(agent_id),
+                    Some(agent_id) => query.event_created_by(agent_id),
                     None => query,
                 }
             }
-            Changeset::Removal(ref event) => query.event_id(event.event_id),
+            Changeset::Removal(event) => query.event_id(event.event_id),
         };
 
         let change = {
@@ -96,7 +101,11 @@ impl RequestHandler for CreateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::ChangeInsertQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::ChangeInsertQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
         };
 
         let response = helpers::build_response(
@@ -137,9 +146,11 @@ impl RequestHandler for ListHandler {
 
             let maybe_edition_and_room = context
                 .profiler()
-                .measure(ProfilerKeys::EditionFindWithRoomQuery, || {
-                    query.execute(&conn)
-                })?;
+                .measure(
+                    ProfilerKeys::EditionFindWithRoomQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?;
 
             match maybe_edition_and_room {
                 Some((edition, room)) => (edition, room),
@@ -175,7 +186,11 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::ChangeListQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::ChangeListQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
         };
 
         Ok(Box::new(stream::from_iter(vec![helpers::build_response(
@@ -234,9 +249,11 @@ impl RequestHandler for DeleteHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::ChangeDeleteQuery, || query.execute(&conn))?;
-
-            query.execute(&conn)?;
+                .measure(
+                    ProfilerKeys::ChangeDeleteQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?;
         }
 
         let response = helpers::build_response(

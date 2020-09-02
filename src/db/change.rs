@@ -76,19 +76,19 @@ impl FindWithEditionAndRoomQuery {
 
 #[derive(Debug, Insertable)]
 #[table_name = "change"]
-pub(crate) struct InsertQuery<'a> {
+pub(crate) struct InsertQuery {
     edition_id: Uuid,
     kind: ChangeType,
     event_id: Option<Uuid>,
-    event_kind: Option<&'a str>,
-    event_set: Option<&'a str>,
-    event_label: Option<&'a str>,
-    event_data: Option<&'a JsonValue>,
+    event_kind: Option<String>,
+    event_set: Option<String>,
+    event_label: Option<String>,
+    event_data: Option<JsonValue>,
     event_occurred_at: Option<i64>,
     event_created_by: Option<AgentId>,
 }
 
-impl<'a> InsertQuery<'a> {
+impl InsertQuery {
     pub(crate) fn new(edition_id: Uuid, kind: ChangeType) -> Self {
         Self {
             event_id: None,
@@ -110,28 +110,28 @@ impl<'a> InsertQuery<'a> {
         }
     }
 
-    pub(crate) fn event_kind(self, kind: &'a str) -> Self {
+    pub(crate) fn event_kind(self, kind: String) -> Self {
         Self {
             event_kind: Some(kind),
             ..self
         }
     }
 
-    pub(crate) fn event_set(self, set: &'a Option<String>) -> Self {
+    pub(crate) fn event_set(self, set: Option<String>) -> Self {
         Self {
-            event_set: set.as_deref(),
+            event_set: set,
             ..self
         }
     }
 
-    pub(crate) fn event_label(self, label: &'a Option<String>) -> Self {
+    pub(crate) fn event_label(self, label: Option<String>) -> Self {
         Self {
-            event_label: label.as_deref(),
+            event_label: label,
             ..self
         }
     }
 
-    pub(crate) fn event_data(self, data: &'a JsonValue) -> Self {
+    pub(crate) fn event_data(self, data: JsonValue) -> Self {
         Self {
             event_data: Some(data),
             ..self
@@ -145,9 +145,9 @@ impl<'a> InsertQuery<'a> {
         }
     }
 
-    pub(crate) fn event_created_by(self, created_by: &AgentId) -> Self {
+    pub(crate) fn event_created_by(self, created_by: AgentId) -> Self {
         Self {
-            event_created_by: Some(created_by.to_owned()),
+            event_created_by: Some(created_by),
             ..self
         }
     }

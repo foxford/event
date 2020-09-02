@@ -36,7 +36,7 @@ pub(crate) fn call(db: &Db, edition: &Edition, source: &Room) -> Result<(Room, V
 
         let cut_events = EventListQuery::new()
             .room_id(source.id())
-            .kind("stream")
+            .kind("stream".to_string())
             .execute(&conn)
             .with_context(|| {
                 format!("failed to fetch cut events for room_id = '{}'", source.id())
@@ -682,7 +682,7 @@ mod tests {
             _ => panic!("Invalid room time"),
         };
 
-        EventInsertQuery::new(room.id(), kind, &data, occurred_at, &created_by)
+        EventInsertQuery::new(room.id(), kind.to_owned(), data, occurred_at, created_by)
             .created_at(opened_at + Duration::nanoseconds(occurred_at))
             .execute(conn)
             .expect("Failed to insert event")

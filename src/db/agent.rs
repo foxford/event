@@ -42,15 +42,15 @@ impl Object {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct ListQuery<'a> {
-    agent_id: Option<&'a AgentId>,
+pub(crate) struct ListQuery {
+    agent_id: Option<AgentId>,
     room_id: Option<Uuid>,
     status: Option<Status>,
     offset: Option<i64>,
     limit: Option<i64>,
 }
 
-impl<'a> ListQuery<'a> {
+impl ListQuery {
     pub(crate) fn new() -> Self {
         Self {
             agent_id: None,
@@ -61,7 +61,7 @@ impl<'a> ListQuery<'a> {
         }
     }
 
-    pub(crate) fn agent_id(self, agent_id: &'a AgentId) -> Self {
+    pub(crate) fn agent_id(self, agent_id: AgentId) -> Self {
         Self {
             agent_id: Some(agent_id),
             ..self
@@ -101,7 +101,7 @@ impl<'a> ListQuery<'a> {
 
         let mut q = agent::table.into_boxed();
 
-        if let Some(agent_id) = self.agent_id {
+        if let Some(ref agent_id) = self.agent_id {
             q = q.filter(agent::agent_id.eq(agent_id));
         }
 
@@ -129,15 +129,15 @@ impl<'a> ListQuery<'a> {
 
 #[derive(Debug, Insertable)]
 #[table_name = "agent"]
-pub(crate) struct InsertQuery<'a> {
+pub(crate) struct InsertQuery {
     id: Option<Uuid>,
-    agent_id: &'a AgentId,
+    agent_id: AgentId,
     room_id: Uuid,
     status: Status,
 }
 
-impl<'a> InsertQuery<'a> {
-    pub(crate) fn new(agent_id: &'a AgentId, room_id: Uuid) -> Self {
+impl InsertQuery {
+    pub(crate) fn new(agent_id: AgentId, room_id: Uuid) -> Self {
         Self {
             id: None,
             agent_id,
@@ -168,14 +168,14 @@ impl<'a> InsertQuery<'a> {
 
 #[derive(Debug, AsChangeset)]
 #[table_name = "agent"]
-pub(crate) struct UpdateQuery<'a> {
-    agent_id: &'a AgentId,
+pub(crate) struct UpdateQuery {
+    agent_id: AgentId,
     room_id: Uuid,
     status: Option<Status>,
 }
 
-impl<'a> UpdateQuery<'a> {
-    pub(crate) fn new(agent_id: &'a AgentId, room_id: Uuid) -> Self {
+impl UpdateQuery {
+    pub(crate) fn new(agent_id: AgentId, room_id: Uuid) -> Self {
         Self {
             agent_id,
             room_id,
@@ -194,8 +194,8 @@ impl<'a> UpdateQuery<'a> {
         use diesel::prelude::*;
 
         let query = agent::table
-            .filter(agent::agent_id.eq(self.agent_id))
-            .filter(agent::room_id.eq(self.room_id));
+            .filter(agent::agent_id.eq(&self.agent_id))
+            .filter(agent::room_id.eq(&self.room_id));
 
         diesel::update(query).set(self).get_result(conn).optional()
     }
@@ -203,13 +203,13 @@ impl<'a> UpdateQuery<'a> {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct DeleteQuery<'a> {
-    agent_id: &'a AgentId,
+pub(crate) struct DeleteQuery {
+    agent_id: AgentId,
     room_id: Uuid,
 }
 
-impl<'a> DeleteQuery<'a> {
-    pub(crate) fn new(agent_id: &'a AgentId, room_id: Uuid) -> Self {
+impl DeleteQuery {
+    pub(crate) fn new(agent_id: AgentId, room_id: Uuid) -> Self {
         Self { agent_id, room_id }
     }
 
@@ -217,7 +217,7 @@ impl<'a> DeleteQuery<'a> {
         use diesel::prelude::*;
 
         let query = agent::table
-            .filter(agent::agent_id.eq(self.agent_id))
+            .filter(agent::agent_id.eq(&self.agent_id))
             .filter(agent::room_id.eq(self.room_id));
 
         diesel::delete(query).execute(conn)

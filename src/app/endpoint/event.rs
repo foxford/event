@@ -1,6 +1,7 @@
 use std::ops::Bound;
 
 use async_std::stream;
+use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
@@ -56,17 +57,22 @@ impl RequestHandler for CreateHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, author) = {
-            let conn = context.db().get()?;
+            let conn = context.ro_db().get()?;
 
             // Check whether the room exists and open.
             let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
 
             let room = context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
+            let conn = context.ro_db().get()?;
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
                 CreateRequest {
@@ -74,13 +80,19 @@ impl RequestHandler for CreateHandler {
                     label: Some(ref label),
                     ..
                 } => {
-                    let query = db::event::OriginalEventQuery::new(room.id(), set, label);
+                    let query = db::event::OriginalEventQuery::new(
+                        room.id(),
+                        set.to_owned(),
+                        label.to_owned(),
+                    );
 
                     context
                         .profiler()
-                        .measure(ProfilerKeys::EventOriginalEventQuery, || {
-                            query.execute(&conn)
-                        })?
+                        .measure(
+                            ProfilerKeys::EventOriginalEventQuery,
+                            spawn_blocking(move || query.execute(&conn)),
+                        )
+                        .await?
                         .map(|original_event| {
                             original_event.created_by().as_account_id().to_string()
                         })
@@ -94,6 +106,8 @@ impl RequestHandler for CreateHandler {
 
             (room, author)
         };
+
+        let is_claim = payload.is_claim;
 
         // Authorize event creation on tenant with cache.
         let room_id = room.id().to_string();
@@ -118,19 +132,26 @@ impl RequestHandler for CreateHandler {
 
         let event = if payload.is_persistent {
             // Insert event into the DB.
+            let CreateRequest {
+                kind,
+                data,
+                set,
+                label,
+                ..
+            } = payload;
             let mut query = db::event::InsertQuery::new(
                 room.id(),
-                &payload.kind,
-                &payload.data,
+                kind,
+                data,
                 occurred_at,
-                reqp.as_agent_id(),
+                reqp.as_agent_id().to_owned(),
             );
 
-            if let Some(ref set) = payload.set {
+            if let Some(set) = set {
                 query = query.set(set);
             }
 
-            if let Some(ref label) = payload.label {
+            if let Some(label) = label {
                 query = query.label(label);
             }
 
@@ -139,24 +160,36 @@ impl RequestHandler for CreateHandler {
 
                 context
                     .profiler()
-                    .measure(ProfilerKeys::EventInsertQuery, || query.execute(&conn))
+                    .measure(
+                        ProfilerKeys::EventInsertQuery,
+                        spawn_blocking(move || query.execute(&conn)),
+                    )
+                    .await
                     .map_err(|err| format!("failed to create event: {}", err))
                     .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
             }
         } else {
+            let CreateRequest {
+                kind,
+                data,
+                set,
+                label,
+                ..
+            } = payload;
+
             // Build transient event.
             let mut builder = db::event::Builder::new()
                 .room_id(payload.room_id)
-                .kind(&payload.kind)
-                .data(&payload.data)
+                .kind(&kind)
+                .data(&data)
                 .occurred_at(occurred_at)
                 .created_by(reqp.as_agent_id());
 
-            if let Some(ref set) = payload.set {
+            if let Some(ref set) = set {
                 builder = builder.set(set)
             }
 
-            if let Some(ref label) = payload.label {
+            if let Some(ref label) = label {
                 builder = builder.label(label)
             }
 
@@ -178,7 +211,7 @@ impl RequestHandler for CreateHandler {
         ));
 
         // If the event is claim notify the tenant.
-        if payload.is_claim {
+        if is_claim {
             messages.push(helpers::build_notification(
                 "event.create",
                 &format!("audiences/{}/events", room.audience()),
@@ -245,7 +278,11 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -261,22 +298,29 @@ impl RequestHandler for ListHandler {
 
         // Retrieve events from the DB.
         let mut query = db::event::ListQuery::new().room_id(room.id());
+        let ListRequest {
+            kind,
+            set,
+            label,
+            last_occurred_at,
+            ..
+        } = payload;
 
-        query = match payload.kind {
-            Some(ListTypesFilter::Single(ref kind)) => query.kind(kind),
-            Some(ListTypesFilter::Multiple(ref kinds)) => query.kinds(kinds),
+        query = match kind {
+            Some(ListTypesFilter::Single(kind)) => query.kind(kind),
+            Some(ListTypesFilter::Multiple(kinds)) => query.kinds(kinds),
             None => query,
         };
 
-        if let Some(ref set) = payload.set {
+        if let Some(set) = set {
             query = query.set(set);
         }
 
-        if let Some(ref label) = payload.label {
+        if let Some(label) = label {
             query = query.label(label);
         }
 
-        if let Some(last_occurred_at) = payload.last_occurred_at {
+        if let Some(last_occurred_at) = last_occurred_at {
             query = query.last_occurred_at(last_occurred_at);
         }
 
@@ -290,7 +334,11 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::EventListQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::EventListQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
         };
 
         // Respond with events list.

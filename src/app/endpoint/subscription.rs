@@ -1,6 +1,7 @@
 use std::result::Result as StdResult;
 
 use async_std::stream;
+use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
@@ -80,14 +81,20 @@ impl EventHandler for CreateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", room_id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
             // Update agent state to `ready`.
-            agent::UpdateQuery::new(&payload.subject, room_id)
-                .status(agent::Status::Ready)
-                .execute(&conn)?;
+            let q = agent::UpdateQuery::new(payload.subject.clone(), room_id)
+                .status(agent::Status::Ready);
+
+            let conn = context.db().get()?;
+            spawn_blocking(move || q.execute(&conn)).await?;
         }
 
         // Send broadcast notification that the agent has entered the room.
@@ -132,12 +139,16 @@ impl EventHandler for DeleteHandler {
         let room_id = payload.try_room_id()?;
 
         let row_count = {
-            let query = agent::DeleteQuery::new(&payload.subject, room_id);
+            let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
             let conn = context.db().get()?;
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
         };
 
         if row_count != 1 {
@@ -228,7 +239,7 @@ mod tests {
                 .expect("Failed to get DB connection");
 
             let db_agents = AgentListQuery::new()
-                .agent_id(agent.agent_id())
+                .agent_id(agent.agent_id().to_owned())
                 .room_id(room.id())
                 .execute(&conn)
                 .expect("Failed to execute agent list query");
@@ -346,7 +357,7 @@ mod tests {
                 .expect("Failed to get DB connection");
 
             let db_agents = AgentListQuery::new()
-                .agent_id(agent.agent_id())
+                .agent_id(agent.agent_id().to_owned())
                 .room_id(room.id())
                 .execute(&conn)
                 .expect("Failed to execute agent list query");

@@ -1,6 +1,7 @@
 use std::ops::Bound;
 
 use async_std::stream;
+use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
@@ -63,7 +64,11 @@ impl RequestHandler for ReadHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -92,12 +97,11 @@ impl RequestHandler for ReadHandler {
 
         // Retrieve state for each set from the DB and put them into a map.
         let mut state = JsonMap::new();
-        let conn = context.ro_db().get()?;
 
         for set in payload.sets.iter() {
             // Build a query for the particular set state.
             let mut query =
-                db::event::SetStateQuery::new(room.id(), &set, original_occurred_at, limit);
+                db::event::SetStateQuery::new(room.id(), set.clone(), original_occurred_at, limit);
 
             if let Some(occurred_at) = payload.occurred_at {
                 query = query.occurred_at(occurred_at);
@@ -106,11 +110,16 @@ impl RequestHandler for ReadHandler {
             // If it is the only set specified at first execute a total count query and
             // add `has_next` pagination flag to the state.
             if payload.sets.len() == 1 {
+                let conn = context.ro_db().get()?;
+                let query_ = query.clone();
+
                 let total_count = context
                     .profiler()
-                    .measure(ProfilerKeys::StateTotalCountQuery, || {
-                        query.total_count(&conn)
-                    })
+                    .measure(
+                        ProfilerKeys::StateTotalCountQuery,
+                        spawn_blocking(move || query_.total_count(&conn)),
+                    )
+                    .await
                     .map_err(|err| {
                         format!(
                             "failed to query state total count for set = '{}': {}",
@@ -123,10 +132,16 @@ impl RequestHandler for ReadHandler {
                 state.insert(String::from("has_next"), JsonValue::Bool(has_next));
             }
 
+            let conn = context.ro_db().get()?;
+
             // Limit the query and retrieve the state.
             let set_state = context
                 .profiler()
-                .measure(ProfilerKeys::StateQuery, || query.execute(&conn))
+                .measure(
+                    ProfilerKeys::StateQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await
                 .map_err(|err| format!("failed to query state for set = '{}': {}", set, err))
                 .status(ResponseStatus::UNPROCESSABLE_ENTITY)?;
 

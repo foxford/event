@@ -2,8 +2,10 @@ use std::ops::Bound;
 
 use async_std::prelude::*;
 use async_std::stream;
+use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use futures::future::FutureExt;
 use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -90,7 +92,11 @@ impl RequestHandler for CreateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomInsertQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomInsertQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
         };
 
         // Respond and broadcast to the audience topic.
@@ -140,7 +146,11 @@ impl RequestHandler for ReadHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -200,7 +210,11 @@ impl RequestHandler for UpdateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("Room not found, id = '{}' or closed", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -254,7 +268,11 @@ impl RequestHandler for UpdateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomUpdateQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomUpdateQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
         };
 
         // Respond and broadcast to the audience topic.
@@ -304,7 +322,11 @@ impl RequestHandler for EnterHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("Room not found or closed, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -321,11 +343,15 @@ impl RequestHandler for EnterHandler {
         // Register agent in `in_progress` state.
         {
             let conn = context.db().get()?;
-            let query = agent::InsertQuery::new(reqp.as_agent_id(), room.id());
+            let query = agent::InsertQuery::new(reqp.as_agent_id().to_owned(), room.id());
 
             context
                 .profiler()
-                .measure(ProfilerKeys::AgentInsertQuery, || query.execute(&conn))?;
+                .measure(
+                    ProfilerKeys::AgentInsertQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?;
         }
 
         // Send dynamic subscription creation request to the broker.
@@ -382,19 +408,28 @@ impl RequestHandler for LeaveHandler {
 
             let room = context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
             // Check room presence.
             let query = agent::ListQuery::new()
                 .room_id(room.id())
-                .agent_id(reqp.as_agent_id())
+                .agent_id(reqp.as_agent_id().to_owned())
                 .status(agent::Status::Ready);
 
+            let conn = context.ro_db().get()?;
             let presence = context
                 .profiler()
-                .measure(ProfilerKeys::AgentListQuery, || query.execute(&conn))?;
+                .measure(
+                    ProfilerKeys::AgentListQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?;
 
             (room, presence)
         };
@@ -469,7 +504,11 @@ impl RequestHandler for AdjustHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -496,14 +535,7 @@ impl RequestHandler for AdjustHandler {
             Some(authz_time),
         ));
 
-        let mut task_finished = false;
-
-        let notification = stream::from_fn(move || {
-            if task_finished {
-                return None;
-            }
-
-            // Call room adjustment operation.
+        let notification_future = async_std::task::spawn_blocking(move || {
             let operation_result = adjust_room(
                 &db,
                 &room,
@@ -553,9 +585,10 @@ impl RequestHandler for AdjustHandler {
             let path = format!("audiences/{}/events", room.audience());
             let event = OutgoingEvent::broadcast(notification, props, &path);
 
-            task_finished = true;
-            Some(Box::new(event) as Box<dyn IntoPublishableMessage + Send>)
+            Box::new(event) as Box<dyn IntoPublishableMessage + Send>
         });
+
+        let notification = notification_future.into_stream();
 
         Ok(Box::new(response.chain(notification)))
     }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::future::Future;
 use std::hash::Hash;
 use std::thread;
 use std::time::Instant;
@@ -100,12 +101,12 @@ impl<K: 'static + Eq + Hash + Send + Copy> Profiler<K> {
         Self { tx, back_rx }
     }
 
-    pub(crate) fn measure<F, R>(&self, key: K, func: F) -> R
+    pub(crate) async fn measure<F, R>(&self, key: K, func: F) -> R
     where
-        F: FnOnce() -> R,
+        F: Future<Output = R>,
     {
         let start_time = Instant::now();
-        let result = func();
+        let result = func.await;
         let duration = start_time.elapsed();
 
         let message = Message::Register {
@@ -143,7 +144,6 @@ impl<K> Drop for Profiler<K> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread::sleep;
     use std::time::Duration;
 
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -169,18 +169,30 @@ mod tests {
 
     #[test]
     fn profiler() {
-        let profiler = Profiler::<Key>::start();
-        profiler.measure(Key::One, || sleep(Duration::from_micros(10000)));
-        profiler.measure(Key::Two, || sleep(Duration::from_micros(1000)));
+        futures::executor::block_on(async {
+            let profiler = Profiler::<Key>::start();
+            profiler
+                .measure(
+                    Key::One,
+                    async_std::task::sleep(Duration::from_micros(10000)),
+                )
+                .await;
+            profiler
+                .measure(
+                    Key::Two,
+                    async_std::task::sleep(Duration::from_micros(1000)),
+                )
+                .await;
 
-        let reports = profiler.flush().expect("Failed to flush profiler");
-        assert_eq!(reports.len(), 2);
+            let reports = profiler.flush().expect("Failed to flush profiler");
+            assert_eq!(reports.len(), 2);
 
-        for (key, report) in reports {
-            match key {
-                Key::One => assert!(report.max >= 10000),
-                Key::Two => assert!(report.max >= 1000),
+            for (key, report) in reports {
+                match key {
+                    Key::One => assert!(report.max >= 10000),
+                    Key::Two => assert!(report.max >= 1000),
+                }
             }
-        }
+        });
     }
 }

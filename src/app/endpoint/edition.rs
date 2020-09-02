@@ -1,5 +1,6 @@
 use async_std::prelude::*;
 use async_std::stream;
+use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::future::FutureExt;
@@ -47,7 +48,11 @@ impl RequestHandler for CreateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -63,12 +68,17 @@ impl RequestHandler for CreateHandler {
             .await?;
 
         let edition = {
-            let query = db::edition::InsertQuery::new(payload.room_id, reqp.as_agent_id());
+            let query =
+                db::edition::InsertQuery::new(payload.room_id, reqp.as_agent_id().to_owned());
             let conn = context.db().get()?;
 
             context
                 .profiler()
-                .measure(ProfilerKeys::EditionInsertQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::EditionInsertQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
         };
 
         let response = helpers::build_response(
@@ -117,7 +127,11 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::RoomFindQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
         };
@@ -149,7 +163,11 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::EditionListQuery, || query.execute(&conn))?
+                .measure(
+                    ProfilerKeys::EditionListQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?
         };
 
         // Respond with events list.
@@ -187,9 +205,11 @@ impl RequestHandler for DeleteHandler {
 
             let maybe_edition_and_room = context
                 .profiler()
-                .measure(ProfilerKeys::EditionFindWithRoomQuery, || {
-                    query.execute(&conn)
-                })?;
+                .measure(
+                    ProfilerKeys::EditionFindWithRoomQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?;
 
             match maybe_edition_and_room {
                 Some((edition, room)) => (edition, room),
@@ -216,7 +236,11 @@ impl RequestHandler for DeleteHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::EditionDeleteQuery, || query.execute(&conn))?;
+                .measure(
+                    ProfilerKeys::EditionDeleteQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?;
         }
 
         let response = helpers::build_response(
@@ -255,9 +279,11 @@ impl RequestHandler for CommitHandler {
 
             let maybe_edition_and_room = context
                 .profiler()
-                .measure(ProfilerKeys::EditionFindWithRoomQuery, || {
-                    query.execute(&conn)
-                })?;
+                .measure(
+                    ProfilerKeys::EditionFindWithRoomQuery,
+                    spawn_blocking(move || query.execute(&conn)),
+                )
+                .await?;
 
             match maybe_edition_and_room {
                 Some((edition, room)) => (edition, room),

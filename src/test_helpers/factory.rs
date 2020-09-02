@@ -99,7 +99,7 @@ impl Agent {
         let agent_id = self.agent_id.expect("Agent ID not set");
         let room_id = self.room_id.expect("Room ID not set");
 
-        let mut query = db::agent::InsertQuery::new(&agent_id, room_id);
+        let mut query = db::agent::InsertQuery::new(agent_id, room_id);
 
         if let Some(status) = self.status {
             query = query.status(status);
@@ -190,14 +190,13 @@ impl Event {
         let occurred_at = self.occurred_at.expect("Occurrence date not set");
         let created_by = self.created_by.expect("Creator not set");
 
-        let mut query =
-            db::event::InsertQuery::new(room_id, &kind, &data, occurred_at, &created_by);
+        let mut query = db::event::InsertQuery::new(room_id, kind, data, occurred_at, created_by);
 
-        if let Some(ref set) = self.set {
+        if let Some(set) = self.set {
             query = query.set(set);
         }
 
-        if let Some(ref label) = self.label {
+        if let Some(label) = self.label {
             query = query.label(label);
         }
 
@@ -219,7 +218,7 @@ impl Edition {
     }
 
     pub(crate) fn insert(self, conn: &PgConnection) -> db::edition::Object {
-        let query = db::edition::InsertQuery::new(self.source_room_id, &self.created_by);
+        let query = db::edition::InsertQuery::new(self.source_room_id, self.created_by);
         query.execute(conn).expect("Failed to insert edition")
     }
 }
@@ -309,20 +308,20 @@ impl Change {
             query
         };
 
-        let query = if let Some(ref event_data) = self.event_data {
+        let query = if let Some(event_data) = self.event_data {
             query.event_data(event_data)
         } else {
             query
         };
 
-        let query = if let Some(ref event_kind) = self.event_kind {
+        let query = if let Some(event_kind) = self.event_kind {
             query.event_kind(event_kind)
         } else {
             query
         };
 
-        let query = query.event_set(&self.event_set);
-        let query = query.event_label(&self.event_label);
+        let query = query.event_set(self.event_set);
+        let query = query.event_label(self.event_label);
 
         let query = if let Some(occurred_at) = self.event_occurred_at {
             query.event_occurred_at(occurred_at)
@@ -330,7 +329,7 @@ impl Change {
             query
         };
 
-        let query = if let Some(ref created_by) = self.event_created_by {
+        let query = if let Some(created_by) = self.event_created_by {
             query.event_created_by(created_by)
         } else {
             query
