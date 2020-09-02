@@ -12,7 +12,7 @@ pub(crate) struct TestDb {
 impl TestDb {
     pub(crate) fn new() -> Self {
         let url = var("DATABASE_URL").expect("DATABASE_URL must be specified");
-        let (connection_pool, _) = create_pool(&url, 1, None, TIMEOUT, false);
+        let (connection_pool, _) = create_pool(&url, 1, None, TIMEOUT, 1800, false);
 
         let conn = connection_pool
             .get()
