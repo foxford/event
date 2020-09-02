@@ -24,7 +24,7 @@ serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 signal-hook = "0.1"
-svc-agent = { version = "0.14", features = ["diesel", "queue-counter"] }
+svc-agent = { version = "0.14", features = ["diesel", "queue-counter"], git = "https://github.com/netology-group/svc-agent-rs", branch = "event_loop_error" }
 svc-authn = { version = "0.6", features = ["jose", "diesel"] }
 svc-authz = "0.10"
 svc-error = { version = "0.1", features = ["diesel", "r2d2", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
