@@ -196,22 +196,22 @@ impl Default for Direction {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-enum KindFilter<'a> {
-    Single(&'a str),
-    Multiple(&'a [String]),
+enum KindFilter {
+    Single(String),
+    Multiple(Vec<String>),
 }
 
-pub(crate) struct ListQuery<'a> {
+pub(crate) struct ListQuery {
     room_id: Option<Uuid>,
-    kind: Option<KindFilter<'a>>,
-    set: Option<&'a str>,
-    label: Option<&'a str>,
+    kind: Option<KindFilter>,
+    set: Option<String>,
+    label: Option<String>,
     last_occurred_at: Option<i64>,
     direction: Direction,
     limit: Option<i64>,
 }
 
-impl<'a> ListQuery<'a> {
+impl ListQuery {
     pub(crate) fn new() -> Self {
         Self {
             room_id: None,
@@ -231,28 +231,28 @@ impl<'a> ListQuery<'a> {
         }
     }
 
-    pub(crate) fn kind(self, kind: &'a str) -> Self {
+    pub(crate) fn kind(self, kind: String) -> Self {
         Self {
             kind: Some(KindFilter::Single(kind)),
             ..self
         }
     }
 
-    pub(crate) fn kinds(self, kinds: &'a [String]) -> Self {
+    pub(crate) fn kinds(self, kinds: Vec<String>) -> Self {
         Self {
             kind: Some(KindFilter::Multiple(kinds)),
             ..self
         }
     }
 
-    pub(crate) fn set(self, set: &'a str) -> Self {
+    pub(crate) fn set(self, set: String) -> Self {
         Self {
             set: Some(set),
             ..self
         }
     }
 
-    pub(crate) fn label(self, label: &'a str) -> Self {
+    pub(crate) fn label(self, label: String) -> Self {
         Self {
             label: Some(label),
             ..self
@@ -289,8 +289,8 @@ impl<'a> ListQuery<'a> {
         }
 
         q = match self.kind {
-            Some(KindFilter::Single(kind)) => q.filter(event::kind.eq(kind)),
-            Some(KindFilter::Multiple(kinds)) => q.filter(event::kind.eq_any(kinds.iter())),
+            Some(KindFilter::Single(ref kind)) => q.filter(event::kind.eq(kind)),
+            Some(KindFilter::Multiple(ref kinds)) => q.filter(event::kind.eq_any(kinds.iter())),
             None => q,
         };
 
@@ -331,29 +331,29 @@ impl<'a> ListQuery<'a> {
 
 #[derive(Debug, Insertable)]
 #[table_name = "event"]
-pub(crate) struct InsertQuery<'a> {
+pub(crate) struct InsertQuery {
     room_id: Uuid,
-    kind: &'a str,
-    set: &'a str,
-    label: Option<&'a str>,
-    data: &'a JsonValue,
+    kind: String,
+    set: String,
+    label: Option<String>,
+    data: JsonValue,
     occurred_at: i64,
-    created_by: &'a AgentId,
+    created_by: AgentId,
     created_at: Option<DateTime<Utc>>,
 }
 
-impl<'a> InsertQuery<'a> {
+impl InsertQuery {
     pub(crate) fn new(
         room_id: Uuid,
-        kind: &'a str,
-        data: &'a JsonValue,
+        kind: String,
+        data: JsonValue,
         occurred_at: i64,
-        created_by: &'a AgentId,
+        created_by: AgentId,
     ) -> Self {
         Self {
             room_id,
+            set: kind.clone(),
             kind,
-            set: kind,
             label: None,
             data,
             occurred_at,
@@ -362,11 +362,11 @@ impl<'a> InsertQuery<'a> {
         }
     }
 
-    pub(crate) fn set(self, set: &'a str) -> Self {
+    pub(crate) fn set(self, set: String) -> Self {
         Self { set, ..self }
     }
 
-    pub(crate) fn label(self, label: &'a str) -> Self {
+    pub(crate) fn label(self, label: String) -> Self {
         Self {
             label: Some(label),
             ..self
@@ -414,17 +414,17 @@ impl<'a> DeleteQuery<'a> {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-
-pub(crate) struct SetStateQuery<'a> {
+#[derive(Clone)]
+pub(crate) struct SetStateQuery {
     room_id: Uuid,
-    set: &'a str,
+    set: String,
     occurred_at: Option<i64>,
     original_occurred_at: i64,
     limit: i64,
 }
 
-impl<'a> SetStateQuery<'a> {
-    pub(crate) fn new(room_id: Uuid, set: &'a str, original_occurred_at: i64, limit: i64) -> Self {
+impl SetStateQuery {
+    pub(crate) fn new(room_id: Uuid, set: String, original_occurred_at: i64, limit: i64) -> Self {
         Self {
             room_id,
             set,
@@ -449,7 +449,7 @@ impl<'a> SetStateQuery<'a> {
             .distinct_on((event::original_occurred_at, event::label))
             .filter(event::deleted_at.is_null())
             .filter(event::room_id.eq(self.room_id))
-            .filter(event::set.eq(self.set))
+            .filter(event::set.eq(&self.set))
             .filter(event::original_occurred_at.lt(self.original_occurred_at))
             .into_boxed();
 
@@ -475,7 +475,7 @@ impl<'a> SetStateQuery<'a> {
         let mut query = event::table
             .filter(event::deleted_at.is_null())
             .filter(event::room_id.eq(self.room_id))
-            .filter(event::set.eq(self.set))
+            .filter(event::set.eq(&self.set))
             .filter(event::original_occurred_at.lt(self.original_occurred_at))
             .into_boxed();
 
@@ -491,14 +491,14 @@ impl<'a> SetStateQuery<'a> {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct OriginalEventQuery<'a> {
+pub(crate) struct OriginalEventQuery {
     room_id: Uuid,
-    set: &'a str,
-    label: &'a str,
+    set: String,
+    label: String,
 }
 
-impl<'a> OriginalEventQuery<'a> {
-    pub(crate) fn new(room_id: Uuid, set: &'a str, label: &'a str) -> Self {
+impl OriginalEventQuery {
+    pub(crate) fn new(room_id: Uuid, set: String, label: String) -> Self {
         Self {
             room_id,
             set,
@@ -513,8 +513,8 @@ impl<'a> OriginalEventQuery<'a> {
         event::table
             .filter(event::deleted_at.is_null())
             .filter(event::room_id.eq(self.room_id))
-            .filter(event::set.eq(self.set))
-            .filter(event::label.eq(self.label))
+            .filter(event::set.eq(&self.set))
+            .filter(event::label.eq(&self.label))
             .order_by(event::occurred_at)
             .limit(1)
             .get_result(conn)

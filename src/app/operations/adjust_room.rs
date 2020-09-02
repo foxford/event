@@ -78,7 +78,7 @@ pub(crate) fn call(
     // Fetch shifted cut events and transform them to gaps.
     let cut_events = EventListQuery::new()
         .room_id(original_room.id())
-        .kind("stream")
+        .kind("stream".to_string())
         .execute(&conn)
         .with_context(|| {
             format!(
@@ -701,10 +701,16 @@ mod tests {
             _ => panic!("Invalid room time"),
         };
 
-        EventInsertQuery::new(room.id(), kind, &data, occurred_at, &created_by)
-            .created_at(opened_at + Duration::nanoseconds(occurred_at))
-            .execute(conn)
-            .expect("Failed to insert event");
+        EventInsertQuery::new(
+            room.id(),
+            kind.to_owned(),
+            data.clone(),
+            occurred_at,
+            created_by,
+        )
+        .created_at(opened_at + Duration::nanoseconds(occurred_at))
+        .execute(conn)
+        .expect("Failed to insert event");
     }
 
     fn assert_event(event: &Event, occurred_at: i64, kind: &str, data: &JsonValue) {
