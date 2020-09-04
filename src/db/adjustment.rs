@@ -3,7 +3,7 @@ use std::ops::Bound;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use diesel::{pg::PgConnection, result::Error};
 use serde_derive::Serialize;
-use uuid::Uuid;
+use uuid06::Uuid;
 
 use crate::db::room::Object as Room;
 use crate::schema::adjustment;

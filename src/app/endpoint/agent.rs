@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
-use uuid::Uuid;
+use uuid06::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -98,7 +98,7 @@ impl RequestHandler for ListHandler {
 mod tests {
     use serde_derive::Deserialize;
     use svc_agent::AgentId;
-    use uuid::Uuid;
+    use uuid06::Uuid;
 
     use crate::test_helpers::prelude::*;
 

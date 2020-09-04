@@ -1,7 +1,7 @@
 use diesel::pg::PgConnection;
 use serde_json::Value as JsonValue;
 use svc_agent::AgentId;
-use uuid::Uuid;
+use uuid06::Uuid;
 
 use crate::db;
 

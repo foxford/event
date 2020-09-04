@@ -14,7 +14,7 @@ async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::init();
 
-    let ((db, db_pool_stats), maybe_ro_db) = {
+    let ((db, db_pool_stats), maybe_ro_db, sqlx_db) = {
         let url = var("DATABASE_URL").expect("DATABASE_URL must be specified");
 
         let size = var("DATABASE_POOL_SIZE")
@@ -46,12 +46,15 @@ async fn main() -> Result<()> {
             .unwrap_or(1800);
 
         let db = crate::db::create_pool(&url, size, idle_size, timeout, max_lifetime, true);
+        let maybe_ro_url = var("READONLY_DATABASE_URL").ok();
 
-        let maybe_ro_db = var("READONLY_DATABASE_URL").ok().map(|ro_url| {
+        let maybe_ro_db = maybe_ro_url.clone().map(|ro_url| {
             crate::db::create_pool(&ro_url, size, idle_size, timeout, max_lifetime, true)
         });
 
-        (db, maybe_ro_db)
+        let sqlx_url = maybe_ro_url.unwrap_or(url);
+        let sqlx_db = crate::db::create_sqlx_pool(&sqlx_url, size, timeout).await;
+        (db, maybe_ro_db, sqlx_db)
     };
 
     let (redis_pool, authz_cache) = if let Some("1") = var("CACHE_ENABLED").ok().as_deref() {
@@ -93,6 +96,7 @@ async fn main() -> Result<()> {
     app::run(
         db,
         maybe_ro_db,
+        sqlx_db,
         redis_pool,
         authz_cache,
         db_pool_stats,

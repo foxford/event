@@ -9,6 +9,7 @@ use chrono::Utc;
 use futures::StreamExt;
 use log::{error, info, warn};
 use serde_json::json;
+use sqlx::postgres::PgPool as SqlxDb;
 use svc_agent::mqtt::{
     Agent, AgentBuilder, AgentNotification, ConnectionMode, OutgoingRequest,
     OutgoingRequestProperties, QoS, ShortTermTimingProperties, SubscriptionTopic,
@@ -32,6 +33,7 @@ pub(crate) const API_VERSION: &str = "v1";
 pub(crate) async fn run(
     db: ConnectionPool,
     ro_db: Option<ConnectionPool>,
+    sqlx_db: SqlxDb,
     redis_pool: Option<RedisConnectionPool>,
     authz_cache: Option<AuthzCache>,
     db_pool_stats: StatsCollector,
@@ -87,7 +89,7 @@ pub(crate) async fn run(
     subscribe(&mut agent, &agent_id, &config)?;
 
     // Context
-    let context_builder = AppContextBuilder::new(config, authz, db);
+    let context_builder = AppContextBuilder::new(config, authz, db, sqlx_db);
 
     let context_builder = match ro_db {
         Some(db) => context_builder.ro_db(db),

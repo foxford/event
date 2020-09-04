@@ -7,6 +7,7 @@ use diesel::{
     r2d2::{ConnectionManager, PoolError, PooledConnection},
     PgConnection,
 };
+use sqlx::postgres::PgPool as SqlxDb;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
@@ -25,6 +26,7 @@ pub(crate) trait Context: Sync {
     fn config(&self) -> &Config;
     fn db(&self) -> &Db;
     fn ro_db(&self) -> &Db;
+    fn sqlx_db(&self) -> &SqlxDb;
     fn agent_id(&self) -> &AgentId;
     fn queue_counter(&self) -> &Option<QueueCounterHandle>;
     fn redis_pool(&self) -> &Option<RedisConnectionPool>;
@@ -65,6 +67,10 @@ impl Context for AppContext {
         self.ro_db.as_ref().unwrap_or(&self.db)
     }
 
+    fn sqlx_db(&self) -> &SqlxDb {
+        &self.sqlx_db
+    }
+
     fn agent_id(&self) -> &AgentId {
         &self.agent_id
     }
@@ -102,6 +108,7 @@ pub(crate) struct AppContext {
     authz: Authz,
     db: Db,
     ro_db: Option<Db>,
+    sqlx_db: SqlxDb,
     agent_id: AgentId,
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
@@ -119,6 +126,7 @@ pub(crate) struct AppContextBuilder {
     db: Db,
     agent_id: AgentId,
     ro_db: Option<Db>,
+    sqlx_db: SqlxDb,
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
     db_pool_stats: Option<StatsCollector>,
@@ -127,7 +135,7 @@ pub(crate) struct AppContextBuilder {
 }
 
 impl AppContextBuilder {
-    pub(crate) fn new(config: Config, authz: Authz, db: Db) -> Self {
+    pub(crate) fn new(config: Config, authz: Authz, db: Db, sqlx_db: SqlxDb) -> Self {
         let agent_id = AgentId::new(&config.agent_label, config.id.to_owned());
 
         Self {
@@ -136,6 +144,7 @@ impl AppContextBuilder {
             db,
             agent_id,
             ro_db: None,
+            sqlx_db,
             queue_counter: None,
             redis_pool: None,
             db_pool_stats: None,
@@ -191,6 +200,7 @@ impl AppContextBuilder {
             config: Arc::new(self.config),
             authz: self.authz,
             db: self.db,
+            sqlx_db: self.sqlx_db,
             ro_db: self.ro_db,
             agent_id: self.agent_id,
             queue_counter: self.queue_counter,

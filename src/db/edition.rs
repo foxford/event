@@ -4,7 +4,7 @@ use diesel::{pg::PgConnection, result::Error};
 
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::AgentId;
-use uuid::Uuid;
+use uuid06::Uuid;
 
 use super::room::Object as Room;
 use crate::schema::edition;

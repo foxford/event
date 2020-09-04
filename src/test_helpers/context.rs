@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use serde_json::json;
+use sqlx::postgres::PgPool as SqlxDb;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
@@ -78,6 +79,10 @@ impl Context for TestContext {
 
     fn db(&self) -> &Db {
         self.db.connection_pool()
+    }
+
+    fn sqlx_db(&self) -> &SqlxDb {
+        self.db.sqlx_connection_pool()
     }
 
     fn ro_db(&self) -> &Db {

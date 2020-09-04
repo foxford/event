@@ -11,7 +11,7 @@ use svc_agent::{
     mqtt::{IncomingRequestProperties, ResponseStatus},
     Addressable,
 };
-use uuid::Uuid;
+use uuid06::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
