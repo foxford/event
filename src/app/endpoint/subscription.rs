@@ -13,7 +13,7 @@ use svc_agent::{
     AgentId, Authenticable,
 };
 use svc_error::Error as SvcError;
-use uuid::Uuid;
+use uuid06::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};

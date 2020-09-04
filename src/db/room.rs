@@ -4,7 +4,7 @@ use chrono::{serde::ts_seconds, DateTime, Utc};
 use diesel::{pg::PgConnection, result::Error};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use uuid::Uuid;
+use uuid06::Uuid;
 
 use crate::schema::room;
 

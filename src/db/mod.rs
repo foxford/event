@@ -1,12 +1,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::app::metrics::StatsCollector;
 use diesel::pg::PgConnection;
 use diesel::r2d2::event::HandleEvent;
 use diesel::r2d2::{ConnectionManager, Pool};
 
+use crate::app::metrics::StatsCollector;
+
 pub(crate) type ConnectionPool = Arc<Pool<ConnectionManager<PgConnection>>>;
+
 pub(crate) fn create_pool(
     url: &str,
     size: u32,
@@ -35,6 +37,15 @@ pub(crate) fn create_pool(
         .expect("Error creating a database pool");
 
     (Arc::new(pool), collector)
+}
+
+pub(crate) async fn create_sqlx_pool(url: &str, size: u32, timeout: u64) -> sqlx::postgres::PgPool {
+    sqlx::postgres::PgPoolOptions::new()
+        .max_connections(size)
+        .connect_timeout(Duration::from_secs(timeout))
+        .connect(url)
+        .await
+        .expect("Failed to create sqlx database pool")
 }
 
 pub(crate) mod sql {
