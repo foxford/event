@@ -221,6 +221,11 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                         .await
                         .unwrap_or_else(|mut svc_error| {
                             svc_error.set_kind(reqp.method(), H::ERROR_TITLE);
+                            error!(
+                                "Failed to handle request with method = '{}': {}",
+                                reqp.method(),
+                                svc_error
+                            );
 
                             sentry::send(svc_error.clone()).unwrap_or_else(|err| {
                                 warn!("Error sending error to Sentry: {}", err)
