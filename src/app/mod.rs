@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -106,8 +106,11 @@ pub(crate) async fn run(
         None => context_builder,
     };
 
+    let running_requests = Arc::new(AtomicI64::new(0));
+
     let context = context_builder
         .queue_counter(agent.get_queue_counter())
+        .running_requests(running_requests.clone())
         .build();
 
     // Message handler
@@ -124,11 +127,14 @@ pub(crate) async fn run(
 
         if let Ok(Some(message)) = fut.await {
             let message_handler = message_handler.clone();
+            let running_requests_ = running_requests.clone();
 
             task::spawn(async move {
                 match message {
                     AgentNotification::Message(ref message, _) => {
-                        message_handler.handle(message).await
+                        running_requests_.fetch_add(1, Ordering::SeqCst);
+                        message_handler.handle(message).await;
+                        running_requests_.fetch_add(-1, Ordering::SeqCst);
                     }
                     AgentNotification::Disconnection => error!("Disconnected from broker"),
                     AgentNotification::Reconnection => {
@@ -146,7 +152,7 @@ pub(crate) async fn run(
                     AgentNotification::Suback(_) => (),
                     AgentNotification::Unsuback(_) => (),
                     AgentNotification::Abort(err) => {
-                        error!("MQTT client aborted: {}", err);
+                        error!("MQTT client aborted: {:?}", err);
                     }
                 }
             });
@@ -200,8 +206,8 @@ fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<()>
 
 fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
     if let Err(err) = subscribe(agent, agent_id, config) {
-        let err = format!("Failed to resubscribe after reconnection: {}", err);
-        error!("{}", err);
+        let err = format!("Failed to resubscribe after reconnection: {:?}", err);
+        error!("{:?}", err);
 
         let svc_error = SvcError::builder()
             .kind("resubscription_error", "Resubscription error")
@@ -209,7 +215,7 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
             .build();
 
         sentry::send(svc_error)
-            .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
+            .unwrap_or_else(|err| warn!("Error sending error to Sentry: {:?}", err));
     }
 }
 

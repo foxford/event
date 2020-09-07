@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use async_std::task::spawn_blocking;
@@ -30,6 +31,7 @@ pub(crate) trait Context: Sync {
     fn profiler(&self) -> &Profiler<ProfilerKeys>;
     fn db_pool_stats(&self) -> &Option<StatsCollector>;
     fn ro_db_pool_stats(&self) -> &Option<StatsCollector>;
+    fn running_requests(&self) -> Option<Arc<AtomicI64>>;
 
     async fn get_conn(
         &self,
@@ -86,6 +88,10 @@ impl Context for AppContext {
     fn ro_db_pool_stats(&self) -> &Option<StatsCollector> {
         &self.ro_db_pool_stats
     }
+
+    fn running_requests(&self) -> Option<Arc<AtomicI64>> {
+        self.running_requests.clone()
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -102,6 +108,7 @@ pub(crate) struct AppContext {
     profiler: Arc<Profiler<ProfilerKeys>>,
     db_pool_stats: Option<StatsCollector>,
     ro_db_pool_stats: Option<StatsCollector>,
+    running_requests: Option<Arc<AtomicI64>>,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -116,6 +123,7 @@ pub(crate) struct AppContextBuilder {
     redis_pool: Option<RedisConnectionPool>,
     db_pool_stats: Option<StatsCollector>,
     ro_db_pool_stats: Option<StatsCollector>,
+    running_requests: Option<Arc<AtomicI64>>,
 }
 
 impl AppContextBuilder {
@@ -132,6 +140,7 @@ impl AppContextBuilder {
             redis_pool: None,
             db_pool_stats: None,
             ro_db_pool_stats: None,
+            running_requests: None,
         }
     }
 
@@ -145,6 +154,13 @@ impl AppContextBuilder {
     pub(crate) fn queue_counter(self, qc: QueueCounterHandle) -> Self {
         Self {
             queue_counter: Some(qc),
+            ..self
+        }
+    }
+
+    pub(crate) fn running_requests(self, counter: Arc<AtomicI64>) -> Self {
+        Self {
+            running_requests: Some(counter),
             ..self
         }
     }
@@ -182,6 +198,7 @@ impl AppContextBuilder {
             profiler: Arc::new(Profiler::<ProfilerKeys>::start()),
             db_pool_stats: self.db_pool_stats,
             ro_db_pool_stats: self.ro_db_pool_stats,
+            running_requests: self.running_requests,
         }
     }
 }
