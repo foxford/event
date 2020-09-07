@@ -1,5 +1,11 @@
 use std::sync::Arc;
 
+use async_std::task::spawn_blocking;
+use async_trait::async_trait;
+use diesel::{
+    r2d2::{ConnectionManager, PoolError, PooledConnection},
+    PgConnection,
+};
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
@@ -12,6 +18,7 @@ use crate::profiler::Profiler;
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[async_trait]
 pub(crate) trait Context: Sync {
     fn authz(&self) -> &Authz;
     fn config(&self) -> &Config;
@@ -23,6 +30,20 @@ pub(crate) trait Context: Sync {
     fn profiler(&self) -> &Profiler<ProfilerKeys>;
     fn db_pool_stats(&self) -> &Option<StatsCollector>;
     fn ro_db_pool_stats(&self) -> &Option<StatsCollector>;
+
+    async fn get_conn(
+        &self,
+    ) -> Result<PooledConnection<ConnectionManager<PgConnection>>, PoolError> {
+        let db = self.db().clone();
+        spawn_blocking(move || db.get()).await
+    }
+
+    async fn get_ro_conn(
+        &self,
+    ) -> Result<PooledConnection<ConnectionManager<PgConnection>>, PoolError> {
+        let db = self.ro_db().clone();
+        spawn_blocking(move || db.get()).await
+    }
 }
 
 impl Context for AppContext {

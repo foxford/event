@@ -77,7 +77,7 @@ impl EventHandler for CreateHandler {
         {
             // Find room.
             let query = room::FindQuery::new(room_id).time(room::now());
-            let conn = context.db().get()?;
+            let conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -93,7 +93,7 @@ impl EventHandler for CreateHandler {
             let q = agent::UpdateQuery::new(payload.subject.clone(), room_id)
                 .status(agent::Status::Ready);
 
-            let conn = context.db().get()?;
+            let conn = context.get_conn().await?;
             spawn_blocking(move || q.execute(&conn)).await?;
         }
 
@@ -140,7 +140,7 @@ impl EventHandler for DeleteHandler {
 
         let row_count = {
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
-            let conn = context.db().get()?;
+            let conn = context.get_conn().await?;
 
             context
                 .profiler()
