@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.2.14 (September 7, 2020)
+
+### Changes
+- Update svc-agent ([94c2593](94c2593eebf3aa0f266d90dadcc46ccf21e524dc), [911ce6e](911ce6eaec47c7a53c030e89f1915217972b280b))
+- Update svc-error ([4ea199d](4ea199d14c57eb95655f0b8e95314fba73ec7888))
+- Execute DB queries in th blocking thread pool ([cbd0c13](cbd0c13acc4994b95708993cc541f57952a226ce))
+- Pass lifetime setting to DB connection pool ([2abd0d5](2abd0d597160f2abb8e45a2f689c6c517d77dd9a))
+- Log request handler errors ([7dfbd07](7dfbd07df388c7c9bc3ffcbbd9ef96434a4375f8))
+
+
 ## v0.2.13 (August 31, 2020)
 
 ### Features
