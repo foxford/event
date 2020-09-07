@@ -1,4 +1,5 @@
 use std::hash::Hash;
+use std::sync::atomic::Ordering;
 
 use async_std::stream;
 use async_trait::async_trait;
@@ -225,6 +226,8 @@ pub(crate) enum Metric {
     RoDbPoolTimeoutAverage(MetricValue<f64>),
     #[serde(rename(serialize = "apps.event.max_ro_db_pool_timeout_total"))]
     MaxRoDbPoolTimeout(MetricValue<u128>),
+    #[serde(rename(serialize = "apps.event.running_requests_total"))]
+    RunningRequests(MetricValue<i64>),
 }
 
 pub(crate) struct PullHandler;
@@ -254,6 +257,13 @@ impl EventHandler for PullHandler {
 
                 append_profiler_stats(&mut metrics, context, now)
                     .status(ResponseStatus::INTERNAL_SERVER_ERROR)?;
+
+                if let Some(counter) = context.running_requests() {
+                    metrics.push(Metric::RunningRequests(MetricValue::new(
+                        counter.load(Ordering::SeqCst),
+                        now,
+                    )));
+                }
 
                 let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
                 let props = evp.to_event("metric.create", short_term_timing);

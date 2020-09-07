@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use serde_json::json;
@@ -105,5 +106,9 @@ impl Context for TestContext {
 
     fn ro_db_pool_stats(&self) -> &Option<StatsCollector> {
         &None
+    }
+
+    fn running_requests(&self) -> Option<Arc<AtomicI64>> {
+        None
     }
 }
