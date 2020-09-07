@@ -60,7 +60,7 @@ impl RequestHandler for ReadHandler {
         // Check whether the room exists.
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -110,7 +110,7 @@ impl RequestHandler for ReadHandler {
             // If it is the only set specified at first execute a total count query and
             // add `has_next` pagination flag to the state.
             if payload.sets.len() == 1 {
-                let conn = context.ro_db().get()?;
+                let conn = context.get_ro_conn().await?;
                 let query_ = query.clone();
 
                 let total_count = context
@@ -132,7 +132,7 @@ impl RequestHandler for ReadHandler {
                 state.insert(String::from("has_next"), JsonValue::Bool(has_next));
             }
 
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             // Limit the query and retrieve the state.
             let set_state = context

@@ -27,7 +27,7 @@ impl RequestHandler for CreateHandler {
     ) -> Result {
         let room = {
             let query = db::edition::FindWithRoomQuery::new(payload.edition_id);
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             let maybe_edition_with_room = context
                 .profiler()
@@ -97,7 +97,7 @@ impl RequestHandler for CreateHandler {
         };
 
         let change = {
-            let conn = context.db().get()?;
+            let conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -142,7 +142,7 @@ impl RequestHandler for ListHandler {
     ) -> Result {
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             let maybe_edition_and_room = context
                 .profiler()
@@ -182,7 +182,7 @@ impl RequestHandler for ListHandler {
         }
 
         let changes = {
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -222,7 +222,7 @@ impl RequestHandler for DeleteHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (change, room) = {
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             match db::change::FindWithEditionAndRoomQuery::new(payload.id).execute(&conn)? {
                 Some((change, (_edition, room))) => (change, room),
@@ -245,7 +245,7 @@ impl RequestHandler for DeleteHandler {
 
         {
             let query = db::change::DeleteQuery::new(change.id());
-            let conn = context.db().get()?;
+            let conn = context.get_conn().await?;
 
             context
                 .profiler()

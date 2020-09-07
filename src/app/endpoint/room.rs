@@ -88,7 +88,7 @@ impl RequestHandler for CreateHandler {
                 query = query.tags(tags);
             }
 
-            let conn = context.db().get()?;
+            let conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -142,7 +142,7 @@ impl RequestHandler for ReadHandler {
     ) -> Result {
         let room = {
             let query = FindQuery::new(payload.id);
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -206,7 +206,7 @@ impl RequestHandler for UpdateHandler {
         }
 
         let room = {
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -264,7 +264,7 @@ impl RequestHandler for UpdateHandler {
                 query = query.tags(tags);
             }
 
-            let conn = context.db().get()?;
+            let conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -318,7 +318,7 @@ impl RequestHandler for EnterHandler {
     ) -> Result {
         let room = {
             let query = FindQuery::new(payload.id).time(now());
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -342,7 +342,7 @@ impl RequestHandler for EnterHandler {
 
         // Register agent in `in_progress` state.
         {
-            let conn = context.db().get()?;
+            let conn = context.get_conn().await?;
             let query = agent::InsertQuery::new(reqp.as_agent_id().to_owned(), room.id());
 
             context
@@ -404,7 +404,7 @@ impl RequestHandler for LeaveHandler {
     ) -> Result {
         let (room, presence) = {
             let query = FindQuery::new(payload.id);
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             let room = context
                 .profiler()
@@ -422,7 +422,7 @@ impl RequestHandler for LeaveHandler {
                 .agent_id(reqp.as_agent_id().to_owned())
                 .status(agent::Status::Ready);
 
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
             let presence = context
                 .profiler()
                 .measure(
@@ -500,7 +500,7 @@ impl RequestHandler for AdjustHandler {
     ) -> Result {
         let room = {
             let query = FindQuery::new(payload.id);
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             context
                 .profiler()

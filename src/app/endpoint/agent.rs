@@ -37,7 +37,7 @@ impl RequestHandler for ListHandler {
         let room = {
             // Check whether the room exists and open.
             let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -61,7 +61,7 @@ impl RequestHandler for ListHandler {
 
         // Get agents list in the room.
         let agents = {
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             let query = db::agent::ListQuery::new()
                 .room_id(payload.room_id)

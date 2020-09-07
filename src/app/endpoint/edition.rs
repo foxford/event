@@ -44,7 +44,7 @@ impl RequestHandler for CreateHandler {
     ) -> Result {
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -70,7 +70,7 @@ impl RequestHandler for CreateHandler {
         let edition = {
             let query =
                 db::edition::InsertQuery::new(payload.room_id, reqp.as_agent_id().to_owned());
-            let conn = context.db().get()?;
+            let conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -123,7 +123,7 @@ impl RequestHandler for ListHandler {
     ) -> Result {
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -159,7 +159,7 @@ impl RequestHandler for ListHandler {
         }
 
         let editions = {
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -201,7 +201,7 @@ impl RequestHandler for DeleteHandler {
     ) -> Result {
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             let maybe_edition_and_room = context
                 .profiler()
@@ -232,7 +232,7 @@ impl RequestHandler for DeleteHandler {
 
         {
             let query = db::edition::DeleteQuery::new(edition.id());
-            let conn = context.db().get()?;
+            let conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -275,7 +275,7 @@ impl RequestHandler for CommitHandler {
     ) -> Result {
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             let maybe_edition_and_room = context
                 .profiler()

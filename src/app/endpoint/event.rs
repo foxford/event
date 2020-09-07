@@ -57,7 +57,7 @@ impl RequestHandler for CreateHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, author) = {
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             // Check whether the room exists and open.
             let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
@@ -72,7 +72,7 @@ impl RequestHandler for CreateHandler {
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
                 CreateRequest {
@@ -156,7 +156,7 @@ impl RequestHandler for CreateHandler {
             }
 
             {
-                let conn = context.db().get()?;
+                let conn = context.get_conn().await?;
 
                 context
                     .profiler()
@@ -273,7 +273,7 @@ impl RequestHandler for ListHandler {
     ) -> Result {
         // Check whether the room exists.
         let room = {
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
             let query = db::room::FindQuery::new(payload.room_id);
 
             context
@@ -325,7 +325,7 @@ impl RequestHandler for ListHandler {
         }
 
         let events = {
-            let conn = context.ro_db().get()?;
+            let conn = context.get_ro_conn().await?;
 
             query = query.direction(payload.direction).limit(std::cmp::min(
                 payload.limit.unwrap_or_else(|| MAX_LIMIT),
