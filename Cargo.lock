@@ -2549,11 +2549,12 @@ dependencies = [
 
 [[package]]
 name = "svc-error"
-version = "0.1.9"
+version = "0.1.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ca1419d26952fbb917f2481b0697bc77768c0ad9bde5618fd7cefdf18fd1738"
+checksum = "b65442d8da16f66dff30ddcc8ea6473f83c4b735fe0f1602806f80dc6d101b7c"
 dependencies = [
  "atom",
+ "crossbeam-channel 0.4.2",
  "diesel",
  "http 0.1.21",
  "lazy_static",
