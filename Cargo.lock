@@ -685,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "event"
-version = "0.2.14"
+version = "0.2.15"
 dependencies = [
  "anyhow",
  "async-std",
@@ -2491,6 +2491,8 @@ dependencies = [
 [[package]]
 name = "svc-agent"
 version = "0.14.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdeb3cd95d467087c9560980482e75be835ce044b5047dcc29a3d3a4ffdfbb3c"
 dependencies = [
  "base64 0.10.1",
  "chrono",
