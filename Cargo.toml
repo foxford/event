@@ -24,11 +24,12 @@ serde = "1.0"
 serde_derive = "1.0"
 serde_json = "1.0"
 signal-hook = "0.1"
-sqlx = { version = "0.4.0-beta.1", features = ["postgres", "macros", "uuid", "chrono", "json"] }
+sqlx = { version = "0.4.0-beta.1", features = ["postgres", "macros", "uuid", "chrono", "json", "bigdecimal"] }
 svc-agent = { version = "0.14", features = ["diesel", "sqlx", "queue-counter"] }
 svc-authn = { version = "0.6", features = ["jose", "diesel", "sqlx"] }
 svc-authz = "0.10"
 svc-error = { version = "0.1", features = ["diesel", "sqlx", "r2d2", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
+quaint = { version = "0.1", features = ["uuid-0_8"] }
 url = "2.1"
 uuid06 = { package = "uuid", version = "0.6", features = ["v4", "serde"] }
 uuid08 = { package = "uuid", version = "0.8", features = ["v4", "serde"] }

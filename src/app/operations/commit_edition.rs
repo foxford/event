@@ -1,10 +1,10 @@
 use std::ops::Bound;
 
-use anyhow::{bail, Context, Error, Result};
+use anyhow::{bail, Context, Result};
 use chrono::Utc;
-use diesel::connection::Connection;
 use diesel::pg::PgConnection;
 use log::info;
+use sqlx::postgres::{PgConnection as SqlxPgConnection, PgPool as SqlxDb};
 
 use crate::app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND};
 use crate::db::adjustment::Segment;
@@ -16,7 +16,12 @@ use crate::db::event::{
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::ConnectionPool as Db;
 
-pub(crate) fn call(db: &Db, edition: &Edition, source: &Room) -> Result<(Room, Vec<Segment>)> {
+pub(crate) async fn call(
+    db: &Db,
+    sqlx_db: &SqlxDb,
+    edition: &Edition,
+    source: &Room,
+) -> Result<(Room, Vec<Segment>)> {
     info!(
         "Edition commit task started for edition_id = '{}', source room id = {}",
         edition.id(),
@@ -26,7 +31,14 @@ pub(crate) fn call(db: &Db, edition: &Edition, source: &Room) -> Result<(Room, V
     let start_timestamp = Utc::now();
     let conn = db.get()?;
 
-    let result = conn.transaction::<(Room, Vec<Segment>), Error, _>(|| {
+    let mut sqlx_conn = sqlx_db
+        .acquire()
+        .await
+        .context("Failed to acquire sqlx db connection")?;
+
+    // TODO: bring back the transaction after getting rid of diesel here.
+    // let result = conn.transaction::<(Room, Vec<Segment>), Error, _>(|| {
+    let result = {
         let room_duration = match source.time() {
             (Bound::Included(start), Bound::Excluded(stop)) if stop > start => {
                 stop.signed_duration_since(*start)
@@ -35,9 +47,10 @@ pub(crate) fn call(db: &Db, edition: &Edition, source: &Room) -> Result<(Room, V
         };
 
         let cut_events = EventListQuery::new()
-            .room_id(source.id())
+            .room_id(uuid08::Uuid::from_bytes(*source.id().as_bytes()))
             .kind("stream".to_string())
-            .execute(&conn)
+            .execute(&mut sqlx_conn)
+            .await
             .with_context(|| {
                 format!("failed to fetch cut events for room_id = '{}'", source.id())
             })?;
@@ -55,10 +68,13 @@ pub(crate) fn call(db: &Db, edition: &Edition, source: &Room) -> Result<(Room, V
         let cut_gaps = collect_gaps(&cut_events, &cut_changes)?;
 
         let destination = clone_room(&conn, &source)?;
-        clone_events(&conn, &source, &destination, &edition, &cut_gaps)?;
+        clone_events(&mut sqlx_conn, &source, &destination, &edition, &cut_gaps).await?;
 
-        EventDeleteQuery::new(destination.id(), "stream")
-            .execute(&conn)
+        let destination_id = uuid08::Uuid::from_bytes(*destination.id().as_bytes());
+
+        EventDeleteQuery::new(destination_id, "stream")
+            .execute(&mut sqlx_conn)
+            .await
             .with_context(|| {
                 format!(
                     "failed to delete cut events for room_id = '{}'",
@@ -81,8 +97,9 @@ pub(crate) fn call(db: &Db, edition: &Edition, source: &Room) -> Result<(Room, V
             })
             .collect::<Vec<Segment>>();
 
-        Ok((destination, modified_segments))
-    })?;
+        Ok((destination, modified_segments)) as Result<(Room, Vec<Segment>)>
+    }?;
+    // })?;
 
     info!(
         "Edition commit successfully finished for edition_id = '{}', duration = {} ms",
@@ -105,125 +122,123 @@ fn clone_room(conn: &PgConnection, source: &Room) -> Result<Room> {
     query.execute(conn).context("Failed to insert room")
 }
 
-const CLONE_EVENTS_SQL: &str = r#"
-WITH
-    gap_starts AS (
-        SELECT start, ROW_NUMBER() OVER () AS row_number
-        FROM UNNEST($4::BIGINT[]) AS start
-    ),
-    gap_stops AS (
-        SELECT stop, ROW_NUMBER() OVER () AS row_number
-        FROM UNNEST($5::BIGINT[]) AS stop
-    ),
-    gaps AS (
-        SELECT start, stop
-        FROM gap_starts, gap_stops
-        WHERE gap_stops.row_number = gap_starts.row_number
-    )
-INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
-SELECT
-    id,
-    room_id,
-    kind,
-    set,
-    label,
-    data,
-    occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1,
-    created_by,
-    created_at
-FROM (
-    SELECT
-        gen_random_uuid() AS id,
-        $2 AS room_id,
-        (CASE change.kind
-                WHEN 'addition' THEN change.event_kind
-                WHEN 'modification' THEN COALESCE(change.event_kind, event.kind)
-                ELSE event.kind
-            END
-        ) AS kind,
-        (CASE change.kind
-            WHEN 'addition' THEN COALESCE(change.event_set, change.event_kind)
-            WHEN 'modification' THEN COALESCE(change.event_set, event.set, change.event_kind, event.kind)
-            ELSE event.set
-            END
-        ) AS set,
-        (CASE change.kind
-            WHEN 'addition' THEN change.event_label
-            WHEN 'modification' THEN COALESCE(change.event_label, event.label)
-            ELSE event.label
-            END
-        ) AS label,
-        (CASE change.kind
-            WHEN 'addition' THEN change.event_data
-            WHEN 'modification' THEN COALESCE(change.event_data, event.data)
-            ELSE event.data
-            END
-        ) AS data,
-        (
-            (CASE change.kind
-                WHEN 'addition' THEN change.event_occurred_at
-                WHEN 'modification' THEN COALESCE(change.event_occurred_at, event.occurred_at)
-                ELSE event.occurred_at
-                END
-            ) - (
-                SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
-                FROM gaps
-                WHERE start < occurred_at
-            )
-        ) AS occurred_at,
-        (CASE change.kind
-            WHEN 'addition' THEN change.event_created_by
-            ELSE event.created_by
-            END
-        ) AS created_by,
-        COALESCE(event.created_at, NOW()) as created_at
-    FROM
-        (SELECT * FROM event WHERE event.room_id = $1 AND deleted_at IS NULL)
-        AS event
-        FULL OUTER JOIN
-        (SELECT * FROM change WHERE change.edition_id = $3)
-        AS change
-        ON change.event_id = event.id
-    WHERE
-        ((event.room_id = $1 AND deleted_at IS NULL) OR event.id IS NULL)
-        AND
-        ((change.edition_id = $3 AND change.kind <> 'removal') OR change.id IS NULL)
-) AS subquery;
-"#;
-
-fn clone_events(
-    conn: &PgConnection,
+async fn clone_events(
+    conn: &mut SqlxPgConnection,
     source: &Room,
     destination: &Room,
     edition: &Edition,
     gaps: &[(i64, i64)],
 ) -> Result<()> {
-    use diesel::prelude::*;
-    use diesel::sql_types::{Array, Int8, Uuid};
-
     let mut starts = Vec::with_capacity(gaps.len());
     let mut stops = Vec::with_capacity(gaps.len());
 
     for (start, stop) in gaps {
-        starts.push(start);
-        stops.push(stop);
+        starts.push(*start);
+        stops.push(*stop);
     }
 
-    diesel::sql_query(CLONE_EVENTS_SQL)
-        .bind::<Uuid, _>(source.id())
-        .bind::<Uuid, _>(destination.id())
-        .bind::<Uuid, _>(edition.id())
-        .bind::<Array<Int8>, _>(&starts)
-        .bind::<Array<Int8>, _>(&stops)
-        .execute(conn)
-        .map(|_| ())
-        .with_context(|| {
-            format!(
-                "Failed cloning events from room = '{}' to room = {}",
-                source.id(),
-                destination.id(),
+    sqlx::query!(
+        "
+        WITH
+            gap_starts AS (
+                SELECT start, ROW_NUMBER() OVER () AS row_number
+                FROM UNNEST($4::BIGINT[]) AS start
+            ),
+            gap_stops AS (
+                SELECT stop, ROW_NUMBER() OVER () AS row_number
+                FROM UNNEST($5::BIGINT[]) AS stop
+            ),
+            gaps AS (
+                SELECT start, stop
+                FROM gap_starts, gap_stops
+                WHERE gap_stops.row_number = gap_starts.row_number
             )
-        })
+        INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
+        SELECT
+            id,
+            room_id,
+            kind,
+            set,
+            label,
+            data,
+            occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1,
+            created_by,
+            created_at
+        FROM (
+            SELECT
+                gen_random_uuid() AS id,
+                $2::UUID AS room_id,
+                (CASE change.kind
+                        WHEN 'addition' THEN change.event_kind
+                        WHEN 'modification' THEN COALESCE(change.event_kind, event.kind)
+                        ELSE event.kind
+                    END
+                ) AS kind,
+                (CASE change.kind
+                    WHEN 'addition' THEN COALESCE(change.event_set, change.event_kind)
+                    WHEN 'modification' THEN COALESCE(change.event_set, event.set, change.event_kind, event.kind)
+                    ELSE event.set
+                    END
+                ) AS set,
+                (CASE change.kind
+                    WHEN 'addition' THEN change.event_label
+                    WHEN 'modification' THEN COALESCE(change.event_label, event.label)
+                    ELSE event.label
+                    END
+                ) AS label,
+                (CASE change.kind
+                    WHEN 'addition' THEN change.event_data
+                    WHEN 'modification' THEN COALESCE(change.event_data, event.data)
+                    ELSE event.data
+                    END
+                ) AS data,
+                (
+                    (CASE change.kind
+                        WHEN 'addition' THEN change.event_occurred_at
+                        WHEN 'modification' THEN COALESCE(change.event_occurred_at, event.occurred_at)
+                        ELSE event.occurred_at
+                        END
+                    ) - (
+                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
+                        FROM gaps
+                        WHERE start < occurred_at
+                    )
+                ) AS occurred_at,
+                (CASE change.kind
+                    WHEN 'addition' THEN change.event_created_by
+                    ELSE event.created_by
+                    END
+                ) AS created_by,
+                COALESCE(event.created_at, NOW()) as created_at
+            FROM
+                (SELECT * FROM event WHERE event.room_id = $1 AND deleted_at IS NULL)
+                AS event
+                FULL OUTER JOIN
+                (SELECT * FROM change WHERE change.edition_id = $3)
+                AS change
+                ON change.event_id = event.id
+            WHERE
+                ((event.room_id = $1 AND deleted_at IS NULL) OR event.id IS NULL)
+                AND
+                ((change.edition_id = $3 AND change.kind <> 'removal') OR change.id IS NULL)
+        ) AS subquery
+        ",
+        uuid08::Uuid::from_bytes(*source.id().as_bytes()),
+        uuid08::Uuid::from_bytes(*destination.id().as_bytes()),
+        uuid08::Uuid::from_bytes(*edition.id().as_bytes()),
+        starts.as_slice(),
+        stops.as_slice(),
+    )
+    .execute(conn)
+    .await
+    .map(|_| ())
+    .with_context(|| {
+        format!(
+            "Failed cloning events from room = '{}' to room = {}",
+            source.id(),
+            destination.id(),
+        )
+    })
 }
 
 #[derive(Clone, Copy, Debug)]
