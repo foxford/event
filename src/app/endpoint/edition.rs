@@ -303,6 +303,7 @@ impl RequestHandler for CommitHandler {
             .await?;
 
         let db = context.db().to_owned();
+        let sqlx_db = context.sqlx_db().to_owned();
 
         // Respond with 202.
         // The actual task result will be broadcasted to the room topic when finished.
@@ -314,8 +315,8 @@ impl RequestHandler for CommitHandler {
             Some(authz_time),
         ));
 
-        let notification_future = async_std::task::spawn_blocking(move || {
-            let result = commit_edition(&db, &edition, &room);
+        let notification_future = async_std::task::spawn(async move {
+            let result = commit_edition(&db, &sqlx_db, &edition, &room).await;
 
             // Handle result.
             let result = match result {

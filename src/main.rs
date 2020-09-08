@@ -46,14 +46,12 @@ async fn main() -> Result<()> {
             .unwrap_or(1800);
 
         let db = crate::db::create_pool(&url, size, idle_size, timeout, max_lifetime, true);
-        let maybe_ro_url = var("READONLY_DATABASE_URL").ok();
 
-        let maybe_ro_db = maybe_ro_url.clone().map(|ro_url| {
+        let maybe_ro_db = var("READONLY_DATABASE_URL").ok().map(|ro_url| {
             crate::db::create_pool(&ro_url, size, idle_size, timeout, max_lifetime, true)
         });
 
-        let sqlx_url = maybe_ro_url.unwrap_or(url);
-        let sqlx_db = crate::db::create_sqlx_pool(&sqlx_url, size, timeout).await;
+        let sqlx_db = crate::db::create_sqlx_pool(&url, size, timeout).await;
         (db, maybe_ro_db, sqlx_db)
     };
 

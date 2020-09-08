@@ -5,6 +5,7 @@ use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use diesel::pg::PgConnection;
 use log::info;
+use sqlx::postgres::{PgConnection as SqlxPgConnection, PgPool as SqlxDb};
 
 use crate::db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segment};
 use crate::db::event::{
@@ -15,8 +16,9 @@ use crate::db::ConnectionPool as Db;
 
 pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 
-pub(crate) fn call(
+pub(crate) async fn call(
     db: &Db,
+    sqlx_db: &SqlxDb,
     real_time_room: &Room,
     started_at: DateTime<Utc>,
     segments: &[Segment],
@@ -29,6 +31,11 @@ pub(crate) fn call(
 
     let start_timestamp = Utc::now();
     let conn = db.get()?;
+
+    let mut sqlx_conn = sqlx_db
+        .acquire()
+        .await
+        .context("Failed to acquire sqlx db connection")?;
 
     // Create adjustment.
     AdjustmentInsertQuery::new(real_time_room.id(), started_at, segments.to_vec(), offset)
@@ -67,19 +74,23 @@ pub(crate) fn call(
     let original_room = create_room(&conn, &real_time_room, started_at)?;
 
     clone_events(
-        &conn,
+        &mut sqlx_conn,
         &original_room,
         &segment_gaps,
         (offset - rtc_offset) * NANOSECONDS_IN_MILLISECOND,
-    )?;
+    )
+    .await?;
 
     ///////////////////////////////////////////////////////////////////////////
 
     // Fetch shifted cut events and transform them to gaps.
+    let original_room_id = uuid08::Uuid::from_bytes(*original_room.id().as_bytes());
+
     let cut_events = EventListQuery::new()
-        .room_id(original_room.id())
+        .room_id(original_room_id)
         .kind("stream".to_string())
-        .execute(&conn)
+        .execute(&mut sqlx_conn)
+        .await
         .with_context(|| {
             format!(
                 "failed to fetch cut events for room_id = '{}'",
@@ -91,11 +102,14 @@ pub(crate) fn call(
 
     // Create modified room with events shifted again according to cut events this time.
     let modified_room = create_room(&conn, &original_room, started_at)?;
-    clone_events(&conn, &modified_room, &cut_gaps, 0)?;
+    clone_events(&mut sqlx_conn, &modified_room, &cut_gaps, 0).await?;
 
     // Delete cut events from the modified room.
-    EventDeleteQuery::new(modified_room.id(), "stream")
-        .execute(&conn)
+    let modified_room_id = uuid08::Uuid::from_bytes(*modified_room.id().as_bytes());
+
+    EventDeleteQuery::new(modified_room_id, "stream")
+        .execute(&mut sqlx_conn)
+        .await
         .with_context(|| {
             format!(
                 "failed to delete cut events for room_id = '{}'",
@@ -157,64 +171,14 @@ fn create_room(conn: &PgConnection, source_room: &Room, started_at: DateTime<Utc
     query.execute(conn).context("failed to insert room")
 }
 
-const SHIFT_CLONE_EVENTS_SQL: &str = r#"
-WITH
-    gap_starts AS (
-        SELECT start, ROW_NUMBER() OVER () AS row_number
-        FROM UNNEST($1::BIGINT[]) AS start
-    ),
-    gap_stops AS (
-        SELECT stop, ROW_NUMBER() OVER () AS row_number
-        FROM UNNEST($2::BIGINT[]) AS stop
-    ),
-    gaps AS (
-        SELECT start, stop
-        FROM gap_starts, gap_stops
-        WHERE gap_stops.row_number = gap_starts.row_number
-    )
-INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
-SELECT
-    id,
-    room_id,
-    kind,
-    set,
-    label,
-    data,
-    -- Monotonization
-    occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at ORDER BY created_at) - 1,
-    created_by,
-    created_at
-FROM (
-    SELECT
-        gen_random_uuid() AS id,
-        $3 AS room_id,
-        kind,
-        set,
-        label,
-        data,
-        CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)
-        WHEN TRUE THEN (SELECT stop FROM gaps WHERE start = 0)
-        ELSE occurred_at - (
-            SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
-            FROM gaps
-            WHERE start < occurred_at
-            AND   start > 0
-        )
-        END + $4 AS occurred_at,
-        created_by,
-        created_at
-    FROM event
-    WHERE room_id = $5
-    AND   deleted_at IS NULL
-) AS sub
-"#;
-
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
 /// adding `offset` (both in nanoseconds).
-fn clone_events(conn: &PgConnection, room: &Room, gaps: &[(i64, i64)], offset: i64) -> Result<()> {
-    use diesel::prelude::*;
-    use diesel::sql_types::{Array, Int8, Uuid};
-
+async fn clone_events(
+    conn: &mut SqlxPgConnection,
+    room: &Room,
+    gaps: &[(i64, i64)],
+    offset: i64,
+) -> Result<()> {
     let source_room_id = match room.source_room_id() {
         Some(id) => id,
         None => bail!("room = '{}' is not derived from another room", room.id()),
@@ -224,24 +188,77 @@ fn clone_events(conn: &PgConnection, room: &Room, gaps: &[(i64, i64)], offset: i
     let mut stops = Vec::with_capacity(gaps.len());
 
     for (start, stop) in gaps {
-        starts.push(start);
-        stops.push(stop);
+        starts.push(*start);
+        stops.push(*stop);
     }
 
-    diesel::sql_query(SHIFT_CLONE_EVENTS_SQL)
-        .bind::<Array<Int8>, _>(&starts)
-        .bind::<Array<Int8>, _>(&stops)
-        .bind::<Uuid, _>(room.id())
-        .bind::<Int8, _>(offset)
-        .bind::<Uuid, _>(source_room_id)
-        .execute(conn)
-        .map(|_| ())
-        .with_context(|| {
-            format!(
-                "failed to shift clone events from to room = '{}'",
-                room.id()
+    sqlx::query!(
+        "
+        WITH
+            gap_starts AS (
+                SELECT start, ROW_NUMBER() OVER () AS row_number
+                FROM UNNEST($1::BIGINT[]) AS start
+            ),
+            gap_stops AS (
+                SELECT stop, ROW_NUMBER() OVER () AS row_number
+                FROM UNNEST($2::BIGINT[]) AS stop
+            ),
+            gaps AS (
+                SELECT start, stop
+                FROM gap_starts, gap_stops
+                WHERE gap_stops.row_number = gap_starts.row_number
             )
-        })
+        INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
+        SELECT
+            id,
+            room_id,
+            kind,
+            set,
+            label,
+            data,
+            -- Monotonization
+            occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at ORDER BY created_at) - 1,
+            created_by,
+            created_at
+        FROM (
+            SELECT
+                gen_random_uuid() AS id,
+                $3::UUID AS room_id,
+                kind,
+                set,
+                label,
+                data,
+                CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)
+                WHEN TRUE THEN (SELECT stop FROM gaps WHERE start = 0)
+                ELSE occurred_at - (
+                    SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
+                    FROM gaps
+                    WHERE start < occurred_at
+                    AND   start > 0
+                )
+                END + $4 AS occurred_at,
+                created_by,
+                created_at
+            FROM event
+            WHERE room_id = $5
+            AND   deleted_at IS NULL
+        ) AS sub
+        ",
+        starts.as_slice(),
+        stops.as_slice(),
+        uuid08::Uuid::from_bytes(*room.id().as_bytes()),
+        sqlx::types::BigDecimal::from(offset),
+        uuid08::Uuid::from_bytes(*source_room_id.as_bytes()),
+    )
+    .execute(conn)
+    .await
+    .map(|_| ())
+    .with_context(|| {
+        format!(
+            "failed to shift clone events from to room = '{}'",
+            room.id()
+        )
+    })
 }
 
 /// Turns `segments` into gaps.

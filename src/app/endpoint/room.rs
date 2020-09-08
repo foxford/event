@@ -5,7 +5,7 @@ use async_std::stream;
 use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use futures::future::FutureExt;
+use futures::FutureExt;
 use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -524,6 +524,7 @@ impl RequestHandler for AdjustHandler {
 
         // Run asynchronous task for adjustment.
         let db = context.db().to_owned();
+        let sqlx_db = context.sqlx_db().to_owned();
 
         // Respond with 202.
         // The actual task result will be broadcasted to the room topic when finished.
@@ -535,14 +536,16 @@ impl RequestHandler for AdjustHandler {
             Some(authz_time),
         ));
 
-        let notification_future = async_std::task::spawn_blocking(move || {
+        let notification_future = async_std::task::spawn(async move {
             let operation_result = adjust_room(
                 &db,
+                &sqlx_db,
                 &room,
                 payload.started_at,
                 &payload.segments,
                 payload.offset,
-            );
+            )
+            .await;
 
             // Handle result.
             let result = match operation_result {

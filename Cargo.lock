@@ -141,7 +141,7 @@ dependencies = [
  "async-std",
  "native-tls",
  "thiserror",
- "url",
+ "url 2.1.1",
 ]
 
 [[package]]
@@ -278,6 +278,17 @@ name = "base64"
 version = "0.12.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3441f0f7b02788e948e47f457ca01f1d7e6d92c693bc132c22b087d3141c03ff"
+
+[[package]]
+name = "bigdecimal"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1374191e2dd25f9ae02e3aa95041ed5d747fc77b3c102b49fe2dd9a8117a6244"
+dependencies = [
+ "num-bigint",
+ "num-integer",
+ "num-traits 0.2.11",
+]
 
 [[package]]
 name = "bitflags"
@@ -464,7 +475,7 @@ dependencies = [
  "base64 0.12.3",
  "hkdf",
  "hmac 0.7.1",
- "percent-encoding",
+ "percent-encoding 2.1.0",
  "rand 0.7.3",
  "sha2 0.8.2",
  "time 0.2.16",
@@ -635,6 +646,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72aa14c04dfae8dd7d8a2b1cb7ca2152618cd01336dbfe704b8dcbf8d41dbd69"
 
 [[package]]
+name = "debug_stub_derive"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "496b7f8a2f853313c3ca370641d7ff3e42c32974fdccda8f0684599ed0a3ff6b"
+dependencies = [
+ "quote 0.3.15",
+ "syn 0.11.11",
+]
+
+[[package]]
 name = "debugid"
 version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -775,6 +796,7 @@ dependencies = [
  "futures-util",
  "http 0.1.21",
  "log",
+ "quaint",
  "serde 1.0.114",
  "serde_derive",
  "serde_json",
@@ -784,7 +806,7 @@ dependencies = [
  "svc-authn",
  "svc-authz",
  "svc-error",
- "url",
+ "url 2.1.1",
  "uuid 0.6.5",
  "uuid 0.8.1",
 ]
@@ -1208,7 +1230,7 @@ dependencies = [
  "serde_json",
  "serde_qs",
  "serde_urlencoded",
- "url",
+ "url 2.1.1",
 ]
 
 [[package]]
@@ -1267,6 +1289,17 @@ dependencies = [
  "native-tls",
  "tokio",
  "tokio-tls",
+]
+
+[[package]]
+name = "idna"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38f09e0f0b1fb55fdee1f17470ad800da77af5186a1a76c026b679358b7e844e"
+dependencies = [
+ "matches",
+ "unicode-bidi",
+ "unicode-normalization",
 ]
 
 [[package]]
@@ -1546,6 +1579,21 @@ checksum = "b4fc2c02a7e374099d4ee95a193111f72d2110197fe200272371758f6c3643d8"
 dependencies = [
  "autocfg",
 ]
+
+[[package]]
+name = "metrics"
+version = "0.11.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "eef776a4455120b26a3d02ace9df13564d7ee8261a8c9c393ddeb5b1db20686e"
+dependencies = [
+ "metrics-core",
+]
+
+[[package]]
+name = "metrics-core"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c064b3a1ff41f4bf6c91185c8a0caeccf8a8a27e9d0f92cc54cf3dbec812f48"
 
 [[package]]
 name = "mime"
@@ -1846,6 +1894,12 @@ dependencies = [
 
 [[package]]
 name = "percent-encoding"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "31010dd2e1ac33d5b46a5b413495239882813e0369f8ed8a5e266f173602f831"
+
+[[package]]
+name = "percent-encoding"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
@@ -1944,6 +1998,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "53f5ffe53a6b28e37c9c1ce74893477864d64f74778a93a4beb43c8fa167f639"
 dependencies = [
  "unicode-xid 0.2.0",
+]
+
+[[package]]
+name = "quaint"
+version = "0.1.13"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9d72369319bd3e02bd6f3efa4f4666aaf6f6d50693c3e19097478deaf13a4ca2"
+dependencies = [
+ "debug_stub_derive",
+ "futures 0.3.5",
+ "lazy_static",
+ "log",
+ "metrics",
+ "num_cpus",
+ "percent-encoding 2.1.0",
+ "rust_decimal",
+ "thiserror",
+ "url 1.7.2",
+ "uuid 0.8.1",
 ]
 
 [[package]]
@@ -2086,7 +2159,7 @@ dependencies = [
  "dtoa",
  "futures 0.1.29",
  "itoa",
- "percent-encoding",
+ "percent-encoding 2.1.0",
  "sha1",
  "tokio-codec",
  "tokio-executor",
@@ -2094,7 +2167,7 @@ dependencies = [
  "tokio-sync",
  "tokio-tcp",
  "tokio-uds",
- "url",
+ "url 2.1.1",
 ]
 
 [[package]]
@@ -2151,7 +2224,7 @@ dependencies = [
  "mime",
  "mime_guess",
  "native-tls",
- "percent-encoding",
+ "percent-encoding 2.1.0",
  "pin-project-lite",
  "serde 1.0.114",
  "serde_json",
@@ -2159,7 +2232,7 @@ dependencies = [
  "time 0.1.43",
  "tokio",
  "tokio-tls",
- "url",
+ "url 2.1.1",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -2200,6 +2273,16 @@ name = "rust-ini"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e52c148ef37f8c375d49d5a73aa70713125b7f19095948a923f80afdeb22ec2"
+
+[[package]]
+name = "rust_decimal"
+version = "1.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c9e81662973c7a8d9663e64a0de4cd642b89a21d64966e3d99606efdc5fb0cc6"
+dependencies = [
+ "num-traits 0.2.11",
+ "serde 1.0.114",
+]
 
 [[package]]
 name = "rustc-demangle"
@@ -2339,7 +2422,7 @@ dependencies = [
  "rustc_version",
  "sentry-types",
  "uname",
- "url",
+ "url 2.1.1",
 ]
 
 [[package]]
@@ -2353,7 +2436,7 @@ dependencies = [
  "failure",
  "serde 1.0.114",
  "serde_json",
- "url",
+ "url 2.1.1",
  "uuid 0.8.1",
 ]
 
@@ -2416,7 +2499,7 @@ checksum = "c6f3acf84e23ab27c01cb5917551765c01c50b2000089db8fa47fe018a3260cf"
 dependencies = [
  "data-encoding",
  "error-chain",
- "percent-encoding",
+ "percent-encoding 2.1.0",
  "serde 1.0.114",
 ]
 
@@ -2438,7 +2521,7 @@ dependencies = [
  "dtoa",
  "itoa",
  "serde 1.0.114",
- "url",
+ "url 2.1.1",
 ]
 
 [[package]]
@@ -2625,6 +2708,7 @@ source = "git+https://github.com/feymartynov/sqlx?branch=patch#d95132a741b072bb9
 dependencies = [
  "atoi",
  "base64 0.12.3",
+ "bigdecimal",
  "bitflags",
  "byteorder",
  "bytes 0.5.4",
@@ -2646,9 +2730,10 @@ dependencies = [
  "lru-cache",
  "md-5",
  "memchr",
+ "num-bigint",
  "once_cell",
  "parking_lot 0.11.0",
- "percent-encoding",
+ "percent-encoding 2.1.0",
  "rand 0.7.3",
  "serde 1.0.114",
  "serde_json",
@@ -2659,7 +2744,7 @@ dependencies = [
  "sqlx-rt",
  "stringprep",
  "thiserror",
- "url",
+ "url 2.1.1",
  "uuid 0.8.1",
  "whoami",
 ]
@@ -2680,7 +2765,7 @@ dependencies = [
  "sqlx-core",
  "sqlx-rt",
  "syn 1.0.35",
- "url",
+ "url 2.1.1",
 ]
 
 [[package]]
@@ -2800,7 +2885,7 @@ dependencies = [
  "serde 1.0.114",
  "serde_json",
  "serde_urlencoded",
- "url",
+ "url 2.1.1",
  "web-sys",
 ]
 
@@ -3356,13 +3441,24 @@ checksum = "a156c684c91ea7d62626509bce3cb4e1d9ed5c4d978f7b4352658f96a4c26b4a"
 
 [[package]]
 name = "url"
+version = "1.7.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dd4e7c0d531266369519a4aa4f399d748bd37043b00bde1e4ff1f60a120b355a"
+dependencies = [
+ "idna 0.1.5",
+ "matches",
+ "percent-encoding 1.0.1",
+]
+
+[[package]]
+name = "url"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "829d4a8476c35c9bf0bbce5a3b23f4106f79728039b726d292bb93bc106787cb"
 dependencies = [
- "idna",
+ "idna 0.2.0",
  "matches",
- "percent-encoding",
+ "percent-encoding 2.1.0",
  "serde 1.0.114",
 ]
 
@@ -3602,7 +3698,7 @@ version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65923dd1784f44da1d2c3dbbc5e822045628c590ba72123e1c73d3c230c4434d"
 dependencies = [
- "linked-hash-map 0.3.0",
+ "linked-hash-map 0.5.3",
 ]
 
 [[package]]

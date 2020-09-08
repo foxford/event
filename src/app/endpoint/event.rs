@@ -72,7 +72,8 @@ impl RequestHandler for CreateHandler {
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
+
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
                 CreateRequest {
@@ -81,7 +82,7 @@ impl RequestHandler for CreateHandler {
                     ..
                 } => {
                     let query = db::event::OriginalEventQuery::new(
-                        room.id(),
+                        uuid08::Uuid::from_bytes(*room.id().as_bytes()),
                         set.to_owned(),
                         label.to_owned(),
                     );
@@ -90,7 +91,7 @@ impl RequestHandler for CreateHandler {
                         .profiler()
                         .measure(
                             ProfilerKeys::EventOriginalEventQuery,
-                            spawn_blocking(move || query.execute(&conn)),
+                            query.execute(&mut conn),
                         )
                         .await?
                         .map(|original_event| {
@@ -140,7 +141,7 @@ impl RequestHandler for CreateHandler {
                 ..
             } = payload;
             let mut query = db::event::InsertQuery::new(
-                room.id(),
+                uuid08::Uuid::from_bytes(*room.id().as_bytes()),
                 kind,
                 data,
                 occurred_at,
@@ -156,14 +157,11 @@ impl RequestHandler for CreateHandler {
             }
 
             {
-                let conn = context.get_conn().await?;
+                let mut conn = context.sqlx_db().acquire().await?;
 
                 context
                     .profiler()
-                    .measure(
-                        ProfilerKeys::EventInsertQuery,
-                        spawn_blocking(move || query.execute(&conn)),
-                    )
+                    .measure(ProfilerKeys::EventInsertQuery, query.execute(&mut conn))
                     .await
                     .map_err(|err| format!("failed to create event: {}", err))
                     .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
@@ -179,7 +177,7 @@ impl RequestHandler for CreateHandler {
 
             // Build transient event.
             let mut builder = db::event::Builder::new()
-                .room_id(payload.room_id)
+                .room_id(uuid08::Uuid::from_bytes(*payload.room_id.as_bytes()))
                 .kind(&kind)
                 .data(&data)
                 .occurred_at(occurred_at)
@@ -236,7 +234,7 @@ impl RequestHandler for CreateHandler {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const MAX_LIMIT: i64 = 100;
+const MAX_LIMIT: usize = 100;
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
@@ -255,7 +253,7 @@ pub(crate) struct ListRequest {
     last_occurred_at: Option<i64>,
     #[serde(default)]
     direction: db::event::Direction,
-    limit: Option<i64>,
+    limit: Option<usize>,
 }
 
 pub(crate) struct ListHandler;
@@ -297,7 +295,9 @@ impl RequestHandler for ListHandler {
             .await?;
 
         // Retrieve events from the DB.
-        let mut query = db::event::ListQuery::new().room_id(room.id());
+        let room_id = uuid08::Uuid::from_bytes(*room.id().as_bytes());
+        let mut query = db::event::ListQuery::new().room_id(room_id);
+
         let ListRequest {
             kind,
             set,
@@ -325,7 +325,7 @@ impl RequestHandler for ListHandler {
         }
 
         let events = {
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             query = query.direction(payload.direction).limit(std::cmp::min(
                 payload.limit.unwrap_or_else(|| MAX_LIMIT),
@@ -334,10 +334,7 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::EventListQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::EventListQuery, query.execute(&mut conn))
                 .await?
         };
 

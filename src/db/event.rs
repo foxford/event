@@ -1,30 +1,17 @@
-use std::convert::TryInto;
-
 use chrono::serde::{ts_milliseconds, ts_milliseconds_option};
 use chrono::{DateTime, Utc};
-use diesel::{pg::PgConnection, result::Error};
-use futures::TryStreamExt;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use sqlx::postgres::PgConnection as SqlxPgConnection;
-use sqlx::Error as SqlxError;
+use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
-use uuid06::Uuid as Uuid06;
-use uuid08::Uuid as Uuid08;
-
-use super::room::Object as Room;
-use crate::schema::event;
+use uuid08::Uuid;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(
-    Clone, Debug, Serialize, Deserialize, Identifiable, Queryable, QueryableByName, Associations,
-)]
-#[belongs_to(Room, foreign_key = "room_id")]
-#[table_name = "event"]
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub(crate) struct Object {
-    id: Uuid06,
-    room_id: Uuid06,
+    id: Uuid,
+    room_id: Uuid,
     #[serde(rename = "type")]
     kind: String,
     set: String,
@@ -46,12 +33,12 @@ pub(crate) struct Object {
 }
 
 impl Object {
-    pub(crate) fn id(&self) -> Uuid06 {
+    pub(crate) fn id(&self) -> Uuid {
         self.id
     }
 
     #[cfg(test)]
-    pub(crate) fn room_id(&self) -> Uuid06 {
+    pub(crate) fn room_id(&self) -> Uuid {
         self.room_id
     }
 
@@ -88,45 +75,10 @@ impl Object {
     }
 }
 
-// TODO: Get rid of it after resolving uuid version conflict.
-struct SqlxObject {
-    id: Uuid08,
-    room_id: Uuid08,
-    kind: String,
-    set: String,
-    label: Option<String>,
-    data: JsonValue,
-    occurred_at: i64,
-    created_by: AgentId,
-    created_at: DateTime<Utc>,
-    deleted_at: Option<DateTime<Utc>>,
-    original_occurred_at: i64,
-}
-
-impl TryInto<Object> for SqlxObject {
-    type Error = SqlxError;
-
-    fn try_into(self) -> Result<Object, Self::Error> {
-        Ok(Object {
-            id: Uuid06::from_uuid_bytes(*self.id.as_bytes()),
-            room_id: Uuid06::from_uuid_bytes(*self.room_id.as_bytes()),
-            kind: self.kind,
-            set: self.set,
-            label: self.label,
-            data: self.data,
-            occurred_at: self.occurred_at,
-            created_by: self.created_by,
-            created_at: self.created_at,
-            deleted_at: self.deleted_at,
-            original_occurred_at: self.original_occurred_at,
-        })
-    }
-}
-
 ///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct Builder {
-    room_id: Option<Uuid06>,
+    room_id: Option<Uuid>,
     kind: Option<String>,
     set: Option<String>,
     label: Option<String>,
@@ -148,7 +100,7 @@ impl Builder {
         }
     }
 
-    pub(crate) fn room_id(self, room_id: Uuid06) -> Self {
+    pub(crate) fn room_id(self, room_id: Uuid) -> Self {
         Self {
             room_id: Some(room_id),
             ..self
@@ -206,7 +158,7 @@ impl Builder {
         let created_by = self.created_by.ok_or("Missing `created_by`")?;
 
         Ok(Object {
-            id: Uuid06::new_v4(),
+            id: Uuid::new_v4(),
             room_id,
             kind,
             set,
@@ -243,13 +195,13 @@ enum KindFilter {
 }
 
 pub(crate) struct ListQuery {
-    room_id: Option<Uuid06>,
+    room_id: Option<Uuid>,
     kind: Option<KindFilter>,
     set: Option<String>,
     label: Option<String>,
     last_occurred_at: Option<i64>,
     direction: Direction,
-    limit: Option<i64>,
+    limit: Option<usize>,
 }
 
 impl ListQuery {
@@ -265,7 +217,7 @@ impl ListQuery {
         }
     }
 
-    pub(crate) fn room_id(self, room_id: Uuid06) -> Self {
+    pub(crate) fn room_id(self, room_id: Uuid) -> Self {
         Self {
             room_id: Some(room_id),
             ..self
@@ -311,36 +263,42 @@ impl ListQuery {
         Self { direction, ..self }
     }
 
-    pub(crate) fn limit(self, limit: i64) -> Self {
+    pub(crate) fn limit(self, limit: usize) -> Self {
         Self {
             limit: Some(limit),
             ..self
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
-        use diesel::prelude::*;
+    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+        use quaint::ast::{Comparable, Orderable, ParameterizedValue, Select};
+        use quaint::visitor::{Postgres, Visitor};
 
-        let mut q = event::table
-            .filter(event::deleted_at.is_null())
-            .into_boxed();
+        let mut q = Select::from_table("event").so_that("deleted_at".is_null());
 
         if let Some(room_id) = self.room_id {
-            q = q.filter(event::room_id.eq(room_id));
+            q = q.and_where("room_id".equals(room_id));
         }
 
         q = match self.kind {
-            Some(KindFilter::Single(ref kind)) => q.filter(event::kind.eq(kind)),
-            Some(KindFilter::Multiple(ref kinds)) => q.filter(event::kind.eq_any(kinds.iter())),
+            Some(KindFilter::Single(ref kind)) => q.and_where("kind".equals(kind.as_str())),
+            Some(KindFilter::Multiple(ref kinds)) => {
+                let kinds = kinds
+                    .iter()
+                    .map(|k| k.as_str().into())
+                    .collect::<Vec<&str>>();
+
+                q.and_where("kind".in_selection(kinds))
+            }
             None => q,
         };
 
-        if let Some(ref set) = self.set {
-            q = q.filter(event::set.eq(set));
+        if let Some(set) = &self.set {
+            q = q.and_where("set".equals(set.as_str()));
         }
 
-        if let Some(ref label) = self.label {
-            q = q.filter(event::label.eq(label));
+        if let Some(label) = &self.label {
+            q = q.and_where("label".equals(label.as_str()));
         }
 
         if let Some(limit) = self.limit {
@@ -350,30 +308,42 @@ impl ListQuery {
         q = match self.direction {
             Direction::Forward => {
                 if let Some(last_occurred_at) = self.last_occurred_at {
-                    q = q.filter(event::occurred_at.gt(last_occurred_at));
+                    q = q.and_where("occurred_at".greater_than(last_occurred_at));
                 }
 
-                q.order_by((event::occurred_at, event::created_at))
+                q.order_by("occurred_at").order_by("created_at")
             }
             Direction::Backward => {
                 if let Some(last_occurred_at) = self.last_occurred_at {
-                    q = q.filter(event::occurred_at.lt(last_occurred_at));
+                    q = q.and_where("occurred_at".less_than(last_occurred_at));
                 }
 
-                q.order_by((event::occurred_at.desc(), event::created_at.desc()))
+                q.order_by("occurred_at".descend())
+                    .order_by("created_at".descend())
             }
         };
 
-        q.get_results(conn)
+        let (sql, bindings) = Postgres::build(q);
+        let mut query = sqlx::query_as(&sql);
+
+        for binding in bindings {
+            query = match binding {
+                ParameterizedValue::Integer(value) => query.bind(value),
+                ParameterizedValue::Text(value) => query.bind(value.to_string()),
+                ParameterizedValue::Uuid(value) => query.bind(value),
+                _ => query,
+            }
+        }
+
+        query.fetch_all(conn).await
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Insertable)]
-#[table_name = "event"]
+#[derive(Debug)]
 pub(crate) struct InsertQuery {
-    room_id: Uuid06,
+    room_id: Uuid,
     kind: String,
     set: String,
     label: Option<String>,
@@ -385,7 +355,7 @@ pub(crate) struct InsertQuery {
 
 impl InsertQuery {
     pub(crate) fn new(
-        room_id: Uuid06,
+        room_id: Uuid,
         kind: String,
         data: JsonValue,
         occurred_at: i64,
@@ -422,35 +392,64 @@ impl InsertQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
-        use crate::diesel::RunQueryDsl;
-        use crate::schema::event::dsl::event;
-
-        diesel::insert_into(event).values(self).get_result(conn)
+    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            INSERT INTO event (room_id, set, kind, label, data, occurred_at, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING
+                id,
+                room_id,
+                kind,
+                set,
+                label,
+                data,
+                occurred_at,
+                created_by AS "created_by!: AgentId",
+                created_at,
+                deleted_at,
+                original_occurred_at
+            "#,
+            self.room_id,
+            self.set,
+            self.kind,
+            self.label,
+            self.data,
+            self.occurred_at,
+            self.created_by.to_owned() as AgentId,
+        )
+        .fetch_one(conn)
+        .await
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct DeleteQuery<'a> {
-    room_id: Uuid06,
+    room_id: Uuid,
     kind: &'a str,
 }
 
 impl<'a> DeleteQuery<'a> {
-    pub(crate) fn new(room_id: Uuid06, kind: &'a str) -> Self {
+    pub(crate) fn new(room_id: Uuid, kind: &'a str) -> Self {
         Self { room_id, kind }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<(), Error> {
-        use diesel::prelude::*;
-
-        let q = event::table
-            .filter(event::room_id.eq(self.room_id))
-            .filter(event::kind.eq(self.kind));
-
-        diesel::delete(q).execute(conn)?;
-        Ok(())
+    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<()> {
+        sqlx::query!(
+            "
+            DELETE FROM event
+            WHERE deleted_at IS NULL
+            AND   room_id = $1
+            AND   kind = $2
+            ",
+            self.room_id,
+            self.kind,
+        )
+        .execute(conn)
+        .await
+        .map(|_| ())
     }
 }
 
@@ -458,7 +457,7 @@ impl<'a> DeleteQuery<'a> {
 
 #[derive(Clone)]
 pub(crate) struct SetStateQuery {
-    room_id: Uuid08,
+    room_id: Uuid,
     set: String,
     occurred_at: Option<i64>,
     original_occurred_at: i64,
@@ -466,9 +465,9 @@ pub(crate) struct SetStateQuery {
 }
 
 impl SetStateQuery {
-    pub(crate) fn new(room_id: Uuid06, set: String, original_occurred_at: i64, limit: i64) -> Self {
+    pub(crate) fn new(room_id: Uuid, set: String, original_occurred_at: i64, limit: i64) -> Self {
         Self {
-            room_id: Uuid08::from_bytes(*room_id.as_bytes()),
+            room_id: Uuid::from_bytes(*room_id.as_bytes()),
             set,
             occurred_at: None,
             original_occurred_at,
@@ -483,12 +482,9 @@ impl SetStateQuery {
         }
     }
 
-    pub(crate) async fn execute(
-        &self,
-        conn: &mut SqlxPgConnection,
-    ) -> Result<Vec<Object>, SqlxError> {
-        let mut stream = sqlx::query_as!(
-            SqlxObject,
+    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+        sqlx::query_as!(
+            Object,
             r#"
             SELECT DISTINCT ON(original_occurred_at, label)
                 id,
@@ -517,18 +513,11 @@ impl SetStateQuery {
             self.occurred_at,
             self.limit,
         )
-        .fetch(conn);
-
-        let mut objects = Vec::with_capacity(self.limit as usize);
-
-        while let Some(sqlx_object) = stream.try_next().await? {
-            objects.push(sqlx_object.try_into()?);
-        }
-
-        Ok(objects)
+        .fetch_all(conn)
+        .await
     }
 
-    pub(crate) async fn total_count(&self, conn: &mut SqlxPgConnection) -> Result<i64, SqlxError> {
+    pub(crate) async fn total_count(&self, conn: &mut PgConnection) -> sqlx::Result<i64> {
         sqlx::query!(
             "
             SELECT COUNT(DISTINCT label) AS total
@@ -553,13 +542,13 @@ impl SetStateQuery {
 ///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct OriginalEventQuery {
-    room_id: Uuid06,
+    room_id: Uuid,
     set: String,
     label: String,
 }
 
 impl OriginalEventQuery {
-    pub(crate) fn new(room_id: Uuid06, set: String, label: String) -> Self {
+    pub(crate) fn new(room_id: Uuid, set: String, label: String) -> Self {
         Self {
             room_id,
             set,
@@ -567,18 +556,35 @@ impl OriginalEventQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
-        use crate::diesel::RunQueryDsl;
-        use diesel::prelude::*;
-
-        event::table
-            .filter(event::deleted_at.is_null())
-            .filter(event::room_id.eq(self.room_id))
-            .filter(event::set.eq(&self.set))
-            .filter(event::label.eq(&self.label))
-            .order_by(event::occurred_at)
-            .limit(1)
-            .get_result(conn)
-            .optional()
+    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            SELECT
+                id,
+                room_id,
+                kind,
+                set,
+                label,
+                data,
+                occurred_at,
+                created_by as "created_by!: AgentId",
+                created_at,
+                deleted_at,
+                original_occurred_at
+            FROM event
+            WHERE deleted_at IS NULL
+            AND   room_id = $1
+            AND   set = $2
+            AND   label = $3
+            ORDER BY occurred_at
+            LIMIT 1
+            "#,
+            self.room_id,
+            self.set,
+            self.label,
+        )
+        .fetch_optional(conn)
+        .await
     }
 }
