@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
-use uuid06::Uuid;
+use uuid08::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -37,14 +37,11 @@ impl RequestHandler for ListHandler {
         let room = {
             // Check whether the room exists and open.
             let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
@@ -64,7 +61,7 @@ impl RequestHandler for ListHandler {
             let conn = context.get_ro_conn().await?;
 
             let query = db::agent::ListQuery::new()
-                .room_id(payload.room_id)
+                .room_id(uuid06::Uuid::from_bytes(payload.room_id.as_bytes()).unwrap())
                 .status(db::agent::Status::Ready)
                 .offset(payload.offset.unwrap_or_else(|| 0))
                 .limit(std::cmp::min(
@@ -98,7 +95,7 @@ impl RequestHandler for ListHandler {
 mod tests {
     use serde_derive::Deserialize;
     use svc_agent::AgentId;
-    use uuid06::Uuid;
+    use uuid08::Uuid;
 
     use crate::test_helpers::prelude::*;
 

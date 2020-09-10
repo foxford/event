@@ -17,14 +17,16 @@ use svc_agent::{
     Addressable, AgentId,
 };
 use svc_error::{extension::sentry, Error as SvcError};
-use uuid06::Uuid;
+use uuid08::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::app::operations::adjust_room;
 use crate::db::adjustment::Segment;
 use crate::db::agent;
-use crate::db::room::{now, since_now, FindQuery, InsertQuery, Time, UpdateQuery};
+use crate::db::room::{now, since_now, FindQuery, InsertQuery, UpdateQuery};
+
+type Time = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -82,20 +84,17 @@ impl RequestHandler for CreateHandler {
 
         // Insert room.
         let room = {
-            let mut query = InsertQuery::new(&payload.audience, payload.time);
+            let mut query = InsertQuery::new(&payload.audience, payload.time.into());
 
             if let Some(tags) = payload.tags {
                 query = query.tags(tags);
             }
 
-            let conn = context.get_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomInsertQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomInsertQuery, query.execute(&mut conn))
                 .await?
         };
 
@@ -142,14 +141,11 @@ impl RequestHandler for ReadHandler {
     ) -> Result {
         let room = {
             let query = FindQuery::new(payload.id);
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
@@ -206,14 +202,11 @@ impl RequestHandler for UpdateHandler {
         }
 
         let room = {
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("Room not found, id = '{}' or closed", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
@@ -236,7 +229,7 @@ impl RequestHandler for UpdateHandler {
                     if new_closed_at > new_opened_at =>
                 {
                     if let (Bound::Included(opened_at), _) = room.time() {
-                        if *opened_at <= Utc::now() {
+                        if opened_at <= Utc::now() {
                             let new_closed_at = if new_closed_at < Utc::now() {
                                 Utc::now()
                             } else {
@@ -244,7 +237,7 @@ impl RequestHandler for UpdateHandler {
                             };
 
                             time =
-                                Some((Bound::Included(*opened_at), Bound::Excluded(new_closed_at)));
+                                Some((Bound::Included(opened_at), Bound::Excluded(new_closed_at)));
                         }
                     }
                 }
@@ -257,21 +250,18 @@ impl RequestHandler for UpdateHandler {
             let mut query = UpdateQuery::new(room.id());
 
             if let Some(time) = time {
-                query = query.time(time);
+                query = query.time(time.into());
             }
 
             if let Some(tags) = payload.tags {
                 query = query.tags(tags);
             }
 
-            let conn = context.get_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomUpdateQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomUpdateQuery, query.execute(&mut conn))
                 .await?
         };
 
@@ -318,14 +308,11 @@ impl RequestHandler for EnterHandler {
     ) -> Result {
         let room = {
             let query = FindQuery::new(payload.id).time(now());
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("Room not found or closed, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?
@@ -343,7 +330,8 @@ impl RequestHandler for EnterHandler {
         // Register agent in `in_progress` state.
         {
             let conn = context.get_conn().await?;
-            let query = agent::InsertQuery::new(reqp.as_agent_id().to_owned(), room.id());
+            let room_id = uuid06::Uuid::from_bytes(room.id().as_bytes()).unwrap();
+            let query = agent::InsertQuery::new(reqp.as_agent_id().to_owned(), room_id);
 
             context
                 .profiler()
@@ -404,25 +392,23 @@ impl RequestHandler for LeaveHandler {
     ) -> Result {
         let (room, presence) = {
             let query = FindQuery::new(payload.id);
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             let room = context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
             // Check room presence.
+            let conn = context.get_ro_conn().await?;
+
             let query = agent::ListQuery::new()
-                .room_id(room.id())
+                .room_id(uuid06::Uuid::from_bytes(room.id().as_bytes()).unwrap())
                 .agent_id(reqp.as_agent_id().to_owned())
                 .status(agent::Status::Ready);
 
-            let conn = context.get_ro_conn().await?;
             let presence = context
                 .profiler()
                 .measure(
@@ -500,14 +486,11 @@ impl RequestHandler for AdjustHandler {
     ) -> Result {
         let room = {
             let query = FindQuery::new(payload.id);
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
                 .status(ResponseStatus::NOT_FOUND)?

@@ -13,7 +13,7 @@ use svc_agent::{
     AgentId, Authenticable,
 };
 use svc_error::Error as SvcError;
-use uuid06::Uuid;
+use uuid08::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -77,19 +77,18 @@ impl EventHandler for CreateHandler {
         {
             // Find room.
             let query = room::FindQuery::new(room_id).time(room::now());
-            let conn = context.get_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", room_id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
             // Update agent state to `ready`.
+            let room_id = uuid06::Uuid::from_bytes(room_id.as_bytes()).unwrap();
+
             let q = agent::UpdateQuery::new(payload.subject.clone(), room_id)
                 .status(agent::Status::Ready);
 
@@ -139,13 +138,14 @@ impl EventHandler for DeleteHandler {
         let room_id = payload.try_room_id()?;
 
         let row_count = {
+            let room_id = uuid06::Uuid::from_bytes(room_id.as_bytes()).unwrap();
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
             let conn = context.get_conn().await?;
 
             context
                 .profiler()
                 .measure(
-                    ProfilerKeys::RoomFindQuery,
+                    ProfilerKeys::AgentDeleteQuery,
                     spawn_blocking(move || query.execute(&conn)),
                 )
                 .await?
@@ -161,7 +161,7 @@ impl EventHandler for DeleteHandler {
 
         // Send broadcast notification that the agent has left the room.
         let outgoing_event_payload = RoomEnterLeaveEvent {
-            id: room_id.to_owned(),
+            id: room_id,
             agent_id: payload.subject,
         };
 

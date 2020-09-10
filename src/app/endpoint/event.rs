@@ -1,7 +1,6 @@
 use std::ops::Bound;
 
 use async_std::stream;
-use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
@@ -11,7 +10,7 @@ use svc_agent::{
     mqtt::{IncomingRequestProperties, ResponseStatus},
     Addressable,
 };
-use uuid06::Uuid;
+use uuid08::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -57,22 +56,17 @@ impl RequestHandler for CreateHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, author) = {
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             // Check whether the room exists and open.
             let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
 
             let room = context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?;
-
-            let mut conn = context.sqlx_db().acquire().await?;
 
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
@@ -271,15 +265,12 @@ impl RequestHandler for ListHandler {
     ) -> Result {
         // Check whether the room exists.
         let room = {
-            let conn = context.get_ro_conn().await?;
             let query = db::room::FindQuery::new(payload.room_id);
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?

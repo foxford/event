@@ -14,15 +14,16 @@ use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::config::TelemetryConfig;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ProfilerKeys {
+    AgentDeleteQuery,
     AgentInsertQuery,
     AgentListQuery,
     ChangeDeleteQuery,
     ChangeInsertQuery,
     ChangeListQuery,
     EditionDeleteQuery,
-    EditionFindWithRoomQuery,
     EditionFindQuery,
     EditionInsertQuery,
     EditionListQuery,
@@ -98,6 +99,12 @@ pub(crate) enum Metric {
     RedisConnections(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.idle_redis_connections_total"))]
     IdleRedisConnections(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_delete_query_p95_microseconds"))]
+    AgentDeleteQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_delete_query_p99_microseconds"))]
+    AgentDeleteQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_delete_query_max_microseconds"))]
+    AgentDeleteQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_insert_query_p95_microseconds"))]
     AgentInsertQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_insert_query_p99_microseconds"))]
@@ -134,12 +141,6 @@ pub(crate) enum Metric {
     EditionDeleteQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_delete_query_max_microseconds"))]
     EditionDeleteQueryMax(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.edition_find_with_room_query_p95_microseconds"))]
-    EditionFindWithRoomQueryP95(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.edition_find_with_room_query_p99_microseconds"))]
-    EditionFindWithRoomQueryP99(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.edition_find_with_room_query_max_microseconds"))]
-    EditionFindWithRoomQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_find_query_p95_microseconds"))]
     EditionFindQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_find_query_p99_microseconds"))]
@@ -390,6 +391,11 @@ fn append_profiler_stats(
         let metric_value_max = MetricValue::new(entry_report.max as u64, now);
 
         match key {
+            ProfilerKeys::AgentDeleteQuery => {
+                metrics.push(Metric::AgentDeleteQueryP95(metric_value_p95));
+                metrics.push(Metric::AgentDeleteQueryP99(metric_value_p99));
+                metrics.push(Metric::AgentDeleteQueryMax(metric_value_max));
+            }
             ProfilerKeys::AgentInsertQuery => {
                 metrics.push(Metric::AgentInsertQueryP95(metric_value_p95));
                 metrics.push(Metric::AgentInsertQueryP99(metric_value_p99));
@@ -419,11 +425,6 @@ fn append_profiler_stats(
                 metrics.push(Metric::EditionDeleteQueryP95(metric_value_p95));
                 metrics.push(Metric::EditionDeleteQueryP99(metric_value_p99));
                 metrics.push(Metric::EditionDeleteQueryMax(metric_value_max));
-            }
-            ProfilerKeys::EditionFindWithRoomQuery => {
-                metrics.push(Metric::EditionFindWithRoomQueryP95(metric_value_p95));
-                metrics.push(Metric::EditionFindWithRoomQueryP99(metric_value_p99));
-                metrics.push(Metric::EditionFindWithRoomQueryMax(metric_value_max));
             }
             ProfilerKeys::EditionFindQuery => {
                 metrics.push(Metric::EditionFindQueryP95(metric_value_p95));

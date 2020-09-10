@@ -25,11 +25,11 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let room = {
-            let query = db::edition::FindWithRoomQuery::new(payload.edition_id);
+        let edition = {
+            let query = db::edition::FindQuery::new(payload.edition_id);
             let conn = context.get_ro_conn().await?;
 
-            let maybe_edition_with_room = context
+            let maybe_edition = context
                 .profiler()
                 .measure(
                     ProfilerKeys::EditionFindQuery,
@@ -37,10 +37,23 @@ impl RequestHandler for CreateHandler {
                 )
                 .await?;
 
-            match maybe_edition_with_room {
-                Some((_edition, room)) => room,
+            match maybe_edition {
+                Some(edition) => edition,
                 None => {
                     return Err(format!("Edition not found, id = '{}'", payload.edition_id))
+                        .status(ResponseStatus::NOT_FOUND)?;
+                }
+            }
+        };
+
+        let room = {
+            let mut conn = context.sqlx_db().acquire().await?;
+            let room_id = uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
+
+            match db::room::FindQuery::new(room_id).execute(&mut conn).await? {
+                Some(room) => room,
+                None => {
+                    return Err(format!("Room not found, id = '{}'", room_id))
                         .status(ResponseStatus::NOT_FOUND)?;
                 }
             }
@@ -140,22 +153,35 @@ impl RequestHandler for ListHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let (edition, room) = {
-            let query = db::edition::FindWithRoomQuery::new(payload.id);
+        let edition = {
+            let query = db::edition::FindQuery::new(payload.id);
             let conn = context.get_ro_conn().await?;
 
-            let maybe_edition_and_room = context
+            let maybe_edition = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindWithRoomQuery,
+                    ProfilerKeys::EditionFindQuery,
                     spawn_blocking(move || query.execute(&conn)),
                 )
                 .await?;
 
-            match maybe_edition_and_room {
-                Some((edition, room)) => (edition, room),
+            match maybe_edition {
+                Some(edition) => edition,
                 None => {
                     return Err(format!("Edition not found, id = '{}'", payload.id))
+                        .status(ResponseStatus::NOT_FOUND)?;
+                }
+            }
+        };
+
+        let room = {
+            let mut conn = context.sqlx_db().acquire().await?;
+            let room_id = uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
+
+            match db::room::FindQuery::new(room_id).execute(&mut conn).await? {
+                Some(room) => room,
+                None => {
+                    return Err(format!("Room not found, id = '{}'", room_id))
                         .status(ResponseStatus::NOT_FOUND)?;
                 }
             }
@@ -221,13 +247,26 @@ impl RequestHandler for DeleteHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let (change, room) = {
+        let (change, edition) = {
             let conn = context.get_ro_conn().await?;
 
-            match db::change::FindWithEditionAndRoomQuery::new(payload.id).execute(&conn)? {
-                Some((change, (_edition, room))) => (change, room),
+            match db::change::FindWithEditionQuery::new(payload.id).execute(&conn)? {
+                Some((change, edition)) => (change, edition),
                 None => {
                     return Err(format!("Change not found, id = '{}'", payload.id))
+                        .status(ResponseStatus::NOT_FOUND)?;
+                }
+            }
+        };
+
+        let room = {
+            let mut conn = context.sqlx_db().acquire().await?;
+            let room_id = uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
+
+            match db::room::FindQuery::new(room_id).execute(&mut conn).await? {
+                Some(room) => room,
+                None => {
+                    return Err(format!("Room not found, id = '{}'", room_id))
                         .status(ResponseStatus::NOT_FOUND)?;
                 }
             }

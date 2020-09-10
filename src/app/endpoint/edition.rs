@@ -15,8 +15,7 @@ use svc_agent::{
     Addressable,
 };
 use svc_error::{extension::sentry, Error as SvcError};
-
-use uuid06::Uuid;
+use uuid08::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -44,14 +43,11 @@ impl RequestHandler for CreateHandler {
     ) -> Result {
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
@@ -68,8 +64,8 @@ impl RequestHandler for CreateHandler {
             .await?;
 
         let edition = {
-            let query =
-                db::edition::InsertQuery::new(payload.room_id, reqp.as_agent_id().to_owned());
+            let room_id = uuid06::Uuid::from_bytes(payload.room_id.as_bytes()).unwrap();
+            let query = db::edition::InsertQuery::new(room_id, reqp.as_agent_id().to_owned());
             let conn = context.get_conn().await?;
 
             context
@@ -123,14 +119,11 @@ impl RequestHandler for ListHandler {
     ) -> Result {
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
@@ -148,6 +141,7 @@ impl RequestHandler for ListHandler {
             )
             .await?;
 
+        let room_id = uuid06::Uuid::from_bytes(room_id.as_bytes()).unwrap();
         let mut query = db::edition::ListQuery::new(room_id);
 
         if let Some(last_created_at) = payload.last_created_at {
@@ -199,23 +193,37 @@ impl RequestHandler for DeleteHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let (edition, room) = {
-            let query = db::edition::FindWithRoomQuery::new(payload.id);
+        let edition = {
+            let room_id = uuid06::Uuid::from_bytes(payload.id.as_bytes()).unwrap();
+            let query = db::edition::FindQuery::new(room_id);
             let conn = context.get_ro_conn().await?;
 
             let maybe_edition_and_room = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindWithRoomQuery,
+                    ProfilerKeys::EditionFindQuery,
                     spawn_blocking(move || query.execute(&conn)),
                 )
                 .await?;
 
             match maybe_edition_and_room {
-                Some((edition, room)) => (edition, room),
+                Some(edition) => edition,
                 None => {
                     return Err(format!("Change not found, id = '{}'", payload.id))
                         .status(ResponseStatus::NOT_FOUND);
+                }
+            }
+        };
+
+        let room = {
+            let mut conn = context.sqlx_db().acquire().await?;
+            let room_id = uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
+
+            match db::room::FindQuery::new(room_id).execute(&mut conn).await? {
+                Some(room) => room,
+                None => {
+                    return Err(format!("Room not found, id = '{}'", room_id))
+                        .status(ResponseStatus::NOT_FOUND)?;
                 }
             }
         };
@@ -273,23 +281,37 @@ impl RequestHandler for CommitHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let (edition, room) = {
-            let query = db::edition::FindWithRoomQuery::new(payload.id);
+        let edition = {
+            let room_id = uuid06::Uuid::from_bytes(payload.id.as_bytes()).unwrap();
+            let query = db::edition::FindQuery::new(room_id);
             let conn = context.get_ro_conn().await?;
 
-            let maybe_edition_and_room = context
+            let maybe_edition = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindWithRoomQuery,
+                    ProfilerKeys::EditionFindQuery,
                     spawn_blocking(move || query.execute(&conn)),
                 )
                 .await?;
 
-            match maybe_edition_and_room {
-                Some((edition, room)) => (edition, room),
+            match maybe_edition {
+                Some(edition) => edition,
                 None => {
                     return Err(format!("Edition not found, id = '{}'", payload.id))
                         .status(ResponseStatus::NOT_FOUND);
+                }
+            }
+        };
+
+        let room = {
+            let mut conn = context.sqlx_db().acquire().await?;
+            let room_id = uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
+
+            match db::room::FindQuery::new(room_id).execute(&mut conn).await? {
+                Some(room) => room,
+                None => {
+                    return Err(format!("Room not found, id = '{}'", room_id))
+                        .status(ResponseStatus::NOT_FOUND)?;
                 }
             }
         };
@@ -320,11 +342,16 @@ impl RequestHandler for CommitHandler {
 
             // Handle result.
             let result = match result {
-                Ok((destination, modified_segments)) => EditionCommitResult::Success {
-                    source_room_id: edition.source_room_id(),
-                    committed_room_id: destination.id(),
-                    modified_segments,
-                },
+                Ok((destination, modified_segments)) => {
+                    let source_room_id =
+                        uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
+
+                    EditionCommitResult::Success {
+                        source_room_id,
+                        committed_room_id: destination.id(),
+                        modified_segments,
+                    }
+                }
                 Err(err) => {
                     error!(
                         "Room adjustment job failed for room_id = '{}': {}",

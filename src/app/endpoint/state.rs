@@ -1,13 +1,12 @@
 use std::ops::Bound;
 
 use async_std::stream;
-use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::{map::Map as JsonMap, Value as JsonValue};
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
-use uuid06::Uuid;
+use uuid08::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -60,14 +59,11 @@ impl RequestHandler for ReadHandler {
         // Check whether the room exists.
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
@@ -86,8 +82,8 @@ impl RequestHandler for ReadHandler {
         let original_occurred_at = if let Some(original_occurred_at) = payload.original_occurred_at
         {
             original_occurred_at
-        } else if let (Bound::Included(opened_at), Bound::Excluded(closed_at)) = room.time() {
-            (*closed_at - *opened_at)
+        } else if let (Bound::Included(open), Bound::Excluded(close)) = room.time() {
+            (close - open)
                 .num_nanoseconds()
                 .map(|n| n + 1)
                 .unwrap_or(std::i64::MAX)

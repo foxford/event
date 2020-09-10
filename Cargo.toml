@@ -35,6 +35,7 @@ uuid06 = { package = "uuid", version = "0.6", features = ["v4", "serde"] }
 uuid08 = { package = "uuid", version = "0.8", features = ["v4", "serde"] }
 
 [patch.crates-io]
+sqlx = { git = "https://github.com/feymartynov/sqlx", branch = "macro-postgres-ranges" }
 svc-agent = { git = "https://github.com/netology-group/svc-agent-rs", branch = "feature/sqlx" }
 svc-authn = { git = "https://github.com/netology-group/svc-authn-rs", branch = "feature/sqlx" }
 svc-error = { git = "https://github.com/netology-group/svc-error-rs", branch = "feature/sqlx" }

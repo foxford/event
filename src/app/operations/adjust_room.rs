@@ -3,7 +3,6 @@ use std::ops::Bound;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, Utc};
-use diesel::pg::PgConnection;
 use log::info;
 use sqlx::postgres::{PgConnection as SqlxPgConnection, PgPool as SqlxDb};
 
@@ -38,7 +37,9 @@ pub(crate) async fn call(
         .context("Failed to acquire sqlx db connection")?;
 
     // Create adjustment.
-    AdjustmentInsertQuery::new(real_time_room.id(), started_at, segments.to_vec(), offset)
+    let real_time_room_id = uuid06::Uuid::from_bytes(real_time_room.id().as_bytes()).unwrap();
+
+    AdjustmentInsertQuery::new(real_time_room_id, started_at, segments.to_vec(), offset)
         .execute(&conn)?;
 
     ///////////////////////////////////////////////////////////////////////////
@@ -46,7 +47,7 @@ pub(crate) async fn call(
     // Get room opening time and duration.
     let (room_opening, room_duration) = match real_time_room.time() {
         (Bound::Included(start), Bound::Excluded(stop)) if stop > start => {
-            (*start, stop.signed_duration_since(*start))
+            (start, stop.signed_duration_since(start))
         }
         _ => bail!("invalid duration for room = '{}'", real_time_room.id()),
     };
@@ -71,7 +72,7 @@ pub(crate) async fn call(
     let segment_gaps = invert_segments(&nano_segments, room_duration)?;
 
     // Create original room with events shifted according to segments.
-    let original_room = create_room(&conn, &real_time_room, started_at)?;
+    let original_room = create_room(&mut sqlx_conn, &real_time_room, started_at).await?;
 
     clone_events(
         &mut sqlx_conn,
@@ -101,7 +102,7 @@ pub(crate) async fn call(
     let cut_gaps = cut_events_to_gaps(&cut_events)?;
 
     // Create modified room with events shifted again according to cut events this time.
-    let modified_room = create_room(&conn, &original_room, started_at)?;
+    let modified_room = create_room(&mut sqlx_conn, &original_room, started_at).await?;
     clone_events(&mut sqlx_conn, &modified_room, &cut_gaps, 0).await?;
 
     // Delete cut events from the modified room.
@@ -159,16 +160,20 @@ pub(crate) async fn call(
 }
 
 /// Creates a derived room from the source room.
-fn create_room(conn: &PgConnection, source_room: &Room, started_at: DateTime<Utc>) -> Result<Room> {
+async fn create_room(
+    conn: &mut SqlxPgConnection,
+    source_room: &Room,
+    started_at: DateTime<Utc>,
+) -> Result<Room> {
     let time = (Bound::Included(started_at), source_room.time().1.to_owned());
-    let mut query = RoomInsertQuery::new(&source_room.audience(), time);
+    let mut query = RoomInsertQuery::new(&source_room.audience(), time.into());
     query = query.source_room_id(source_room.id());
 
     if let Some(tags) = source_room.tags() {
         query = query.tags(tags.to_owned());
     }
 
-    query.execute(conn).context("failed to insert room")
+    query.execute(conn).await.context("failed to insert room")
 }
 
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
