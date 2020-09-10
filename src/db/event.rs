@@ -189,11 +189,14 @@ impl Default for Direction {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
 enum KindFilter {
     Single(String),
     Multiple(Vec<String>),
 }
 
+#[derive(Debug)]
 pub(crate) struct ListQuery {
     room_id: Option<Uuid>,
     kind: Option<KindFilter>,
@@ -283,11 +286,7 @@ impl ListQuery {
         q = match self.kind {
             Some(KindFilter::Single(ref kind)) => q.and_where("kind".equals(kind.as_str())),
             Some(KindFilter::Multiple(ref kinds)) => {
-                let kinds = kinds
-                    .iter()
-                    .map(|k| k.as_str().into())
-                    .collect::<Vec<&str>>();
-
+                let kinds = kinds.iter().map(|k| k.as_str()).collect::<Vec<&str>>();
                 q.and_where("kind".in_selection(kinds))
             }
             None => q,
@@ -426,6 +425,7 @@ impl InsertQuery {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub(crate) struct DeleteQuery<'a> {
     room_id: Uuid,
     kind: &'a str,
@@ -541,6 +541,7 @@ impl SetStateQuery {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub(crate) struct OriginalEventQuery {
     room_id: Uuid,
     set: String,

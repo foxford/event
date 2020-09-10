@@ -1,49 +1,20 @@
 use std::ops::Bound;
 
 use chrono::{serde::ts_seconds, DateTime, Utc};
-use diesel::{pg::PgConnection, result::Error};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use uuid06::Uuid;
-
-use crate::schema::room;
-
-///////////////////////////////////////////////////////////////////////////////
-
-pub(crate) type Time = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
-
-/// Use to filter by not expired room allowing time before room opening.
-///
-///    [-----room.time-----]
-/// [---------------------------- OK
-///              [--------------- OK
-///                           [-- NOT OK
-pub(crate) fn since_now() -> Time {
-    (Bound::Included(Utc::now()), Bound::Unbounded)
-}
-
-/// Use to filter strictly by room time range.
-///
-///    [-----room.time-----]
-///  |                            NOT OK
-///              |                OK
-///                          |    NOT OK
-pub(crate) fn now() -> Time {
-    let now = Utc::now();
-    (Bound::Included(now), Bound::Included(now))
-}
+use sqlx::postgres::{types::PgRange, PgConnection};
+use uuid08::Uuid;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Debug, Deserialize, Serialize, Identifiable, Associations, Queryable)]
-#[table_name = "room"]
-#[belongs_to(Object, foreign_key = "source_room_id")]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Object {
     id: Uuid,
     audience: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     source_room_id: Option<Uuid>,
-    #[serde(with = "crate::serde::ts_seconds_bound_tuple")]
+    #[serde(with = "serde::time")]
     time: Time,
     #[serde(skip_serializing_if = "Option::is_none")]
     tags: Option<JsonValue>,
@@ -64,8 +35,8 @@ impl Object {
         self.source_room_id
     }
 
-    pub(crate) fn time(&self) -> &Time {
-        &self.time
+    pub(crate) fn time(&self) -> (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>) {
+        (self.time.0.start, self.time.0.end)
     }
 
     pub(crate) fn tags(&self) -> Option<&JsonValue> {
@@ -75,6 +46,7 @@ impl Object {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub(crate) struct FindQuery {
     id: Uuid,
     time: Option<Time>,
@@ -92,24 +64,28 @@ impl FindQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
-        use diesel::prelude::*;
-        use diesel::{dsl::sql, sql_types::Tstzrange};
+    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+        let time: Option<PgRange<DateTime<Utc>>> = self.time.to_owned().map(|t| t.into());
 
-        let mut q = room::table.into_boxed();
-
-        if let Some(time) = self.time {
-            q = q.filter(sql("room.time && ").bind::<Tstzrange, _>(time));
-        }
-
-        q.filter(room::id.eq(self.id)).get_result(conn).optional()
+        sqlx::query_as!(
+            Object,
+            r#"
+            SELECT id, audience, source_room_id, time AS "time!: Time", tags, created_at
+            FROM room
+            WHERE id = $1
+            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)
+            "#,
+            self.id,
+            time,
+        )
+        .fetch_optional(conn)
+        .await
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Insertable)]
-#[table_name = "room"]
+#[derive(Debug)]
 pub(crate) struct InsertQuery {
     audience: String,
     source_room_id: Option<Uuid>,
@@ -141,18 +117,29 @@ impl InsertQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
-        use crate::diesel::RunQueryDsl;
-        use crate::schema::room::dsl::room;
+    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+        let time: PgRange<DateTime<Utc>> = self.time.to_owned().into();
 
-        diesel::insert_into(room).values(self).get_result(conn)
+        sqlx::query_as!(
+            Object,
+            r#"
+            INSERT INTO room (audience, source_room_id, time, tags)
+            VALUES ($1, $2, $3, $4)
+            RETURNING id, audience, source_room_id, time AS "time!: Time", tags, created_at
+            "#,
+            self.audience,
+            self.source_room_id,
+            Some(time),
+            self.tags,
+        )
+        .fetch_one(conn)
+        .await
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Identifiable, AsChangeset, Deserialize)]
-#[table_name = "room"]
+#[derive(Debug, Deserialize)]
 pub(crate) struct UpdateQuery {
     id: Uuid,
     time: Option<Time>,
@@ -182,9 +169,99 @@ impl UpdateQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
-        use diesel::prelude::*;
+    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+        let time: Option<PgRange<DateTime<Utc>>> = self.time.to_owned().map(|t| t.into());
 
-        diesel::update(self).set(self).get_result(conn)
+        sqlx::query_as!(
+            Object,
+            r#"
+            UPDATE room
+            SET time = COALESCE($2, time),
+                tags = COALESCE($3::JSON, tags)
+            WHERE id = $1
+            RETURNING id, audience, source_room_id, time AS "time!: Time", tags, created_at
+            "#,
+            self.id,
+            time,
+            self.tags,
+        )
+        .fetch_one(conn)
+        .await
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+type BoundedDateTimeTuple = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
+
+#[derive(Clone, Debug, Deserialize, Serialize, sqlx::Type)]
+#[sqlx(transparent)]
+#[serde(from = "BoundedDateTimeTuple")]
+#[serde(into = "BoundedDateTimeTuple")]
+pub(crate) struct Time(PgRange<DateTime<Utc>>);
+
+impl From<BoundedDateTimeTuple> for Time {
+    fn from(time: BoundedDateTimeTuple) -> Self {
+        Time(PgRange::from(time))
+    }
+}
+
+impl Into<BoundedDateTimeTuple> for Time {
+    fn into(self) -> BoundedDateTimeTuple {
+        (self.0.start, self.0.end)
+    }
+}
+
+impl Into<PgRange<DateTime<Utc>>> for Time {
+    fn into(self) -> PgRange<DateTime<Utc>> {
+        self.0
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+/// Use to filter by not expired room allowing time before room opening.
+///
+///    [-----room.time-----]
+/// [---------------------------- OK
+///              [--------------- OK
+///                           [-- NOT OK
+pub(crate) fn since_now() -> Time {
+    (Bound::Included(Utc::now()), Bound::Unbounded).into()
+}
+
+/// Use to filter strictly by room time range.
+///
+///    [-----room.time-----]
+///  |                            NOT OK
+///              |                OK
+///                          |    NOT OK
+pub(crate) fn now() -> Time {
+    let now = Utc::now();
+    (Bound::Included(now), Bound::Included(now)).into()
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+pub(crate) mod serde {
+    pub(crate) mod time {
+        use super::super::Time;
+        use crate::serde::ts_seconds_bound_tuple;
+        use serde::{de, ser};
+
+        pub(crate) fn serialize<S>(value: &Time, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: ser::Serializer,
+        {
+            ts_seconds_bound_tuple::serialize(&value.to_owned().into(), serializer)
+        }
+
+        pub(crate) fn deserialize<'de, D>(d: D) -> Result<Time, D::Error>
+        where
+            D: de::Deserializer<'de>,
+        {
+            let time = ts_seconds_bound_tuple::deserialize(d)?;
+            Ok(Time::from(time))
+        }
     }
 }

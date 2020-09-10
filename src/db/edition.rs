@@ -22,25 +22,32 @@ pub(crate) struct Object {
     created_at: DateTime<Utc>,
 }
 
-pub(crate) struct FindWithRoomQuery {
+impl Object {
+    pub(crate) fn id(&self) -> Uuid {
+        self.id
+    }
+
+    pub(crate) fn source_room_id(&self) -> Uuid {
+        self.source_room_id
+    }
+}
+
+pub(crate) struct FindQuery {
     id: Uuid,
 }
 
-type EditionWithRoom = (Object, Room);
-
-impl FindWithRoomQuery {
+impl FindQuery {
     pub(crate) fn new(id: Uuid) -> Self {
         Self { id }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<EditionWithRoom>, Error> {
-        use crate::schema::room;
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
         use diesel::prelude::*;
 
-        let q = edition::table
-            .inner_join(room::table)
-            .filter(edition::id.eq(self.id));
-        q.get_result(conn).optional()
+        edition::table
+            .filter(edition::id.eq(self.id))
+            .get_result(conn)
+            .optional()
     }
 }
 
@@ -123,15 +130,5 @@ impl DeleteQuery {
 
         let q = edition::table.filter(edition::id.eq(self.id));
         diesel::delete(q).execute(conn)
-    }
-}
-
-impl Object {
-    pub(crate) fn id(&self) -> Uuid {
-        self.id
-    }
-
-    pub(crate) fn source_room_id(&self) -> Uuid {
-        self.source_room_id
     }
 }

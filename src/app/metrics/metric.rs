@@ -53,6 +53,12 @@ pub(crate) enum Metric {
     RedisConnections(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.idle_redis_connections_total"))]
     IdleRedisConnections(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_delete_query_p95_microseconds"))]
+    AgentDeleteQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_delete_query_p99_microseconds"))]
+    AgentDeleteQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_delete_query_max_microseconds"))]
+    AgentDeleteQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_insert_query_p95_microseconds"))]
     AgentInsertQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_insert_query_p99_microseconds"))]
@@ -89,12 +95,6 @@ pub(crate) enum Metric {
     EditionDeleteQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_delete_query_max_microseconds"))]
     EditionDeleteQueryMax(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.edition_find_with_room_query_p95_microseconds"))]
-    EditionFindWithRoomQueryP95(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.edition_find_with_room_query_p99_microseconds"))]
-    EditionFindWithRoomQueryP99(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.edition_find_with_room_query_max_microseconds"))]
-    EditionFindWithRoomQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_find_query_p95_microseconds"))]
     EditionFindQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_find_query_p99_microseconds"))]
@@ -224,6 +224,12 @@ pub(crate) enum Metric2 {
     RedisConnections(MetricValue<u64>),
     #[serde(rename(serialize = "idle_redis_connections_total"))]
     IdleRedisConnections(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_delete_query_p95_microseconds"))]
+    AgentDeleteQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_delete_query_p99_microseconds"))]
+    AgentDeleteQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_delete_query_max_microseconds"))]
+    AgentDeleteQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "agent_insert_query_p95_microseconds"))]
     AgentInsertQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "agent_insert_query_p99_microseconds"))]
@@ -260,12 +266,6 @@ pub(crate) enum Metric2 {
     EditionDeleteQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "edition_delete_query_max_microseconds"))]
     EditionDeleteQueryMax(MetricValue<u64>),
-    #[serde(rename(serialize = "edition_find_with_room_query_p95_microseconds"))]
-    EditionFindWithRoomQueryP95(MetricValue<u64>),
-    #[serde(rename(serialize = "edition_find_with_room_query_p99_microseconds"))]
-    EditionFindWithRoomQueryP99(MetricValue<u64>),
-    #[serde(rename(serialize = "edition_find_with_room_query_max_microseconds"))]
-    EditionFindWithRoomQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "edition_find_query_p95_microseconds"))]
     EditionFindQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "edition_find_query_p99_microseconds"))]
@@ -377,6 +377,9 @@ impl From<Metric> for Metric2 {
             Metric::MaxDbPoolTimeout(v) => Metric2::MaxDbPoolTimeout(v),
             Metric::RedisConnections(v) => Metric2::RedisConnections(v),
             Metric::IdleRedisConnections(v) => Metric2::IdleRedisConnections(v),
+            Metric::AgentDeleteQueryP95(v) => Metric2::AgentDeleteQueryP95(v),
+            Metric::AgentDeleteQueryP99(v) => Metric2::AgentDeleteQueryP99(v),
+            Metric::AgentDeleteQueryMax(v) => Metric2::AgentDeleteQueryMax(v),
             Metric::AgentInsertQueryP95(v) => Metric2::AgentInsertQueryP95(v),
             Metric::AgentInsertQueryP99(v) => Metric2::AgentInsertQueryP99(v),
             Metric::AgentInsertQueryMax(v) => Metric2::AgentInsertQueryMax(v),
@@ -395,9 +398,6 @@ impl From<Metric> for Metric2 {
             Metric::EditionDeleteQueryP95(v) => Metric2::EditionDeleteQueryP95(v),
             Metric::EditionDeleteQueryP99(v) => Metric2::EditionDeleteQueryP99(v),
             Metric::EditionDeleteQueryMax(v) => Metric2::EditionDeleteQueryMax(v),
-            Metric::EditionFindWithRoomQueryP95(v) => Metric2::EditionFindWithRoomQueryP95(v),
-            Metric::EditionFindWithRoomQueryP99(v) => Metric2::EditionFindWithRoomQueryP99(v),
-            Metric::EditionFindWithRoomQueryMax(v) => Metric2::EditionFindWithRoomQueryMax(v),
             Metric::EditionFindQueryP95(v) => Metric2::EditionFindQueryP95(v),
             Metric::EditionFindQueryP99(v) => Metric2::EditionFindQueryP99(v),
             Metric::EditionFindQueryMax(v) => Metric2::EditionFindQueryMax(v),

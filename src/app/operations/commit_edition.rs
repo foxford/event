@@ -2,7 +2,6 @@ use std::ops::Bound;
 
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
-use diesel::pg::PgConnection;
 use log::info;
 use sqlx::postgres::{PgConnection as SqlxPgConnection, PgPool as SqlxDb};
 
@@ -41,7 +40,7 @@ pub(crate) async fn call(
     let result = {
         let room_duration = match source.time() {
             (Bound::Included(start), Bound::Excluded(stop)) if stop > start => {
-                stop.signed_duration_since(*start)
+                stop.signed_duration_since(start)
             }
             _ => bail!("invalid duration for room = '{}'", source.id()),
         };
@@ -67,7 +66,7 @@ pub(crate) async fn call(
 
         let cut_gaps = collect_gaps(&cut_events, &cut_changes)?;
 
-        let destination = clone_room(&conn, &source)?;
+        let destination = clone_room(&mut sqlx_conn, &source).await?;
         clone_events(&mut sqlx_conn, &source, &destination, &edition, &cut_gaps).await?;
 
         let destination_id = uuid08::Uuid::from_bytes(*destination.id().as_bytes());
@@ -110,16 +109,15 @@ pub(crate) async fn call(
     Ok(result)
 }
 
-fn clone_room(conn: &PgConnection, source: &Room) -> Result<Room> {
-    let mut query = RoomInsertQuery::new(&source.audience(), source.time().to_owned());
-
+async fn clone_room(conn: &mut SqlxPgConnection, source: &Room) -> Result<Room> {
+    let mut query = RoomInsertQuery::new(&source.audience(), source.time().to_owned().into());
     query = query.source_room_id(source.id());
 
     if let Some(tags) = source.tags() {
         query = query.tags(tags.to_owned());
     }
 
-    query.execute(conn).context("Failed to insert room")
+    query.execute(conn).await.context("Failed to insert room")
 }
 
 async fn clone_events(

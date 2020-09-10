@@ -7,7 +7,6 @@ use svc_agent::AgentId;
 use uuid06::Uuid;
 
 use super::edition::Object as Edition;
-use super::room::Object as Room;
 use crate::schema::change;
 
 #[derive(DbEnum, Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
@@ -49,28 +48,26 @@ pub(crate) struct Object {
     created_at: DateTime<Utc>,
 }
 
-pub(crate) struct FindWithEditionAndRoomQuery {
+pub(crate) struct FindWithEditionQuery {
     id: Uuid,
 }
 
-type ChangeWithEditionAndRoom = (Object, (Edition, Room));
+type ChangeWithEdition = (Object, Edition);
 
-impl FindWithEditionAndRoomQuery {
+impl FindWithEditionQuery {
     pub(crate) fn new(id: Uuid) -> Self {
         Self { id }
     }
 
-    pub(crate) fn execute(
-        &self,
-        conn: &PgConnection,
-    ) -> Result<Option<ChangeWithEditionAndRoom>, Error> {
-        use crate::schema::{edition, room};
+    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<ChangeWithEdition>, Error> {
+        use crate::schema::edition;
         use diesel::prelude::*;
 
-        let q = change::table
-            .inner_join(edition::table.inner_join(room::table))
-            .filter(change::id.eq(self.id));
-        q.get_result(conn).optional()
+        change::table
+            .inner_join(edition::table)
+            .filter(change::id.eq(self.id))
+            .get_result(conn)
+            .optional()
     }
 }
 
