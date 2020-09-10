@@ -64,6 +64,13 @@ async fn main() -> Result<()> {
             })
             .unwrap_or_else(|_| 5);
 
+        let idle_size = var("CACHE_POOL_IDLE_SIZE")
+            .map(|val| {
+                val.parse::<u32>()
+                    .expect("Error converting CACHE_POOL_IDLE_SIZE variable into u32")
+            })
+            .ok();
+
         let timeout = var("CACHE_POOL_TIMEOUT")
             .map(|val| {
                 val.parse::<u64>()
@@ -78,7 +85,7 @@ async fn main() -> Result<()> {
             })
             .unwrap_or_else(|_| 300);
 
-        let pool = create_pool(&url, size, timeout);
+        let pool = create_pool(&url, size, idle_size, timeout);
         let cache = Cache::new(pool.clone(), expiration_time);
         (Some(pool), Some(cache))
     } else {
