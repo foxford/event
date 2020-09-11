@@ -273,7 +273,7 @@ impl ListQuery {
         }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
         use quaint::ast::{Comparable, Orderable, ParameterizedValue, Select};
         use quaint::visitor::{Postgres, Visitor};
 
@@ -391,7 +391,7 @@ impl InsertQuery {
         }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         sqlx::query_as!(
             Object,
             r#"
@@ -416,7 +416,7 @@ impl InsertQuery {
             self.label,
             self.data,
             self.occurred_at,
-            self.created_by.to_owned() as AgentId,
+            self.created_by as AgentId,
         )
         .fetch_one(conn)
         .await
@@ -436,7 +436,7 @@ impl<'a> DeleteQuery<'a> {
         Self { room_id, kind }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<()> {
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<()> {
         sqlx::query!(
             "
             DELETE FROM event
@@ -482,7 +482,7 @@ impl SetStateQuery {
         }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
         sqlx::query_as!(
             Object,
             r#"
@@ -557,7 +557,7 @@ impl OriginalEventQuery {
         }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
         sqlx::query_as!(
             Object,
             r#"

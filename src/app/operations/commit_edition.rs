@@ -6,7 +6,7 @@ use log::info;
 use sqlx::postgres::{PgConnection as SqlxPgConnection, PgPool as SqlxDb};
 
 use crate::app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND};
-use crate::db::adjustment::Segment;
+use crate::db::adjustment::Segments;
 use crate::db::change::{ListQuery as ChangeListQuery, Object as Change};
 use crate::db::edition::Object as Edition;
 use crate::db::event::{
@@ -20,7 +20,7 @@ pub(crate) async fn call(
     sqlx_db: &SqlxDb,
     edition: &Edition,
     source: &Room,
-) -> Result<(Room, Vec<Segment>)> {
+) -> Result<(Room, Segments)> {
     info!(
         "Edition commit task started for edition_id = '{}', source room id = {}",
         edition.id(),
@@ -81,12 +81,7 @@ pub(crate) async fn call(
                 )
             })?;
 
-        let bounded_cut_gaps = cut_gaps
-            .into_iter()
-            .map(|(start, stop)| (Bound::Included(start), Bound::Excluded(stop)))
-            .collect::<Vec<Segment>>();
-
-        let modified_segments = invert_segments(&bounded_cut_gaps, room_duration)?
+        let modified_segments = invert_segments(&cut_gaps, room_duration)?
             .into_iter()
             .map(|(start, stop)| {
                 (
@@ -94,9 +89,9 @@ pub(crate) async fn call(
                     Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
                 )
             })
-            .collect::<Vec<Segment>>();
+            .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
 
-        Ok((destination, modified_segments)) as Result<(Room, Vec<Segment>)>
+        Ok((destination, Segments::from(modified_segments))) as Result<(Room, Segments)>
     }?;
     // })?;
 
