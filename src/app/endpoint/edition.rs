@@ -21,7 +21,7 @@ use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::app::operations::commit_edition;
 use crate::db;
-use crate::db::adjustment::Segment;
+use crate::db::adjustment::Segments;
 
 pub(crate) struct CreateHandler;
 
@@ -407,8 +407,8 @@ enum EditionCommitResult {
     Success {
         source_room_id: Uuid,
         committed_room_id: Uuid,
-        #[serde(with = "crate::serde::milliseconds_bound_tuples")]
-        modified_segments: Vec<Segment>,
+        #[serde(with = "crate::db::adjustment::serde::segments")]
+        modified_segments: Segments,
     },
     Error {
         error: SvcError,

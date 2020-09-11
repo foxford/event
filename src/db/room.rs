@@ -64,8 +64,8 @@ impl FindQuery {
         }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
-        let time: Option<PgRange<DateTime<Utc>>> = self.time.to_owned().map(|t| t.into());
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+        let time: Option<PgRange<DateTime<Utc>>> = self.time.map(|t| t.into());
 
         sqlx::query_as!(
             Object,
@@ -117,8 +117,8 @@ impl InsertQuery {
         }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Object> {
-        let time: PgRange<DateTime<Utc>> = self.time.to_owned().into();
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+        let time: PgRange<DateTime<Utc>> = self.time.into();
 
         sqlx::query_as!(
             Object,
@@ -169,8 +169,8 @@ impl UpdateQuery {
         }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Object> {
-        let time: Option<PgRange<DateTime<Utc>>> = self.time.to_owned().map(|t| t.into());
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+        let time: Option<PgRange<DateTime<Utc>>> = self.time.map(|t| t.into());
 
         sqlx::query_as!(
             Object,
@@ -202,7 +202,7 @@ pub(crate) struct Time(PgRange<DateTime<Utc>>);
 
 impl From<BoundedDateTimeTuple> for Time {
     fn from(time: BoundedDateTimeTuple) -> Self {
-        Time(PgRange::from(time))
+        Self(PgRange::from(time))
     }
 }
 

@@ -93,7 +93,7 @@ impl ListQuery {
         }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
         use quaint::ast::{Comparable, Orderable, Select};
         use quaint::visitor::{Postgres, Visitor};
 
@@ -124,7 +124,7 @@ impl ListQuery {
         let (sql, _bindings) = Postgres::build(q);
         let mut query = sqlx::query_as(&sql);
 
-        if let Some(ref agent_id) = self.agent_id {
+        if let Some(agent_id) = self.agent_id {
             query = query.bind(agent_id);
         }
 
@@ -171,7 +171,7 @@ impl InsertQuery {
         Self { status, ..self }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         sqlx::query_as!(
             Object,
             r#"
@@ -185,7 +185,7 @@ impl InsertQuery {
                 status AS "status!: Status",
                 created_at
             "#,
-            self.agent_id.to_owned() as AgentId,
+            self.agent_id as AgentId,
             self.room_id,
             self.status as Status,
         )
@@ -219,7 +219,7 @@ impl UpdateQuery {
         }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
         sqlx::query_as!(
             Object,
             r#"
@@ -256,7 +256,7 @@ impl DeleteQuery {
         Self { agent_id, room_id }
     }
 
-    pub(crate) async fn execute(&self, conn: &mut PgConnection) -> sqlx::Result<usize> {
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<usize> {
         sqlx::query_as!(
             Object,
             r#"

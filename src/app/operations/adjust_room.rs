@@ -4,43 +4,50 @@ use std::ops::Bound;
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use log::info;
-use sqlx::postgres::{PgConnection as SqlxPgConnection, PgPool as SqlxDb};
+use sqlx::postgres::{PgConnection, PgPool as Db};
 
-use crate::db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segment};
+use crate::db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segments};
 use crate::db::event::{
     DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event,
 };
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
-use crate::db::ConnectionPool as Db;
 
 pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 
 pub(crate) async fn call(
     db: &Db,
-    sqlx_db: &SqlxDb,
     real_time_room: &Room,
     started_at: DateTime<Utc>,
-    segments: &[Segment],
+    segments: &Segments,
     offset: i64,
-) -> Result<(Room, Room, Vec<Segment>)> {
+) -> Result<(Room, Room, Segments)> {
     info!(
         "Room adjustment task started for room_id = '{}'",
         real_time_room.id()
     );
 
     let start_timestamp = Utc::now();
-    let conn = db.get()?;
 
-    let mut sqlx_conn = sqlx_db
-        .acquire()
-        .await
-        .context("Failed to acquire sqlx db connection")?;
+    // Parse segments.
+    let bounded_offset_tuples: Vec<(Bound<i64>, Bound<i64>)> = segments.to_owned().into();
+    let mut parsed_segments = Vec::with_capacity(bounded_offset_tuples.len());
+
+    for segment in bounded_offset_tuples {
+        match segment {
+            (Bound::Included(start), Bound::Excluded(stop)) => parsed_segments.push((start, stop)),
+            segment => bail!("Invalid segment: {:?}", segment),
+        }
+    }
 
     // Create adjustment.
-    let real_time_room_id = uuid06::Uuid::from_bytes(real_time_room.id().as_bytes()).unwrap();
+    let mut conn = db
+        .acquire()
+        .await
+        .context("Failed to acquire db connection")?;
 
-    AdjustmentInsertQuery::new(real_time_room_id, started_at, segments.to_vec(), offset)
-        .execute(&conn)?;
+    AdjustmentInsertQuery::new(real_time_room.id(), started_at, segments.to_owned(), offset)
+        .execute(&mut conn)
+        .await?;
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -56,26 +63,23 @@ pub(crate) async fn call(
     let rtc_offset = (started_at - room_opening).num_milliseconds();
 
     // Convert segments to nanoseconds.
-    let mut nano_segments = Vec::with_capacity(segments.len());
-
-    for segment in segments {
-        if let (Bound::Included(start), Bound::Excluded(stop)) = segment {
+    let nano_segments = parsed_segments
+        .iter()
+        .map(|(start, stop)| {
             let nano_start = (start + rtc_offset) * NANOSECONDS_IN_MILLISECOND;
             let nano_stop = (stop + rtc_offset) * NANOSECONDS_IN_MILLISECOND;
-            nano_segments.push((Bound::Included(nano_start), Bound::Excluded(nano_stop)));
-        } else {
-            bail!("invalid segment");
-        }
-    }
+            (nano_start, nano_stop)
+        })
+        .collect::<Vec<(i64, i64)>>();
 
     // Invert segments to gaps.
     let segment_gaps = invert_segments(&nano_segments, room_duration)?;
 
     // Create original room with events shifted according to segments.
-    let original_room = create_room(&mut sqlx_conn, &real_time_room, started_at).await?;
+    let original_room = create_room(&mut conn, &real_time_room, started_at).await?;
 
     clone_events(
-        &mut sqlx_conn,
+        &mut conn,
         &original_room,
         &segment_gaps,
         (offset - rtc_offset) * NANOSECONDS_IN_MILLISECOND,
@@ -90,7 +94,7 @@ pub(crate) async fn call(
     let cut_events = EventListQuery::new()
         .room_id(original_room_id)
         .kind("stream".to_string())
-        .execute(&mut sqlx_conn)
+        .execute(&mut conn)
         .await
         .with_context(|| {
             format!(
@@ -102,14 +106,12 @@ pub(crate) async fn call(
     let cut_gaps = cut_events_to_gaps(&cut_events)?;
 
     // Create modified room with events shifted again according to cut events this time.
-    let modified_room = create_room(&mut sqlx_conn, &original_room, started_at).await?;
-    clone_events(&mut sqlx_conn, &modified_room, &cut_gaps, 0).await?;
+    let modified_room = create_room(&mut conn, &original_room, started_at).await?;
+    clone_events(&mut conn, &modified_room, &cut_gaps, 0).await?;
 
     // Delete cut events from the modified room.
-    let modified_room_id = uuid08::Uuid::from_bytes(*modified_room.id().as_bytes());
-
-    EventDeleteQuery::new(modified_room_id, "stream")
-        .execute(&mut sqlx_conn)
+    EventDeleteQuery::new(modified_room.id(), "stream")
+        .execute(&mut conn)
         .await
         .with_context(|| {
             format!(
@@ -121,23 +123,14 @@ pub(crate) async fn call(
     ///////////////////////////////////////////////////////////////////////////
 
     // Calculate total duration of initial segments.
-    let mut total_segments_millis = 0;
-
-    for segment in segments {
-        if let (Bound::Included(start), Bound::Excluded(stop)) = segment {
-            total_segments_millis += stop - start
-        }
-    }
+    let total_segments_millis = parsed_segments
+        .into_iter()
+        .fold(0, |acc, (start, stop)| acc + (stop - start));
 
     let total_segments_duration = Duration::milliseconds(total_segments_millis);
 
     // Calculate modified segments by inverting cut gaps limited by total initial segments duration.
-    let bounded_cut_gaps = cut_gaps
-        .into_iter()
-        .map(|(start, stop)| (Bound::Included(start), Bound::Excluded(stop)))
-        .collect::<Vec<Segment>>();
-
-    let modified_segments = invert_segments(&bounded_cut_gaps, total_segments_duration)?
+    let modified_segments = invert_segments(&cut_gaps, total_segments_duration)?
         .into_iter()
         .map(|(start, stop)| {
             (
@@ -145,7 +138,7 @@ pub(crate) async fn call(
                 Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
             )
         })
-        .collect::<Vec<Segment>>();
+        .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -156,12 +149,16 @@ pub(crate) async fn call(
         (Utc::now() - start_timestamp).num_milliseconds()
     );
 
-    Ok((original_room, modified_room, modified_segments))
+    Ok((
+        original_room,
+        modified_room,
+        Segments::from(modified_segments),
+    ))
 }
 
 /// Creates a derived room from the source room.
 async fn create_room(
-    conn: &mut SqlxPgConnection,
+    conn: &mut PgConnection,
     source_room: &Room,
     started_at: DateTime<Utc>,
 ) -> Result<Room> {
@@ -179,7 +176,7 @@ async fn create_room(
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
 /// adding `offset` (both in nanoseconds).
 async fn clone_events(
-    conn: &mut SqlxPgConnection,
+    conn: &mut PgConnection,
     room: &Room,
     gaps: &[(i64, i64)],
     offset: i64,
@@ -268,7 +265,7 @@ async fn clone_events(
 
 /// Turns `segments` into gaps.
 pub(crate) fn invert_segments(
-    segments: &[Segment],
+    segments: &[(i64, i64)],
     room_duration: Duration,
 ) -> Result<Vec<(i64, i64)>> {
     if segments.is_empty() {
@@ -279,38 +276,23 @@ pub(crate) fn invert_segments(
     let mut gaps = Vec::with_capacity(segments.len() + 2);
 
     // A possible gap before the first segment.
-    if let Some(first_segment) = segments.first() {
-        match first_segment {
-            (Bound::Included(first_segment_start), _) => {
-                if *first_segment_start > 0 {
-                    gaps.push((0, *first_segment_start));
-                }
-            }
-            _ => bail!("invalid first segment"),
+    if let Some((first_segment_start, _)) = segments.first() {
+        if *first_segment_start > 0 {
+            gaps.push((0, *first_segment_start));
         }
     }
 
     // Gaps between segments.
-    for item in segments.iter().zip(&segments[1..]) {
-        match item {
-            ((_, Bound::Excluded(segment_stop)), (Bound::Included(next_segment_start), _)) => {
-                gaps.push((*segment_stop, *next_segment_start));
-            }
-            _ => bail!("invalid segments"),
-        }
+    for ((_, segment_stop), (next_segment_start, _)) in segments.iter().zip(&segments[1..]) {
+        gaps.push((*segment_stop, *next_segment_start));
     }
 
     // A possible gap after the last segment.
-    if let Some(last_segment) = segments.last() {
-        match last_segment {
-            (_, Bound::Excluded(last_segment_stop)) => {
-                let room_duration_nanos = room_duration.num_nanoseconds().unwrap_or(std::i64::MAX);
+    if let Some((_, last_segment_stop)) = segments.last() {
+        let room_duration_nanos = room_duration.num_nanoseconds().unwrap_or(std::i64::MAX);
 
-                if *last_segment_stop < room_duration_nanos {
-                    gaps.push((*last_segment_stop, room_duration_nanos));
-                }
-            }
-            _ => bail!("invalid last segment"),
+        if *last_segment_stop < room_duration_nanos {
+            gaps.push((*last_segment_stop, room_duration_nanos));
         }
     }
 

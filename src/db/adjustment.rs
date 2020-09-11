@@ -1,27 +1,20 @@
 use std::ops::Bound;
 
 use chrono::{serde::ts_seconds, DateTime, Utc};
-use diesel::{pg::PgConnection, result::Error};
-use serde_derive::Serialize;
-use uuid06::Uuid;
 
-use crate::db::room::Object as Room;
-use crate::schema::adjustment;
+use serde_derive::{Deserialize, Serialize};
+use sqlx::postgres::{types::PgRange, PgConnection};
+use uuid08::Uuid;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) type Segment = (Bound<i64>, Bound<i64>);
-
-#[derive(Clone, Debug, Serialize, Identifiable, Associations, Queryable)]
-#[table_name = "adjustment"]
-#[primary_key(room_id)]
-#[belongs_to(Room, foreign_key = "room_id")]
+#[derive(Clone, Debug, Serialize)]
 pub(crate) struct Object {
     room_id: Uuid,
     #[serde(with = "ts_seconds")]
     started_at: DateTime<Utc>,
-    #[serde(with = "crate::serde::milliseconds_bound_tuples")]
-    segments: Vec<Segment>,
+    #[serde(with = "serde::segments")]
+    segments: Segments,
     offset: i64,
     #[serde(with = "ts_seconds")]
     created_at: DateTime<Utc>,
@@ -29,12 +22,11 @@ pub(crate) struct Object {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Insertable)]
-#[table_name = "adjustment"]
+#[derive(Debug)]
 pub(crate) struct InsertQuery {
     room_id: Uuid,
     started_at: DateTime<Utc>,
-    segments: Vec<Segment>,
+    segments: Segments,
     offset: i64,
 }
 
@@ -42,7 +34,7 @@ impl InsertQuery {
     pub(crate) fn new(
         room_id: Uuid,
         started_at: DateTime<Utc>,
-        segments: Vec<Segment>,
+        segments: Segments,
         offset: i64,
     ) -> Self {
         Self {
@@ -53,12 +45,78 @@ impl InsertQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
-        use crate::diesel::RunQueryDsl;
-        use crate::schema::adjustment::dsl::adjustment;
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            INSERT INTO adjustment (room_id, started_at, segments, "offset")
+            VALUES ($1, $2, $3, $4)
+            RETURNING
+                room_id,
+                started_at,
+                segments AS "segments!: Segments",
+                "offset",
+                created_at
+            "#,
+            self.room_id,
+            self.started_at,
+            self.segments as Segments,
+            self.offset,
+        )
+        .fetch_one(conn)
+        .await
+    }
+}
 
-        diesel::insert_into(adjustment)
-            .values(self)
-            .get_result(conn)
+////////////////////////////////////////////////////////////////////////////////
+
+type BoundedOffsetTuples = Vec<(Bound<i64>, Bound<i64>)>;
+
+#[derive(Clone, Debug, Deserialize, Serialize, sqlx::Type)]
+#[sqlx(transparent)]
+#[serde(from = "BoundedOffsetTuples")]
+#[serde(into = "BoundedOffsetTuples")]
+pub(crate) struct Segments(Vec<PgRange<i64>>);
+
+impl From<BoundedOffsetTuples> for Segments {
+    fn from(segments: BoundedOffsetTuples) -> Self {
+        Self(segments.into_iter().map(PgRange::from).collect())
+    }
+}
+
+impl Into<BoundedOffsetTuples> for Segments {
+    fn into(self) -> BoundedOffsetTuples {
+        self.0.into_iter().map(|s| (s.start, s.end)).collect()
+    }
+}
+
+impl Into<Vec<PgRange<i64>>> for Segments {
+    fn into(self) -> Vec<PgRange<i64>> {
+        self.0
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+pub(crate) mod serde {
+    pub(crate) mod segments {
+        use super::super::{BoundedOffsetTuples, Segments};
+        use crate::serde::milliseconds_bound_tuples;
+        use serde::{de, ser};
+
+        pub(crate) fn serialize<S>(value: &Segments, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: ser::Serializer,
+        {
+            let bounded_offset_tuples: BoundedOffsetTuples = value.to_owned().into();
+            milliseconds_bound_tuples::serialize(&bounded_offset_tuples, serializer)
+        }
+
+        pub(crate) fn deserialize<'de, D>(d: D) -> Result<Segments, D::Error>
+        where
+            D: de::Deserializer<'de>,
+        {
+            milliseconds_bound_tuples::deserialize(d).map(Segments::from)
+        }
     }
 }

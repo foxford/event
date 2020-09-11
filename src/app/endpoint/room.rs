@@ -21,7 +21,7 @@ use uuid08::Uuid;
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::app::operations::adjust_room;
-use crate::db::adjustment::Segment;
+use crate::db::adjustment::Segments;
 use crate::db::agent;
 use crate::db::room::{now, since_now, FindQuery, InsertQuery, UpdateQuery};
 
@@ -456,8 +456,8 @@ pub(crate) struct AdjustRequest {
     id: Uuid,
     #[serde(with = "chrono::serde::ts_milliseconds")]
     started_at: DateTime<Utc>,
-    #[serde(with = "crate::serde::milliseconds_bound_tuples")]
-    segments: Vec<Segment>,
+    #[serde(with = "crate::db::adjustment::serde::segments")]
+    segments: Segments,
     offset: i64,
 }
 
@@ -496,8 +496,7 @@ impl RequestHandler for AdjustHandler {
             .await?;
 
         // Run asynchronous task for adjustment.
-        let db = context.db().to_owned();
-        let sqlx_db = context.sqlx_db().to_owned();
+        let db = context.sqlx_db().to_owned();
 
         // Respond with 202.
         // The actual task result will be broadcasted to the room topic when finished.
@@ -512,7 +511,6 @@ impl RequestHandler for AdjustHandler {
         let notification_future = async_std::task::spawn(async move {
             let operation_result = adjust_room(
                 &db,
-                &sqlx_db,
                 &room,
                 payload.started_at,
                 &payload.segments,
@@ -585,8 +583,8 @@ enum RoomAdjustResult {
     Success {
         original_room_id: Uuid,
         modified_room_id: Uuid,
-        #[serde(with = "crate::serde::milliseconds_bound_tuples")]
-        modified_segments: Vec<Segment>,
+        #[serde(with = "crate::db::adjustment::serde::segments")]
+        modified_segments: Segments,
     },
     Error {
         error: SvcError,
