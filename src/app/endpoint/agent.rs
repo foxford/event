@@ -1,5 +1,4 @@
 use async_std::stream;
-use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
@@ -12,13 +11,13 @@ use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const MAX_LIMIT: i64 = 25;
+const MAX_LIMIT: usize = 25;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ListRequest {
     room_id: Uuid,
-    offset: Option<i64>,
-    limit: Option<i64>,
+    offset: Option<usize>,
+    limit: Option<usize>,
 }
 
 pub(crate) struct ListHandler;
@@ -58,12 +57,12 @@ impl RequestHandler for ListHandler {
 
         // Get agents list in the room.
         let agents = {
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             let query = db::agent::ListQuery::new()
-                .room_id(uuid06::Uuid::from_bytes(payload.room_id.as_bytes()).unwrap())
+                .room_id(payload.room_id)
                 .status(db::agent::Status::Ready)
-                .offset(payload.offset.unwrap_or_else(|| 0))
+                .offset(payload.offset.unwrap_or(0))
                 .limit(std::cmp::min(
                     payload.limit.unwrap_or_else(|| MAX_LIMIT),
                     MAX_LIMIT,
@@ -71,10 +70,7 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::AgentListQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::AgentListQuery, query.execute(&mut conn))
                 .await?
         };
 

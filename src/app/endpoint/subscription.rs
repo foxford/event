@@ -1,7 +1,6 @@
 use std::result::Result as StdResult;
 
 use async_std::stream;
-use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
@@ -87,13 +86,13 @@ impl EventHandler for CreateHandler {
                 .status(ResponseStatus::NOT_FOUND)?;
 
             // Update agent state to `ready`.
-            let room_id = uuid06::Uuid::from_bytes(room_id.as_bytes()).unwrap();
-
             let q = agent::UpdateQuery::new(payload.subject.clone(), room_id)
                 .status(agent::Status::Ready);
 
-            let conn = context.get_conn().await?;
-            spawn_blocking(move || q.execute(&conn)).await?;
+            context
+                .profiler()
+                .measure(ProfilerKeys::AgentUpdateQuery, q.execute(&mut conn))
+                .await?;
         }
 
         // Send broadcast notification that the agent has entered the room.
@@ -138,16 +137,12 @@ impl EventHandler for DeleteHandler {
         let room_id = payload.try_room_id()?;
 
         let row_count = {
-            let room_id = uuid06::Uuid::from_bytes(room_id.as_bytes()).unwrap();
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
-            let conn = context.get_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::AgentDeleteQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::AgentDeleteQuery, query.execute(&mut conn))
                 .await?
         };
 

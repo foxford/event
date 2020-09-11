@@ -65,6 +65,12 @@ pub(crate) enum Metric {
     AgentInsertQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_insert_query_max_microseconds"))]
     AgentInsertQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_update_query_p95_microseconds"))]
+    AgentUpdateQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_update_query_p99_microseconds"))]
+    AgentUpdateQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_update_query_max_microseconds"))]
+    AgentUpdateQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_list_query_p95_microseconds"))]
     AgentListQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_list_query_p99_microseconds"))]
@@ -224,11 +230,11 @@ pub(crate) enum Metric2 {
     RedisConnections(MetricValue<u64>),
     #[serde(rename(serialize = "idle_redis_connections_total"))]
     IdleRedisConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.agent_delete_query_p95_microseconds"))]
+    #[serde(rename(serialize = "agent_delete_query_p95_microseconds"))]
     AgentDeleteQueryP95(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.agent_delete_query_p99_microseconds"))]
+    #[serde(rename(serialize = "agent_delete_query_p99_microseconds"))]
     AgentDeleteQueryP99(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.agent_delete_query_max_microseconds"))]
+    #[serde(rename(serialize = "agent_delete_query_max_microseconds"))]
     AgentDeleteQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "agent_insert_query_p95_microseconds"))]
     AgentInsertQueryP95(MetricValue<u64>),
@@ -242,6 +248,12 @@ pub(crate) enum Metric2 {
     AgentListQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "agent_list_query_max_microseconds"))]
     AgentListQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "agent_update_query_p95_microseconds"))]
+    AgentUpdateQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "agent_update_query_p99_microseconds"))]
+    AgentUpdateQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "agent_update_query_max_microseconds"))]
+    AgentUpdateQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "change_delete_query_p95_microseconds"))]
     ChangeDeleteQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "change_delete_query_p99_microseconds"))]
@@ -386,6 +398,9 @@ impl From<Metric> for Metric2 {
             Metric::AgentListQueryP95(v) => Metric2::AgentListQueryP95(v),
             Metric::AgentListQueryP99(v) => Metric2::AgentListQueryP99(v),
             Metric::AgentListQueryMax(v) => Metric2::AgentListQueryMax(v),
+            Metric::AgentUpdateQueryP95(v) => Metric2::AgentUpdateQueryP95(v),
+            Metric::AgentUpdateQueryP99(v) => Metric2::AgentUpdateQueryP99(v),
+            Metric::AgentUpdateQueryMax(v) => Metric2::AgentUpdateQueryMax(v),
             Metric::ChangeDeleteQueryP95(v) => Metric2::ChangeDeleteQueryP95(v),
             Metric::ChangeDeleteQueryP99(v) => Metric2::ChangeDeleteQueryP99(v),
             Metric::ChangeDeleteQueryMax(v) => Metric2::ChangeDeleteQueryMax(v),

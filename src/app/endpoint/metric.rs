@@ -21,6 +21,7 @@ pub(crate) enum ProfilerKeys {
     AgentDeleteQuery,
     AgentInsertQuery,
     AgentListQuery,
+    AgentUpdateQuery,
     ChangeDeleteQuery,
     ChangeInsertQuery,
     ChangeListQuery,
@@ -232,6 +233,11 @@ fn append_profiler_stats(
                 metrics.push(Metric::AgentListQueryP95(metric_value_p95));
                 metrics.push(Metric::AgentListQueryP99(metric_value_p99));
                 metrics.push(Metric::AgentListQueryMax(metric_value_max));
+            }
+            ProfilerKeys::AgentUpdateQuery => {
+                metrics.push(Metric::AgentUpdateQueryP95(metric_value_p95));
+                metrics.push(Metric::AgentUpdateQueryP99(metric_value_p99));
+                metrics.push(Metric::AgentUpdateQueryMax(metric_value_max));
             }
             ProfilerKeys::ChangeDeleteQuery => {
                 metrics.push(Metric::ChangeDeleteQueryP95(metric_value_p95));

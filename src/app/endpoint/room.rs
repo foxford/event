@@ -2,7 +2,6 @@ use std::ops::Bound;
 
 use async_std::prelude::*;
 use async_std::stream;
-use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
@@ -329,16 +328,12 @@ impl RequestHandler for EnterHandler {
 
         // Register agent in `in_progress` state.
         {
-            let conn = context.get_conn().await?;
-            let room_id = uuid06::Uuid::from_bytes(room.id().as_bytes()).unwrap();
-            let query = agent::InsertQuery::new(reqp.as_agent_id().to_owned(), room_id);
+            let mut conn = context.sqlx_db().acquire().await?;
+            let query = agent::InsertQuery::new(reqp.as_agent_id().to_owned(), room.id());
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::AgentInsertQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::AgentInsertQuery, query.execute(&mut conn))
                 .await?;
         }
 
@@ -402,19 +397,14 @@ impl RequestHandler for LeaveHandler {
                 .status(ResponseStatus::NOT_FOUND)?;
 
             // Check room presence.
-            let conn = context.get_ro_conn().await?;
-
             let query = agent::ListQuery::new()
-                .room_id(uuid06::Uuid::from_bytes(room.id().as_bytes()).unwrap())
+                .room_id(room.id())
                 .agent_id(reqp.as_agent_id().to_owned())
                 .status(agent::Status::Ready);
 
             let presence = context
                 .profiler()
-                .measure(
-                    ProfilerKeys::AgentListQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::AgentListQuery, query.execute(&mut conn))
                 .await?;
 
             (room, presence)
