@@ -20,6 +20,7 @@ pub(crate) enum ProfilerKeys {
     AgentDeleteQuery,
     AgentInsertQuery,
     AgentListQuery,
+    AgentUpdateQuery,
     ChangeDeleteQuery,
     ChangeInsertQuery,
     ChangeListQuery,
@@ -111,6 +112,12 @@ pub(crate) enum Metric {
     AgentInsertQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_insert_query_max_microseconds"))]
     AgentInsertQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_update_query_p95_microseconds"))]
+    AgentUpdateQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_update_query_p99_microseconds"))]
+    AgentUpdateQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_update_query_max_microseconds"))]
+    AgentUpdateQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_list_query_p95_microseconds"))]
     AgentListQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_list_query_p99_microseconds"))]
@@ -405,6 +412,11 @@ fn append_profiler_stats(
                 metrics.push(Metric::AgentListQueryP95(metric_value_p95));
                 metrics.push(Metric::AgentListQueryP99(metric_value_p99));
                 metrics.push(Metric::AgentListQueryMax(metric_value_max));
+            }
+            ProfilerKeys::AgentUpdateQuery => {
+                metrics.push(Metric::AgentUpdateQueryP95(metric_value_p95));
+                metrics.push(Metric::AgentUpdateQueryP99(metric_value_p99));
+                metrics.push(Metric::AgentUpdateQueryMax(metric_value_max));
             }
             ProfilerKeys::ChangeDeleteQuery => {
                 metrics.push(Metric::ChangeDeleteQueryP95(metric_value_p95));

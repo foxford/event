@@ -49,7 +49,14 @@ pub(crate) async fn create_sqlx_pool(url: &str, size: u32, timeout: u64) -> sqlx
 }
 
 pub(crate) mod sql {
-    pub use super::agent::Agent_status;
+    #[derive(Clone, Copy, Debug, DbEnum, PartialEq)]
+    #[PgType = "agent_status"]
+    #[DieselType = "Agent_status"]
+    pub enum AgentStatus {
+        InProgress,
+        Ready,
+    }
+
     pub use super::change::Change_type;
     pub use svc_agent::sql::{Account_id, Agent_id};
 }
