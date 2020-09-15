@@ -229,7 +229,7 @@ impl RequestHandler for UpdateHandler {
                 {
                     if let (Bound::Included(opened_at), _) = room.time() {
                         if opened_at <= Utc::now() {
-                            let new_closed_at = if new_closed_at < Utc::now() {
+                            let new_closed_at = if new_closed_at <= Utc::now() {
                                 Utc::now()
                             } else {
                                 new_closed_at
@@ -498,7 +498,7 @@ impl RequestHandler for AdjustHandler {
 
         // Run asynchronous task for adjustment.
         let db = context.db().to_owned();
-        let profiler = context.profiler().to_owned();
+        let profiler = context.profiler();
 
         let notification_future = async_std::task::spawn(async move {
             let operation_result = adjust_room(
@@ -629,14 +629,14 @@ mod tests {
 
         #[test]
         fn create_room() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 // Allow agent to create rooms.
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
                 let mut authz = TestAuthz::new();
                 authz.allow(agent.account_id(), vec!["rooms"], "create");
 
                 // Make room.create request.
-                let context = TestContext::new(TestDb::new(), authz);
+                let context = TestContext::new(TestDb::new().await, authz);
                 let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
@@ -647,7 +647,7 @@ mod tests {
                 let tags = json!({ "webinar_id": "123" });
 
                 let payload = CreateRequest {
-                    time: time.clone(),
+                    time: Time::from(time),
                     audience: USR_AUDIENCE.to_owned(),
                     tags: Some(tags.clone()),
                 };
@@ -660,7 +660,7 @@ mod tests {
                 let (room, respp) = find_response::<Room>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::CREATED);
                 assert_eq!(room.audience(), USR_AUDIENCE);
-                assert_eq!(room.time(), &time);
+                assert_eq!(room.time(), time);
                 assert_eq!(room.tags(), Some(&tags));
 
                 // Assert notification.
@@ -668,18 +668,18 @@ mod tests {
                 assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
                 assert_eq!(evp.label(), "room.create");
                 assert_eq!(room.audience(), USR_AUDIENCE);
-                assert_eq!(room.time(), &time);
+                assert_eq!(room.time(), time);
                 assert_eq!(room.tags(), Some(&tags));
             });
         }
 
         #[test]
         fn create_room_not_authorized() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 // Make room.create request.
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
@@ -703,14 +703,14 @@ mod tests {
 
         #[test]
         fn create_room_invalid_time() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 // Allow agent to create rooms.
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
                 let mut authz = TestAuthz::new();
                 authz.allow(agent.account_id(), vec!["rooms"], "create");
 
                 // Make room.create request.
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = CreateRequest {
                     time: (Bound::Unbounded, Bound::Unbounded),
@@ -735,17 +735,13 @@ mod tests {
 
         #[test]
         fn read_room() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
                     // Create room.
-                    shared_helpers::insert_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_room(&mut conn).await
                 };
 
                 // Allow agent to read the room.
@@ -773,18 +769,14 @@ mod tests {
 
         #[test]
         fn read_room_not_authorized() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new();
+                let db = TestDb::new().await;
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
                     // Create room.
-                    shared_helpers::insert_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_room(&mut conn).await
                 };
 
                 // Make room.read request.
@@ -801,9 +793,9 @@ mod tests {
 
         #[test]
         fn read_room_missing() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = ReadRequest { id: Uuid::new_v4() };
 
                 let err = handle_request::<ReadHandler>(&context, &agent, payload)
@@ -827,15 +819,12 @@ mod tests {
 
         #[test]
         fn update_room() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let now = Utc::now().trunc_subsecs(0);
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
 
                     // Create room.
                     factory::Room::new()
@@ -845,7 +834,8 @@ mod tests {
                             Bound::Excluded(now + Duration::hours(2)),
                         ))
                         .tags(&json!({ "webinar_id": "123" }))
-                        .insert(&conn)
+                        .insert(&mut conn)
+                        .await
                 };
 
                 // Allow agent to update the room.
@@ -879,22 +869,19 @@ mod tests {
                 assert_eq!(respp.status(), ResponseStatus::OK);
                 assert_eq!(resp_room.id(), room.id());
                 assert_eq!(resp_room.audience(), room.audience());
-                assert_eq!(resp_room.time(), &time);
+                assert_eq!(resp_room.time(), time);
                 assert_eq!(resp_room.tags(), Some(&tags));
             });
         }
 
         #[test]
         fn update_closed_at_in_open_room() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let now = Utc::now().trunc_subsecs(0);
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
 
                     // Create room.
                     factory::Room::new()
@@ -903,7 +890,8 @@ mod tests {
                             Bound::Included(now - Duration::hours(1)),
                             Bound::Excluded(now + Duration::hours(1)),
                         ))
-                        .insert(&conn)
+                        .insert(&mut conn)
+                        .await
                 };
 
                 // Allow agent to update the room.
@@ -936,7 +924,7 @@ mod tests {
                 assert_eq!(resp_room.audience(), room.audience());
                 assert_eq!(
                     resp_room.time(),
-                    &(
+                    (
                         Bound::Included(now - Duration::hours(1)),
                         Bound::Excluded(now + Duration::hours(3)),
                     )
@@ -946,15 +934,12 @@ mod tests {
 
         #[test]
         fn update_closed_at_in_the_past_in_already_open_room() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let now = Utc::now().trunc_subsecs(0);
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
 
                     // Create room.
                     factory::Room::new()
@@ -963,7 +948,8 @@ mod tests {
                             Bound::Included(now - Duration::hours(2)),
                             Bound::Excluded(now + Duration::hours(2)),
                         ))
-                        .insert(&conn)
+                        .insert(&mut conn)
+                        .await
                 };
 
                 // Allow agent to update the room.
@@ -996,7 +982,7 @@ mod tests {
                 assert_eq!(resp_room.audience(), room.audience());
                 assert_eq!(
                     resp_room.time(),
-                    &(
+                    (
                         Bound::Included(now - Duration::hours(2)),
                         Bound::Excluded(now),
                     )
@@ -1006,15 +992,12 @@ mod tests {
 
         #[test]
         fn update_room_invalid_time() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let now = Utc::now().trunc_subsecs(0);
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
 
                     // Create room.
                     factory::Room::new()
@@ -1023,7 +1006,8 @@ mod tests {
                             Bound::Included(now + Duration::hours(1)),
                             Bound::Excluded(now + Duration::hours(2)),
                         ))
-                        .insert(&conn)
+                        .insert(&mut conn)
+                        .await
                 };
 
                 // Allow agent to update the room.
@@ -1056,18 +1040,14 @@ mod tests {
 
         #[test]
         fn update_room_not_authorized() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new();
+                let db = TestDb::new().await;
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
                     // Create room.
-                    shared_helpers::insert_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_room(&mut conn).await
                 };
 
                 // Make room.update request.
@@ -1088,9 +1068,10 @@ mod tests {
 
         #[test]
         fn update_room_missing() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+
                 let payload = UpdateRequest {
                     id: Uuid::new_v4(),
                     time: None,
@@ -1107,24 +1088,27 @@ mod tests {
 
         #[test]
         fn update_room_closed() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new();
+                let db = TestDb::new().await;
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
                     // Create closed room.
-                    shared_helpers::insert_closed_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_closed_room(&mut conn).await
                 };
 
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let now = Utc::now().trunc_subsecs(0);
+
+                let time = (
+                    Bound::Included(now - Duration::hours(2)),
+                    Bound::Excluded(now - Duration::hours(1)),
+                );
+
                 let payload = UpdateRequest {
                     id: room.id(),
-                    time: None,
+                    time: Some(time.into()),
                     tags: None,
                 };
 
@@ -1145,17 +1129,13 @@ mod tests {
 
         #[test]
         fn enter_room() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
                     // Create room.
-                    shared_helpers::insert_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_room(&mut conn).await
                 };
 
                 // Allow agent to subscribe to the rooms' events.
@@ -1196,18 +1176,14 @@ mod tests {
 
         #[test]
         fn enter_room_not_authorized() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new();
+                let db = TestDb::new().await;
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
                     // Create room.
-                    shared_helpers::insert_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_room(&mut conn).await
                 };
 
                 // Make room.enter request.
@@ -1224,9 +1200,9 @@ mod tests {
 
         #[test]
         fn enter_room_missing() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = EnterRequest { id: Uuid::new_v4() };
 
                 let err = handle_request::<EnterHandler>(&context, &agent, payload)
@@ -1239,17 +1215,13 @@ mod tests {
 
         #[test]
         fn enter_room_closed() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
                     // Create closed room.
-                    shared_helpers::insert_closed_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_closed_room(&mut conn).await
                 };
 
                 // Allow agent to subscribe to the rooms' events.
@@ -1284,21 +1256,17 @@ mod tests {
 
         #[test]
         fn leave_room() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
                     // Create room.
-                    let room = shared_helpers::insert_room(&conn);
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
                     // Put agent online in the room.
-                    shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                    shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
                     room
                 };
 
@@ -1331,18 +1299,14 @@ mod tests {
 
         #[test]
         fn leave_room_while_not_entered() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new();
+                let db = TestDb::new().await;
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
                     // Create room.
-                    shared_helpers::insert_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_room(&mut conn).await
                 };
 
                 // Make room.leave request.
@@ -1359,9 +1323,9 @@ mod tests {
 
         #[test]
         fn leave_room_missing() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = LeaveRequest { id: Uuid::new_v4() };
 
                 let err = handle_request::<LeaveHandler>(&context, &agent, payload)
@@ -1382,18 +1346,14 @@ mod tests {
 
         #[test]
         fn adjust_room_not_authorized() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new();
+                let db = TestDb::new().await;
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
                     // Create room.
-                    shared_helpers::insert_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_room(&mut conn).await
                 };
 
                 // Make room.adjust request.
@@ -1402,7 +1362,7 @@ mod tests {
                 let payload = AdjustRequest {
                     id: room.id(),
                     started_at: Utc::now(),
-                    segments: vec![],
+                    segments: vec![].into(),
                     offset: 0,
                 };
 
@@ -1416,14 +1376,14 @@ mod tests {
 
         #[test]
         fn adjust_room_missing() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = AdjustRequest {
                     id: Uuid::new_v4(),
                     started_at: Utc::now(),
-                    segments: vec![],
+                    segments: vec![].into(),
                     offset: 0,
                 };
 

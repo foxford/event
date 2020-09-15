@@ -337,6 +337,8 @@ impl ListQuery {
 
         for binding in bindings {
             query = match binding {
+                ParameterizedValue::Uuid(value) => query.bind(value),
+                ParameterizedValue::Integer(value) => query.bind(value),
                 ParameterizedValue::Text(value) => query.bind(value.to_string()),
                 ParameterizedValue::DateTime(value) => query.bind(value),
                 _ => query,

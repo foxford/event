@@ -1,5 +1,8 @@
-use diesel::pg::PgConnection;
+use std::ops::Bound;
+
+use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
+use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
 use uuid::Uuid;
 
@@ -29,9 +32,9 @@ impl Room {
         }
     }
 
-    pub(crate) fn time(self, time: db::room::Time) -> Self {
+    pub(crate) fn time(self, time: (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>)) -> Self {
         Self {
-            time: Some(time),
+            time: Some(time.into()),
             ..self
         }
     }
@@ -43,7 +46,7 @@ impl Room {
         }
     }
 
-    pub(crate) fn insert(self, conn: &PgConnection) -> db::room::Object {
+    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::room::Object {
         let audience = self.audience.expect("Audience not set");
         let time = self.time.expect("Time not set");
 
@@ -53,7 +56,7 @@ impl Room {
             query = query.tags(tags)
         }
 
-        query.execute(conn).expect("Failed to insert room")
+        query.execute(conn).await.expect("Failed to insert room")
     }
 }
 
@@ -95,7 +98,7 @@ impl Agent {
         }
     }
 
-    pub(crate) fn insert(self, conn: &PgConnection) -> db::agent::Object {
+    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::agent::Object {
         let agent_id = self.agent_id.expect("Agent ID not set");
         let room_id = self.room_id.expect("Room ID not set");
 
@@ -105,7 +108,7 @@ impl Agent {
             query = query.status(status);
         }
 
-        query.execute(conn).expect("Failed to insert agent")
+        query.execute(conn).await.expect("Failed to insert agent")
     }
 }
 
@@ -183,7 +186,7 @@ impl Event {
         }
     }
 
-    pub(crate) fn insert(self, conn: &PgConnection) -> db::event::Object {
+    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::event::Object {
         let room_id = self.room_id.expect("Room ID not set");
         let kind = self.kind.expect("Kind not set");
         let data = self.data.expect("Data not set");
@@ -200,7 +203,7 @@ impl Event {
             query = query.label(label);
         }
 
-        query.execute(conn).expect("Failed to insert event")
+        query.execute(conn).await.expect("Failed to insert event")
     }
 }
 
@@ -217,9 +220,9 @@ impl Edition {
         }
     }
 
-    pub(crate) fn insert(self, conn: &PgConnection) -> db::edition::Object {
-        let query = db::edition::InsertQuery::new(self.source_room_id, self.created_by);
-        query.execute(conn).expect("Failed to insert edition")
+    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::edition::Object {
+        let query = db::edition::InsertQuery::new(self.source_room_id, &self.created_by);
+        query.execute(conn).await.expect("Failed to insert edition")
     }
 }
 
@@ -299,7 +302,7 @@ impl Change {
         }
     }
 
-    pub(crate) fn insert(self, conn: &PgConnection) -> db::change::Object {
+    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::change::Object {
         let query = db::change::InsertQuery::new(self.edition_id, self.kind);
 
         let query = if let Some(event_id) = self.event_id {
@@ -335,6 +338,6 @@ impl Change {
             query
         };
 
-        query.execute(conn).expect("Failed to insert edition")
+        query.execute(conn).await.expect("Failed to insert edition")
     }
 }

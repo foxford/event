@@ -364,150 +364,169 @@ mod tests {
     use std::ops::Bound;
 
     use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-    use diesel::pg::PgConnection;
     use serde_json::{json, Value as JsonValue};
+    use sqlx::postgres::PgConnection;
     use svc_agent::{AccountId, AgentId};
 
+    use crate::app::endpoint::metric::ProfilerKeys;
+    use crate::db::adjustment::Segments;
     use crate::db::event::{
         InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,
     };
-    use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
+    use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room, Time as RoomTime};
+    use crate::profiler::Profiler;
     use crate::test_helpers::db::TestDb;
 
     const AUDIENCE: &str = "dev.svc.example.org";
 
     #[test]
     fn adjust_room() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
-
-            let conn = db
-                .connection_pool()
-                .get()
-                .expect("Failed to get db connection");
+        async_std::task::block_on(async {
+            let profiler = Profiler::<ProfilerKeys>::start();
+            let db = TestDb::new().await;
+            let mut conn = db.get_conn().await;
 
             // Create room.
             let opened_at = DateTime::from_utc(NaiveDateTime::from_timestamp(1582002673, 0), Utc);
             let closed_at = opened_at + Duration::seconds(50);
-            let time = (Bound::Included(opened_at), Bound::Excluded(closed_at));
+            let time = RoomTime::from((Bound::Included(opened_at), Bound::Excluded(closed_at)));
 
             let room = RoomInsertQuery::new(AUDIENCE, time)
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to insert room");
 
             // Create events.
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 1_000_000_000,
                 "message",
                 json!({"message": "m1"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 12_000_000_000,
                 "message",
                 json!({"message": "m2"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 13_000_000_000,
                 "stream",
                 json!({"cut": "start"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 14_000_000_000,
                 "message",
                 json!({"message": "m4"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 15_000_000_000,
                 "stream",
                 json!({"cut": "stop"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 16_000_000_000,
                 "message",
                 json!({"message": "m6"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 17_000_000_000,
                 "message",
                 json!({"message": "m7"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 18_000_000_000,
                 "stream",
                 json!({"cut": "start"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 19_000_000_000,
                 "message",
                 json!({"message": "m9"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 20_000_000_000,
                 "stream",
                 json!({"cut": "stop"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 21_000_000_000,
                 "message",
                 json!({"message": "m11"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 22_000_000_000,
                 "message",
                 json!({"message": "m12"}),
-            );
+            )
+            .await;
 
             drop(conn);
 
             // Video segments.
-            let segments = vec![
+            let segments = Segments::from(vec![
                 (Bound::Included(0), Bound::Excluded(6500)),
                 (Bound::Included(8500), Bound::Excluded(11500)),
-            ];
+            ]);
 
             // RTC started 10 seconds after the room opened and preroll is 3 seconds long.
             let started_at = opened_at + Duration::seconds(10);
-            let offset = 3000;
 
             // Call room adjustment.
-            let (original_room, modified_room, modified_segments) =
-                super::call(db.connection_pool(), &room, started_at, &segments, offset)
-                    .expect("Room adjustment failed");
+            let (original_room, modified_room, modified_segments) = super::call(
+                &db.connection_pool(),
+                &profiler,
+                &room,
+                started_at,
+                &segments,
+                3000 as i64,
+            )
+            .await
+            .expect("Room adjustment failed");
 
             // Assert original room.
             assert_eq!(original_room.source_room_id(), Some(room.id()));
@@ -517,14 +536,12 @@ mod tests {
             assert_eq!(original_room.tags(), room.tags());
 
             // Assert original room events.
-            let conn = db
-                .connection_pool()
-                .get()
-                .expect("Failed to get db connection");
+            let mut conn = db.get_conn().await;
 
             let events = EventListQuery::new()
                 .room_id(original_room.id())
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to fetch original room events");
 
             assert_eq!(events.len(), 12);
@@ -635,7 +652,8 @@ mod tests {
             // Assert modified room events.
             let events = EventListQuery::new()
                 .room_id(modified_room.id())
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to fetch modified room events");
 
             assert_eq!(events.len(), 8);
@@ -705,8 +723,10 @@ mod tests {
             );
 
             // Assert modified segments.
+            let segments: Vec<(Bound<i64>, Bound<i64>)> = modified_segments.into();
+
             assert_eq!(
-                modified_segments,
+                segments,
                 vec![
                     (Bound::Included(0), Bound::Excluded(6000)),
                     (Bound::Included(8000), Bound::Excluded(9500)),
@@ -715,8 +735,8 @@ mod tests {
         });
     }
 
-    fn create_event(
-        conn: &PgConnection,
+    async fn create_event(
+        conn: &mut PgConnection,
         room: &Room,
         occurred_at: i64,
         kind: &str,
@@ -725,7 +745,7 @@ mod tests {
         let created_by = AgentId::new("test", AccountId::new("test", AUDIENCE));
 
         let opened_at = match room.time() {
-            (Bound::Included(opened_at), _) => *opened_at,
+            (Bound::Included(opened_at), _) => opened_at,
             _ => panic!("Invalid room time"),
         };
 
@@ -738,6 +758,7 @@ mod tests {
         )
         .created_at(opened_at + Duration::nanoseconds(occurred_at))
         .execute(conn)
+        .await
         .expect("Failed to insert event");
     }
 

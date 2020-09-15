@@ -107,19 +107,15 @@ mod tests {
 
     #[test]
     fn list_agents() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room and put the agent online.
-                let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
                 room
             };
 
@@ -157,17 +153,13 @@ mod tests {
 
     #[test]
     fn list_agents_not_authorized() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new();
+            let db = TestDb::new().await;
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
-                shared_helpers::insert_room(&conn)
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
             };
 
             let context = TestContext::new(db, TestAuthz::new());
@@ -188,18 +180,14 @@ mod tests {
 
     #[test]
     fn list_agents_closed_room() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new();
+            let db = TestDb::new().await;
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create closed room.
-                shared_helpers::insert_closed_room(&conn)
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_closed_room(&mut conn).await
             };
 
             // Allow agent to list agents in the room.
@@ -231,9 +219,9 @@ mod tests {
 
     #[test]
     fn list_agents_missing_room() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
             let payload = ListRequest {
                 room_id: Uuid::new_v4(),
