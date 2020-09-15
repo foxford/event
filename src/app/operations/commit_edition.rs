@@ -344,8 +344,8 @@ mod tests {
     use std::ops::Bound;
 
     use chrono::Duration;
-    use diesel::pg::PgConnection;
     use serde_json::{json, Value as JsonValue};
+    use sqlx::postgres::PgConnection;
     use svc_agent::{AccountId, AgentId};
     use svc_authn::Authenticable;
 
@@ -353,8 +353,10 @@ mod tests {
         InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,
     };
 
+    use crate::app::endpoint::metric::ProfilerKeys;
     use crate::db::change::ChangeType;
     use crate::db::room::Object as Room;
+    use crate::profiler::Profiler;
     use crate::test_helpers::db::TestDb;
     use crate::test_helpers::prelude::*;
 
@@ -362,75 +364,80 @@ mod tests {
 
     #[test]
     fn commit_edition() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let profiler = Profiler::<ProfilerKeys>::start();
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-
-            let conn = db
-                .connection_pool()
-                .get()
-                .expect("Failed to get db connection");
-
-            let room = shared_helpers::insert_room(&conn);
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
 
             // Seed events.
             let e1 = create_event(
-                &conn,
+                &mut conn,
                 &room,
                 1_000_000_000,
                 "message",
                 json!({"message": "m1"}),
-            );
+            )
+            .await;
 
             let e2 = create_event(
-                &conn,
+                &mut conn,
                 &room,
                 2_000_000_000,
                 "message",
                 json!({"message": "m2"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 2_500_000_000,
                 "message",
                 json!({"message": "passthrough"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 3_000_000_000,
                 "stream",
                 json!({"cut": "start"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 4_000_000_000,
                 "message",
                 json!({"message": "m4"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 5_000_000_000,
                 "stream",
                 json!({"cut": "stop"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 6_000_000_000,
                 "message",
                 json!({"message": "m5"}),
-            );
+            )
+            .await;
 
-            let edition = factory::Edition::new(room.id(), agent.agent_id()).insert(&conn);
+            let edition = factory::Edition::new(room.id(), agent.agent_id())
+                .insert(&mut conn)
+                .await;
 
             factory::Change::new(edition.id(), ChangeType::Addition)
                 .event_data(json!({"message": "newmessage"}))
@@ -439,36 +446,41 @@ mod tests {
                 .event_label("mylabel")
                 .event_occurred_at(3_000_000_000)
                 .event_created_by(&AgentId::new("barbaz", AccountId::new("foo", USR_AUDIENCE)))
-                .insert(&conn);
+                .insert(&mut conn)
+                .await;
 
             factory::Change::new(edition.id(), ChangeType::Modification)
                 .event_data(json![{"key": "value"}])
                 .event_label("randomlabel")
                 .event_id(e1.id())
-                .insert(&conn);
+                .insert(&mut conn)
+                .await;
 
             factory::Change::new(edition.id(), ChangeType::Removal)
                 .event_id(e2.id())
-                .insert(&conn);
+                .insert(&mut conn)
+                .await;
 
             drop(conn);
+
             let (destination, segments) =
-                super::call(db.connection_pool(), &edition, &room).expect("edition commit failed");
+                super::call(&db.connection_pool(), &profiler, &edition, &room)
+                    .await
+                    .expect("edition commit failed");
 
             // Assert original room.
             assert_eq!(destination.source_room_id().unwrap(), room.id());
             assert_eq!(room.audience(), destination.audience());
             assert_eq!(room.tags(), destination.tags());
+            let segments: Vec<(Bound<i64>, Bound<i64>)> = segments.into();
             assert_eq!(segments.len(), 2);
 
-            let conn = db
-                .connection_pool()
-                .get()
-                .expect("Failed to get db connection");
+            let mut conn = db.get_conn().await;
 
             let events = EventListQuery::new()
                 .room_id(destination.id())
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to fetch events");
 
             assert_eq!(events.len(), 5);
@@ -479,14 +491,14 @@ mod tests {
             assert_eq!(events[1].occurred_at(), 2_500_000_000);
             assert_eq!(events[1].data()["message"], "passthrough");
 
-            assert_eq!(events[2].occurred_at(), 3_000_000_000);
-            assert_eq!(events[2].data()["message"], "newmessage");
-            let aid = events[2].created_by();
+            assert_eq!(events[2].occurred_at(), 3_000_000_001);
+            assert_eq!(events[2].data()["message"], "m4");
+
+            assert_eq!(events[3].occurred_at(), 3_000_000_003);
+            assert_eq!(events[3].data()["message"], "newmessage");
+            let aid = events[3].created_by();
             assert_eq!(aid.label(), "barbaz");
             assert_eq!(aid.as_account_id().label(), "foo");
-
-            assert_eq!(events[3].occurred_at(), 3_000_000_002);
-            assert_eq!(events[3].data()["message"], "m4");
 
             assert_eq!(events[4].occurred_at(), 4_000_000_000);
             assert_eq!(events[4].data()["message"], "m5");
@@ -495,58 +507,61 @@ mod tests {
 
     #[test]
     fn commit_edition_with_cut_changes() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let profiler = Profiler::<ProfilerKeys>::start();
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-
-            let conn = db
-                .connection_pool()
-                .get()
-                .expect("Failed to get db connection");
-
-            let room = shared_helpers::insert_room(&conn);
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 2_500_000_000,
                 "message",
                 json!({"message": "passthrough"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 3_500_000_000,
                 "message",
                 json!({"message": "cutted out"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 4_200_000_000,
                 "stream",
                 json!({"cut": "start"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 4_500_000_000,
                 "message",
                 json!({"message": "some message"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 4_800_000_000,
                 "stream",
                 json!({"cut": "stop"}),
-            );
+            )
+            .await;
 
-            let edition = factory::Edition::new(room.id(), agent.agent_id()).insert(&conn);
+            let edition = factory::Edition::new(room.id(), agent.agent_id())
+                .insert(&mut conn)
+                .await;
 
             factory::Change::new(edition.id(), ChangeType::Addition)
                 .event_data(json!({"cut": "start"}))
@@ -554,7 +569,8 @@ mod tests {
                 .event_set("stream")
                 .event_occurred_at(3_000_000_000)
                 .event_created_by(agent.agent_id())
-                .insert(&conn);
+                .insert(&mut conn)
+                .await;
 
             factory::Change::new(edition.id(), ChangeType::Addition)
                 .event_data(json!({"cut": "stop"}))
@@ -562,34 +578,36 @@ mod tests {
                 .event_set("stream")
                 .event_occurred_at(4_000_000_000)
                 .event_created_by(agent.agent_id())
-                .insert(&conn);
+                .insert(&mut conn)
+                .await;
 
             drop(conn);
+
             let (destination, segments) =
-                super::call(db.connection_pool(), &edition, &room).expect("edition commit failed");
+                super::call(&db.connection_pool(), &profiler, &edition, &room)
+                    .await
+                    .expect("edition commit failed");
 
             // Assert original room.
             assert_eq!(destination.source_room_id().unwrap(), room.id());
             assert_eq!(room.audience(), destination.audience());
             assert_eq!(room.tags(), destination.tags());
+            let segments: Vec<(Bound<i64>, Bound<i64>)> = segments.into();
             assert_eq!(segments.len(), 3);
 
-            let conn = db
-                .connection_pool()
-                .get()
-                .expect("Failed to get db connection");
+            let mut conn = db.get_conn().await;
 
             let events = EventListQuery::new()
                 .room_id(destination.id())
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to fetch events");
 
             assert_eq!(events.len(), 3);
-
             assert_eq!(events[0].data()["message"], "passthrough");
             assert_eq!(events[0].occurred_at(), 2_500_000_000);
             assert_eq!(events[1].data()["message"], "cutted out");
-            assert_eq!(events[1].occurred_at(), 3_000_000_001);
+            assert_eq!(events[1].occurred_at(), 3_000_000_000);
             assert_eq!(events[2].data()["message"], "some message");
             assert_eq!(events[2].occurred_at(), 3_200_000_001);
         });
@@ -597,58 +615,61 @@ mod tests {
 
     #[test]
     fn commit_edition_with_intersecting_gaps() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let profiler = Profiler::<ProfilerKeys>::start();
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-
-            let conn = db
-                .connection_pool()
-                .get()
-                .expect("Failed to get db connection");
-
-            let room = shared_helpers::insert_room(&conn);
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 2_500_000_000,
                 "message",
                 json!({"message": "passthrough"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 3_000_000_000,
                 "stream",
                 json!({"cut": "start"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 3_500_000_000,
                 "message",
                 json!({"message": "cutted out"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 4_000_000_000,
                 "stream",
                 json!({"cut": "stop"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 5_000_000_000,
                 "message",
                 json!({"message": "passthrough2"}),
-            );
+            )
+            .await;
 
-            let edition = factory::Edition::new(room.id(), agent.agent_id()).insert(&conn);
+            let edition = factory::Edition::new(room.id(), agent.agent_id())
+                .insert(&mut conn)
+                .await;
 
             factory::Change::new(edition.id(), ChangeType::Addition)
                 .event_data(json!({"cut": "start"}))
@@ -656,7 +677,8 @@ mod tests {
                 .event_set("stream")
                 .event_occurred_at(3_200_000_000)
                 .event_created_by(agent.agent_id())
-                .insert(&conn);
+                .insert(&mut conn)
+                .await;
 
             factory::Change::new(edition.id(), ChangeType::Addition)
                 .event_data(json!({"cut": "stop"}))
@@ -664,30 +686,32 @@ mod tests {
                 .event_set("stream")
                 .event_occurred_at(4_500_000_000)
                 .event_created_by(agent.agent_id())
-                .insert(&conn);
+                .insert(&mut conn)
+                .await;
 
             drop(conn);
+
             let (destination, segments) =
-                super::call(db.connection_pool(), &edition, &room).expect("edition commit failed");
+                super::call(&db.connection_pool(), &profiler, &edition, &room)
+                    .await
+                    .expect("edition commit failed");
 
             // Assert original room.
             assert_eq!(destination.source_room_id().unwrap(), room.id());
             assert_eq!(room.audience(), destination.audience());
             assert_eq!(room.tags(), destination.tags());
+            let segments: Vec<(Bound<i64>, Bound<i64>)> = segments.into();
             assert_eq!(segments.len(), 2);
 
-            let conn = db
-                .connection_pool()
-                .get()
-                .expect("Failed to get db connection");
+            let mut conn = db.get_conn().await;
 
             let events = EventListQuery::new()
                 .room_id(destination.id())
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to fetch events");
 
             assert_eq!(events.len(), 3);
-
             assert_eq!(events[0].data()["message"], "passthrough");
             assert_eq!(events[0].occurred_at(), 2_500_000_000);
             assert_eq!(events[1].data()["message"], "cutted out");
@@ -697,8 +721,8 @@ mod tests {
         });
     }
 
-    fn create_event(
-        conn: &PgConnection,
+    async fn create_event(
+        conn: &mut PgConnection,
         room: &Room,
         occurred_at: i64,
         kind: &str,
@@ -707,13 +731,14 @@ mod tests {
         let created_by = AgentId::new("test", AccountId::new("test", AUDIENCE));
 
         let opened_at = match room.time() {
-            (Bound::Included(opened_at), _) => *opened_at,
+            (Bound::Included(opened_at), _) => opened_at,
             _ => panic!("Invalid room time"),
         };
 
         EventInsertQuery::new(room.id(), kind.to_owned(), data, occurred_at, created_by)
             .created_at(opened_at + Duration::nanoseconds(occurred_at))
             .execute(conn)
+            .await
             .expect("Failed to insert event")
     }
 }

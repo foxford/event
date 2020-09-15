@@ -296,7 +296,7 @@ impl RequestHandler for CommitHandler {
 
         // Run commit task asynchronously.
         let db = context.db().to_owned();
-        let profiler = context.profiler().to_owned();
+        let profiler = context.profiler();
 
         let notification_future = async_std::task::spawn(async move {
             let result = commit_edition(&db, &profiler, &edition, &room).await;
@@ -401,30 +401,23 @@ mod tests {
 
         #[test]
         fn create_edition() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
-                    shared_helpers::insert_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_room(&mut conn).await
                 };
 
                 // Allow agent to create editions
                 let mut authz = TestAuthz::new();
                 let room_id = room.id().to_string();
-
                 let object = vec!["rooms", &room_id];
-
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
                 let context = TestContext::new(db, authz);
-
                 let payload = CreateRequest { room_id: room.id() };
 
                 let messages = handle_request::<CreateHandler>(&context, &agent, payload)
@@ -440,21 +433,16 @@ mod tests {
 
         #[test]
         fn create_edition_not_authorized() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let room = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
-
-                    shared_helpers::insert_room(&conn)
+                    let mut conn = db.get_conn().await;
+                    shared_helpers::insert_room(&mut conn).await
                 };
 
                 let context = TestContext::new(db, TestAuthz::new());
-
                 let payload = CreateRequest { room_id: room.id() };
 
                 let response = handle_request::<CreateHandler>(&context, &agent, payload)
@@ -466,10 +454,9 @@ mod tests {
         }
         #[test]
         fn create_edition_missing_room() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = CreateRequest {
                     room_id: Uuid::new_v4(),
@@ -491,32 +478,24 @@ mod tests {
 
         #[test]
         fn list_editions() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, editions) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
+                    let edition = factory::Edition::new(room.id(), agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                    let editions = (1..2)
-                        .map(|_idx| {
-                            factory::Edition::new(room.id(), agent.agent_id()).insert(&conn)
-                        })
-                        .collect::<Vec<Edition>>();
-
-                    (room, editions)
+                    (room, vec![edition])
                 };
 
                 let mut authz = TestAuthz::new();
                 let room_id = room.id().to_string();
-
                 let object = vec!["rooms", &room_id];
-
                 authz.allow(agent.account_id(), object, "update");
 
                 let context = TestContext::new(db, authz);
@@ -540,25 +519,19 @@ mod tests {
 
         #[test]
         fn list_editions_not_authorized() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, _editions) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
+                    let edition = factory::Edition::new(room.id(), agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                    let editions = (1..2)
-                        .map(|_idx| {
-                            factory::Edition::new(room.id(), agent.agent_id()).insert(&conn)
-                        })
-                        .collect::<Vec<Edition>>();
-
-                    (room, editions)
+                    (room, vec![edition])
                 };
 
                 let context = TestContext::new(db, TestAuthz::new());
@@ -579,10 +552,9 @@ mod tests {
 
         #[test]
         fn list_editions_missing_room() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = ListRequest {
                     room_id: Uuid::new_v4(),
@@ -606,32 +578,29 @@ mod tests {
 
         #[test]
         fn delete_edition() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, editions) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
+                    let mut editions = vec![];
 
-                    let room = shared_helpers::insert_room(&conn);
+                    for _ in 1..4 {
+                        let edition = factory::Edition::new(room.id(), agent.agent_id())
+                            .insert(&mut conn)
+                            .await;
 
-                    let editions = (1..4)
-                        .map(|_idx| {
-                            factory::Edition::new(room.id(), agent.agent_id()).insert(&conn)
-                        })
-                        .collect::<Vec<Edition>>();
+                        editions.push(edition);
+                    }
 
                     (room, editions)
                 };
 
                 let mut authz = TestAuthz::new();
                 let room_id = room.id().to_string();
-
                 let object = vec!["rooms", &room_id];
-
                 authz.allow(agent.account_id(), object, "update");
 
                 let context = TestContext::new(db, authz);
@@ -648,33 +617,39 @@ mod tests {
                 assert_eq!(resp.status(), ResponseStatus::OK);
                 assert_eq!(resp_edition.id(), editions[0].id());
 
-                let conn = context.db().get().expect("Failed to get DB connection");
+                let mut conn = context
+                    .db()
+                    .acquire()
+                    .await
+                    .expect("Failed to get DB connection");
+
                 let db_editions = db::edition::ListQuery::new(room.id())
-                    .execute(&conn)
+                    .execute(&mut conn)
+                    .await
                     .expect("Failed to fetch editions");
+
                 assert_eq!(db_editions.len(), editions.len() - 1);
             });
         }
 
         #[test]
         fn delete_edition_not_authorized() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, editions) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
+                    let mut editions = vec![];
 
-                    let room = shared_helpers::insert_room(&conn);
+                    for _ in 1..4 {
+                        let edition = factory::Edition::new(room.id(), agent.agent_id())
+                            .insert(&mut conn)
+                            .await;
 
-                    let editions = (1..4)
-                        .map(|_idx| {
-                            factory::Edition::new(room.id(), agent.agent_id()).insert(&conn)
-                        })
-                        .collect::<Vec<Edition>>();
+                        editions.push(edition)
+                    }
 
                     (room, editions)
                 };
@@ -691,21 +666,26 @@ mod tests {
 
                 assert_eq!(resp.status_code(), ResponseStatus::FORBIDDEN);
 
-                let conn = context.db().get().expect("Failed to get DB connection");
+                let mut conn = context
+                    .db()
+                    .acquire()
+                    .await
+                    .expect("Failed to get DB connection");
+
                 let db_editions = db::edition::ListQuery::new(room.id())
-                    .execute(&conn)
+                    .execute(&mut conn)
+                    .await
                     .expect("Failed to fetch editions");
+
                 assert_eq!(db_editions.len(), editions.len());
             });
         }
 
         #[test]
         fn delete_editions_missing_room() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
-
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = DeleteRequest { id: Uuid::new_v4() };
 
                 let resp = handle_request::<DeleteHandler>(&context, &agent, payload)

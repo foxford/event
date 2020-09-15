@@ -182,30 +182,27 @@ mod tests {
 
     #[test]
     fn create_subscription() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room.
-                let room = shared_helpers::insert_room(&conn);
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
                 // Put agent in the room in `in_progress` status.
                 factory::Agent::new()
                     .room_id(room.id())
                     .agent_id(agent.agent_id().to_owned())
-                    .insert(&conn);
+                    .insert(&mut conn)
+                    .await;
 
                 room
             };
 
             // Send subscription.create event.
-            let context = TestContext::new(db.clone(), TestAuthz::new());
+            let context = TestContext::new(db, TestAuthz::new());
             let room_id = room.id().to_string();
 
             let payload = SubscriptionEvent {
@@ -228,15 +225,16 @@ mod tests {
             assert_eq!(&payload.agent_id, agent.agent_id());
 
             // Assert agent turned to `ready` status.
-            let conn = db
-                .connection_pool()
-                .get()
+            let mut conn = context
+                .get_conn()
+                .await
                 .expect("Failed to get DB connection");
 
             let db_agents = AgentListQuery::new()
                 .agent_id(agent.agent_id().to_owned())
                 .room_id(room.id())
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to execute agent list query");
 
             let db_agent = db_agents.first().expect("Missing agent in the DB");
@@ -246,10 +244,9 @@ mod tests {
 
     #[test]
     fn create_subscription_missing_room() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new();
-            let context = TestContext::new(db, TestAuthz::new());
+            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
             let room_id = Uuid::new_v4().to_string();
 
             let payload = SubscriptionEvent {
@@ -270,16 +267,12 @@ mod tests {
 
     #[test]
     fn create_subscription_closed_room() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
-                shared_helpers::insert_closed_room(&conn)
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_closed_room(&mut conn).await
             };
 
             let context = TestContext::new(db, TestAuthz::new());
@@ -306,24 +299,20 @@ mod tests {
 
     #[test]
     fn delete_subscription() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room and put the agent online.
-                let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
                 room
             };
 
             // Send subscription.delete event.
-            let context = TestContext::new(db.clone(), TestAuthz::new());
+            let context = TestContext::new(db, TestAuthz::new());
             let room_id = room.id().to_string();
 
             let payload = SubscriptionEvent {
@@ -346,15 +335,16 @@ mod tests {
             assert_eq!(&payload.agent_id, agent.agent_id());
 
             // Assert agent deleted from the DB.
-            let conn = db
-                .connection_pool()
-                .get()
+            let mut conn = context
+                .get_conn()
+                .await
                 .expect("Failed to get DB connection");
 
             let db_agents = AgentListQuery::new()
                 .agent_id(agent.agent_id().to_owned())
                 .room_id(room.id())
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to execute agent list query");
 
             assert_eq!(db_agents.len(), 0);
@@ -363,20 +353,16 @@ mod tests {
 
     #[test]
     fn delete_subscription_missing_agent() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new();
+            let db = TestDb::new().await;
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
-                shared_helpers::insert_room(&conn)
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
             };
 
-            let context = TestContext::new(db.clone(), TestAuthz::new());
+            let context = TestContext::new(db, TestAuthz::new());
             let room_id = room.id().to_string();
 
             let payload = SubscriptionEvent {
@@ -397,10 +383,9 @@ mod tests {
 
     #[test]
     fn delete_subscription_missing_room() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new();
-            let context = TestContext::new(db.clone(), TestAuthz::new());
+            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
             let room_id = Uuid::new_v4().to_string();
 
             let payload = SubscriptionEvent {

@@ -277,39 +277,36 @@ impl RequestHandler for DeleteHandler {
 #[cfg(test)]
 mod tests {
     mod create {
-        use super::super::*;
-        use crate::db::change::{ChangeType, Object as Change};
-        use crate::test_helpers::prelude::*;
-
         use serde_json::json;
 
         use crate::app::endpoint::change::create_request::{
             AdditionData, Changeset, CreateRequest, ModificationData, RemovalData,
         };
+        use crate::db::change::{ChangeType, Object as Change};
+        use crate::test_helpers::prelude::*;
+
+        use super::super::*;
 
         #[test]
         fn create_addition_change() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, edition) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
-                    let edition = shared_helpers::insert_edition(&conn, &room, &agent.agent_id());
+                    let edition =
+                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+
                     (room, edition)
                 };
 
                 // Allow agent to create editions
                 let mut authz = TestAuthz::new();
                 let room_id = room.id().to_string();
-
                 let object = vec!["rooms", &room_id];
-
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
@@ -340,7 +337,7 @@ mod tests {
                     change
                         .event_data()
                         .as_ref()
-                        .expect("Couldnt get event data from Change"),
+                        .expect("Couldn't get event data from Change"),
                     &json![{"key": "value"}]
                 );
             });
@@ -348,38 +345,39 @@ mod tests {
 
         #[test]
         fn create_removal_change() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, edition, events) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
-                    let edition = shared_helpers::insert_edition(&conn, &room, &agent.agent_id());
-                    let events = (1..4)
-                        .map(|i| {
-                            factory::Event::new()
-                                .room_id(room.id())
-                                .kind("message")
-                                .data(&json!({ "text": format!("message {}", i) }))
-                                .occurred_at(i * 1000)
-                                .created_by(&agent.agent_id())
-                                .insert(&conn)
-                        })
-                        .collect::<Vec<crate::db::event::Object>>();
+                    let edition =
+                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+
+                    let mut events = vec![];
+
+                    for i in 1..4 {
+                        let event = factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .data(&json!({ "text": format!("message {}", i) }))
+                            .occurred_at(i * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&mut conn)
+                            .await;
+
+                        events.push(event);
+                    }
+
                     (room, edition, events)
                 };
 
                 // Allow agent to create editions
                 let mut authz = TestAuthz::new();
                 let room_id = room.id().to_string();
-
                 let object = vec!["rooms", &room_id];
-
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
@@ -410,38 +408,39 @@ mod tests {
 
         #[test]
         fn create_modification_change() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, edition, events) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
-                    let edition = shared_helpers::insert_edition(&conn, &room, &agent.agent_id());
-                    let events = (1..4)
-                        .map(|i| {
-                            factory::Event::new()
-                                .room_id(room.id())
-                                .kind("message")
-                                .data(&json!({ "text": format!("message {}", i) }))
-                                .occurred_at(i * 1000)
-                                .created_by(&agent.agent_id())
-                                .insert(&conn)
-                        })
-                        .collect::<Vec<crate::db::event::Object>>();
+                    let edition =
+                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+
+                    let mut events = vec![];
+
+                    for i in 1..4 {
+                        let event = factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .data(&json!({ "text": format!("message {}", i) }))
+                            .occurred_at(i * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&mut conn)
+                            .await;
+
+                        events.push(event);
+                    }
+
                     (room, edition, events)
                 };
 
                 // Allow agent to create editions
                 let mut authz = TestAuthz::new();
                 let room_id = room.id().to_string();
-
                 let object = vec!["rooms", &room_id];
-
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
@@ -474,7 +473,7 @@ mod tests {
                     change
                         .event_data()
                         .as_ref()
-                        .expect("Couldnt get event data from ChangeWithChangeEvent"),
+                        .expect("Couldn't get event data from ChangeWithChangeEvent"),
                     &json![{"key": "value"}]
                 );
             });
@@ -482,18 +481,16 @@ mod tests {
 
         #[test]
         fn create_change_with_improper_event_id() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, edition) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
-                    let edition = shared_helpers::insert_edition(&conn, &room, &agent.agent_id());
+                    let edition =
+                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
                     (room, edition)
                 };
@@ -501,9 +498,7 @@ mod tests {
                 // Allow agent to create editions
                 let mut authz = TestAuthz::new();
                 let room_id = room.id().to_string();
-
                 let object = vec!["rooms", &room_id];
-
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
@@ -529,18 +524,17 @@ mod tests {
 
         #[test]
         fn create_change_not_authorized() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (_room, edition) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
-                    let edition = shared_helpers::insert_edition(&conn, &room, &agent.agent_id());
+                    let edition =
+                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+
                     (room, edition)
                 };
 
@@ -567,10 +561,9 @@ mod tests {
         }
         #[test]
         fn create_change_missing_edition() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = CreateRequest {
                     edition_id: Uuid::new_v4(),
@@ -594,51 +587,52 @@ mod tests {
     }
 
     mod list {
+        use serde_json::json;
+
         use super::super::*;
         use crate::db::change::{ChangeType, Object as Change};
         use crate::test_helpers::prelude::*;
-        use serde_json::json;
 
         #[test]
         fn list_changes() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, edition, changes) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
-                    let edition = shared_helpers::insert_edition(&conn, &room, &agent.agent_id());
+                    let edition =
+                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let changes = (1..35)
-                        .map(|idx| {
-                            let event = factory::Event::new()
-                                .room_id(room.id())
-                                .kind("message")
-                                .data(&json!({ "text": format!("message {}", idx) }))
-                                .occurred_at(idx * 1000)
-                                .created_by(&agent.agent_id())
-                                .insert(&conn);
+                    let mut changes = vec![];
 
-                            factory::Change::new(edition.id(), ChangeType::Modification)
-                                .event_id(event.id())
-                                .event_data(json![{"key": "value"}])
-                                .insert(&conn)
-                        })
-                        .collect::<Vec<Change>>();
+                    for idx in 1..35 {
+                        let event = factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .data(&json!({ "text": format!("message {}", idx) }))
+                            .occurred_at(idx * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&mut conn)
+                            .await;
+
+                        let change = factory::Change::new(edition.id(), ChangeType::Modification)
+                            .event_id(event.id())
+                            .event_data(json![{"key": "value"}])
+                            .insert(&mut conn)
+                            .await;
+
+                        changes.push(change);
+                    }
 
                     (room, edition, changes)
                 };
 
                 let mut authz = TestAuthz::new();
                 let room_id = room.id().to_string();
-
                 let object = vec!["rooms", &room_id];
-
                 authz.allow(agent.account_id(), object, "update");
 
                 let context = TestContext::new(db, authz);
@@ -656,41 +650,46 @@ mod tests {
                 let (response_changes, respp) = find_response::<Vec<Change>>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::OK);
                 assert_eq!(response_changes.len(), 25);
-                assert_eq!(response_changes[0].id(), changes[0].id());
+
+                let ids = changes.into_iter().map(|c| c.id()).collect::<Vec<Uuid>>();
+
+                assert!(ids.contains(&response_changes[0].id()));
             });
         }
 
         #[test]
         fn list_changes_not_authorized() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (_room, edition, _changes) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
-                    let edition = shared_helpers::insert_edition(&conn, &room, &agent.agent_id());
+                    let edition =
+                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let changes = (1..35)
-                        .map(|idx| {
-                            let event = factory::Event::new()
-                                .room_id(room.id())
-                                .kind("message")
-                                .data(&json!({ "text": format!("message {}", idx) }))
-                                .occurred_at(idx * 1000)
-                                .created_by(&agent.agent_id())
-                                .insert(&conn);
+                    let mut changes = vec![];
 
-                            factory::Change::new(edition.id(), ChangeType::Modification)
-                                .event_id(event.id())
-                                .event_data(json![{"key": "value"}])
-                                .insert(&conn)
-                        })
-                        .collect::<Vec<Change>>();
+                    for idx in 1..35 {
+                        let event = factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .data(&json!({ "text": format!("message {}", idx) }))
+                            .occurred_at(idx * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&mut conn)
+                            .await;
+
+                        let change = factory::Change::new(edition.id(), ChangeType::Modification)
+                            .event_id(event.id())
+                            .event_data(json![{"key": "value"}])
+                            .insert(&mut conn)
+                            .await;
+
+                        changes.push(change);
+                    }
 
                     (room, edition, changes)
                 };
@@ -713,10 +712,9 @@ mod tests {
 
         #[test]
         fn list_changes_missing_edition() {
-            futures::executor::block_on(async {
+            async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-
-                let context = TestContext::new(TestDb::new(), TestAuthz::new());
+                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = ListRequest {
                     id: Uuid::new_v4(),
@@ -741,44 +739,44 @@ mod tests {
 
         #[test]
         fn delete_change() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, edition, changes) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
-                    let edition = shared_helpers::insert_edition(&conn, &room, &agent.agent_id());
+                    let edition =
+                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let changes = (1..15)
-                        .map(|idx| {
-                            let event = factory::Event::new()
-                                .room_id(room.id())
-                                .kind("message")
-                                .data(&json!({ "text": format!("message {}", idx) }))
-                                .occurred_at(idx * 1000)
-                                .created_by(&agent.agent_id())
-                                .insert(&conn);
+                    let mut changes = vec![];
 
-                            factory::Change::new(edition.id(), ChangeType::Modification)
-                                .event_id(event.id())
-                                .event_data(json![{"key": "value"}])
-                                .insert(&conn)
-                        })
-                        .collect::<Vec<Change>>();
+                    for idx in 1..15 {
+                        let event = factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .data(&json!({ "text": format!("message {}", idx) }))
+                            .occurred_at(idx * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&mut conn)
+                            .await;
+
+                        let change = factory::Change::new(edition.id(), ChangeType::Modification)
+                            .event_id(event.id())
+                            .event_data(json![{"key": "value"}])
+                            .insert(&mut conn)
+                            .await;
+
+                        changes.push(change);
+                    }
 
                     (room, edition, changes)
                 };
 
                 let mut authz = TestAuthz::new();
                 let room_id = room.id().to_string();
-
                 let object = vec!["rooms", &room_id];
-
                 authz.allow(agent.account_id(), object, "update");
 
                 let context = TestContext::new(db, authz);
@@ -794,44 +792,55 @@ mod tests {
                 let (_, resp) = find_response::<Change>(messages.as_slice());
 
                 assert_eq!(resp.status(), ResponseStatus::OK);
+
+                let mut conn = context
+                    .db()
+                    .acquire()
+                    .await
+                    .expect("Failed to get DB connection");
+
                 let db_changes = db::change::ListQuery::new(edition.id())
-                    .execute(&context.db().get().expect("Failed to get DB connection"))
-                    .expect("Couldnt load changes from db");
+                    .execute(&mut conn)
+                    .await
+                    .expect("Couldn't load changes from db");
+
                 assert_eq!(db_changes.len(), changes.len() - 1);
             });
         }
 
         #[test]
         fn delete_change_not_authorized() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (_room, edition, changes) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
-                    let edition = shared_helpers::insert_edition(&conn, &room, &agent.agent_id());
+                    let edition =
+                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let changes = (1..15)
-                        .map(|idx| {
-                            let event = factory::Event::new()
-                                .room_id(room.id())
-                                .kind("message")
-                                .data(&json!({ "text": format!("message {}", idx) }))
-                                .occurred_at(idx * 1000)
-                                .created_by(&agent.agent_id())
-                                .insert(&conn);
+                    let mut changes = vec![];
 
-                            factory::Change::new(edition.id(), ChangeType::Modification)
-                                .event_id(event.id())
-                                .event_data(json![{"key": "value"}])
-                                .insert(&conn)
-                        })
-                        .collect::<Vec<Change>>();
+                    for idx in 1..15 {
+                        let event = factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .data(&json!({ "text": format!("message {}", idx) }))
+                            .occurred_at(idx * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&mut conn)
+                            .await;
+
+                        let change = factory::Change::new(edition.id(), ChangeType::Modification)
+                            .event_id(event.id())
+                            .event_data(json![{"key": "value"}])
+                            .insert(&mut conn)
+                            .await;
+
+                        changes.push(change);
+                    }
 
                     (room, edition, changes)
                 };
@@ -848,57 +857,64 @@ mod tests {
 
                 assert_eq!(response.status_code(), ResponseStatus::FORBIDDEN);
 
+                let mut conn = context
+                    .db()
+                    .acquire()
+                    .await
+                    .expect("Failed to get DB connection");
+
                 let db_changes = db::change::ListQuery::new(edition.id())
-                    .execute(&context.db().get().expect("Failed to get DB connection"))
-                    .expect("Couldnt load changes from db");
+                    .execute(&mut conn)
+                    .await
+                    .expect("Couldn't load changes from db");
+
                 assert_eq!(db_changes.len(), changes.len());
             });
         }
 
         #[test]
         fn delete_change_with_wrong_uuid() {
-            futures::executor::block_on(async {
-                let db = TestDb::new();
+            async_std::task::block_on(async {
+                let db = TestDb::new().await;
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 let (room, edition, changes) = {
-                    let conn = db
-                        .connection_pool()
-                        .get()
-                        .expect("Failed to get DB connection");
+                    let mut conn = db.get_conn().await;
+                    let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let room = shared_helpers::insert_room(&conn);
-                    let edition = shared_helpers::insert_edition(&conn, &room, &agent.agent_id());
+                    let edition =
+                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let changes = (1..15)
-                        .map(|idx| {
-                            let event = factory::Event::new()
-                                .room_id(room.id())
-                                .kind("message")
-                                .data(&json!({ "text": format!("message {}", idx) }))
-                                .occurred_at(idx * 1000)
-                                .created_by(&agent.agent_id())
-                                .insert(&conn);
+                    let mut changes = vec![];
 
-                            factory::Change::new(edition.id(), ChangeType::Modification)
-                                .event_id(event.id())
-                                .event_data(json![{"key": "value"}])
-                                .insert(&conn)
-                        })
-                        .collect::<Vec<Change>>();
+                    for idx in 1..15 {
+                        let event = factory::Event::new()
+                            .room_id(room.id())
+                            .kind("message")
+                            .data(&json!({ "text": format!("message {}", idx) }))
+                            .occurred_at(idx * 1000)
+                            .created_by(&agent.agent_id())
+                            .insert(&mut conn)
+                            .await;
+
+                        let change = factory::Change::new(edition.id(), ChangeType::Modification)
+                            .event_id(event.id())
+                            .event_data(json![{"key": "value"}])
+                            .insert(&mut conn)
+                            .await;
+
+                        changes.push(change);
+                    }
 
                     (room, edition, changes)
                 };
 
                 let mut authz = TestAuthz::new();
                 let room_id = room.id().to_string();
-
                 let object = vec!["rooms", &room_id];
-
                 authz.allow(agent.account_id(), object, "update");
 
                 let context = TestContext::new(db, authz);
-
                 let payload = DeleteRequest { id: Uuid::new_v4() };
 
                 let resp = handle_request::<DeleteHandler>(&context, &agent, payload)
@@ -906,9 +922,18 @@ mod tests {
                     .expect_err("Failed to list changes");
 
                 assert_eq!(resp.status_code(), ResponseStatus::NOT_FOUND);
+
+                let mut conn = context
+                    .db()
+                    .acquire()
+                    .await
+                    .expect("Failed to get DB connection");
+
                 let db_changes = db::change::ListQuery::new(edition.id())
-                    .execute(&context.db().get().expect("Failed to get DB connection"))
-                    .expect("Couldnt load changes from db");
+                    .execute(&mut conn)
+                    .await
+                    .expect("Couldn't load changes from db");
+
                 assert_eq!(db_changes.len(), changes.len());
             });
         }

@@ -9,7 +9,6 @@ use svc_authz::ClientMap as Authz;
 
 use crate::app::context::Context;
 use crate::app::endpoint::metric::ProfilerKeys;
-use crate::app::metrics::StatsCollector;
 use crate::config::Config;
 use crate::profiler::Profiler;
 
@@ -43,7 +42,6 @@ fn build_config() -> Config {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
 pub(crate) struct TestContext {
     config: Config,
     authz: Authz,
@@ -98,14 +96,6 @@ impl Context for TestContext {
 
     fn profiler(&self) -> Arc<Profiler<ProfilerKeys>> {
         self.profiler.clone()
-    }
-
-    fn db_pool_stats(&self) -> &Option<StatsCollector> {
-        &None
-    }
-
-    fn ro_db_pool_stats(&self) -> &Option<StatsCollector> {
-        &None
     }
 
     fn running_requests(&self) -> Option<Arc<AtomicI64>> {
