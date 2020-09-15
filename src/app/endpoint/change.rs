@@ -1,18 +1,18 @@
 use async_std::stream;
-use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
-use uuid06::Uuid;
+use uuid08::Uuid;
 
 use crate::app::context::Context;
+use crate::app::endpoint::change::create_request::{Changeset, CreateRequest};
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::db;
 
-pub(crate) struct CreateHandler;
+////////////////////////////////////////////////////////////////////////////////
 
-use crate::app::endpoint::change::create_request::{Changeset, CreateRequest};
+pub(crate) struct CreateHandler;
 
 #[async_trait]
 impl RequestHandler for CreateHandler {
@@ -25,35 +25,22 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let edition = {
-            let query = db::edition::FindQuery::new(payload.edition_id);
-            let conn = context.get_ro_conn().await?;
+        let (_edition, room) = {
+            let query = db::edition::FindWithRoomQuery::new(payload.edition_id);
+            let mut conn = context.sqlx_db().acquire().await?;
 
-            let maybe_edition = context
+            let maybe_edition_with_room = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
+                    ProfilerKeys::EditionFindWithRoomQuery,
+                    query.execute(&mut conn),
                 )
                 .await?;
 
-            match maybe_edition {
-                Some(edition) => edition,
+            match maybe_edition_with_room {
+                Some(edition_with_room) => edition_with_room,
                 None => {
                     return Err(format!("Edition not found, id = '{}'", payload.edition_id))
-                        .status(ResponseStatus::NOT_FOUND)?;
-                }
-            }
-        };
-
-        let room = {
-            let mut conn = context.sqlx_db().acquire().await?;
-            let room_id = uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
-
-            match db::room::FindQuery::new(room_id).execute(&mut conn).await? {
-                Some(room) => room,
-                None => {
-                    return Err(format!("Room not found, id = '{}'", room_id))
                         .status(ResponseStatus::NOT_FOUND)?;
                 }
             }
@@ -110,14 +97,11 @@ impl RequestHandler for CreateHandler {
         };
 
         let change = {
-            let conn = context.get_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::ChangeInsertQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::ChangeInsertQuery, query.execute(&mut conn))
                 .await?
         };
 
@@ -133,13 +117,15 @@ impl RequestHandler for CreateHandler {
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
 pub(crate) struct ListHandler;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ListRequest {
     id: Uuid,
     last_created_at: Option<DateTime<Utc>>,
-    limit: Option<i64>,
+    limit: Option<usize>,
 }
 
 #[async_trait]
@@ -153,35 +139,22 @@ impl RequestHandler for ListHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let edition = {
-            let query = db::edition::FindQuery::new(payload.id);
-            let conn = context.get_ro_conn().await?;
+        let (edition, room) = {
+            let query = db::edition::FindWithRoomQuery::new(payload.id);
+            let mut conn = context.sqlx_db().acquire().await?;
 
-            let maybe_edition = context
+            let maybe_edition_with_room = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
+                    ProfilerKeys::EditionFindWithRoomQuery,
+                    query.execute(&mut conn),
                 )
                 .await?;
 
-            match maybe_edition {
-                Some(edition) => edition,
+            match maybe_edition_with_room {
+                Some(edition_with_room) => edition_with_room,
                 None => {
                     return Err(format!("Edition not found, id = '{}'", payload.id))
-                        .status(ResponseStatus::NOT_FOUND)?;
-                }
-            }
-        };
-
-        let room = {
-            let mut conn = context.sqlx_db().acquire().await?;
-            let room_id = uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
-
-            match db::room::FindQuery::new(room_id).execute(&mut conn).await? {
-                Some(room) => room,
-                None => {
-                    return Err(format!("Room not found, id = '{}'", room_id))
                         .status(ResponseStatus::NOT_FOUND)?;
                 }
             }
@@ -208,14 +181,11 @@ impl RequestHandler for ListHandler {
         }
 
         let changes = {
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::ChangeListQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::ChangeListQuery, query.execute(&mut conn))
                 .await?
         };
 
@@ -228,6 +198,8 @@ impl RequestHandler for ListHandler {
         )])))
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct DeleteHandler;
 
@@ -247,26 +219,22 @@ impl RequestHandler for DeleteHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let (change, edition) = {
-            let conn = context.get_ro_conn().await?;
+        let (change, room) = {
+            let query = db::change::FindWithRoomQuery::new(payload.id);
+            let mut conn = context.sqlx_db().acquire().await?;
 
-            match db::change::FindWithEditionQuery::new(payload.id).execute(&conn)? {
-                Some((change, edition)) => (change, edition),
+            let maybe_change_with_room = context
+                .profiler()
+                .measure(
+                    ProfilerKeys::ChangeFindWithRoomQuery,
+                    query.execute(&mut conn),
+                )
+                .await?;
+
+            match maybe_change_with_room {
+                Some(change_with_room) => change_with_room,
                 None => {
                     return Err(format!("Change not found, id = '{}'", payload.id))
-                        .status(ResponseStatus::NOT_FOUND)?;
-                }
-            }
-        };
-
-        let room = {
-            let mut conn = context.sqlx_db().acquire().await?;
-            let room_id = uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
-
-            match db::room::FindQuery::new(room_id).execute(&mut conn).await? {
-                Some(room) => room,
-                None => {
-                    return Err(format!("Room not found, id = '{}'", room_id))
                         .status(ResponseStatus::NOT_FOUND)?;
                 }
             }
@@ -284,14 +252,11 @@ impl RequestHandler for DeleteHandler {
 
         {
             let query = db::change::DeleteQuery::new(change.id());
-            let conn = context.get_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::ChangeDeleteQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::ChangeDeleteQuery, query.execute(&mut conn))
                 .await?;
         }
 
@@ -306,6 +271,8 @@ impl RequestHandler for DeleteHandler {
         Ok(Box::new(stream::from_iter(vec![response])))
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

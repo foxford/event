@@ -474,6 +474,7 @@ impl RequestHandler for AdjustHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
+        // Find realtime room.
         let room = {
             let query = FindQuery::new(payload.id);
             let mut conn = context.sqlx_db().acquire().await?;
@@ -497,20 +498,12 @@ impl RequestHandler for AdjustHandler {
 
         // Run asynchronous task for adjustment.
         let db = context.sqlx_db().to_owned();
-
-        // Respond with 202.
-        // The actual task result will be broadcasted to the room topic when finished.
-        let response = stream::once(helpers::build_response(
-            ResponseStatus::ACCEPTED,
-            json!({}),
-            reqp,
-            start_timestamp,
-            Some(authz_time),
-        ));
+        let profiler = context.profiler().to_owned();
 
         let notification_future = async_std::task::spawn(async move {
             let operation_result = adjust_room(
                 &db,
+                &profiler,
                 &room,
                 payload.started_at,
                 &payload.segments,
@@ -562,8 +555,17 @@ impl RequestHandler for AdjustHandler {
             Box::new(event) as Box<dyn IntoPublishableMessage + Send>
         });
 
-        let notification = notification_future.into_stream();
+        // Respond with 202.
+        // The actual task result will be broadcasted to the room topic when finished.
+        let response = stream::once(helpers::build_response(
+            ResponseStatus::ACCEPTED,
+            json!({}),
+            reqp,
+            start_timestamp,
+            Some(authz_time),
+        ));
 
+        let notification = notification_future.into_stream();
         Ok(Box::new(response.chain(notification)))
     }
 }

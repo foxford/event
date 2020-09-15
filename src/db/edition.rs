@@ -1,19 +1,15 @@
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
-use diesel::{pg::PgConnection, result::Error};
-
 use serde_derive::{Deserialize, Serialize};
+use sqlx::{postgres::PgConnection, Done};
 use svc_agent::AgentId;
-use uuid06::Uuid;
+use uuid08::Uuid;
 
-use super::room::Object as Room;
-use crate::schema::edition;
+use crate::db::room::{Builder as RoomBuilder, Object as Room, Time as RoomTime};
 
-#[derive(
-    Clone, Debug, Serialize, Deserialize, Identifiable, Queryable, QueryableByName, Associations,
-)]
-#[belongs_to(Room, foreign_key = "source_room_id")]
-#[table_name = "edition"]
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub(crate) struct Object {
     id: Uuid,
     source_room_id: Uuid,
@@ -32,48 +28,106 @@ impl Object {
     }
 }
 
-pub(crate) struct FindQuery {
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+pub(crate) struct FindWithRoomQuery {
     id: Uuid,
 }
 
-impl FindQuery {
+impl FindWithRoomQuery {
     pub(crate) fn new(id: Uuid) -> Self {
         Self { id }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
-        use diesel::prelude::*;
+    pub(crate) async fn execute(
+        self,
+        conn: &mut PgConnection,
+    ) -> sqlx::Result<Option<(Object, Room)>> {
+        let maybe_row = sqlx::query!(
+            r#"
+            SELECT
+                e.id             AS edition_id,
+                e.source_room_id AS edition_source_room_id,
+                e.created_by     AS "edition_created_by!: AgentId",
+                e.created_at     AS edition_created_at,
+                r.id             AS room_id,
+                r.audience       AS room_audience,
+                r.source_room_id AS room_source_room_id,
+                r.time           AS "room_time!: RoomTime",
+                r.tags           AS room_tags,
+                r.created_at     AS room_created_at
+            FROM edition AS e
+            INNER JOIN room AS r
+            ON r.id = e.source_room_id
+            WHERE e.id = $1
+            "#,
+            self.id,
+        )
+        .fetch_optional(conn)
+        .await?;
 
-        edition::table
-            .filter(edition::id.eq(self.id))
-            .get_result(conn)
-            .optional()
+        match maybe_row {
+            None => Ok(None),
+            Some(row) => {
+                let edition = Object {
+                    id: row.edition_id,
+                    source_room_id: row.edition_source_room_id,
+                    created_by: row.edition_created_by,
+                    created_at: row.edition_created_at,
+                };
+
+                let room = RoomBuilder::new()
+                    .id(row.room_id)
+                    .audience(row.room_audience)
+                    .source_room_id(row.room_source_room_id)
+                    .time(row.room_time)
+                    .tags(row.room_tags)
+                    .created_at(row.room_created_at)
+                    .build()
+                    .map_err(|err| sqlx::Error::Decode(err.into()))?;
+
+                Ok(Some((edition, room)))
+            }
+        }
     }
 }
 
-#[derive(Debug, Insertable)]
-#[table_name = "edition"]
-pub(crate) struct InsertQuery {
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+pub(crate) struct InsertQuery<'a> {
     source_room_id: Uuid,
-    created_by: AgentId,
+    created_by: &'a AgentId,
 }
 
-impl InsertQuery {
-    pub(crate) fn new(source_room_id: Uuid, created_by: AgentId) -> Self {
+impl<'a> InsertQuery<'a> {
+    pub(crate) fn new(source_room_id: Uuid, created_by: &'a AgentId) -> Self {
         Self {
             source_room_id,
             created_by,
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
-        use crate::diesel::RunQueryDsl;
-        use crate::schema::edition::dsl::edition;
-
-        diesel::insert_into(edition).values(self).get_result(conn)
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            INSERT INTO edition (source_room_id, created_by)
+            VALUES ($1, $2)
+            RETURNING id, source_room_id, created_by AS "created_by!: AgentId", created_at
+            "#,
+            self.source_room_id,
+            self.created_by.to_owned() as AgentId,
+        )
+        .fetch_one(conn)
+        .await
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
 pub(crate) struct ListQuery {
     source_room_id: Uuid,
     last_created_at: Option<DateTime<Utc>>,
@@ -100,22 +154,29 @@ impl ListQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
-        use diesel::prelude::*;
-
-        let mut q = edition::table
-            .filter(edition::source_room_id.eq(self.source_room_id))
-            .into_boxed();
-
-        if let Some(last_created_at) = self.last_created_at {
-            q = q.filter(edition::created_at.ge(last_created_at));
-        }
-
-        q = q.order_by(edition::created_at.desc()).limit(self.limit);
-        q.get_results(conn)
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            SELECT id, source_room_id, created_by AS "created_by!: AgentId", created_at
+            FROM edition
+            WHERE source_room_id = $1
+            AND   created_at > COALESCE($2, TO_TIMESTAMP(0))
+            ORDER BY created_at DESC
+            LIMIT $3
+            "#,
+            self.source_room_id,
+            self.last_created_at,
+            self.limit,
+        )
+        .fetch_all(conn)
+        .await
     }
 }
 
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
 pub(crate) struct DeleteQuery {
     id: Uuid,
 }
@@ -125,10 +186,10 @@ impl DeleteQuery {
         Self { id }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<usize, Error> {
-        use diesel::prelude::*;
-
-        let q = edition::table.filter(edition::id.eq(self.id));
-        diesel::delete(q).execute(conn)
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<usize> {
+        sqlx::query!("DELETE FROM edition WHERE id = $1", self.id)
+            .execute(conn)
+            .await
+            .map(|r| r.rows_affected() as usize)
     }
 }

@@ -1,6 +1,5 @@
 use async_std::prelude::*;
 use async_std::stream;
-use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::future::FutureExt;
@@ -22,6 +21,8 @@ use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
 use crate::app::operations::commit_edition;
 use crate::db;
 use crate::db::adjustment::Segments;
+
+////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct CreateHandler;
 
@@ -64,16 +65,12 @@ impl RequestHandler for CreateHandler {
             .await?;
 
         let edition = {
-            let room_id = uuid06::Uuid::from_bytes(payload.room_id.as_bytes()).unwrap();
-            let query = db::edition::InsertQuery::new(room_id, reqp.as_agent_id().to_owned());
-            let conn = context.get_conn().await?;
+            let query = db::edition::InsertQuery::new(payload.room_id, reqp.as_agent_id());
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::EditionInsertQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::EditionInsertQuery, query.execute(&mut conn))
                 .await?
         };
 
@@ -96,6 +93,8 @@ impl RequestHandler for CreateHandler {
         Ok(Box::new(stream::from_iter(vec![response, notification])))
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct ListHandler;
 
@@ -141,7 +140,6 @@ impl RequestHandler for ListHandler {
             )
             .await?;
 
-        let room_id = uuid06::Uuid::from_bytes(room_id.as_bytes()).unwrap();
         let mut query = db::edition::ListQuery::new(room_id);
 
         if let Some(last_created_at) = payload.last_created_at {
@@ -153,14 +151,11 @@ impl RequestHandler for ListHandler {
         }
 
         let editions = {
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::EditionListQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::EditionListQuery, query.execute(&mut conn))
                 .await?
         };
 
@@ -174,6 +169,8 @@ impl RequestHandler for ListHandler {
         ))))
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct DeleteHandler;
 
@@ -193,37 +190,23 @@ impl RequestHandler for DeleteHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let edition = {
-            let room_id = uuid06::Uuid::from_bytes(payload.id.as_bytes()).unwrap();
-            let query = db::edition::FindQuery::new(room_id);
-            let conn = context.get_ro_conn().await?;
+        let (edition, room) = {
+            let query = db::edition::FindWithRoomQuery::new(payload.id);
+            let mut conn = context.sqlx_db().acquire().await?;
 
-            let maybe_edition_and_room = context
+            let maybe_edition = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
+                    ProfilerKeys::EditionFindWithRoomQuery,
+                    query.execute(&mut conn),
                 )
                 .await?;
 
-            match maybe_edition_and_room {
-                Some(edition) => edition,
+            match maybe_edition {
+                Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(format!("Change not found, id = '{}'", payload.id))
+                    return Err(format!("Edition not found, id = '{}'", payload.id))
                         .status(ResponseStatus::NOT_FOUND);
-                }
-            }
-        };
-
-        let room = {
-            let mut conn = context.sqlx_db().acquire().await?;
-            let room_id = uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
-
-            match db::room::FindQuery::new(room_id).execute(&mut conn).await? {
-                Some(room) => room,
-                None => {
-                    return Err(format!("Room not found, id = '{}'", room_id))
-                        .status(ResponseStatus::NOT_FOUND)?;
                 }
             }
         };
@@ -240,14 +223,11 @@ impl RequestHandler for DeleteHandler {
 
         {
             let query = db::edition::DeleteQuery::new(edition.id());
-            let conn = context.get_conn().await?;
+            let mut conn = context.sqlx_db().acquire().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::EditionDeleteQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::EditionDeleteQuery, query.execute(&mut conn))
                 .await?;
         }
 
@@ -262,6 +242,8 @@ impl RequestHandler for DeleteHandler {
         Ok(Box::new(stream::from_iter(vec![response])))
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct CommitHandler;
 
@@ -281,21 +263,21 @@ impl RequestHandler for CommitHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let edition = {
-            let room_id = uuid06::Uuid::from_bytes(payload.id.as_bytes()).unwrap();
-            let query = db::edition::FindQuery::new(room_id);
-            let conn = context.get_ro_conn().await?;
+        // Find edition with its source room.
+        let (edition, room) = {
+            let query = db::edition::FindWithRoomQuery::new(payload.id);
+            let mut conn = context.sqlx_db().acquire().await?;
 
             let maybe_edition = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
+                    ProfilerKeys::EditionFindWithRoomQuery,
+                    query.execute(&mut conn),
                 )
                 .await?;
 
             match maybe_edition {
-                Some(edition) => edition,
+                Some(edition_with_room) => edition_with_room,
                 None => {
                     return Err(format!("Edition not found, id = '{}'", payload.id))
                         .status(ResponseStatus::NOT_FOUND);
@@ -303,19 +285,7 @@ impl RequestHandler for CommitHandler {
             }
         };
 
-        let room = {
-            let mut conn = context.sqlx_db().acquire().await?;
-            let room_id = uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
-
-            match db::room::FindQuery::new(room_id).execute(&mut conn).await? {
-                Some(room) => room,
-                None => {
-                    return Err(format!("Room not found, id = '{}'", room_id))
-                        .status(ResponseStatus::NOT_FOUND)?;
-                }
-            }
-        };
-
+        // Authorize room update.
         let room_id = room.id().to_string();
         let object = vec!["rooms", &room_id];
 
@@ -324,34 +294,20 @@ impl RequestHandler for CommitHandler {
             .authorize(room.audience(), reqp, object, "update")
             .await?;
 
-        let db = context.db().to_owned();
+        // Run commit task asynchronously.
         let sqlx_db = context.sqlx_db().to_owned();
-
-        // Respond with 202.
-        // The actual task result will be broadcasted to the room topic when finished.
-        let response = stream::once(helpers::build_response(
-            ResponseStatus::ACCEPTED,
-            json!({}),
-            reqp,
-            start_timestamp,
-            Some(authz_time),
-        ));
+        let profiler = context.profiler().to_owned();
 
         let notification_future = async_std::task::spawn(async move {
-            let result = commit_edition(&db, &sqlx_db, &edition, &room).await;
+            let result = commit_edition(&sqlx_db, &profiler, &edition, &room).await;
 
             // Handle result.
             let result = match result {
-                Ok((destination, modified_segments)) => {
-                    let source_room_id =
-                        uuid08::Uuid::from_bytes(*edition.source_room_id().as_bytes());
-
-                    EditionCommitResult::Success {
-                        source_room_id,
-                        committed_room_id: destination.id(),
-                        modified_segments,
-                    }
-                }
+                Ok((destination, modified_segments)) => EditionCommitResult::Success {
+                    source_room_id: edition.source_room_id(),
+                    committed_room_id: destination.id(),
+                    modified_segments,
+                },
                 Err(err) => {
                     error!(
                         "Room adjustment job failed for room_id = '{}': {}",
@@ -386,6 +342,16 @@ impl RequestHandler for CommitHandler {
 
             Box::new(event) as Box<dyn IntoPublishableMessage + Send>
         });
+
+        // Respond with 202.
+        // The actual task result will be broadcasted to the room topic when finished.
+        let response = stream::once(helpers::build_response(
+            ResponseStatus::ACCEPTED,
+            json!({}),
+            reqp,
+            start_timestamp,
+            Some(authz_time),
+        ));
 
         let notification = notification_future.into_stream();
         Ok(Box::new(response.chain(notification)))
@@ -423,6 +389,8 @@ impl EditionCommitResult {
         }
     }
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

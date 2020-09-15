@@ -101,8 +101,8 @@ impl Context for TestContext {
         &None
     }
 
-    fn profiler(&self) -> &Profiler<ProfilerKeys> {
-        &self.profiler
+    fn profiler(&self) -> Arc<Profiler<ProfilerKeys>> {
+        self.profiler.clone()
     }
 
     fn db_pool_stats(&self) -> &Option<StatsCollector> {
