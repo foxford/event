@@ -18,20 +18,25 @@ use crate::config::TelemetryConfig;
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ProfilerKeys {
+    AdjustmentInsertQuery,
     AgentDeleteQuery,
     AgentInsertQuery,
     AgentListQuery,
     AgentUpdateQuery,
     ChangeDeleteQuery,
+    ChangeFindWithRoomQuery,
     ChangeInsertQuery,
     ChangeListQuery,
+    EditionCloneEventsQuery,
     EditionDeleteQuery,
-    EditionFindQuery,
+    EditionFindWithRoomQuery,
     EditionInsertQuery,
     EditionListQuery,
+    EventDeleteQuery,
     EventInsertQuery,
     EventListQuery,
     EventOriginalEventQuery,
+    RoomAdjustCloneEventsQuery,
     RoomFindQuery,
     RoomInsertQuery,
     RoomUpdateQuery,
@@ -219,6 +224,11 @@ fn append_profiler_stats(
         let metric_value_max = MetricValue::new(entry_report.max as u64, now);
 
         match key {
+            ProfilerKeys::AdjustmentInsertQuery => {
+                metrics.push(Metric::AdjustmentInsertQueryP95(metric_value_p95));
+                metrics.push(Metric::AdjustmentInsertQueryP99(metric_value_p99));
+                metrics.push(Metric::AdjustmentInsertQueryMax(metric_value_max));
+            }
             ProfilerKeys::AgentDeleteQuery => {
                 metrics.push(Metric::AgentDeleteQueryP95(metric_value_p95));
                 metrics.push(Metric::AgentDeleteQueryP99(metric_value_p99));
@@ -244,6 +254,11 @@ fn append_profiler_stats(
                 metrics.push(Metric::ChangeDeleteQueryP99(metric_value_p99));
                 metrics.push(Metric::ChangeDeleteQueryMax(metric_value_max));
             }
+            ProfilerKeys::ChangeFindWithRoomQuery => {
+                metrics.push(Metric::ChangeFindWithRoomQueryP95(metric_value_p95));
+                metrics.push(Metric::ChangeFindWithRoomQueryP99(metric_value_p99));
+                metrics.push(Metric::ChangeFindWithRoomQueryMax(metric_value_max));
+            }
             ProfilerKeys::ChangeInsertQuery => {
                 metrics.push(Metric::ChangeInsertQueryP95(metric_value_p95));
                 metrics.push(Metric::ChangeInsertQueryP99(metric_value_p99));
@@ -254,15 +269,20 @@ fn append_profiler_stats(
                 metrics.push(Metric::ChangeListQueryP99(metric_value_p99));
                 metrics.push(Metric::ChangeListQueryMax(metric_value_max));
             }
+            ProfilerKeys::EditionCloneEventsQuery => {
+                metrics.push(Metric::EditionCloneEventsQueryP95(metric_value_p95));
+                metrics.push(Metric::EditionCloneEventsQueryP99(metric_value_p99));
+                metrics.push(Metric::EditionCloneEventsQueryMax(metric_value_max));
+            }
             ProfilerKeys::EditionDeleteQuery => {
                 metrics.push(Metric::EditionDeleteQueryP95(metric_value_p95));
                 metrics.push(Metric::EditionDeleteQueryP99(metric_value_p99));
                 metrics.push(Metric::EditionDeleteQueryMax(metric_value_max));
             }
-            ProfilerKeys::EditionFindQuery => {
-                metrics.push(Metric::EditionFindQueryP95(metric_value_p95));
-                metrics.push(Metric::EditionFindQueryP99(metric_value_p99));
-                metrics.push(Metric::EditionFindQueryMax(metric_value_max));
+            ProfilerKeys::EditionFindWithRoomQuery => {
+                metrics.push(Metric::EditionFindWithRoomQueryP95(metric_value_p95));
+                metrics.push(Metric::EditionFindWithRoomQueryP99(metric_value_p99));
+                metrics.push(Metric::EditionFindWithRoomQueryMax(metric_value_max));
             }
             ProfilerKeys::EditionInsertQuery => {
                 metrics.push(Metric::EditionInsertQueryP95(metric_value_p95));
@@ -273,6 +293,11 @@ fn append_profiler_stats(
                 metrics.push(Metric::EditionListQueryP95(metric_value_p95));
                 metrics.push(Metric::EditionListQueryP99(metric_value_p99));
                 metrics.push(Metric::EditionListQueryMax(metric_value_max));
+            }
+            ProfilerKeys::EventDeleteQuery => {
+                metrics.push(Metric::EventDeleteQueryP95(metric_value_p95));
+                metrics.push(Metric::EventDeleteQueryP99(metric_value_p99));
+                metrics.push(Metric::EventDeleteQueryMax(metric_value_max));
             }
             ProfilerKeys::EventInsertQuery => {
                 metrics.push(Metric::EventInsertQueryP95(metric_value_p95));
@@ -288,6 +313,11 @@ fn append_profiler_stats(
                 metrics.push(Metric::EventOriginalQueryP95(metric_value_p95));
                 metrics.push(Metric::EventOriginalQueryP99(metric_value_p99));
                 metrics.push(Metric::EventOriginalQueryMax(metric_value_max));
+            }
+            ProfilerKeys::RoomAdjustCloneEventsQuery => {
+                metrics.push(Metric::RoomAdjustCloneEventsQueryP95(metric_value_p95));
+                metrics.push(Metric::RoomAdjustCloneEventsQueryP99(metric_value_p99));
+                metrics.push(Metric::RoomAdjustCloneEventsQueryMax(metric_value_max));
             }
             ProfilerKeys::RoomFindQuery => {
                 metrics.push(Metric::RoomFindQueryP95(metric_value_p95));

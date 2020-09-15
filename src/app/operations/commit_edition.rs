@@ -3,8 +3,9 @@ use std::ops::Bound;
 use anyhow::{bail, Context, Result};
 use chrono::Utc;
 use log::info;
-use sqlx::postgres::{PgConnection as SqlxPgConnection, PgPool as SqlxDb};
+use sqlx::postgres::{PgConnection, PgPool as Db};
 
+use crate::app::endpoint::metric::ProfilerKeys;
 use crate::app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND};
 use crate::db::adjustment::Segments;
 use crate::db::change::{ListQuery as ChangeListQuery, Object as Change};
@@ -13,11 +14,13 @@ use crate::db::event::{
     DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event,
 };
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
-use crate::db::ConnectionPool as Db;
+use crate::profiler::Profiler;
+
+////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) async fn call(
     db: &Db,
-    sqlx_db: &SqlxDb,
+    profiler: &Profiler<ProfilerKeys>,
     edition: &Edition,
     source: &Room,
 ) -> Result<(Room, Segments)> {
@@ -28,9 +31,8 @@ pub(crate) async fn call(
     );
 
     let start_timestamp = Utc::now();
-    let conn = db.get()?;
 
-    let mut sqlx_conn = sqlx_db
+    let mut conn = db
         .acquire()
         .await
         .context("Failed to acquire sqlx db connection")?;
@@ -45,18 +47,22 @@ pub(crate) async fn call(
             _ => bail!("invalid duration for room = '{}'", source.id()),
         };
 
-        let cut_events = EventListQuery::new()
-            .room_id(uuid08::Uuid::from_bytes(*source.id().as_bytes()))
-            .kind("stream".to_string())
-            .execute(&mut sqlx_conn)
+        let query = EventListQuery::new()
+            .room_id(source.id())
+            .kind("stream".to_string());
+
+        let cut_events = profiler
+            .measure(ProfilerKeys::EventListQuery, query.execute(&mut conn))
             .await
             .with_context(|| {
                 format!("failed to fetch cut events for room_id = '{}'", source.id())
             })?;
 
-        let cut_changes = ChangeListQuery::new(edition.id())
-            .kind("stream")
-            .execute(&conn)
+        let query = ChangeListQuery::new(edition.id()).kind("stream");
+
+        let cut_changes = profiler
+            .measure(ProfilerKeys::ChangeListQuery, query.execute(&mut conn))
+            .await
             .with_context(|| {
                 format!(
                     "failed to fetch cut changes for room_id = '{}'",
@@ -65,14 +71,22 @@ pub(crate) async fn call(
             })?;
 
         let cut_gaps = collect_gaps(&cut_events, &cut_changes)?;
+        let destination = clone_room(&mut conn, profiler, &source).await?;
 
-        let destination = clone_room(&mut sqlx_conn, &source).await?;
-        clone_events(&mut sqlx_conn, &source, &destination, &edition, &cut_gaps).await?;
+        clone_events(
+            &mut conn,
+            profiler,
+            &source,
+            &destination,
+            &edition,
+            &cut_gaps,
+        )
+        .await?;
 
-        let destination_id = uuid08::Uuid::from_bytes(*destination.id().as_bytes());
+        let query = EventDeleteQuery::new(destination.id(), "stream");
 
-        EventDeleteQuery::new(destination_id, "stream")
-            .execute(&mut sqlx_conn)
+        profiler
+            .measure(ProfilerKeys::EventDeleteQuery, query.execute(&mut conn))
             .await
             .with_context(|| {
                 format!(
@@ -104,7 +118,11 @@ pub(crate) async fn call(
     Ok(result)
 }
 
-async fn clone_room(conn: &mut SqlxPgConnection, source: &Room) -> Result<Room> {
+async fn clone_room(
+    conn: &mut PgConnection,
+    profiler: &Profiler<ProfilerKeys>,
+    source: &Room,
+) -> Result<Room> {
     let mut query = RoomInsertQuery::new(&source.audience(), source.time().to_owned().into());
     query = query.source_room_id(source.id());
 
@@ -112,11 +130,15 @@ async fn clone_room(conn: &mut SqlxPgConnection, source: &Room) -> Result<Room> 
         query = query.tags(tags.to_owned());
     }
 
-    query.execute(conn).await.context("Failed to insert room")
+    profiler
+        .measure(ProfilerKeys::RoomInsertQuery, query.execute(conn))
+        .await
+        .context("Failed to insert room")
 }
 
 async fn clone_events(
-    conn: &mut SqlxPgConnection,
+    conn: &mut PgConnection,
+    profiler: &Profiler<ProfilerKeys>,
     source: &Room,
     destination: &Room,
     edition: &Edition,
@@ -130,7 +152,7 @@ async fn clone_events(
         stops.push(*stop);
     }
 
-    sqlx::query!(
+    let query = sqlx::query!(
         "
         WITH
             gap_starts AS (
@@ -216,22 +238,24 @@ async fn clone_events(
                 ((change.edition_id = $3 AND change.kind <> 'removal') OR change.id IS NULL)
         ) AS subquery
         ",
-        uuid08::Uuid::from_bytes(*source.id().as_bytes()),
-        uuid08::Uuid::from_bytes(*destination.id().as_bytes()),
-        uuid08::Uuid::from_bytes(*edition.id().as_bytes()),
+        source.id(),
+        destination.id(),
+        edition.id(),
         starts.as_slice(),
         stops.as_slice(),
-    )
-    .execute(conn)
-    .await
-    .map(|_| ())
-    .with_context(|| {
-        format!(
-            "Failed cloning events from room = '{}' to room = {}",
-            source.id(),
-            destination.id(),
-        )
-    })
+    );
+
+    profiler
+        .measure(ProfilerKeys::EditionCloneEventsQuery, query.execute(conn))
+        .await
+        .map(|_| ())
+        .with_context(|| {
+            format!(
+                "Failed cloning events from room = '{}' to room = {}",
+                source.id(),
+                destination.id(),
+            )
+        })
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -317,6 +341,8 @@ fn collect_gaps(cut_events: &[Event], cut_changes: &[Change]) -> Result<Vec<(i64
 
     Ok(gaps)
 }
+
+////////////////////////////////////////////////////////////////////////////////
 
 #[cfg(test)]
 mod tests {

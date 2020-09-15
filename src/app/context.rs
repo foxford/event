@@ -30,7 +30,7 @@ pub(crate) trait Context: Sync {
     fn agent_id(&self) -> &AgentId;
     fn queue_counter(&self) -> &Option<QueueCounterHandle>;
     fn redis_pool(&self) -> &Option<RedisConnectionPool>;
-    fn profiler(&self) -> &Profiler<ProfilerKeys>;
+    fn profiler(&self) -> Arc<Profiler<ProfilerKeys>>;
     fn db_pool_stats(&self) -> &Option<StatsCollector>;
     fn ro_db_pool_stats(&self) -> &Option<StatsCollector>;
     fn running_requests(&self) -> Option<Arc<AtomicI64>>;
@@ -83,8 +83,8 @@ impl Context for AppContext {
         &self.redis_pool
     }
 
-    fn profiler(&self) -> &Profiler<ProfilerKeys> {
-        &self.profiler
+    fn profiler(&self) -> Arc<Profiler<ProfilerKeys>> {
+        self.profiler.clone()
     }
 
     fn db_pool_stats(&self) -> &Option<StatsCollector> {

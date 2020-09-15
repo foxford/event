@@ -2006,6 +2006,7 @@ version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d72369319bd3e02bd6f3efa4f4666aaf6f6d50693c3e19097478deaf13a4ca2"
 dependencies = [
+ "chrono",
  "debug_stub_derive",
  "futures 0.3.5",
  "lazy_static",

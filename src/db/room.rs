@@ -1,5 +1,6 @@
 use std::ops::Bound;
 
+use anyhow::anyhow;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
@@ -41,6 +42,74 @@ impl Object {
 
     pub(crate) fn tags(&self) -> Option<&JsonValue> {
         self.tags.as_ref()
+    }
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct Builder {
+    id: Option<Uuid>,
+    audience: Option<String>,
+    source_room_id: Option<Uuid>,
+    time: Option<Time>,
+    tags: Option<JsonValue>,
+    created_at: Option<DateTime<Utc>>,
+}
+
+impl Builder {
+    pub(crate) fn new() -> Self {
+        Self::default()
+    }
+
+    pub(crate) fn id(self, id: Uuid) -> Self {
+        Self {
+            id: Some(id),
+            ..self
+        }
+    }
+
+    pub(crate) fn audience(self, audience: String) -> Self {
+        Self {
+            audience: Some(audience),
+            ..self
+        }
+    }
+
+    pub(crate) fn source_room_id(self, source_room_id: Option<Uuid>) -> Self {
+        Self {
+            source_room_id,
+            ..self
+        }
+    }
+
+    pub(crate) fn time(self, time: Time) -> Self {
+        Self {
+            time: Some(time),
+            ..self
+        }
+    }
+
+    pub(crate) fn tags(self, tags: Option<JsonValue>) -> Self {
+        Self { tags, ..self }
+    }
+
+    pub(crate) fn created_at(self, created_at: DateTime<Utc>) -> Self {
+        Self {
+            created_at: Some(created_at),
+            ..self
+        }
+    }
+
+    pub(crate) fn build(self) -> anyhow::Result<Object> {
+        Ok(Object {
+            id: self.id.ok_or_else(|| anyhow!("missing id"))?,
+            audience: self.audience.ok_or_else(|| anyhow!("missing audience"))?,
+            source_room_id: self.source_room_id,
+            time: self.time.ok_or_else(|| anyhow!("missing time"))?,
+            tags: self.tags,
+            created_at: self
+                .created_at
+                .ok_or_else(|| anyhow!("missing created_at"))?,
+        })
     }
 }
 

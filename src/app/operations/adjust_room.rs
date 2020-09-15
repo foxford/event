@@ -6,16 +6,21 @@ use chrono::{DateTime, Duration, Utc};
 use log::info;
 use sqlx::postgres::{PgConnection, PgPool as Db};
 
+use crate::app::endpoint::metric::ProfilerKeys;
 use crate::db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segments};
 use crate::db::event::{
     DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event,
 };
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
+use crate::profiler::Profiler;
 
 pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 
+////////////////////////////////////////////////////////////////////////////////
+
 pub(crate) async fn call(
     db: &Db,
+    profiler: &Profiler<ProfilerKeys>,
     real_time_room: &Room,
     started_at: DateTime<Utc>,
     segments: &Segments,
@@ -45,8 +50,14 @@ pub(crate) async fn call(
         .await
         .context("Failed to acquire db connection")?;
 
-    AdjustmentInsertQuery::new(real_time_room.id(), started_at, segments.to_owned(), offset)
-        .execute(&mut conn)
+    let query =
+        AdjustmentInsertQuery::new(real_time_room.id(), started_at, segments.to_owned(), offset);
+
+    profiler
+        .measure(
+            ProfilerKeys::AdjustmentInsertQuery,
+            query.execute(&mut conn),
+        )
         .await?;
 
     ///////////////////////////////////////////////////////////////////////////
@@ -76,10 +87,11 @@ pub(crate) async fn call(
     let segment_gaps = invert_segments(&nano_segments, room_duration)?;
 
     // Create original room with events shifted according to segments.
-    let original_room = create_room(&mut conn, &real_time_room, started_at).await?;
+    let original_room = create_room(&mut conn, profiler, &real_time_room, started_at).await?;
 
     clone_events(
         &mut conn,
+        profiler,
         &original_room,
         &segment_gaps,
         (offset - rtc_offset) * NANOSECONDS_IN_MILLISECOND,
@@ -89,12 +101,12 @@ pub(crate) async fn call(
     ///////////////////////////////////////////////////////////////////////////
 
     // Fetch shifted cut events and transform them to gaps.
-    let original_room_id = uuid08::Uuid::from_bytes(*original_room.id().as_bytes());
+    let query = EventListQuery::new()
+        .room_id(original_room.id())
+        .kind("stream".to_string());
 
-    let cut_events = EventListQuery::new()
-        .room_id(original_room_id)
-        .kind("stream".to_string())
-        .execute(&mut conn)
+    let cut_events = profiler
+        .measure(ProfilerKeys::EventListQuery, query.execute(&mut conn))
         .await
         .with_context(|| {
             format!(
@@ -106,12 +118,14 @@ pub(crate) async fn call(
     let cut_gaps = cut_events_to_gaps(&cut_events)?;
 
     // Create modified room with events shifted again according to cut events this time.
-    let modified_room = create_room(&mut conn, &original_room, started_at).await?;
-    clone_events(&mut conn, &modified_room, &cut_gaps, 0).await?;
+    let modified_room = create_room(&mut conn, profiler, &original_room, started_at).await?;
+    clone_events(&mut conn, profiler, &modified_room, &cut_gaps, 0).await?;
 
     // Delete cut events from the modified room.
-    EventDeleteQuery::new(modified_room.id(), "stream")
-        .execute(&mut conn)
+    let query = EventDeleteQuery::new(modified_room.id(), "stream");
+
+    profiler
+        .measure(ProfilerKeys::EventDeleteQuery, query.execute(&mut conn))
         .await
         .with_context(|| {
             format!(
@@ -159,6 +173,7 @@ pub(crate) async fn call(
 /// Creates a derived room from the source room.
 async fn create_room(
     conn: &mut PgConnection,
+    profiler: &Profiler<ProfilerKeys>,
     source_room: &Room,
     started_at: DateTime<Utc>,
 ) -> Result<Room> {
@@ -170,13 +185,17 @@ async fn create_room(
         query = query.tags(tags.to_owned());
     }
 
-    query.execute(conn).await.context("failed to insert room")
+    profiler
+        .measure(ProfilerKeys::RoomInsertQuery, query.execute(conn))
+        .await
+        .context("failed to insert room")
 }
 
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
 /// adding `offset` (both in nanoseconds).
 async fn clone_events(
     conn: &mut PgConnection,
+    profiler: &Profiler<ProfilerKeys>,
     room: &Room,
     gaps: &[(i64, i64)],
     offset: i64,
@@ -194,7 +213,7 @@ async fn clone_events(
         stops.push(*stop);
     }
 
-    sqlx::query!(
+    let query = sqlx::query!(
         "
         WITH
             gap_starts AS (
@@ -248,19 +267,24 @@ async fn clone_events(
         ",
         starts.as_slice(),
         stops.as_slice(),
-        uuid08::Uuid::from_bytes(*room.id().as_bytes()),
+        room.id(),
         sqlx::types::BigDecimal::from(offset),
-        uuid08::Uuid::from_bytes(*source_room_id.as_bytes()),
-    )
-    .execute(conn)
-    .await
-    .map(|_| ())
-    .with_context(|| {
-        format!(
-            "failed to shift clone events from to room = '{}'",
-            room.id()
+        source_room_id,
+    );
+
+    profiler
+        .measure(
+            ProfilerKeys::RoomAdjustCloneEventsQuery,
+            query.execute(conn),
         )
-    })
+        .await
+        .map(|_| ())
+        .with_context(|| {
+            format!(
+                "failed to shift clone events from to room = '{}'",
+                room.id()
+            )
+        })
 }
 
 /// Turns `segments` into gaps.

@@ -57,7 +57,15 @@ pub(crate) mod sql {
         Ready,
     }
 
-    pub use super::change::Change_type;
+    #[derive(DbEnum, Clone, Copy, Debug, PartialEq)]
+    #[PgType = "change_type"]
+    #[DieselType = "Change_type"]
+    pub enum ChangeType {
+        Addition,
+        Modification,
+        Removal,
+    }
+
     pub use svc_agent::sql::{Account_id, Agent_id};
 }
 
