@@ -4,13 +4,13 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
-use uuid08::Uuid;
+use uuid::Uuid;
 
 use crate::db::room::{Builder as RoomBuilder, Object as Room, Time as RoomTime};
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize, PartialEq, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(rename = "change_type")]
 pub(crate) enum ChangeType {

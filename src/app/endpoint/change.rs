@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
-use uuid08::Uuid;
+use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::change::create_request::{Changeset, CreateRequest};
@@ -27,7 +27,7 @@ impl RequestHandler for CreateHandler {
     ) -> Result {
         let (_edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.edition_id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             let maybe_edition_with_room = context
                 .profiler()
@@ -97,7 +97,7 @@ impl RequestHandler for CreateHandler {
         };
 
         let change = {
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -141,7 +141,7 @@ impl RequestHandler for ListHandler {
     ) -> Result {
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             let maybe_edition_with_room = context
                 .profiler()
@@ -181,7 +181,7 @@ impl RequestHandler for ListHandler {
         }
 
         let changes = {
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -221,7 +221,7 @@ impl RequestHandler for DeleteHandler {
     ) -> Result {
         let (change, room) = {
             let query = db::change::FindWithRoomQuery::new(payload.id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             let maybe_change_with_room = context
                 .profiler()
@@ -252,7 +252,7 @@ impl RequestHandler for DeleteHandler {
 
         {
             let query = db::change::DeleteQuery::new(change.id());
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_conn().await?;
 
             context
                 .profiler()

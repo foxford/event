@@ -1,8 +1,3 @@
-#[macro_use]
-extern crate diesel;
-#[macro_use]
-extern crate diesel_derive_enum;
-
 use std::env::var;
 
 use anyhow::Result;
@@ -14,7 +9,7 @@ async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::init();
 
-    let ((db, db_pool_stats), maybe_ro_db, sqlx_db) = {
+    let (db, maybe_ro_db) = {
         let url = var("DATABASE_URL").expect("DATABASE_URL must be specified");
 
         let size = var("DATABASE_POOL_SIZE")
@@ -45,14 +40,16 @@ async fn main() -> Result<()> {
             })
             .unwrap_or(1800);
 
-        let db = crate::db::create_pool(&url, size, idle_size, timeout, max_lifetime, true);
+        let db = crate::db::create_pool(&url, size, idle_size, timeout, max_lifetime).await;
 
-        let maybe_ro_db = var("READONLY_DATABASE_URL").ok().map(|ro_url| {
-            crate::db::create_pool(&ro_url, size, idle_size, timeout, max_lifetime, true)
-        });
+        let maybe_ro_db = match var("READONLY_DATABASE_URL") {
+            Err(_) => None,
+            Ok(ro_url) => {
+                Some(crate::db::create_pool(&ro_url, size, idle_size, timeout, max_lifetime).await)
+            }
+        };
 
-        let sqlx_db = crate::db::create_sqlx_pool(&url, size, timeout).await;
-        (db, maybe_ro_db, sqlx_db)
+        (db, maybe_ro_db)
     };
 
     let (redis_pool, authz_cache) = if let Some("1") = var("CACHE_ENABLED").ok().as_deref() {
@@ -86,21 +83,7 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
-    let (maybe_ro_db, maybe_ro_db_pool_stats) = match maybe_ro_db {
-        Some((db, pool_stats)) => (Some(db), Some(pool_stats)),
-        None => (None, None),
-    };
-
-    app::run(
-        db,
-        maybe_ro_db,
-        sqlx_db,
-        redis_pool,
-        authz_cache,
-        db_pool_stats,
-        maybe_ro_db_pool_stats,
-    )
-    .await
+    app::run(db, maybe_ro_db, redis_pool, authz_cache).await
 }
 
 mod app;
@@ -108,8 +91,6 @@ mod config;
 mod db;
 mod profiler;
 #[allow(unused_imports)]
-#[rustfmt::skip]
-mod schema;
 mod serde;
 #[cfg(test)]
 mod test_helpers;

@@ -12,7 +12,7 @@ use svc_agent::{
     AgentId, Authenticable,
 };
 use svc_error::Error as SvcError;
-use uuid08::Uuid;
+use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -76,7 +76,7 @@ impl EventHandler for CreateHandler {
         {
             // Find room.
             let query = room::FindQuery::new(room_id).time(room::now());
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -138,7 +138,7 @@ impl EventHandler for DeleteHandler {
 
         let row_count = {
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_conn().await?;
 
             context
                 .profiler()

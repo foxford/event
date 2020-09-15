@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use sqlx::{postgres::PgConnection, Done};
 use svc_agent::AgentId;
-use uuid08::Uuid;
+use uuid::Uuid;
 
 use crate::db::room::{Builder as RoomBuilder, Object as Room, Time as RoomTime};
 

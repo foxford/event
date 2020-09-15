@@ -4,7 +4,7 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
-use uuid08::Uuid;
+use uuid::Uuid;
 
 ////////////////////////////////////////////////////////////////////////////////
 
