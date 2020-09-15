@@ -16,7 +16,7 @@ use svc_agent::{
     Addressable, AgentId,
 };
 use svc_error::{extension::sentry, Error as SvcError};
-use uuid08::Uuid;
+use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -89,7 +89,7 @@ impl RequestHandler for CreateHandler {
                 query = query.tags(tags);
             }
 
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -140,7 +140,7 @@ impl RequestHandler for ReadHandler {
     ) -> Result {
         let room = {
             let query = FindQuery::new(payload.id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -201,7 +201,7 @@ impl RequestHandler for UpdateHandler {
         }
 
         let room = {
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -256,7 +256,7 @@ impl RequestHandler for UpdateHandler {
                 query = query.tags(tags);
             }
 
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -307,7 +307,7 @@ impl RequestHandler for EnterHandler {
     ) -> Result {
         let room = {
             let query = FindQuery::new(payload.id).time(now());
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -328,7 +328,7 @@ impl RequestHandler for EnterHandler {
 
         // Register agent in `in_progress` state.
         {
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_conn().await?;
             let query = agent::InsertQuery::new(reqp.as_agent_id().to_owned(), room.id());
 
             context
@@ -387,7 +387,7 @@ impl RequestHandler for LeaveHandler {
     ) -> Result {
         let (room, presence) = {
             let query = FindQuery::new(payload.id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             let room = context
                 .profiler()
@@ -477,7 +477,7 @@ impl RequestHandler for AdjustHandler {
         // Find realtime room.
         let room = {
             let query = FindQuery::new(payload.id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -497,7 +497,7 @@ impl RequestHandler for AdjustHandler {
             .await?;
 
         // Run asynchronous task for adjustment.
-        let db = context.sqlx_db().to_owned();
+        let db = context.db().to_owned();
         let profiler = context.profiler().to_owned();
 
         let notification_future = async_std::task::spawn(async move {

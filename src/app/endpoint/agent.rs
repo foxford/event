@@ -3,7 +3,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
-use uuid08::Uuid;
+use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -36,7 +36,7 @@ impl RequestHandler for ListHandler {
         let room = {
             // Check whether the room exists and open.
             let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -57,7 +57,7 @@ impl RequestHandler for ListHandler {
 
         // Get agents list in the room.
         let agents = {
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             let query = db::agent::ListQuery::new()
                 .room_id(payload.room_id)
@@ -91,7 +91,7 @@ impl RequestHandler for ListHandler {
 mod tests {
     use serde_derive::Deserialize;
     use svc_agent::AgentId;
-    use uuid08::Uuid;
+    use uuid::Uuid;
 
     use crate::test_helpers::prelude::*;
 

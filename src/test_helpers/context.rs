@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use serde_json::json;
-use sqlx::postgres::PgPool as SqlxDb;
+use sqlx::postgres::PgPool as Db;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
@@ -11,7 +11,6 @@ use crate::app::context::Context;
 use crate::app::endpoint::metric::ProfilerKeys;
 use crate::app::metrics::StatsCollector;
 use crate::config::Config;
-use crate::db::ConnectionPool as Db;
 use crate::profiler::Profiler;
 
 use super::authz::TestAuthz;
@@ -79,10 +78,6 @@ impl Context for TestContext {
 
     fn db(&self) -> &Db {
         self.db.connection_pool()
-    }
-
-    fn sqlx_db(&self) -> &SqlxDb {
-        self.db.sqlx_connection_pool()
     }
 
     fn ro_db(&self) -> &Db {

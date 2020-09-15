@@ -4,7 +4,7 @@ use chrono::{serde::ts_seconds, DateTime, Utc};
 
 use serde_derive::{Deserialize, Serialize};
 use sqlx::postgres::{types::PgRange, PgConnection};
-use uuid08::Uuid;
+use uuid::Uuid;
 
 ///////////////////////////////////////////////////////////////////////////////
 

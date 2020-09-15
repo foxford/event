@@ -18,6 +18,8 @@ use crate::config::TelemetryConfig;
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum ProfilerKeys {
+    DbConnAcquisition,
+    RoDbConnAcquisition,
     AdjustmentInsertQuery,
     AgentDeleteQuery,
     AgentInsertQuery,
@@ -28,6 +30,7 @@ pub(crate) enum ProfilerKeys {
     ChangeInsertQuery,
     ChangeListQuery,
     EditionCloneEventsQuery,
+    EditionCommitTxnCommit,
     EditionDeleteQuery,
     EditionFindWithRoomQuery,
     EditionInsertQuery,
@@ -75,9 +78,8 @@ impl EventHandler for PullHandler {
 
                 append_mqtt_stats(&mut metrics, context, now, payload.duration)
                     .status(ResponseStatus::INTERNAL_SERVER_ERROR)?;
-                append_db_stats(&mut metrics, context, now);
+                append_db_pools_stats(&mut metrics, context, now);
                 append_redis_pool_metrics(&mut metrics, context, now);
-                append_db_pool_stats(&mut metrics, context, now);
 
                 append_profiler_stats(&mut metrics, context, now)
                     .status(ResponseStatus::INTERNAL_SERVER_ERROR)?;
@@ -136,78 +138,23 @@ fn append_mqtt_stats(
     Ok(())
 }
 
-fn append_db_stats(metrics: &mut Vec<Metric>, context: &dyn Context, now: DateTime<Utc>) {
-    let db_state = context.db().state();
-
-    metrics.push(Metric::DbConnections(MetricValue::new(
-        db_state.connections as u64,
-        now,
-    )));
-    metrics.push(Metric::IdleDbConnections(MetricValue::new(
-        db_state.idle_connections as u64,
-        now,
-    )));
-
-    let db_state = context.ro_db().state();
-
-    metrics.push(Metric::RoDbConnections(MetricValue::new(
-        db_state.connections as u64,
-        now,
-    )));
-    metrics.push(Metric::IdleRoDbConnections(MetricValue::new(
-        db_state.idle_connections as u64,
-        now,
-    )));
+fn append_db_pools_stats(metrics: &mut Vec<Metric>, context: &dyn Context, now: DateTime<Utc>) {
+    metrics.extend_from_slice(&[
+        Metric::DbConnections(MetricValue::new(context.db().size() as u64, now)),
+        Metric::IdleDbConnections(MetricValue::new(context.db().num_idle() as u64, now)),
+        Metric::RoDbConnections(MetricValue::new(context.ro_db().size() as u64, now)),
+        Metric::IdleRoDbConnections(MetricValue::new(context.ro_db().num_idle() as u64, now)),
+    ])
 }
 
 fn append_redis_pool_metrics(metrics: &mut Vec<Metric>, context: &dyn Context, now: DateTime<Utc>) {
     if let Some(pool) = context.redis_pool() {
-        let pool_state = pool.state();
+        let state = pool.state();
 
-        metrics.push(Metric::RedisConnections(MetricValue::new(
-            pool_state.connections as u64,
-            now,
-        )));
-        metrics.push(Metric::IdleRedisConnections(MetricValue::new(
-            pool_state.idle_connections as u64,
-            now,
-        )));
-    }
-}
-
-fn append_db_pool_stats(metrics: &mut Vec<Metric>, context: &dyn Context, now: DateTime<Utc>) {
-    if let Some(db_pool_stats) = context.db_pool_stats() {
-        let stats = db_pool_stats.get_stats();
-
-        let m = [
-            Metric::DbPoolCheckinAverage(MetricValue::new(stats.avg_checkin, now)),
-            Metric::MaxDbPoolCheckin(MetricValue::new(stats.max_checkin, now)),
-            Metric::DbPoolCheckoutAverage(MetricValue::new(stats.avg_checkout, now)),
-            Metric::MaxDbPoolCheckout(MetricValue::new(stats.max_checkout, now)),
-            Metric::DbPoolTimeoutAverage(MetricValue::new(stats.avg_timeout, now)),
-            Metric::MaxDbPoolTimeout(MetricValue::new(stats.max_timeout, now)),
-            Metric::DbPoolReleaseAverage(MetricValue::new(stats.avg_release, now)),
-            Metric::MaxDbPoolRelease(MetricValue::new(stats.max_release, now)),
-        ];
-
-        metrics.extend_from_slice(&m);
-    }
-
-    if let Some(db_pool_stats) = context.ro_db_pool_stats() {
-        let stats = db_pool_stats.get_stats();
-
-        let m = [
-            Metric::RoDbPoolCheckinAverage(MetricValue::new(stats.avg_checkin, now)),
-            Metric::MaxRoDbPoolCheckin(MetricValue::new(stats.max_checkin, now)),
-            Metric::RoDbPoolCheckoutAverage(MetricValue::new(stats.avg_checkout, now)),
-            Metric::MaxRoDbPoolCheckout(MetricValue::new(stats.max_checkout, now)),
-            Metric::RoDbPoolTimeoutAverage(MetricValue::new(stats.avg_timeout, now)),
-            Metric::MaxRoDbPoolTimeout(MetricValue::new(stats.max_timeout, now)),
-            Metric::RoDbPoolReleaseAverage(MetricValue::new(stats.avg_release, now)),
-            Metric::MaxRoDbPoolRelease(MetricValue::new(stats.max_release, now)),
-        ];
-
-        metrics.extend_from_slice(&m);
+        metrics.extend_from_slice(&[
+            Metric::RedisConnections(MetricValue::new(state.connections as u64, now)),
+            Metric::IdleRedisConnections(MetricValue::new(state.idle_connections as u64, now)),
+        ]);
     }
 }
 
@@ -219,11 +166,24 @@ fn append_profiler_stats(
     let profiler_report = context.profiler().flush().map_err(|err| err.to_string())?;
 
     for (key, entry_report) in profiler_report {
+        let metric_value_count = MetricValue::new(entry_report.count as u64, now);
         let metric_value_p95 = MetricValue::new(entry_report.p95 as u64, now);
         let metric_value_p99 = MetricValue::new(entry_report.p99 as u64, now);
         let metric_value_max = MetricValue::new(entry_report.max as u64, now);
 
         match key {
+            ProfilerKeys::DbConnAcquisition => {
+                metrics.push(Metric::DbConnAcquisitionCount(metric_value_count));
+                metrics.push(Metric::DbConnAcquisitionP95(metric_value_p95));
+                metrics.push(Metric::DbConnAcquisitionP99(metric_value_p99));
+                metrics.push(Metric::DbConnAcquisitionMax(metric_value_max));
+            }
+            ProfilerKeys::RoDbConnAcquisition => {
+                metrics.push(Metric::RoDbConnAcquisitionCount(metric_value_count));
+                metrics.push(Metric::RoDbConnAcquisitionP95(metric_value_p95));
+                metrics.push(Metric::RoDbConnAcquisitionP99(metric_value_p99));
+                metrics.push(Metric::RoDbConnAcquisitionMax(metric_value_max));
+            }
             ProfilerKeys::AdjustmentInsertQuery => {
                 metrics.push(Metric::AdjustmentInsertQueryP95(metric_value_p95));
                 metrics.push(Metric::AdjustmentInsertQueryP99(metric_value_p99));
@@ -273,6 +233,11 @@ fn append_profiler_stats(
                 metrics.push(Metric::EditionCloneEventsQueryP95(metric_value_p95));
                 metrics.push(Metric::EditionCloneEventsQueryP99(metric_value_p99));
                 metrics.push(Metric::EditionCloneEventsQueryMax(metric_value_max));
+            }
+            ProfilerKeys::EditionCommitTxnCommit => {
+                metrics.push(Metric::EditionCommitTxnCommitP95(metric_value_p95));
+                metrics.push(Metric::EditionCommitTxnCommitP99(metric_value_p99));
+                metrics.push(Metric::EditionCommitTxnCommitMax(metric_value_max));
             }
             ProfilerKeys::EditionDeleteQuery => {
                 metrics.push(Metric::EditionDeleteQueryP95(metric_value_p95));

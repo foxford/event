@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::{map::Map as JsonMap, Value as JsonValue};
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
-use uuid08::Uuid;
+use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -59,7 +59,7 @@ impl RequestHandler for ReadHandler {
         // Check whether the room exists.
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -93,14 +93,12 @@ impl RequestHandler for ReadHandler {
 
         // Retrieve state for each set from the DB and put them into a map.
         let mut state = JsonMap::new();
-        let mut conn = context.sqlx_db().acquire().await?;
+        let mut conn = context.get_ro_conn().await?;
 
         for set in payload.sets.iter() {
             // Build a query for the particular set state.
-            let room_id = uuid08::Uuid::from_bytes(*room.id().as_bytes());
-
             let mut query =
-                db::event::SetStateQuery::new(room_id, set.clone(), original_occurred_at, limit);
+                db::event::SetStateQuery::new(room.id(), set.clone(), original_occurred_at, limit);
 
             if let Some(occurred_at) = payload.occurred_at {
                 query = query.occurred_at(occurred_at);

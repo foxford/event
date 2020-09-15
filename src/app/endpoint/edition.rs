@@ -14,7 +14,7 @@ use svc_agent::{
     Addressable,
 };
 use svc_error::{extension::sentry, Error as SvcError};
-use uuid08::Uuid;
+use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -44,7 +44,7 @@ impl RequestHandler for CreateHandler {
     ) -> Result {
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -66,7 +66,7 @@ impl RequestHandler for CreateHandler {
 
         let edition = {
             let query = db::edition::InsertQuery::new(payload.room_id, reqp.as_agent_id());
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -118,7 +118,7 @@ impl RequestHandler for ListHandler {
     ) -> Result {
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -151,7 +151,7 @@ impl RequestHandler for ListHandler {
         }
 
         let editions = {
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -192,7 +192,7 @@ impl RequestHandler for DeleteHandler {
     ) -> Result {
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             let maybe_edition = context
                 .profiler()
@@ -223,7 +223,7 @@ impl RequestHandler for DeleteHandler {
 
         {
             let query = db::edition::DeleteQuery::new(edition.id());
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -266,7 +266,7 @@ impl RequestHandler for CommitHandler {
         // Find edition with its source room.
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             let maybe_edition = context
                 .profiler()
@@ -295,11 +295,11 @@ impl RequestHandler for CommitHandler {
             .await?;
 
         // Run commit task asynchronously.
-        let sqlx_db = context.sqlx_db().to_owned();
+        let db = context.db().to_owned();
         let profiler = context.profiler().to_owned();
 
         let notification_future = async_std::task::spawn(async move {
-            let result = commit_edition(&sqlx_db, &profiler, &edition, &room).await;
+            let result = commit_edition(&db, &profiler, &edition, &room).await;
 
             // Handle result.
             let result = match result {

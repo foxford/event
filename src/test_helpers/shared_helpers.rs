@@ -4,7 +4,7 @@ use chrono::{Duration, SubsecRound, Utc};
 use diesel::pg::PgConnection;
 use serde_json::json;
 use svc_agent::AgentId;
-use uuid06::Uuid;
+use uuid::Uuid;
 
 use crate::db::agent::{Object as Agent, Status as AgentStatus};
 use crate::db::edition::Object as Edition;

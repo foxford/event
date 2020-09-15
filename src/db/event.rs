@@ -4,7 +4,7 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
-use uuid08::Uuid;
+use uuid::Uuid;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -467,7 +467,7 @@ pub(crate) struct SetStateQuery {
 impl SetStateQuery {
     pub(crate) fn new(room_id: Uuid, set: String, original_occurred_at: i64, limit: i64) -> Self {
         Self {
-            room_id: Uuid::from_bytes(*room_id.as_bytes()),
+            room_id,
             set,
             occurred_at: None,
             original_occurred_at,

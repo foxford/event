@@ -476,7 +476,7 @@ dependencies = [
  "hkdf",
  "hmac 0.7.1",
  "percent-encoding 2.1.0",
- "rand 0.7.3",
+ "rand",
  "sha2 0.8.2",
  "time 0.2.16",
 ]
@@ -662,45 +662,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f91cf5a8c2f2097e2a32627123508635d47ce10563d999ec1a95addf08b502ba"
 dependencies = [
  "serde 1.0.114",
- "uuid 0.8.1",
-]
-
-[[package]]
-name = "diesel"
-version = "1.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "33d7ca63eb2efea87a7f56a283acc49e2ce4b2bd54adf7465dc1d81fef13d8fc"
-dependencies = [
- "bitflags",
- "byteorder",
- "chrono",
- "diesel_derives",
- "pq-sys",
- "r2d2",
- "serde_json",
- "uuid 0.6.5",
-]
-
-[[package]]
-name = "diesel-derive-enum"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "adbaf5e1344edeedc4d1cead2dc3ce6fc4115bb26b3704c533b92717940f2fb5"
-dependencies = [
- "heck",
- "quote 0.3.15",
- "syn 0.11.11",
-]
-
-[[package]]
-name = "diesel_derives"
-version = "1.4.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "45f5098f628d02a7a0f68ddba586fb61e80edec3bdc1be3b921f4ceec60858d3"
-dependencies = [
- "proc-macro2",
- "quote 1.0.7",
- "syn 1.0.35",
+ "uuid",
 ]
 
 [[package]]
@@ -787,8 +749,6 @@ dependencies = [
  "chrono",
  "config",
  "crossbeam-channel 0.4.2",
- "diesel",
- "diesel-derive-enum",
  "dotenv",
  "env_logger",
  "futures 0.3.5",
@@ -807,8 +767,7 @@ dependencies = [
  "svc-authz",
  "svc-error",
  "url 2.1.1",
- "uuid 0.6.5",
- "uuid 0.8.1",
+ "uuid",
 ]
 
 [[package]]
@@ -859,12 +818,6 @@ name = "foreign-types-shared"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "00b0228411908ca8685dba7fc2cdd70ec9990a6e753e89b6ac91a84c40fbaf4b"
-
-[[package]]
-name = "fuchsia-cprng"
-version = "0.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a06f77d526c1a601b7c4cdd98f54b5eaabffc14d5f2f0296febdc7f357c6d3ba"
 
 [[package]]
 name = "fuchsia-zircon"
@@ -1225,7 +1178,7 @@ dependencies = [
  "cookie",
  "infer",
  "pin-project-lite",
- "rand 0.7.3",
+ "rand",
  "serde 1.0.114",
  "serde_json",
  "serde_qs",
@@ -1320,7 +1273,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "696059c87b83c5a258817ecd67c3af915e3ed141891fc35a1e79908801cf0ce7"
 dependencies = [
  "bitmaps",
- "rand_core 0.5.1",
+ "rand_core",
  "rand_xoshiro",
  "sized-chunks",
  "typenum",
@@ -1971,15 +1924,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "74490b50b9fbe561ac330df47c08f3f33073d2d00c150f719147d7c54522fa1b"
 
 [[package]]
-name = "pq-sys"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6ac25eee5a0582f45a67e837e350d784e7003bd29a5f460796772061ca49ffda"
-dependencies = [
- "vcpkg",
-]
-
-[[package]]
 name = "proc-macro-hack"
 version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2017,7 +1961,7 @@ dependencies = [
  "rust_decimal",
  "thiserror",
  "url 1.7.2",
- "uuid 0.8.1",
+ "uuid",
 ]
 
 [[package]]
@@ -2064,19 +2008,6 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.4.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "552840b97013b1a26992c11eac34bdd778e464601a4c2054b5f0bff7c6761293"
-dependencies = [
- "fuchsia-cprng",
- "libc",
- "rand_core 0.3.1",
- "rdrand",
- "winapi 0.3.8",
-]
-
-[[package]]
-name = "rand"
 version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a6b1679d49b24bbfe0c803429aa1874472f50d9b363131f0e89fc356b544d03"
@@ -2084,7 +2015,7 @@ dependencies = [
  "getrandom",
  "libc",
  "rand_chacha",
- "rand_core 0.5.1",
+ "rand_core",
  "rand_hc",
 ]
 
@@ -2095,23 +2026,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f4c8ed856279c9737206bf725bf36935d8666ead7aa69b52be55af369d193402"
 dependencies = [
  "ppv-lite86",
- "rand_core 0.5.1",
+ "rand_core",
 ]
-
-[[package]]
-name = "rand_core"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a6fdeb83b075e8266dcc8762c22776f6877a63111121f5f8c7411e5be7eed4b"
-dependencies = [
- "rand_core 0.4.2",
-]
-
-[[package]]
-name = "rand_core"
-version = "0.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c33a3c44ca05fa6f1807d8e6743f3824e8509beca625669633be0acbdf509dc"
 
 [[package]]
 name = "rand_core"
@@ -2128,7 +2044,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca3129af7b92a17112d59ad498c6f81eaf463253766b90396d39ea7a39d6613c"
 dependencies = [
- "rand_core 0.5.1",
+ "rand_core",
 ]
 
 [[package]]
@@ -2137,16 +2053,7 @@ version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a9fcdd2e881d02f1d9390ae47ad8e5696a9e4be7b547a1da2afbc61973217004"
 dependencies = [
- "rand_core 0.5.1",
-]
-
-[[package]]
-name = "rdrand"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "678054eb77286b51581ba43620cc911abf02758c91f93f479767aed0f90458b2"
-dependencies = [
- "rand_core 0.3.1",
+ "rand_core",
 ]
 
 [[package]]
@@ -2417,7 +2324,7 @@ dependencies = [
  "im",
  "lazy_static",
  "libc",
- "rand 0.7.3",
+ "rand",
  "regex",
  "reqwest",
  "rustc_version",
@@ -2438,7 +2345,7 @@ dependencies = [
  "serde 1.0.114",
  "serde_json",
  "url 2.1.1",
- "uuid 0.8.1",
+ "uuid",
 ]
 
 [[package]]
@@ -2735,7 +2642,7 @@ dependencies = [
  "once_cell",
  "parking_lot 0.11.0",
  "percent-encoding 2.1.0",
- "rand 0.7.3",
+ "rand",
  "serde 1.0.114",
  "serde_json",
  "sha-1",
@@ -2746,7 +2653,7 @@ dependencies = [
  "stringprep",
  "thiserror",
  "url 2.1.1",
- "uuid 0.8.1",
+ "uuid",
  "whoami",
 ]
 
@@ -2899,7 +2806,6 @@ dependencies = [
  "base64 0.10.1",
  "chrono",
  "crossbeam-channel 0.3.9",
- "diesel",
  "futures 0.3.5",
  "futures-channel",
  "http 0.1.21",
@@ -2911,7 +2817,7 @@ dependencies = [
  "svc-authn",
  "svc-rumq-client",
  "tokio",
- "uuid 0.8.1",
+ "uuid",
 ]
 
 [[package]]
@@ -2921,7 +2827,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91d34e5c280d7ba8ca1112383cb8d292fa9b9e28860ed56a4a4bf15ce4d3debe"
 dependencies = [
  "chrono",
- "diesel",
  "http 0.1.21",
  "jsonwebtoken",
  "serde 1.0.114",
@@ -2960,10 +2865,8 @@ checksum = "b1716fe22df598c8f66494b0ea81c15f630143f664f62f6a15b170b2f30ace3b"
 dependencies = [
  "atom",
  "crossbeam-channel 0.4.2",
- "diesel",
  "http 0.1.21",
  "lazy_static",
- "r2d2",
  "sentry",
  "serde 1.0.114",
  "serde_derive",
@@ -3041,7 +2944,7 @@ checksum = "7a6e24d9338a0a5be79593e2fa15a648add6138caa803e2d5bc782c371732ca9"
 dependencies = [
  "cfg-if",
  "libc",
- "rand 0.7.3",
+ "rand",
  "redox_syscall",
  "remove_dir_all",
  "winapi 0.3.8",
@@ -3465,22 +3368,11 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1436e58182935dcd9ce0add9ea0b558e8a87befe01c1a301e6020aeb0876363"
-dependencies = [
- "cfg-if",
- "rand 0.4.6",
- "serde 1.0.114",
-]
-
-[[package]]
-name = "uuid"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9fde2f6a4bea1d6e007c4ad38c6839fa71cbb63b6dbf5b595aa38dc9b1093c11"
 dependencies = [
- "rand 0.7.3",
+ "rand",
  "serde 1.0.114",
 ]
 

@@ -10,7 +10,7 @@ use svc_agent::{
     mqtt::{IncomingRequestProperties, ResponseStatus},
     Addressable,
 };
-use uuid08::Uuid;
+use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
@@ -56,7 +56,7 @@ impl RequestHandler for CreateHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, author) = {
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             // Check whether the room exists and open.
             let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
@@ -76,7 +76,7 @@ impl RequestHandler for CreateHandler {
                     ..
                 } => {
                     let query = db::event::OriginalEventQuery::new(
-                        uuid08::Uuid::from_bytes(*room.id().as_bytes()),
+                        room.id(),
                         set.to_owned(),
                         label.to_owned(),
                     );
@@ -135,7 +135,7 @@ impl RequestHandler for CreateHandler {
                 ..
             } = payload;
             let mut query = db::event::InsertQuery::new(
-                uuid08::Uuid::from_bytes(*room.id().as_bytes()),
+                room.id(),
                 kind,
                 data,
                 occurred_at,
@@ -151,7 +151,7 @@ impl RequestHandler for CreateHandler {
             }
 
             {
-                let mut conn = context.sqlx_db().acquire().await?;
+                let mut conn = context.get_conn().await?;
 
                 context
                     .profiler()
@@ -171,7 +171,7 @@ impl RequestHandler for CreateHandler {
 
             // Build transient event.
             let mut builder = db::event::Builder::new()
-                .room_id(uuid08::Uuid::from_bytes(*payload.room_id.as_bytes()))
+                .room_id(payload.room_id)
                 .kind(&kind)
                 .data(&data)
                 .occurred_at(occurred_at)
@@ -266,7 +266,7 @@ impl RequestHandler for ListHandler {
         // Check whether the room exists.
         let room = {
             let query = db::room::FindQuery::new(payload.room_id);
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
@@ -286,8 +286,7 @@ impl RequestHandler for ListHandler {
             .await?;
 
         // Retrieve events from the DB.
-        let room_id = uuid08::Uuid::from_bytes(*room.id().as_bytes());
-        let mut query = db::event::ListQuery::new().room_id(room_id);
+        let mut query = db::event::ListQuery::new().room_id(room.id());
 
         let ListRequest {
             kind,
@@ -316,7 +315,7 @@ impl RequestHandler for ListHandler {
         }
 
         let events = {
-            let mut conn = context.sqlx_db().acquire().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             query = query.direction(payload.direction).limit(std::cmp::min(
                 payload.limit.unwrap_or_else(|| MAX_LIMIT),

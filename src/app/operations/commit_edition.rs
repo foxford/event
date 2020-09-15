@@ -32,82 +32,77 @@ pub(crate) async fn call(
 
     let start_timestamp = Utc::now();
 
-    let mut conn = db
-        .acquire()
+    let mut txn = profiler
+        .measure(ProfilerKeys::DbConnAcquisition, db.begin())
         .await
-        .context("Failed to acquire sqlx db connection")?;
+        .context("Failed to begin sqlx db transaction")?;
 
-    // TODO: bring back the transaction after getting rid of diesel here.
-    // let result = conn.transaction::<(Room, Vec<Segment>), Error, _>(|| {
-    let result = {
-        let room_duration = match source.time() {
-            (Bound::Included(start), Bound::Excluded(stop)) if stop > start => {
-                stop.signed_duration_since(start)
-            }
-            _ => bail!("invalid duration for room = '{}'", source.id()),
-        };
+    let room_duration = match source.time() {
+        (Bound::Included(start), Bound::Excluded(stop)) if stop > start => {
+            stop.signed_duration_since(start)
+        }
+        _ => bail!("invalid duration for room = '{}'", source.id()),
+    };
 
-        let query = EventListQuery::new()
-            .room_id(source.id())
-            .kind("stream".to_string());
+    let query = EventListQuery::new()
+        .room_id(source.id())
+        .kind("stream".to_string());
 
-        let cut_events = profiler
-            .measure(ProfilerKeys::EventListQuery, query.execute(&mut conn))
-            .await
-            .with_context(|| {
-                format!("failed to fetch cut events for room_id = '{}'", source.id())
-            })?;
+    let cut_events = profiler
+        .measure(ProfilerKeys::EventListQuery, query.execute(&mut txn))
+        .await
+        .with_context(|| format!("failed to fetch cut events for room_id = '{}'", source.id()))?;
 
-        let query = ChangeListQuery::new(edition.id()).kind("stream");
+    let query = ChangeListQuery::new(edition.id()).kind("stream");
 
-        let cut_changes = profiler
-            .measure(ProfilerKeys::ChangeListQuery, query.execute(&mut conn))
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to fetch cut changes for room_id = '{}'",
-                    source.id(),
-                )
-            })?;
+    let cut_changes = profiler
+        .measure(ProfilerKeys::ChangeListQuery, query.execute(&mut txn))
+        .await
+        .with_context(|| {
+            format!(
+                "failed to fetch cut changes for room_id = '{}'",
+                source.id(),
+            )
+        })?;
 
-        let cut_gaps = collect_gaps(&cut_events, &cut_changes)?;
-        let destination = clone_room(&mut conn, profiler, &source).await?;
+    let cut_gaps = collect_gaps(&cut_events, &cut_changes)?;
+    let destination = clone_room(&mut txn, profiler, &source).await?;
 
-        clone_events(
-            &mut conn,
-            profiler,
-            &source,
-            &destination,
-            &edition,
-            &cut_gaps,
-        )
+    clone_events(
+        &mut txn,
+        profiler,
+        &source,
+        &destination,
+        &edition,
+        &cut_gaps,
+    )
+    .await?;
+
+    let query = EventDeleteQuery::new(destination.id(), "stream");
+
+    profiler
+        .measure(ProfilerKeys::EventDeleteQuery, query.execute(&mut txn))
+        .await
+        .with_context(|| {
+            format!(
+                "failed to delete cut events for room_id = '{}'",
+                destination.id()
+            )
+        })?;
+
+    let modified_segments = invert_segments(&cut_gaps, room_duration)?
+        .into_iter()
+        .map(|(start, stop)| {
+            (
+                Bound::Included(start / NANOSECONDS_IN_MILLISECOND),
+                Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
+            )
+        })
+        .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
+
+    profiler
+        .measure(ProfilerKeys::EditionCommitTxnCommit, txn.commit())
         .await?;
-
-        let query = EventDeleteQuery::new(destination.id(), "stream");
-
-        profiler
-            .measure(ProfilerKeys::EventDeleteQuery, query.execute(&mut conn))
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to delete cut events for room_id = '{}'",
-                    destination.id()
-                )
-            })?;
-
-        let modified_segments = invert_segments(&cut_gaps, room_duration)?
-            .into_iter()
-            .map(|(start, stop)| {
-                (
-                    Bound::Included(start / NANOSECONDS_IN_MILLISECOND),
-                    Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
-                )
-            })
-            .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
-
-        Ok((destination, Segments::from(modified_segments))) as Result<(Room, Segments)>
-    }?;
-    // })?;
 
     info!(
         "Edition commit successfully finished for edition_id = '{}', duration = {} ms",
@@ -115,7 +110,7 @@ pub(crate) async fn call(
         (Utc::now() - start_timestamp).num_milliseconds()
     );
 
-    Ok(result)
+    Ok((destination, Segments::from(modified_segments))) as Result<(Room, Segments)>
 }
 
 async fn clone_room(

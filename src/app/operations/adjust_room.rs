@@ -45,8 +45,8 @@ pub(crate) async fn call(
     }
 
     // Create adjustment.
-    let mut conn = db
-        .acquire()
+    let mut conn = profiler
+        .measure(ProfilerKeys::DbConnAcquisition, db.acquire())
         .await
         .context("Failed to acquire db connection")?;
 

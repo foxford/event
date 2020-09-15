@@ -3,11 +3,11 @@ use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use sqlx::{postgres::PgConnection, Done};
 use svc_agent::AgentId;
-use uuid08::Uuid;
+use uuid::Uuid;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize, PartialEq, sqlx::Type)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(rename = "agent_status")]
 pub(crate) enum Status {

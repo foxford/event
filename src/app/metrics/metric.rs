@@ -17,6 +17,7 @@ impl<T: serde::Serialize> MetricValue<T> {
 #[derive(Serialize, Copy, Clone)]
 #[serde(tag = "metric")]
 pub(crate) enum Metric {
+    // MQTT queues.
     #[serde(rename(serialize = "apps.event.incoming_requests_total"))]
     IncomingQueueRequests(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.incoming_responses_total"))]
@@ -29,30 +30,42 @@ pub(crate) enum Metric {
     OutgoingQueueResponses(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.outgoing_events_total"))]
     OutgoingQueueEvents(MetricValue<u64>),
+
+    // DB pool.
     #[serde(rename(serialize = "apps.event.db_connections_total"))]
     DbConnections(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.idle_db_connections_total"))]
     IdleDbConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.db_pool_checkin_average_total"))]
-    DbPoolCheckinAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "apps.event.max_db_pool_checkin_total"))]
-    MaxDbPoolCheckin(MetricValue<u128>),
-    #[serde(rename(serialize = "apps.event.db_pool_checkout_average_total"))]
-    DbPoolCheckoutAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "apps.event.max_db_pool_checkout_total"))]
-    MaxDbPoolCheckout(MetricValue<u128>),
-    #[serde(rename(serialize = "apps.event.db_pool_release_average_total"))]
-    DbPoolReleaseAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "apps.event.max_db_pool_release_total"))]
-    MaxDbPoolRelease(MetricValue<u128>),
-    #[serde(rename(serialize = "apps.event.db_pool_timeout_average_total"))]
-    DbPoolTimeoutAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "apps.event.max_db_pool_timeout_total"))]
-    MaxDbPoolTimeout(MetricValue<u128>),
+    #[serde(rename(serialize = "apps.event.db_conn_acquisition_total"))]
+    DbConnAcquisitionCount(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.db_conn_acquisition_p95_microseconds"))]
+    DbConnAcquisitionP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.db_conn_acquisition_p99_microseconds"))]
+    DbConnAcquisitionP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.db_conn_acquisition_max_microseconds"))]
+    DbConnAcquisitionMax(MetricValue<u64>),
+
+    // Read-only DB pool.
+    #[serde(rename(serialize = "apps.event.ro_db_connections_total"))]
+    RoDbConnections(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.idle_ro_db_connections_total"))]
+    IdleRoDbConnections(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ro_db_conn_acquisition_total"))]
+    RoDbConnAcquisitionCount(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ro_db_conn_acquisition_p95_microseconds"))]
+    RoDbConnAcquisitionP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ro_db_conn_acquisition_p99_microseconds"))]
+    RoDbConnAcquisitionP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ro_db_conn_acquisition_max_microseconds"))]
+    RoDbConnAcquisitionMax(MetricValue<u64>),
+
+    // Redis pool.
     #[serde(rename(serialize = "apps.event.redis_connections_total"))]
     RedisConnections(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.idle_redis_connections_total"))]
     IdleRedisConnections(MetricValue<u64>),
+
+    // DB queries.
     #[serde(rename(serialize = "apps.event.adjustment_insert_query_p95_microseconds"))]
     AdjustmentInsertQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.adjustment_insert_query_p99_microseconds"))]
@@ -113,6 +126,12 @@ pub(crate) enum Metric {
     EditionCloneEventsQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_clone_events_query_max_microseconds"))]
     EditionCloneEventsQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_commit_txn_commit_max_p95"))]
+    EditionCommitTxnCommitP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_commit_txn_commit_max_p99"))]
+    EditionCommitTxnCommitP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.edition_commit_txn_commit_max_microseconds"))]
+    EditionCommitTxnCommitMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_delete_query_p95_microseconds"))]
     EditionDeleteQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_delete_query_p99_microseconds"))]
@@ -197,26 +216,8 @@ pub(crate) enum Metric {
     StateQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.state_query_max_microseconds"))]
     StateQueryMax(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.ro_db_connections_total"))]
-    RoDbConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.idle_ro_db_connections_total"))]
-    IdleRoDbConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.ro_db_pool_checkin_average_total"))]
-    RoDbPoolCheckinAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "apps.event.max_ro_db_pool_checkin_total"))]
-    MaxRoDbPoolCheckin(MetricValue<u128>),
-    #[serde(rename(serialize = "apps.event.ro_db_pool_checkout_average_total"))]
-    RoDbPoolCheckoutAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "apps.event.max_ro_db_pool_checkout_total"))]
-    MaxRoDbPoolCheckout(MetricValue<u128>),
-    #[serde(rename(serialize = "apps.event.ro_db_pool_release_average_total"))]
-    RoDbPoolReleaseAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "apps.event.max_ro_db_pool_release_total"))]
-    MaxRoDbPoolRelease(MetricValue<u128>),
-    #[serde(rename(serialize = "apps.event.ro_db_pool_timeout_average_total"))]
-    RoDbPoolTimeoutAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "apps.event.max_ro_db_pool_timeout_total"))]
-    MaxRoDbPoolTimeout(MetricValue<u128>),
+
+    // Misc.
     #[serde(rename(serialize = "apps.event.running_requests_total"))]
     RunningRequests(MetricValue<i64>),
 }
@@ -224,6 +225,7 @@ pub(crate) enum Metric {
 #[derive(Serialize, Copy, Clone)]
 #[serde(tag = "metric")]
 pub(crate) enum Metric2 {
+    // MQTT queues.
     #[serde(rename(serialize = "incoming_requests_total"))]
     IncomingQueueRequests(MetricValue<u64>),
     #[serde(rename(serialize = "incoming_responses_total"))]
@@ -236,30 +238,42 @@ pub(crate) enum Metric2 {
     OutgoingQueueResponses(MetricValue<u64>),
     #[serde(rename(serialize = "outgoing_events_total"))]
     OutgoingQueueEvents(MetricValue<u64>),
+
+    // DB pool.
     #[serde(rename(serialize = "db_connections_total"))]
     DbConnections(MetricValue<u64>),
     #[serde(rename(serialize = "idle_db_connections_total"))]
     IdleDbConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "db_pool_checkin_average_total"))]
-    DbPoolCheckinAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "max_db_pool_checkin_total"))]
-    MaxDbPoolCheckin(MetricValue<u128>),
-    #[serde(rename(serialize = "db_pool_checkout_average_total"))]
-    DbPoolCheckoutAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "max_db_pool_checkout_total"))]
-    MaxDbPoolCheckout(MetricValue<u128>),
-    #[serde(rename(serialize = "db_pool_release_average_total"))]
-    DbPoolReleaseAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "max_db_pool_release_total"))]
-    MaxDbPoolRelease(MetricValue<u128>),
-    #[serde(rename(serialize = "db_pool_timeout_average_total"))]
-    DbPoolTimeoutAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "max_db_pool_timeout_total"))]
-    MaxDbPoolTimeout(MetricValue<u128>),
+    #[serde(rename(serialize = "db_conn_acquisition_total"))]
+    DbConnAcquisitionCount(MetricValue<u64>),
+    #[serde(rename(serialize = "db_conn_acquisition_p95_microseconds"))]
+    DbConnAcquisitionP95(MetricValue<u64>),
+    #[serde(rename(serialize = "db_conn_acquisition_p99_microseconds"))]
+    DbConnAcquisitionP99(MetricValue<u64>),
+    #[serde(rename(serialize = "db_conn_acquisition_max_microseconds"))]
+    DbConnAcquisitionMax(MetricValue<u64>),
+
+    // Read-only DB pool.
+    #[serde(rename(serialize = "ro_db_connections_total"))]
+    RoDbConnections(MetricValue<u64>),
+    #[serde(rename(serialize = "idle_ro_db_connections_total"))]
+    IdleRoDbConnections(MetricValue<u64>),
+    #[serde(rename(serialize = "ro_db_conn_acquisition_total"))]
+    RoDbConnAcquisitionCount(MetricValue<u64>),
+    #[serde(rename(serialize = "ro_db_conn_acquisition_p95_microseconds"))]
+    RoDbConnAcquisitionP95(MetricValue<u64>),
+    #[serde(rename(serialize = "ro_db_conn_acquisition_p99_microseconds"))]
+    RoDbConnAcquisitionP99(MetricValue<u64>),
+    #[serde(rename(serialize = "ro_db_conn_acquisition_max_microseconds"))]
+    RoDbConnAcquisitionMax(MetricValue<u64>),
+
+    // Redis pool.
     #[serde(rename(serialize = "redis_connections_total"))]
     RedisConnections(MetricValue<u64>),
     #[serde(rename(serialize = "idle_redis_connections_total"))]
     IdleRedisConnections(MetricValue<u64>),
+
+    // DB queries.
     #[serde(rename(serialize = "adjustment_insert_query_p95_microseconds"))]
     AdjustmentInsertQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "adjustment_insert_query_p99_microseconds"))]
@@ -320,6 +334,12 @@ pub(crate) enum Metric2 {
     EditionCloneEventsQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "edition_clone_events_query_max_microseconds"))]
     EditionCloneEventsQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "edition_commit_txn_commit_max_p95"))]
+    EditionCommitTxnCommitP95(MetricValue<u64>),
+    #[serde(rename(serialize = "edition_commit_txn_commit_max_p99"))]
+    EditionCommitTxnCommitP99(MetricValue<u64>),
+    #[serde(rename(serialize = "edition_commit_txn_commit_max_microseconds"))]
+    EditionCommitTxnCommitMax(MetricValue<u64>),
     #[serde(rename(serialize = "edition_delete_query_p95_microseconds"))]
     EditionDeleteQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "edition_delete_query_p99_microseconds"))]
@@ -404,26 +424,8 @@ pub(crate) enum Metric2 {
     StateQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "state_query_max_microseconds"))]
     StateQueryMax(MetricValue<u64>),
-    #[serde(rename(serialize = "ro_db_connections_total"))]
-    RoDbConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "idle_ro_db_connections_total"))]
-    IdleRoDbConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "ro_db_pool_checkin_average_total"))]
-    RoDbPoolCheckinAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "max_ro_db_pool_checkin_total"))]
-    MaxRoDbPoolCheckin(MetricValue<u128>),
-    #[serde(rename(serialize = "ro_db_pool_checkout_average_total"))]
-    RoDbPoolCheckoutAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "max_ro_db_pool_checkout_total"))]
-    MaxRoDbPoolCheckout(MetricValue<u128>),
-    #[serde(rename(serialize = "ro_db_pool_release_average_total"))]
-    RoDbPoolReleaseAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "max_ro_db_pool_release_total"))]
-    MaxRoDbPoolRelease(MetricValue<u128>),
-    #[serde(rename(serialize = "ro_db_pool_timeout_average_total"))]
-    RoDbPoolTimeoutAverage(MetricValue<f64>),
-    #[serde(rename(serialize = "max_ro_db_pool_timeout_total"))]
-    MaxRoDbPoolTimeout(MetricValue<u128>),
+
+    // Misc.
     #[serde(rename(serialize = "running_requests_total"))]
     RunningRequests(MetricValue<i64>),
 }
@@ -439,14 +441,16 @@ impl From<Metric> for Metric2 {
             Metric::OutgoingQueueEvents(v) => Metric2::OutgoingQueueEvents(v),
             Metric::DbConnections(v) => Metric2::DbConnections(v),
             Metric::IdleDbConnections(v) => Metric2::IdleDbConnections(v),
-            Metric::DbPoolCheckinAverage(v) => Metric2::DbPoolCheckinAverage(v),
-            Metric::MaxDbPoolCheckin(v) => Metric2::MaxDbPoolCheckin(v),
-            Metric::DbPoolCheckoutAverage(v) => Metric2::DbPoolCheckoutAverage(v),
-            Metric::MaxDbPoolCheckout(v) => Metric2::MaxDbPoolCheckout(v),
-            Metric::DbPoolReleaseAverage(v) => Metric2::DbPoolReleaseAverage(v),
-            Metric::MaxDbPoolRelease(v) => Metric2::MaxDbPoolRelease(v),
-            Metric::DbPoolTimeoutAverage(v) => Metric2::DbPoolTimeoutAverage(v),
-            Metric::MaxDbPoolTimeout(v) => Metric2::MaxDbPoolTimeout(v),
+            Metric::DbConnAcquisitionCount(v) => Metric2::DbConnAcquisitionCount(v),
+            Metric::DbConnAcquisitionP95(v) => Metric2::DbConnAcquisitionP95(v),
+            Metric::DbConnAcquisitionP99(v) => Metric2::DbConnAcquisitionP99(v),
+            Metric::DbConnAcquisitionMax(v) => Metric2::DbConnAcquisitionMax(v),
+            Metric::RoDbConnections(v) => Metric2::RoDbConnections(v),
+            Metric::IdleRoDbConnections(v) => Metric2::IdleRoDbConnections(v),
+            Metric::RoDbConnAcquisitionCount(v) => Metric2::RoDbConnAcquisitionCount(v),
+            Metric::RoDbConnAcquisitionP95(v) => Metric2::RoDbConnAcquisitionP95(v),
+            Metric::RoDbConnAcquisitionP99(v) => Metric2::RoDbConnAcquisitionP99(v),
+            Metric::RoDbConnAcquisitionMax(v) => Metric2::RoDbConnAcquisitionMax(v),
             Metric::RedisConnections(v) => Metric2::RedisConnections(v),
             Metric::IdleRedisConnections(v) => Metric2::IdleRedisConnections(v),
             Metric::AdjustmentInsertQueryP95(v) => Metric2::AdjustmentInsertQueryP95(v),
@@ -479,6 +483,9 @@ impl From<Metric> for Metric2 {
             Metric::EditionCloneEventsQueryP95(v) => Metric2::EditionCloneEventsQueryP95(v),
             Metric::EditionCloneEventsQueryP99(v) => Metric2::EditionCloneEventsQueryP99(v),
             Metric::EditionCloneEventsQueryMax(v) => Metric2::EditionCloneEventsQueryMax(v),
+            Metric::EditionCommitTxnCommitP95(v) => Metric2::EditionCommitTxnCommitP95(v),
+            Metric::EditionCommitTxnCommitP99(v) => Metric2::EditionCommitTxnCommitP99(v),
+            Metric::EditionCommitTxnCommitMax(v) => Metric2::EditionCommitTxnCommitMax(v),
             Metric::EditionDeleteQueryP95(v) => Metric2::EditionDeleteQueryP95(v),
             Metric::EditionDeleteQueryP99(v) => Metric2::EditionDeleteQueryP99(v),
             Metric::EditionDeleteQueryMax(v) => Metric2::EditionDeleteQueryMax(v),
@@ -521,16 +528,6 @@ impl From<Metric> for Metric2 {
             Metric::StateQueryP95(v) => Metric2::StateQueryP95(v),
             Metric::StateQueryP99(v) => Metric2::StateQueryP99(v),
             Metric::StateQueryMax(v) => Metric2::StateQueryMax(v),
-            Metric::RoDbConnections(v) => Metric2::RoDbConnections(v),
-            Metric::IdleRoDbConnections(v) => Metric2::IdleRoDbConnections(v),
-            Metric::RoDbPoolCheckinAverage(v) => Metric2::RoDbPoolCheckinAverage(v),
-            Metric::MaxRoDbPoolCheckin(v) => Metric2::MaxRoDbPoolCheckin(v),
-            Metric::RoDbPoolCheckoutAverage(v) => Metric2::RoDbPoolCheckoutAverage(v),
-            Metric::MaxRoDbPoolCheckout(v) => Metric2::MaxRoDbPoolCheckout(v),
-            Metric::RoDbPoolReleaseAverage(v) => Metric2::RoDbPoolReleaseAverage(v),
-            Metric::MaxRoDbPoolRelease(v) => Metric2::MaxRoDbPoolRelease(v),
-            Metric::RoDbPoolTimeoutAverage(v) => Metric2::RoDbPoolTimeoutAverage(v),
-            Metric::MaxRoDbPoolTimeout(v) => Metric2::MaxRoDbPoolTimeout(v),
             Metric::RunningRequests(v) => Metric2::RunningRequests(v),
         }
     }
