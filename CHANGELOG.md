@@ -1,10 +1,25 @@
 # Changelog
 
-## v0.2.15 (September 7, 2020)
+## v0.2.18 (September 17, 2020)
+
+### Changes
+- Added new metrics serialization format, both are used for now ([0e4083a](https://github.com/netology-group/event/commit/0e4083a418b533d1bedf2fdeaef81011d350b65d))
+
+## v0.2.17 (September 11, 2020)
+
+### Fixes
+- Update svc-authz ([67b52fa](https://github.com/netology-group/event/commit/67b52fa2a54250e5e6403521bc85b18149c29fea))
+
+## v0.2.16 (September 8, 2020)
+
+### Changes
+- Wrapped all pool connections checkouts into spawn_blocking tasks ([58a060e](https://github.com/netology-group/event/commit/58a060edc313afa69a6fd9a05150d434fcf52fed))
+- Added running_requests_total metric, logging improvements ([71e8a07](https://github.com/netology-group/event/commit/71e8a07c168b98d7f8e9ab0eecc14bb76311e667))
+
+## v0.2.15 (September 7, 2020) - yanked
 
 ### Fixes
 - Update svc-agent ([e165376](https://github.com/netology-group/event/commit/e165376c72dc0f2f3afe3ccfa45ca70b279fee99))
-
 
 ## v0.2.14 (September 7, 2020)
 

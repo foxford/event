@@ -1,6 +1,6 @@
 [package]
 name = "event"
-version = "0.2.17"
+version = "0.2.18"
 authors = ["Timofey Martynov <t.martinov@netology-group.ru>"]
 edition = "2018"
 
