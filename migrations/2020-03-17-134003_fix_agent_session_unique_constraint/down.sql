@@ -1,2 +1,0 @@
-ALTER TABLE agent_session
-DROP CONSTRAINT agent_session_room_id_agent_id_excl;
