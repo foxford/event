@@ -2,4 +2,5 @@
 !Cargo.lock
 !Cargo.toml
 !src
+!sqlx-data.json
 !migrations

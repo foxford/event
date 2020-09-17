@@ -706,6 +706,9 @@ name = "either"
 version = "1.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bb1f6b1ce1c140482ea30ddd3335fc0024ac7ee112895426e0a629a6c20adfe3"
+dependencies = [
+ "serde 1.0.114",
+]
 
 [[package]]
 name = "encoding_rs"
@@ -2666,8 +2669,10 @@ dependencies = [
  "either",
  "futures 0.3.5",
  "heck",
+ "hex",
  "proc-macro2",
  "quote 1.0.7",
+ "serde 1.0.114",
  "serde_json",
  "sha2 0.9.1",
  "sqlx-core",

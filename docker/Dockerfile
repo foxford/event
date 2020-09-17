@@ -7,15 +7,7 @@ RUN apt update && apt install -y --no-install-recommends \
   pkg-config \
   libssl-dev \
   libcurl4-openssl-dev \
-  libpq-dev \
-  postgresql
-
-# Set up and postgres for passwordless local connection
-RUN echo "host all postgres 0.0.0.0/0 trust" > /etc/postgresql/11/main/pg_hba.conf
-ENV DATABASE_URL postgresql://postgres@0.0.0.0/postgres
-
-# Install diesel_cli to run migrations
-RUN cargo install diesel_cli --no-default-features --features "postgres"
+  libpq-dev
 
 WORKDIR "/build"
 
@@ -24,13 +16,10 @@ COPY Cargo.* /build/
 RUN mkdir /build/src && echo "fn main() {}" > /build/src/main.rs
 RUN cargo build --release
 
-# Run migrations
-COPY migrations /build/migrations
-RUN service postgresql start && diesel migration run
-
 # Build app
+COPY sqlx-data.json /build/sqlx-data.json
 COPY src/ /build/src/
-RUN service postgresql start && touch src/main.rs && cargo build --release
+RUN touch src/main.rs && cargo build --release
 
 ## -----------------------------------------------------------------------------
 ## Package
