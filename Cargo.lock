@@ -2937,9 +2937,9 @@ dependencies = [
 
 [[package]]
 name = "svc-agent"
-version = "0.14.8"
+version = "0.14.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3cd9b1387868b2656a863412fdb7d5cf9e23cd65a2f82baad0c7e97bb13192c9"
+checksum = "c8a0bfa157dc0e82eadd331bc899c6edf6603f022ade6e1f7fced9683428b493"
 dependencies = [
  "base64 0.10.1",
  "chrono",
@@ -3751,7 +3751,7 @@ version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65923dd1784f44da1d2c3dbbc5e822045628c590ba72123e1c73d3c230c4434d"
 dependencies = [
- "linked-hash-map 0.5.3",
+ "linked-hash-map 0.3.0",
 ]
 
 [[package]]
