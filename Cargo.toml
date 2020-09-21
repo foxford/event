@@ -30,6 +30,7 @@ svc-error = { version = "0.1", features = ["sqlx", "svc-agent", "svc-authn", "sv
 quaint = { version = "0.1", features = ["uuid-0_8", "chrono-0_4"] }
 url = "2.1"
 uuid = { version = "0.8", features = ["v4", "serde"] }
+tide = "0.13.0"
 
 [patch.crates-io]
 sqlx = { git = "https://github.com/feymartynov/sqlx", branch = "patch" }

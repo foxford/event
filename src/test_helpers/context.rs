@@ -1,4 +1,3 @@
-use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use serde_json::json;
@@ -9,6 +8,7 @@ use svc_authz::ClientMap as Authz;
 
 use crate::app::context::Context;
 use crate::app::endpoint::metric::ProfilerKeys;
+use crate::app::metrics::Metric;
 use crate::config::Config;
 use crate::profiler::Profiler;
 
@@ -42,6 +42,7 @@ fn build_config() -> Config {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Clone)]
 pub(crate) struct TestContext {
     config: Config,
     authz: Authz,
@@ -98,7 +99,7 @@ impl Context for TestContext {
         self.profiler.clone()
     }
 
-    fn running_requests(&self) -> Option<Arc<AtomicI64>> {
-        None
+    fn get_metrics(&self, _duration: u64) -> Result<Vec<Metric>, String> {
+        Ok(vec![])
     }
 }
