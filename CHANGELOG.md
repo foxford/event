@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.2.19 (September 22, 2020)
+
+### Changes
+- Moved from diesel to sqlx
+- Added http server serving metrics for prometheus
+- Updated svc-agent
+
 ## v0.2.18 (September 17, 2020)
 
 ### Changes
