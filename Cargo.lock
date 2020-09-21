@@ -2937,9 +2937,9 @@ dependencies = [
 
 [[package]]
 name = "svc-agent"
-version = "0.14.7"
+version = "0.14.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82379491849e0c4f40fb0d5baac751db14221730a71b671934753be6d04383cf"
+checksum = "3cd9b1387868b2656a863412fdb7d5cf9e23cd65a2f82baad0c7e97bb13192c9"
 dependencies = [
  "base64 0.10.1",
  "chrono",
@@ -2947,6 +2947,7 @@ dependencies = [
  "futures 0.3.5",
  "futures-channel",
  "http 0.1.21",
+ "lazy_static",
  "log",
  "serde 1.0.114",
  "serde_derive",
