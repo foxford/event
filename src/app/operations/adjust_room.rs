@@ -3,43 +3,69 @@ use std::ops::Bound;
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Duration, Utc};
-use diesel::pg::PgConnection;
 use log::info;
+use sqlx::postgres::{PgConnection, PgPool as Db};
 
-use crate::db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segment};
+use crate::app::endpoint::metric::ProfilerKeys;
+use crate::db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segments};
 use crate::db::event::{
     DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event,
 };
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
-use crate::db::ConnectionPool as Db;
+use crate::profiler::Profiler;
 
 pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 
-pub(crate) fn call(
+////////////////////////////////////////////////////////////////////////////////
+
+pub(crate) async fn call(
     db: &Db,
+    profiler: &Profiler<ProfilerKeys>,
     real_time_room: &Room,
     started_at: DateTime<Utc>,
-    segments: &[Segment],
+    segments: &Segments,
     offset: i64,
-) -> Result<(Room, Room, Vec<Segment>)> {
+) -> Result<(Room, Room, Segments)> {
     info!(
         "Room adjustment task started for room_id = '{}'",
         real_time_room.id()
     );
 
     let start_timestamp = Utc::now();
-    let conn = db.get()?;
+
+    // Parse segments.
+    let bounded_offset_tuples: Vec<(Bound<i64>, Bound<i64>)> = segments.to_owned().into();
+    let mut parsed_segments = Vec::with_capacity(bounded_offset_tuples.len());
+
+    for segment in bounded_offset_tuples {
+        match segment {
+            (Bound::Included(start), Bound::Excluded(stop)) => parsed_segments.push((start, stop)),
+            segment => bail!("Invalid segment: {:?}", segment),
+        }
+    }
 
     // Create adjustment.
-    AdjustmentInsertQuery::new(real_time_room.id(), started_at, segments.to_vec(), offset)
-        .execute(&conn)?;
+    let mut conn = profiler
+        .measure(ProfilerKeys::DbConnAcquisition, db.acquire())
+        .await
+        .context("Failed to acquire db connection")?;
+
+    let query =
+        AdjustmentInsertQuery::new(real_time_room.id(), started_at, segments.to_owned(), offset);
+
+    profiler
+        .measure(
+            ProfilerKeys::AdjustmentInsertQuery,
+            query.execute(&mut conn),
+        )
+        .await?;
 
     ///////////////////////////////////////////////////////////////////////////
 
     // Get room opening time and duration.
     let (room_opening, room_duration) = match real_time_room.time() {
         (Bound::Included(start), Bound::Excluded(stop)) if stop > start => {
-            (*start, stop.signed_duration_since(*start))
+            (start, stop.signed_duration_since(start))
         }
         _ => bail!("invalid duration for room = '{}'", real_time_room.id()),
     };
@@ -48,38 +74,40 @@ pub(crate) fn call(
     let rtc_offset = (started_at - room_opening).num_milliseconds();
 
     // Convert segments to nanoseconds.
-    let mut nano_segments = Vec::with_capacity(segments.len());
-
-    for segment in segments {
-        if let (Bound::Included(start), Bound::Excluded(stop)) = segment {
+    let nano_segments = parsed_segments
+        .iter()
+        .map(|(start, stop)| {
             let nano_start = (start + rtc_offset) * NANOSECONDS_IN_MILLISECOND;
             let nano_stop = (stop + rtc_offset) * NANOSECONDS_IN_MILLISECOND;
-            nano_segments.push((Bound::Included(nano_start), Bound::Excluded(nano_stop)));
-        } else {
-            bail!("invalid segment");
-        }
-    }
+            (nano_start, nano_stop)
+        })
+        .collect::<Vec<(i64, i64)>>();
 
     // Invert segments to gaps.
     let segment_gaps = invert_segments(&nano_segments, room_duration)?;
 
     // Create original room with events shifted according to segments.
-    let original_room = create_room(&conn, &real_time_room, started_at)?;
+    let original_room = create_room(&mut conn, profiler, &real_time_room, started_at).await?;
 
     clone_events(
-        &conn,
+        &mut conn,
+        profiler,
         &original_room,
         &segment_gaps,
         (offset - rtc_offset) * NANOSECONDS_IN_MILLISECOND,
-    )?;
+    )
+    .await?;
 
     ///////////////////////////////////////////////////////////////////////////
 
     // Fetch shifted cut events and transform them to gaps.
-    let cut_events = EventListQuery::new()
+    let query = EventListQuery::new()
         .room_id(original_room.id())
-        .kind("stream".to_string())
-        .execute(&conn)
+        .kind("stream".to_string());
+
+    let cut_events = profiler
+        .measure(ProfilerKeys::EventListQuery, query.execute(&mut conn))
+        .await
         .with_context(|| {
             format!(
                 "failed to fetch cut events for room_id = '{}'",
@@ -90,12 +118,15 @@ pub(crate) fn call(
     let cut_gaps = cut_events_to_gaps(&cut_events)?;
 
     // Create modified room with events shifted again according to cut events this time.
-    let modified_room = create_room(&conn, &original_room, started_at)?;
-    clone_events(&conn, &modified_room, &cut_gaps, 0)?;
+    let modified_room = create_room(&mut conn, profiler, &original_room, started_at).await?;
+    clone_events(&mut conn, profiler, &modified_room, &cut_gaps, 0).await?;
 
     // Delete cut events from the modified room.
-    EventDeleteQuery::new(modified_room.id(), "stream")
-        .execute(&conn)
+    let query = EventDeleteQuery::new(modified_room.id(), "stream");
+
+    profiler
+        .measure(ProfilerKeys::EventDeleteQuery, query.execute(&mut conn))
+        .await
         .with_context(|| {
             format!(
                 "failed to delete cut events for room_id = '{}'",
@@ -106,23 +137,14 @@ pub(crate) fn call(
     ///////////////////////////////////////////////////////////////////////////
 
     // Calculate total duration of initial segments.
-    let mut total_segments_millis = 0;
-
-    for segment in segments {
-        if let (Bound::Included(start), Bound::Excluded(stop)) = segment {
-            total_segments_millis += stop - start
-        }
-    }
+    let total_segments_millis = parsed_segments
+        .into_iter()
+        .fold(0, |acc, (start, stop)| acc + (stop - start));
 
     let total_segments_duration = Duration::milliseconds(total_segments_millis);
 
     // Calculate modified segments by inverting cut gaps limited by total initial segments duration.
-    let bounded_cut_gaps = cut_gaps
-        .into_iter()
-        .map(|(start, stop)| (Bound::Included(start), Bound::Excluded(stop)))
-        .collect::<Vec<Segment>>();
-
-    let modified_segments = invert_segments(&bounded_cut_gaps, total_segments_duration)?
+    let modified_segments = invert_segments(&cut_gaps, total_segments_duration)?
         .into_iter()
         .map(|(start, stop)| {
             (
@@ -130,7 +152,7 @@ pub(crate) fn call(
                 Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
             )
         })
-        .collect::<Vec<Segment>>();
+        .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -141,80 +163,43 @@ pub(crate) fn call(
         (Utc::now() - start_timestamp).num_milliseconds()
     );
 
-    Ok((original_room, modified_room, modified_segments))
+    Ok((
+        original_room,
+        modified_room,
+        Segments::from(modified_segments),
+    ))
 }
 
 /// Creates a derived room from the source room.
-fn create_room(conn: &PgConnection, source_room: &Room, started_at: DateTime<Utc>) -> Result<Room> {
+async fn create_room(
+    conn: &mut PgConnection,
+    profiler: &Profiler<ProfilerKeys>,
+    source_room: &Room,
+    started_at: DateTime<Utc>,
+) -> Result<Room> {
     let time = (Bound::Included(started_at), source_room.time().1.to_owned());
-    let mut query = RoomInsertQuery::new(&source_room.audience(), time);
+    let mut query = RoomInsertQuery::new(&source_room.audience(), time.into());
     query = query.source_room_id(source_room.id());
 
     if let Some(tags) = source_room.tags() {
         query = query.tags(tags.to_owned());
     }
 
-    query.execute(conn).context("failed to insert room")
+    profiler
+        .measure(ProfilerKeys::RoomInsertQuery, query.execute(conn))
+        .await
+        .context("failed to insert room")
 }
-
-const SHIFT_CLONE_EVENTS_SQL: &str = r#"
-WITH
-    gap_starts AS (
-        SELECT start, ROW_NUMBER() OVER () AS row_number
-        FROM UNNEST($1::BIGINT[]) AS start
-    ),
-    gap_stops AS (
-        SELECT stop, ROW_NUMBER() OVER () AS row_number
-        FROM UNNEST($2::BIGINT[]) AS stop
-    ),
-    gaps AS (
-        SELECT start, stop
-        FROM gap_starts, gap_stops
-        WHERE gap_stops.row_number = gap_starts.row_number
-    )
-INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
-SELECT
-    id,
-    room_id,
-    kind,
-    set,
-    label,
-    data,
-    -- Monotonization
-    occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at ORDER BY created_at) - 1,
-    created_by,
-    created_at
-FROM (
-    SELECT
-        gen_random_uuid() AS id,
-        $3 AS room_id,
-        kind,
-        set,
-        label,
-        data,
-        CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)
-        WHEN TRUE THEN (SELECT stop FROM gaps WHERE start = 0)
-        ELSE occurred_at - (
-            SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
-            FROM gaps
-            WHERE start < occurred_at
-            AND   start > 0
-        )
-        END + $4 AS occurred_at,
-        created_by,
-        created_at
-    FROM event
-    WHERE room_id = $5
-    AND   deleted_at IS NULL
-) AS sub
-"#;
 
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
 /// adding `offset` (both in nanoseconds).
-fn clone_events(conn: &PgConnection, room: &Room, gaps: &[(i64, i64)], offset: i64) -> Result<()> {
-    use diesel::prelude::*;
-    use diesel::sql_types::{Array, Int8, Uuid};
-
+async fn clone_events(
+    conn: &mut PgConnection,
+    profiler: &Profiler<ProfilerKeys>,
+    room: &Room,
+    gaps: &[(i64, i64)],
+    offset: i64,
+) -> Result<()> {
     let source_room_id = match room.source_room_id() {
         Some(id) => id,
         None => bail!("room = '{}' is not derived from another room", room.id()),
@@ -224,17 +209,75 @@ fn clone_events(conn: &PgConnection, room: &Room, gaps: &[(i64, i64)], offset: i
     let mut stops = Vec::with_capacity(gaps.len());
 
     for (start, stop) in gaps {
-        starts.push(start);
-        stops.push(stop);
+        starts.push(*start);
+        stops.push(*stop);
     }
 
-    diesel::sql_query(SHIFT_CLONE_EVENTS_SQL)
-        .bind::<Array<Int8>, _>(&starts)
-        .bind::<Array<Int8>, _>(&stops)
-        .bind::<Uuid, _>(room.id())
-        .bind::<Int8, _>(offset)
-        .bind::<Uuid, _>(source_room_id)
-        .execute(conn)
+    let query = sqlx::query!(
+        "
+        WITH
+            gap_starts AS (
+                SELECT start, ROW_NUMBER() OVER () AS row_number
+                FROM UNNEST($1::BIGINT[]) AS start
+            ),
+            gap_stops AS (
+                SELECT stop, ROW_NUMBER() OVER () AS row_number
+                FROM UNNEST($2::BIGINT[]) AS stop
+            ),
+            gaps AS (
+                SELECT start, stop
+                FROM gap_starts, gap_stops
+                WHERE gap_stops.row_number = gap_starts.row_number
+            )
+        INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
+        SELECT
+            id,
+            room_id,
+            kind,
+            set,
+            label,
+            data,
+            -- Monotonization
+            occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at ORDER BY created_at) - 1,
+            created_by,
+            created_at
+        FROM (
+            SELECT
+                gen_random_uuid() AS id,
+                $3::UUID AS room_id,
+                kind,
+                set,
+                label,
+                data,
+                CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)
+                WHEN TRUE THEN (SELECT stop FROM gaps WHERE start = 0)
+                ELSE occurred_at - (
+                    SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
+                    FROM gaps
+                    WHERE start < occurred_at
+                    AND   start > 0
+                )
+                END + $4 AS occurred_at,
+                created_by,
+                created_at
+            FROM event
+            WHERE room_id = $5
+            AND   deleted_at IS NULL
+        ) AS sub
+        ",
+        starts.as_slice(),
+        stops.as_slice(),
+        room.id(),
+        sqlx::types::BigDecimal::from(offset),
+        source_room_id,
+    );
+
+    profiler
+        .measure(
+            ProfilerKeys::RoomAdjustCloneEventsQuery,
+            query.execute(conn),
+        )
+        .await
         .map(|_| ())
         .with_context(|| {
             format!(
@@ -246,7 +289,7 @@ fn clone_events(conn: &PgConnection, room: &Room, gaps: &[(i64, i64)], offset: i
 
 /// Turns `segments` into gaps.
 pub(crate) fn invert_segments(
-    segments: &[Segment],
+    segments: &[(i64, i64)],
     room_duration: Duration,
 ) -> Result<Vec<(i64, i64)>> {
     if segments.is_empty() {
@@ -257,38 +300,23 @@ pub(crate) fn invert_segments(
     let mut gaps = Vec::with_capacity(segments.len() + 2);
 
     // A possible gap before the first segment.
-    if let Some(first_segment) = segments.first() {
-        match first_segment {
-            (Bound::Included(first_segment_start), _) => {
-                if *first_segment_start > 0 {
-                    gaps.push((0, *first_segment_start));
-                }
-            }
-            _ => bail!("invalid first segment"),
+    if let Some((first_segment_start, _)) = segments.first() {
+        if *first_segment_start > 0 {
+            gaps.push((0, *first_segment_start));
         }
     }
 
     // Gaps between segments.
-    for item in segments.iter().zip(&segments[1..]) {
-        match item {
-            ((_, Bound::Excluded(segment_stop)), (Bound::Included(next_segment_start), _)) => {
-                gaps.push((*segment_stop, *next_segment_start));
-            }
-            _ => bail!("invalid segments"),
-        }
+    for ((_, segment_stop), (next_segment_start, _)) in segments.iter().zip(&segments[1..]) {
+        gaps.push((*segment_stop, *next_segment_start));
     }
 
     // A possible gap after the last segment.
-    if let Some(last_segment) = segments.last() {
-        match last_segment {
-            (_, Bound::Excluded(last_segment_stop)) => {
-                let room_duration_nanos = room_duration.num_nanoseconds().unwrap_or(std::i64::MAX);
+    if let Some((_, last_segment_stop)) = segments.last() {
+        let room_duration_nanos = room_duration.num_nanoseconds().unwrap_or(std::i64::MAX);
 
-                if *last_segment_stop < room_duration_nanos {
-                    gaps.push((*last_segment_stop, room_duration_nanos));
-                }
-            }
-            _ => bail!("invalid last segment"),
+        if *last_segment_stop < room_duration_nanos {
+            gaps.push((*last_segment_stop, room_duration_nanos));
         }
     }
 
@@ -336,150 +364,169 @@ mod tests {
     use std::ops::Bound;
 
     use chrono::{DateTime, Duration, NaiveDateTime, Utc};
-    use diesel::pg::PgConnection;
     use serde_json::{json, Value as JsonValue};
+    use sqlx::postgres::PgConnection;
     use svc_agent::{AccountId, AgentId};
 
+    use crate::app::endpoint::metric::ProfilerKeys;
+    use crate::db::adjustment::Segments;
     use crate::db::event::{
         InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,
     };
-    use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
+    use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room, Time as RoomTime};
+    use crate::profiler::Profiler;
     use crate::test_helpers::db::TestDb;
 
     const AUDIENCE: &str = "dev.svc.example.org";
 
     #[test]
     fn adjust_room() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
-
-            let conn = db
-                .connection_pool()
-                .get()
-                .expect("Failed to get db connection");
+        async_std::task::block_on(async {
+            let profiler = Profiler::<ProfilerKeys>::start();
+            let db = TestDb::new().await;
+            let mut conn = db.get_conn().await;
 
             // Create room.
             let opened_at = DateTime::from_utc(NaiveDateTime::from_timestamp(1582002673, 0), Utc);
             let closed_at = opened_at + Duration::seconds(50);
-            let time = (Bound::Included(opened_at), Bound::Excluded(closed_at));
+            let time = RoomTime::from((Bound::Included(opened_at), Bound::Excluded(closed_at)));
 
             let room = RoomInsertQuery::new(AUDIENCE, time)
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to insert room");
 
             // Create events.
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 1_000_000_000,
                 "message",
                 json!({"message": "m1"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 12_000_000_000,
                 "message",
                 json!({"message": "m2"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 13_000_000_000,
                 "stream",
                 json!({"cut": "start"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 14_000_000_000,
                 "message",
                 json!({"message": "m4"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 15_000_000_000,
                 "stream",
                 json!({"cut": "stop"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 16_000_000_000,
                 "message",
                 json!({"message": "m6"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 17_000_000_000,
                 "message",
                 json!({"message": "m7"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 18_000_000_000,
                 "stream",
                 json!({"cut": "start"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 19_000_000_000,
                 "message",
                 json!({"message": "m9"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 20_000_000_000,
                 "stream",
                 json!({"cut": "stop"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 21_000_000_000,
                 "message",
                 json!({"message": "m11"}),
-            );
+            )
+            .await;
 
             create_event(
-                &conn,
+                &mut conn,
                 &room,
                 22_000_000_000,
                 "message",
                 json!({"message": "m12"}),
-            );
+            )
+            .await;
 
             drop(conn);
 
             // Video segments.
-            let segments = vec![
+            let segments = Segments::from(vec![
                 (Bound::Included(0), Bound::Excluded(6500)),
                 (Bound::Included(8500), Bound::Excluded(11500)),
-            ];
+            ]);
 
             // RTC started 10 seconds after the room opened and preroll is 3 seconds long.
             let started_at = opened_at + Duration::seconds(10);
-            let offset = 3000;
 
             // Call room adjustment.
-            let (original_room, modified_room, modified_segments) =
-                super::call(db.connection_pool(), &room, started_at, &segments, offset)
-                    .expect("Room adjustment failed");
+            let (original_room, modified_room, modified_segments) = super::call(
+                &db.connection_pool(),
+                &profiler,
+                &room,
+                started_at,
+                &segments,
+                3000 as i64,
+            )
+            .await
+            .expect("Room adjustment failed");
 
             // Assert original room.
             assert_eq!(original_room.source_room_id(), Some(room.id()));
@@ -489,14 +536,12 @@ mod tests {
             assert_eq!(original_room.tags(), room.tags());
 
             // Assert original room events.
-            let conn = db
-                .connection_pool()
-                .get()
-                .expect("Failed to get db connection");
+            let mut conn = db.get_conn().await;
 
             let events = EventListQuery::new()
                 .room_id(original_room.id())
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to fetch original room events");
 
             assert_eq!(events.len(), 12);
@@ -607,7 +652,8 @@ mod tests {
             // Assert modified room events.
             let events = EventListQuery::new()
                 .room_id(modified_room.id())
-                .execute(&conn)
+                .execute(&mut conn)
+                .await
                 .expect("Failed to fetch modified room events");
 
             assert_eq!(events.len(), 8);
@@ -677,8 +723,10 @@ mod tests {
             );
 
             // Assert modified segments.
+            let segments: Vec<(Bound<i64>, Bound<i64>)> = modified_segments.into();
+
             assert_eq!(
-                modified_segments,
+                segments,
                 vec![
                     (Bound::Included(0), Bound::Excluded(6000)),
                     (Bound::Included(8000), Bound::Excluded(9500)),
@@ -687,8 +735,8 @@ mod tests {
         });
     }
 
-    fn create_event(
-        conn: &PgConnection,
+    async fn create_event(
+        conn: &mut PgConnection,
         room: &Room,
         occurred_at: i64,
         kind: &str,
@@ -697,7 +745,7 @@ mod tests {
         let created_by = AgentId::new("test", AccountId::new("test", AUDIENCE));
 
         let opened_at = match room.time() {
-            (Bound::Included(opened_at), _) => *opened_at,
+            (Bound::Included(opened_at), _) => opened_at,
             _ => panic!("Invalid room time"),
         };
 
@@ -710,6 +758,7 @@ mod tests {
         )
         .created_at(opened_at + Duration::nanoseconds(occurred_at))
         .execute(conn)
+        .await
         .expect("Failed to insert event");
     }
 

@@ -1,7 +1,6 @@
 use std::ops::Bound;
 
 use async_std::stream;
-use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
@@ -57,22 +56,18 @@ impl RequestHandler for CreateHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, author) = {
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             // Check whether the room exists and open.
             let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
 
             let room = context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?;
 
-            let conn = context.get_ro_conn().await?;
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
                 CreateRequest {
@@ -90,7 +85,7 @@ impl RequestHandler for CreateHandler {
                         .profiler()
                         .measure(
                             ProfilerKeys::EventOriginalEventQuery,
-                            spawn_blocking(move || query.execute(&conn)),
+                            query.execute(&mut conn),
                         )
                         .await?
                         .map(|original_event| {
@@ -156,14 +151,11 @@ impl RequestHandler for CreateHandler {
             }
 
             {
-                let conn = context.get_conn().await?;
+                let mut conn = context.get_conn().await?;
 
                 context
                     .profiler()
-                    .measure(
-                        ProfilerKeys::EventInsertQuery,
-                        spawn_blocking(move || query.execute(&conn)),
-                    )
+                    .measure(ProfilerKeys::EventInsertQuery, query.execute(&mut conn))
                     .await
                     .map_err(|err| format!("failed to create event: {}", err))
                     .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
@@ -236,7 +228,7 @@ impl RequestHandler for CreateHandler {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const MAX_LIMIT: i64 = 100;
+const MAX_LIMIT: usize = 100;
 
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(untagged)]
@@ -255,7 +247,7 @@ pub(crate) struct ListRequest {
     last_occurred_at: Option<i64>,
     #[serde(default)]
     direction: db::event::Direction,
-    limit: Option<i64>,
+    limit: Option<usize>,
 }
 
 pub(crate) struct ListHandler;
@@ -273,15 +265,12 @@ impl RequestHandler for ListHandler {
     ) -> Result {
         // Check whether the room exists.
         let room = {
-            let conn = context.get_ro_conn().await?;
             let query = db::room::FindQuery::new(payload.room_id);
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
@@ -298,6 +287,7 @@ impl RequestHandler for ListHandler {
 
         // Retrieve events from the DB.
         let mut query = db::event::ListQuery::new().room_id(room.id());
+
         let ListRequest {
             kind,
             set,
@@ -325,7 +315,7 @@ impl RequestHandler for ListHandler {
         }
 
         let events = {
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             query = query.direction(payload.direction).limit(std::cmp::min(
                 payload.limit.unwrap_or_else(|| MAX_LIMIT),
@@ -334,10 +324,7 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::EventListQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::EventListQuery, query.execute(&mut conn))
                 .await?
         };
 
@@ -368,19 +355,15 @@ mod tests {
 
     #[test]
     fn create_event() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room and put the agent online.
-                let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
                 room
             };
 
@@ -442,19 +425,15 @@ mod tests {
 
     #[test]
     fn create_next_event() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let original_author = TestAgent::new("web", "user123", USR_AUDIENCE);
             let agent = TestAgent::new("web", "moderator", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room.
-                let room = shared_helpers::insert_room(&conn);
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
                 // Add an event to the room.
                 factory::Event::new()
@@ -465,10 +444,11 @@ mod tests {
                     .data(&json!({ "text": "original text" }))
                     .occurred_at(1_000_000_000)
                     .created_by(&original_author.agent_id())
-                    .insert(&conn);
+                    .insert(&mut conn)
+                    .await;
 
                 // Put the agent online.
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
                 room
             };
 
@@ -516,19 +496,15 @@ mod tests {
 
     #[test]
     fn create_claim() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room and put the agent online.
-                let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
                 room
             };
 
@@ -536,9 +512,7 @@ mod tests {
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
             let account_id = agent.account_id().to_string();
-
             let object = vec!["rooms", &room_id, "claims", "block", "authors", &account_id];
-
             authz.allow(agent.account_id(), object, "create");
 
             // Make event.create request.
@@ -603,19 +577,15 @@ mod tests {
 
     #[test]
     fn create_transient_event() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room and put the agent online.
-                let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
                 room
             };
 
@@ -683,19 +653,15 @@ mod tests {
 
     #[test]
     fn create_event_not_authorized() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room and put the agent online.
-                let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
                 room
             };
 
@@ -722,18 +688,14 @@ mod tests {
 
     #[test]
     fn create_event_not_entered() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room.
-                shared_helpers::insert_room(&conn)
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
             };
 
             // Allow agent to create events of type `message` in the room.
@@ -775,19 +737,15 @@ mod tests {
 
     #[test]
     fn create_event_closed_room() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create closed room and put the agent online.
-                let room = shared_helpers::insert_closed_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_closed_room(&mut conn).await;
+                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
                 room
             };
 
@@ -830,9 +788,9 @@ mod tests {
 
     #[test]
     fn create_event_missing_room() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
             let payload = CreateRequest {
                 room_id: Uuid::new_v4(),
@@ -856,31 +814,30 @@ mod tests {
 
     #[test]
     fn list_events() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let (room, db_events) = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room.
-                let room = shared_helpers::insert_room(&conn);
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
                 // Create events in the room.
-                let events = (1..4)
-                    .map(|i| {
-                        factory::Event::new()
-                            .room_id(room.id())
-                            .kind("message")
-                            .data(&json!({ "text": format!("message {}", i) }))
-                            .occurred_at(i * 1000)
-                            .created_by(&agent.agent_id())
-                            .insert(&conn)
-                    })
-                    .collect::<Vec<Event>>();
+                let mut events = vec![];
+
+                for i in 1..4 {
+                    let event = factory::Event::new()
+                        .room_id(room.id())
+                        .kind("message")
+                        .data(&json!({ "text": format!("message {}", i) }))
+                        .occurred_at(i * 1000)
+                        .created_by(&agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
+
+                    events.push(event);
+                }
 
                 (room, events)
             };
@@ -940,29 +897,26 @@ mod tests {
 
     #[test]
     fn list_events_filtered_by_kinds() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room.
-                let room = shared_helpers::insert_room(&conn);
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
                 // Create events in the room.
-                ["A", "B", "A", "C"].iter().enumerate().for_each(|(i, s)| {
+                for (i, s) in ["A", "B", "A", "C"].iter().enumerate() {
                     factory::Event::new()
                         .room_id(room.id())
                         .kind(s)
                         .data(&json!({ "text": format!("message {}", i) }))
                         .occurred_at(i as i64 * 1000)
                         .created_by(&agent.agent_id())
-                        .insert(&conn);
-                });
+                        .insert(&mut conn)
+                        .await;
+                }
 
                 room
             };
@@ -1021,17 +975,13 @@ mod tests {
 
     #[test]
     fn list_events_not_authorized() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
-                shared_helpers::insert_room(&conn)
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
             };
 
             let context = TestContext::new(db, TestAuthz::new());
@@ -1056,9 +1006,9 @@ mod tests {
 
     #[test]
     fn list_events_missing_room() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
             let payload = ListRequest {
                 room_id: Uuid::new_v4(),

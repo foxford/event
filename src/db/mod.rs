@@ -1,46 +1,22 @@
-use std::sync::Arc;
 use std::time::Duration;
 
-use crate::app::metrics::StatsCollector;
-use diesel::pg::PgConnection;
-use diesel::r2d2::event::HandleEvent;
-use diesel::r2d2::{ConnectionManager, Pool};
+use sqlx::postgres::{PgPool, PgPoolOptions};
 
-pub(crate) type ConnectionPool = Arc<Pool<ConnectionManager<PgConnection>>>;
-pub(crate) fn create_pool(
+pub(crate) async fn create_pool(
     url: &str,
     size: u32,
     idle_size: Option<u32>,
     timeout: u64,
     max_lifetime: u64,
-    enable_stats: bool,
-) -> (ConnectionPool, StatsCollector) {
-    let manager = ConnectionManager::<PgConnection>::new(url);
-    let (collector, transmitter) = StatsCollector::new();
-
-    let builder = Pool::builder()
-        .max_size(size)
-        .min_idle(idle_size)
-        .connection_timeout(Duration::from_secs(timeout))
-        .max_lifetime(Some(Duration::from_secs(max_lifetime)));
-
-    let builder = if enable_stats {
-        builder.event_handler(Box::new(transmitter) as Box<dyn HandleEvent>)
-    } else {
-        builder
-    };
-
-    let pool = builder
-        .build(manager)
-        .expect("Error creating a database pool");
-
-    (Arc::new(pool), collector)
-}
-
-pub(crate) mod sql {
-    pub use super::agent::Agent_status;
-    pub use super::change::Change_type;
-    pub use svc_agent::sql::{Account_id, Agent_id};
+) -> PgPool {
+    PgPoolOptions::new()
+        .max_connections(size)
+        .min_connections(idle_size.unwrap_or(1))
+        .connect_timeout(Duration::from_secs(timeout))
+        .max_lifetime(Duration::from_secs(max_lifetime))
+        .connect(url)
+        .await
+        .expect("Failed to create sqlx database pool")
 }
 
 pub(crate) mod adjustment;

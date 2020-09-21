@@ -9,6 +9,7 @@ use log::warn;
 
 #[derive(Default)]
 pub(crate) struct EntryReport {
+    pub(crate) count: usize,
     pub(crate) p95: usize,
     pub(crate) p99: usize,
     pub(crate) max: usize,
@@ -33,9 +34,10 @@ impl Entry {
         } else {
             self.values.sort();
 
-            let p95_idx = (self.values.len() as f32 * 0.95) as usize;
-            let p99_idx = (self.values.len() as f32 * 0.99) as usize;
-            let max_idx = self.values.len() - 1;
+            let count = self.values.len();
+            let p95_idx = (count as f32 * 0.95) as usize;
+            let p99_idx = (count as f32 * 0.99) as usize;
+            let max_idx = count - 1;
             let max = self.values[max_idx];
 
             let p95 = if p95_idx < max_idx {
@@ -50,7 +52,12 @@ impl Entry {
                 max
             };
 
-            let report = EntryReport { p95, p99, max };
+            let report = EntryReport {
+                count,
+                p95,
+                p99,
+                max,
+            };
             self.values.clear();
             report
         }
@@ -161,6 +168,7 @@ mod tests {
         }
 
         let report = entry.flush();
+        assert_eq!(report.count, 999);
         assert_eq!(report.p95, 974);
         assert_eq!(report.p99, 994);
         assert_eq!(report.max, 999);

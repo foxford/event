@@ -1,5 +1,4 @@
 use async_std::stream;
-use async_std::task::spawn_blocking;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
@@ -12,13 +11,13 @@ use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-const MAX_LIMIT: i64 = 25;
+const MAX_LIMIT: usize = 25;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ListRequest {
     room_id: Uuid,
-    offset: Option<i64>,
-    limit: Option<i64>,
+    offset: Option<usize>,
+    limit: Option<usize>,
 }
 
 pub(crate) struct ListHandler;
@@ -37,14 +36,11 @@ impl RequestHandler for ListHandler {
         let room = {
             // Check whether the room exists and open.
             let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::RoomFindQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await?
                 .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
                 .status(ResponseStatus::NOT_FOUND)?
@@ -61,12 +57,12 @@ impl RequestHandler for ListHandler {
 
         // Get agents list in the room.
         let agents = {
-            let conn = context.get_ro_conn().await?;
+            let mut conn = context.get_ro_conn().await?;
 
             let query = db::agent::ListQuery::new()
                 .room_id(payload.room_id)
                 .status(db::agent::Status::Ready)
-                .offset(payload.offset.unwrap_or_else(|| 0))
+                .offset(payload.offset.unwrap_or(0))
                 .limit(std::cmp::min(
                     payload.limit.unwrap_or_else(|| MAX_LIMIT),
                     MAX_LIMIT,
@@ -74,10 +70,7 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(
-                    ProfilerKeys::AgentListQuery,
-                    spawn_blocking(move || query.execute(&conn)),
-                )
+                .measure(ProfilerKeys::AgentListQuery, query.execute(&mut conn))
                 .await?
         };
 
@@ -114,19 +107,15 @@ mod tests {
 
     #[test]
     fn list_agents() {
-        futures::executor::block_on(async {
-            let db = TestDb::new();
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create room and put the agent online.
-                let room = shared_helpers::insert_room(&conn);
-                shared_helpers::insert_agent(&conn, agent.agent_id(), room.id());
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
                 room
             };
 
@@ -164,17 +153,13 @@ mod tests {
 
     #[test]
     fn list_agents_not_authorized() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new();
+            let db = TestDb::new().await;
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
-                shared_helpers::insert_room(&conn)
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
             };
 
             let context = TestContext::new(db, TestAuthz::new());
@@ -195,18 +180,14 @@ mod tests {
 
     #[test]
     fn list_agents_closed_room() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new();
+            let db = TestDb::new().await;
 
             let room = {
-                let conn = db
-                    .connection_pool()
-                    .get()
-                    .expect("Failed to get DB connection");
-
                 // Create closed room.
-                shared_helpers::insert_closed_room(&conn)
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_closed_room(&mut conn).await
             };
 
             // Allow agent to list agents in the room.
@@ -238,9 +219,9 @@ mod tests {
 
     #[test]
     fn list_agents_missing_room() {
-        futures::executor::block_on(async {
+        async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new(), TestAuthz::new());
+            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
             let payload = ListRequest {
                 room_id: Uuid::new_v4(),

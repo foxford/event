@@ -1,8 +1,8 @@
 use std::ops::Bound;
 
 use chrono::{Duration, SubsecRound, Utc};
-use diesel::pg::PgConnection;
 use serde_json::json;
+use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
 use uuid::Uuid;
 
@@ -14,7 +14,7 @@ use super::{factory, USR_AUDIENCE};
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) fn insert_room(conn: &PgConnection) -> Room {
+pub(crate) async fn insert_room(conn: &mut PgConnection) -> Room {
     let now = Utc::now().trunc_subsecs(0);
 
     factory::Room::new()
@@ -24,10 +24,11 @@ pub(crate) fn insert_room(conn: &PgConnection) -> Room {
             Bound::Excluded(now + Duration::hours(1)),
         ))
         .tags(&json!({ "webinar_id": "123" }))
-        .insert(&conn)
+        .insert(conn)
+        .await
 }
 
-pub(crate) fn insert_closed_room(conn: &PgConnection) -> Room {
+pub(crate) async fn insert_closed_room(conn: &mut PgConnection) -> Room {
     let now = Utc::now().trunc_subsecs(0);
 
     factory::Room::new()
@@ -37,17 +38,29 @@ pub(crate) fn insert_closed_room(conn: &PgConnection) -> Room {
             Bound::Excluded(now - Duration::hours(8)),
         ))
         .tags(&json!({ "webinar_id": "123" }))
-        .insert(&conn)
+        .insert(conn)
+        .await
 }
 
-pub(crate) fn insert_agent(conn: &PgConnection, agent_id: &AgentId, room_id: Uuid) -> Agent {
+pub(crate) async fn insert_agent(
+    conn: &mut PgConnection,
+    agent_id: &AgentId,
+    room_id: Uuid,
+) -> Agent {
     factory::Agent::new()
         .agent_id(agent_id.to_owned())
         .room_id(room_id)
         .status(AgentStatus::Ready)
-        .insert(&conn)
+        .insert(conn)
+        .await
 }
 
-pub(crate) fn insert_edition(conn: &PgConnection, room: &Room, agent_id: &AgentId) -> Edition {
-    factory::Edition::new(room.id(), &agent_id).insert(&conn)
+pub(crate) async fn insert_edition(
+    conn: &mut PgConnection,
+    room: &Room,
+    agent_id: &AgentId,
+) -> Edition {
+    factory::Edition::new(room.id(), &agent_id)
+        .insert(conn)
+        .await
 }

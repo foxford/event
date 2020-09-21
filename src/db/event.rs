@@ -1,21 +1,14 @@
 use chrono::serde::{ts_milliseconds, ts_milliseconds_option};
 use chrono::{DateTime, Utc};
-use diesel::{pg::PgConnection, result::Error};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
 use uuid::Uuid;
 
-use super::room::Object as Room;
-use crate::schema::event;
-
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(
-    Clone, Debug, Serialize, Deserialize, Identifiable, Queryable, QueryableByName, Associations,
-)]
-#[belongs_to(Room, foreign_key = "room_id")]
-#[table_name = "event"]
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub(crate) struct Object {
     id: Uuid,
     room_id: Uuid,
@@ -196,11 +189,14 @@ impl Default for Direction {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
 enum KindFilter {
     Single(String),
     Multiple(Vec<String>),
 }
 
+#[derive(Debug)]
 pub(crate) struct ListQuery {
     room_id: Option<Uuid>,
     kind: Option<KindFilter>,
@@ -208,7 +204,7 @@ pub(crate) struct ListQuery {
     label: Option<String>,
     last_occurred_at: Option<i64>,
     direction: Direction,
-    limit: Option<i64>,
+    limit: Option<usize>,
 }
 
 impl ListQuery {
@@ -270,36 +266,38 @@ impl ListQuery {
         Self { direction, ..self }
     }
 
-    pub(crate) fn limit(self, limit: i64) -> Self {
+    pub(crate) fn limit(self, limit: usize) -> Self {
         Self {
             limit: Some(limit),
             ..self
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
-        use diesel::prelude::*;
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+        use quaint::ast::{Comparable, Orderable, ParameterizedValue, Select};
+        use quaint::visitor::{Postgres, Visitor};
 
-        let mut q = event::table
-            .filter(event::deleted_at.is_null())
-            .into_boxed();
+        let mut q = Select::from_table("event").so_that("deleted_at".is_null());
 
         if let Some(room_id) = self.room_id {
-            q = q.filter(event::room_id.eq(room_id));
+            q = q.and_where("room_id".equals(room_id));
         }
 
         q = match self.kind {
-            Some(KindFilter::Single(ref kind)) => q.filter(event::kind.eq(kind)),
-            Some(KindFilter::Multiple(ref kinds)) => q.filter(event::kind.eq_any(kinds.iter())),
+            Some(KindFilter::Single(ref kind)) => q.and_where("kind".equals(kind.as_str())),
+            Some(KindFilter::Multiple(ref kinds)) => {
+                let kinds = kinds.iter().map(|k| k.as_str()).collect::<Vec<&str>>();
+                q.and_where("kind".in_selection(kinds))
+            }
             None => q,
         };
 
-        if let Some(ref set) = self.set {
-            q = q.filter(event::set.eq(set));
+        if let Some(set) = &self.set {
+            q = q.and_where("set".equals(set.as_str()));
         }
 
-        if let Some(ref label) = self.label {
-            q = q.filter(event::label.eq(label));
+        if let Some(label) = &self.label {
+            q = q.and_where("label".equals(label.as_str()));
         }
 
         if let Some(limit) = self.limit {
@@ -309,28 +307,40 @@ impl ListQuery {
         q = match self.direction {
             Direction::Forward => {
                 if let Some(last_occurred_at) = self.last_occurred_at {
-                    q = q.filter(event::occurred_at.gt(last_occurred_at));
+                    q = q.and_where("occurred_at".greater_than(last_occurred_at));
                 }
 
-                q.order_by((event::occurred_at, event::created_at))
+                q.order_by("occurred_at").order_by("created_at")
             }
             Direction::Backward => {
                 if let Some(last_occurred_at) = self.last_occurred_at {
-                    q = q.filter(event::occurred_at.lt(last_occurred_at));
+                    q = q.and_where("occurred_at".less_than(last_occurred_at));
                 }
 
-                q.order_by((event::occurred_at.desc(), event::created_at.desc()))
+                q.order_by("occurred_at".descend())
+                    .order_by("created_at".descend())
             }
         };
 
-        q.get_results(conn)
+        let (sql, bindings) = Postgres::build(q);
+        let mut query = sqlx::query_as(&sql);
+
+        for binding in bindings {
+            query = match binding {
+                ParameterizedValue::Integer(value) => query.bind(value),
+                ParameterizedValue::Text(value) => query.bind(value.to_string()),
+                ParameterizedValue::Uuid(value) => query.bind(value),
+                _ => query,
+            }
+        }
+
+        query.fetch_all(conn).await
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Insertable)]
-#[table_name = "event"]
+#[derive(Debug)]
 pub(crate) struct InsertQuery {
     room_id: Uuid,
     kind: String,
@@ -381,16 +391,41 @@ impl InsertQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
-        use crate::diesel::RunQueryDsl;
-        use crate::schema::event::dsl::event;
-
-        diesel::insert_into(event).values(self).get_result(conn)
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            INSERT INTO event (room_id, set, kind, label, data, occurred_at, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            RETURNING
+                id,
+                room_id,
+                kind,
+                set,
+                label,
+                data,
+                occurred_at,
+                created_by AS "created_by!: AgentId",
+                created_at,
+                deleted_at,
+                original_occurred_at
+            "#,
+            self.room_id,
+            self.set,
+            self.kind,
+            self.label,
+            self.data,
+            self.occurred_at,
+            self.created_by as AgentId,
+        )
+        .fetch_one(conn)
+        .await
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub(crate) struct DeleteQuery<'a> {
     room_id: Uuid,
     kind: &'a str,
@@ -401,19 +436,25 @@ impl<'a> DeleteQuery<'a> {
         Self { room_id, kind }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<(), Error> {
-        use diesel::prelude::*;
-
-        let q = event::table
-            .filter(event::room_id.eq(self.room_id))
-            .filter(event::kind.eq(self.kind));
-
-        diesel::delete(q).execute(conn)?;
-        Ok(())
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<()> {
+        sqlx::query!(
+            "
+            DELETE FROM event
+            WHERE deleted_at IS NULL
+            AND   room_id = $1
+            AND   kind = $2
+            ",
+            self.room_id,
+            self.kind,
+        )
+        .execute(conn)
+        .await
+        .map(|_| ())
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
 #[derive(Clone)]
 pub(crate) struct SetStateQuery {
     room_id: Uuid,
@@ -441,56 +482,66 @@ impl SetStateQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
-        use crate::diesel::RunQueryDsl;
-        use diesel::prelude::*;
-
-        let mut query = event::table
-            .distinct_on((event::original_occurred_at, event::label))
-            .filter(event::deleted_at.is_null())
-            .filter(event::room_id.eq(self.room_id))
-            .filter(event::set.eq(&self.set))
-            .filter(event::original_occurred_at.lt(self.original_occurred_at))
-            .into_boxed();
-
-        if let Some(occurred_at) = self.occurred_at {
-            query = query.filter(event::occurred_at.lt(occurred_at));
-        }
-
-        query
-            .order_by((
-                event::original_occurred_at.desc(),
-                event::label,
-                event::occurred_at.desc(),
-            ))
-            .limit(self.limit)
-            .get_results(conn)
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            SELECT DISTINCT ON(original_occurred_at, label)
+                id,
+                room_id,
+                kind,
+                set,
+                label,
+                data,
+                occurred_at,
+                created_by as "created_by!: AgentId",
+                created_at,
+                deleted_at,
+                original_occurred_at
+            FROM event
+            WHERE deleted_at IS NULL
+            AND   room_id = $1
+            AND   set = $2
+            AND   original_occurred_at < $3
+            AND   occurred_at < COALESCE($4, 9223372036854775807)
+            ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC
+            LIMIT $5
+            "#,
+            self.room_id,
+            self.set,
+            self.original_occurred_at,
+            self.occurred_at,
+            self.limit,
+        )
+        .fetch_all(conn)
+        .await
     }
 
-    pub(crate) fn total_count(&self, conn: &PgConnection) -> Result<i64, Error> {
-        use crate::diesel::RunQueryDsl;
-        use diesel::dsl::sql;
-        use diesel::prelude::*;
-
-        let mut query = event::table
-            .filter(event::deleted_at.is_null())
-            .filter(event::room_id.eq(self.room_id))
-            .filter(event::set.eq(&self.set))
-            .filter(event::original_occurred_at.lt(self.original_occurred_at))
-            .into_boxed();
-
-        if let Some(occurred_at) = self.occurred_at {
-            query = query.filter(event::occurred_at.lt(occurred_at));
-        }
-
-        query
-            .select(sql("COUNT(DISTINCT label) AS total"))
-            .get_result(conn)
+    pub(crate) async fn total_count(&self, conn: &mut PgConnection) -> sqlx::Result<i64> {
+        sqlx::query!(
+            "
+            SELECT COUNT(DISTINCT label) AS total
+            FROM event
+            WHERE deleted_at IS NULL
+            AND   room_id = $1
+            AND   set = $2
+            AND   original_occurred_at < $3
+            AND   occurred_at < COALESCE($4, 9223372036854775807)
+            ",
+            self.room_id,
+            self.set,
+            self.original_occurred_at,
+            self.occurred_at,
+        )
+        .fetch_one(conn)
+        .await
+        .map(|r| r.total.unwrap_or(0))
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub(crate) struct OriginalEventQuery {
     room_id: Uuid,
     set: String,
@@ -506,18 +557,35 @@ impl OriginalEventQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
-        use crate::diesel::RunQueryDsl;
-        use diesel::prelude::*;
-
-        event::table
-            .filter(event::deleted_at.is_null())
-            .filter(event::room_id.eq(self.room_id))
-            .filter(event::set.eq(&self.set))
-            .filter(event::label.eq(&self.label))
-            .order_by(event::occurred_at)
-            .limit(1)
-            .get_result(conn)
-            .optional()
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            SELECT
+                id,
+                room_id,
+                kind,
+                set,
+                label,
+                data,
+                occurred_at,
+                created_by as "created_by!: AgentId",
+                created_at,
+                deleted_at,
+                original_occurred_at
+            FROM event
+            WHERE deleted_at IS NULL
+            AND   room_id = $1
+            AND   set = $2
+            AND   label = $3
+            ORDER BY occurred_at
+            LIMIT 1
+            "#,
+            self.room_id,
+            self.set,
+            self.label,
+        )
+        .fetch_optional(conn)
+        .await
     }
 }

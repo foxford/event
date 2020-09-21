@@ -2,15 +2,14 @@ use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use serde_json::json;
+use sqlx::postgres::PgPool as Db;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
 use crate::app::context::Context;
 use crate::app::endpoint::metric::ProfilerKeys;
-use crate::app::metrics::StatsCollector;
 use crate::config::Config;
-use crate::db::ConnectionPool as Db;
 use crate::profiler::Profiler;
 
 use super::authz::TestAuthz;
@@ -43,7 +42,6 @@ fn build_config() -> Config {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
 pub(crate) struct TestContext {
     config: Config,
     authz: Authz,
@@ -96,16 +94,8 @@ impl Context for TestContext {
         &None
     }
 
-    fn profiler(&self) -> &Profiler<ProfilerKeys> {
-        &self.profiler
-    }
-
-    fn db_pool_stats(&self) -> &Option<StatsCollector> {
-        &None
-    }
-
-    fn ro_db_pool_stats(&self) -> &Option<StatsCollector> {
-        &None
+    fn profiler(&self) -> Arc<Profiler<ProfilerKeys>> {
+        self.profiler.clone()
     }
 
     fn running_requests(&self) -> Option<Arc<AtomicI64>> {

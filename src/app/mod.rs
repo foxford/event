@@ -9,6 +9,7 @@ use chrono::Utc;
 use futures::StreamExt;
 use log::{error, info, warn};
 use serde_json::json;
+use sqlx::postgres::PgPool as Db;
 use svc_agent::mqtt::{
     Agent, AgentBuilder, AgentNotification, ConnectionMode, OutgoingRequest,
     OutgoingRequestProperties, QoS, ShortTermTimingProperties, SubscriptionTopic,
@@ -19,9 +20,7 @@ use svc_authz::cache::{Cache as AuthzCache, ConnectionPool as RedisConnectionPoo
 use svc_error::{extension::sentry, Error as SvcError};
 
 use crate::app::context::Context;
-use crate::app::metrics::StatsCollector;
 use crate::config::{self, Config, KruonisConfig};
-use crate::db::ConnectionPool;
 use context::AppContextBuilder;
 use message_handler::MessageHandler;
 
@@ -30,12 +29,10 @@ pub(crate) const API_VERSION: &str = "v1";
 ////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) async fn run(
-    db: ConnectionPool,
-    ro_db: Option<ConnectionPool>,
+    db: Db,
+    ro_db: Option<Db>,
     redis_pool: Option<RedisConnectionPool>,
     authz_cache: Option<AuthzCache>,
-    db_pool_stats: StatsCollector,
-    ro_db_pool_stats: Option<StatsCollector>,
 ) -> Result<()> {
     // Config
     let config = config::load().context("Failed to load config")?;
@@ -96,13 +93,6 @@ pub(crate) async fn run(
 
     let context_builder = match redis_pool {
         Some(pool) => context_builder.redis_pool(pool),
-        None => context_builder,
-    };
-
-    let context_builder = context_builder.db_pool_stats(db_pool_stats);
-
-    let context_builder = match ro_db_pool_stats {
-        Some(stats) => context_builder.ro_db_pool_stats(stats),
         None => context_builder,
     };
 

@@ -1,20 +1,16 @@
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
-use async_std::task::spawn_blocking;
 use async_trait::async_trait;
-use diesel::{
-    r2d2::{ConnectionManager, PoolError, PooledConnection},
-    PgConnection,
-};
+use sqlx::pool::PoolConnection;
+use sqlx::postgres::{PgPool as Db, Postgres};
+use sqlx::Error as SqlxError;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
 use crate::app::endpoint::metric::ProfilerKeys;
-use crate::app::metrics::StatsCollector;
 use crate::config::Config;
-use crate::db::ConnectionPool as Db;
 use crate::profiler::Profiler;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -28,23 +24,19 @@ pub(crate) trait Context: Sync {
     fn agent_id(&self) -> &AgentId;
     fn queue_counter(&self) -> &Option<QueueCounterHandle>;
     fn redis_pool(&self) -> &Option<RedisConnectionPool>;
-    fn profiler(&self) -> &Profiler<ProfilerKeys>;
-    fn db_pool_stats(&self) -> &Option<StatsCollector>;
-    fn ro_db_pool_stats(&self) -> &Option<StatsCollector>;
+    fn profiler(&self) -> Arc<Profiler<ProfilerKeys>>;
     fn running_requests(&self) -> Option<Arc<AtomicI64>>;
 
-    async fn get_conn(
-        &self,
-    ) -> Result<PooledConnection<ConnectionManager<PgConnection>>, PoolError> {
-        let db = self.db().clone();
-        spawn_blocking(move || db.get()).await
+    async fn get_conn(&self) -> Result<PoolConnection<Postgres>, SqlxError> {
+        self.profiler()
+            .measure(ProfilerKeys::DbConnAcquisition, self.db().acquire())
+            .await
     }
 
-    async fn get_ro_conn(
-        &self,
-    ) -> Result<PooledConnection<ConnectionManager<PgConnection>>, PoolError> {
-        let db = self.ro_db().clone();
-        spawn_blocking(move || db.get()).await
+    async fn get_ro_conn(&self) -> Result<PoolConnection<Postgres>, SqlxError> {
+        self.profiler()
+            .measure(ProfilerKeys::RoDbConnAcquisition, self.ro_db().acquire())
+            .await
     }
 }
 
@@ -77,16 +69,8 @@ impl Context for AppContext {
         &self.redis_pool
     }
 
-    fn profiler(&self) -> &Profiler<ProfilerKeys> {
-        &self.profiler
-    }
-
-    fn db_pool_stats(&self) -> &Option<StatsCollector> {
-        &self.db_pool_stats
-    }
-
-    fn ro_db_pool_stats(&self) -> &Option<StatsCollector> {
-        &self.ro_db_pool_stats
+    fn profiler(&self) -> Arc<Profiler<ProfilerKeys>> {
+        self.profiler.clone()
     }
 
     fn running_requests(&self) -> Option<Arc<AtomicI64>> {
@@ -106,8 +90,6 @@ pub(crate) struct AppContext {
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
     profiler: Arc<Profiler<ProfilerKeys>>,
-    db_pool_stats: Option<StatsCollector>,
-    ro_db_pool_stats: Option<StatsCollector>,
     running_requests: Option<Arc<AtomicI64>>,
 }
 
@@ -117,12 +99,10 @@ pub(crate) struct AppContextBuilder {
     config: Config,
     authz: Authz,
     db: Db,
-    agent_id: AgentId,
     ro_db: Option<Db>,
+    agent_id: AgentId,
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
-    db_pool_stats: Option<StatsCollector>,
-    ro_db_pool_stats: Option<StatsCollector>,
     running_requests: Option<Arc<AtomicI64>>,
 }
 
@@ -134,12 +114,10 @@ impl AppContextBuilder {
             config,
             authz,
             db,
-            agent_id,
             ro_db: None,
+            agent_id,
             queue_counter: None,
             redis_pool: None,
-            db_pool_stats: None,
-            ro_db_pool_stats: None,
             running_requests: None,
         }
     }
@@ -172,20 +150,6 @@ impl AppContextBuilder {
         }
     }
 
-    pub(crate) fn db_pool_stats(self, stats: StatsCollector) -> Self {
-        Self {
-            db_pool_stats: Some(stats),
-            ..self
-        }
-    }
-
-    pub(crate) fn ro_db_pool_stats(self, stats: StatsCollector) -> Self {
-        Self {
-            ro_db_pool_stats: Some(stats),
-            ..self
-        }
-    }
-
     pub(crate) fn build(self) -> AppContext {
         AppContext {
             config: Arc::new(self.config),
@@ -196,8 +160,6 @@ impl AppContextBuilder {
             queue_counter: self.queue_counter,
             redis_pool: self.redis_pool,
             profiler: Arc::new(Profiler::<ProfilerKeys>::start()),
-            db_pool_stats: self.db_pool_stats,
-            ro_db_pool_stats: self.ro_db_pool_stats,
             running_requests: self.running_requests,
         }
     }

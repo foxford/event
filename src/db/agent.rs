@@ -1,27 +1,23 @@
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
-use diesel::{pg::PgConnection, result::Error};
 use serde_derive::{Deserialize, Serialize};
+use sqlx::{postgres::PgConnection, Done};
 use svc_agent::AgentId;
 use uuid::Uuid;
 
-use super::room::Object as Room;
-use crate::schema::agent;
-
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone, Copy, Debug, DbEnum, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
-#[PgType = "agent_status"]
-#[DieselType = "Agent_status"]
+#[sqlx(rename = "agent_status")]
 pub(crate) enum Status {
+    #[sqlx(rename = "in_progress")]
     InProgress,
+    #[sqlx(rename = "ready")]
     Ready,
 }
 
-#[derive(Debug, Serialize, Deserialize, Identifiable, Queryable, QueryableByName, Associations)]
-#[belongs_to(Room, foreign_key = "room_id")]
-#[table_name = "agent"]
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub(crate) struct Object {
     #[serde(skip_serializing)]
     id: Uuid,
@@ -42,12 +38,13 @@ impl Object {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub(crate) struct ListQuery {
     agent_id: Option<AgentId>,
     room_id: Option<Uuid>,
     status: Option<Status>,
-    offset: Option<i64>,
-    limit: Option<i64>,
+    offset: Option<usize>,
+    limit: Option<usize>,
 }
 
 impl ListQuery {
@@ -82,55 +79,79 @@ impl ListQuery {
         }
     }
 
-    pub(crate) fn offset(self, offset: i64) -> Self {
+    pub(crate) fn offset(self, offset: usize) -> Self {
         Self {
             offset: Some(offset),
             ..self
         }
     }
 
-    pub(crate) fn limit(self, limit: i64) -> Self {
+    pub(crate) fn limit(self, limit: usize) -> Self {
         Self {
             limit: Some(limit),
             ..self
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Vec<Object>, Error> {
-        use diesel::prelude::*;
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+        use quaint::ast::{Comparable, Orderable, Select};
+        use quaint::visitor::{Postgres, Visitor};
 
-        let mut q = agent::table.into_boxed();
+        let mut q = Select::from_table("agent");
 
-        if let Some(ref agent_id) = self.agent_id {
-            q = q.filter(agent::agent_id.eq(agent_id));
+        if self.agent_id.is_some() {
+            q = q.and_where("agent_id".equals("_placeholder_"));
         }
 
         if let Some(room_id) = self.room_id {
-            q = q.filter(agent::room_id.eq(room_id));
+            q = q.and_where("room_id".equals(room_id));
         }
 
-        if let Some(status) = self.status {
-            q = q.filter(agent::status.eq(status));
-        }
-
-        if let Some(offset) = self.offset {
-            q = q.offset(offset);
+        if self.status.is_some() {
+            q = q.and_where("status".equals("_placeholder_"));
         }
 
         if let Some(limit) = self.limit {
             q = q.limit(limit);
         }
 
-        q.order_by(agent::created_at.desc()).get_results(conn)
+        if let Some(offset) = self.offset {
+            q = q.offset(offset);
+        }
+
+        q = q.order_by("created_at".descend());
+
+        let (sql, _bindings) = Postgres::build(q);
+        let mut query = sqlx::query_as(&sql);
+
+        if let Some(agent_id) = self.agent_id {
+            query = query.bind(agent_id);
+        }
+
+        if let Some(room_id) = self.room_id {
+            query = query.bind(room_id);
+        }
+
+        if let Some(status) = self.status {
+            query = query.bind(status);
+        }
+
+        if let Some(limit) = self.limit {
+            query = query.bind(limit as u32);
+        }
+
+        if let Some(offset) = self.offset {
+            query = query.bind(offset as u32);
+        }
+
+        query.fetch_all(conn).await
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Insertable)]
-#[table_name = "agent"]
+#[derive(Debug)]
 pub(crate) struct InsertQuery {
-    id: Option<Uuid>,
     agent_id: AgentId,
     room_id: Uuid,
     status: Status,
@@ -139,7 +160,6 @@ pub(crate) struct InsertQuery {
 impl InsertQuery {
     pub(crate) fn new(agent_id: AgentId, room_id: Uuid) -> Self {
         Self {
-            id: None,
             agent_id,
             room_id,
             status: Status::InProgress,
@@ -151,23 +171,32 @@ impl InsertQuery {
         Self { status, ..self }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Object, Error> {
-        use crate::schema::agent::dsl::*;
-        use diesel::{ExpressionMethods, RunQueryDsl};
-
-        diesel::insert_into(agent)
-            .values(self)
-            .on_conflict((agent_id, room_id))
-            .do_update()
-            .set(status.eq(self.status))
-            .get_result(conn)
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            INSERT INTO agent (agent_id, room_id, status)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (agent_id, room_id) DO UPDATE SET status = $3
+            RETURNING
+                id,
+                agent_id AS "agent_id!: AgentId",
+                room_id,
+                status AS "status!: Status",
+                created_at
+            "#,
+            self.agent_id as AgentId,
+            self.room_id,
+            self.status as Status,
+        )
+        .fetch_one(conn)
+        .await
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, AsChangeset)]
-#[table_name = "agent"]
+#[derive(Debug)]
 pub(crate) struct UpdateQuery {
     agent_id: AgentId,
     room_id: Uuid,
@@ -190,19 +219,33 @@ impl UpdateQuery {
         }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<Option<Object>, Error> {
-        use diesel::prelude::*;
-
-        let query = agent::table
-            .filter(agent::agent_id.eq(&self.agent_id))
-            .filter(agent::room_id.eq(&self.room_id));
-
-        diesel::update(query).set(self).get_result(conn).optional()
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            UPDATE agent
+            SET status = $3
+            WHERE agent_id = $1
+            AND   room_id = $2
+            RETURNING
+                id,
+                agent_id AS "agent_id!: AgentId",
+                room_id,
+                status AS "status!: Status",
+                created_at
+            "#,
+            self.agent_id.to_owned() as AgentId,
+            self.room_id,
+            self.status as Option<Status>,
+        )
+        .fetch_optional(conn)
+        .await
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug)]
 pub(crate) struct DeleteQuery {
     agent_id: AgentId,
     room_id: Uuid,
@@ -213,13 +256,19 @@ impl DeleteQuery {
         Self { agent_id, room_id }
     }
 
-    pub(crate) fn execute(&self, conn: &PgConnection) -> Result<usize, Error> {
-        use diesel::prelude::*;
-
-        let query = agent::table
-            .filter(agent::agent_id.eq(&self.agent_id))
-            .filter(agent::room_id.eq(self.room_id));
-
-        diesel::delete(query).execute(conn)
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<usize> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            DELETE FROM agent
+            WHERE agent_id = $1
+            AND   room_id  = $2
+            "#,
+            self.agent_id.to_owned() as AgentId,
+            self.room_id,
+        )
+        .execute(conn)
+        .await
+        .map(|r| r.rows_affected() as usize)
     }
 }
