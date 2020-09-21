@@ -20,6 +20,7 @@ use svc_authz::cache::{Cache as AuthzCache, ConnectionPool as RedisConnectionPoo
 use svc_error::{extension::sentry, Error as SvcError};
 
 use crate::app::context::Context;
+use crate::app::metrics::StatsRoute;
 use crate::config::{self, Config, KruonisConfig};
 use context::AppContextBuilder;
 use message_handler::MessageHandler;
@@ -84,7 +85,7 @@ pub(crate) async fn run(
     subscribe(&mut agent, &agent_id, &config)?;
 
     // Context
-    let context_builder = AppContextBuilder::new(config, authz, db);
+    let context_builder = AppContextBuilder::new(config.clone(), authz, db);
 
     let context_builder = match ro_db {
         Some(db) => context_builder.ro_db(db),
@@ -105,6 +106,8 @@ pub(crate) async fn run(
 
     // Message handler
     let message_handler = Arc::new(MessageHandler::new(agent, context));
+
+    StatsRoute::start(config, message_handler.clone());
 
     // Message loop
     let term_check_period = Duration::from_secs(1);
