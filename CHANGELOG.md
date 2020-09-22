@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.20 (September 23, 2020)
+
+### Changes
+- Fixed format in metrics http route
+
 ## v0.2.19 (September 22, 2020)
 
 ### Changes
