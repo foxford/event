@@ -16,7 +16,7 @@ pub(crate) struct EntryReport {
 }
 
 struct Entry {
-    values: Vec<usize>,
+    values: Vec<(usize, Instant)>,
 }
 
 impl Entry {
@@ -25,10 +25,14 @@ impl Entry {
     }
 
     fn register(&mut self, value: usize) {
-        self.values.push(value);
+        self.values.push((value, Instant::now()));
     }
 
-    fn flush(&mut self) -> EntryReport {
+    fn flush(&mut self, duration: u64) -> EntryReport {
+        let now = Instant::now();
+        self.values
+            .retain(|(_val, added_at)| now.duration_since(*added_at).as_secs() < duration);
+
         if self.values.is_empty() {
             EntryReport::default()
         } else {
@@ -38,16 +42,16 @@ impl Entry {
             let p95_idx = (count as f32 * 0.95) as usize;
             let p99_idx = (count as f32 * 0.99) as usize;
             let max_idx = count - 1;
-            let max = self.values[max_idx];
+            let max = self.values[max_idx].0;
 
             let p95 = if p95_idx < max_idx {
-                (self.values[p95_idx] + max) / 2
+                (self.values[p95_idx].0 + max) / 2
             } else {
                 max
             };
 
             let p99 = if p99_idx < max_idx {
-                (self.values[p99_idx] + max) / 2
+                (self.values[p99_idx].0 + max) / 2
             } else {
                 max
             };
@@ -58,7 +62,6 @@ impl Entry {
                 p99,
                 max,
             };
-            self.values.clear();
             report
         }
     }
@@ -66,7 +69,7 @@ impl Entry {
 
 enum Message<K> {
     Register { key: K, value: usize },
-    Flush,
+    Flush(u64),
     Stop,
 }
 
@@ -93,8 +96,11 @@ impl<K: 'static + Eq + Hash + Send + Copy> Profiler<K> {
                             data.insert(key, entry);
                         }
                     },
-                    Message::Flush => {
-                        let report = data.iter_mut().map(|(k, v)| (*k, v.flush())).collect();
+                    Message::Flush(duration) => {
+                        let report = data
+                            .iter_mut()
+                            .map(|(k, v)| (*k, v.flush(duration)))
+                            .collect();
 
                         if let Err(err) = back_tx.send(report) {
                             warn!("Failed to send profiler report: {}", err);
@@ -128,9 +134,9 @@ impl<K: 'static + Eq + Hash + Send + Copy> Profiler<K> {
         result
     }
 
-    pub(crate) fn flush(&self) -> Result<Vec<(K, EntryReport)>> {
+    pub(crate) fn flush(&self, duration: u64) -> Result<Vec<(K, EntryReport)>> {
         self.tx
-            .send(Message::Flush)
+            .send(Message::Flush(duration))
             .map_err(|err| anyhow!(err.to_string()))
             .context("Failed to send flush message to the profiler")?;
 
@@ -167,12 +173,11 @@ mod tests {
             entry.register(i);
         }
 
-        let report = entry.flush();
+        let report = entry.flush(5);
         assert_eq!(report.count, 999);
         assert_eq!(report.p95, 974);
         assert_eq!(report.p99, 994);
         assert_eq!(report.max, 999);
-        assert!(entry.values.is_empty());
     }
 
     #[test]
@@ -192,7 +197,7 @@ mod tests {
                 )
                 .await;
 
-            let reports = profiler.flush().expect("Failed to flush profiler");
+            let reports = profiler.flush(5).expect("Failed to flush profiler");
             assert_eq!(reports.len(), 2);
 
             for (key, report) in reports {

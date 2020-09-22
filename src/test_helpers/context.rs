@@ -42,7 +42,6 @@ fn build_config() -> Config {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
 pub(crate) struct TestContext {
     config: Config,
     authz: Authz,
