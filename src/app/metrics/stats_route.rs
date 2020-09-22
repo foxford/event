@@ -7,8 +7,8 @@ use log::{error, warn};
 use serde_derive::Deserialize;
 use svc_authn::AccountId;
 
-use crate::app::Context;
-use crate::app::MessageHandler;
+use crate::app::metrics::Metric2;
+use crate::app::{Context, MessageHandler};
 
 #[derive(Clone)]
 pub(crate) struct StatsRoute<C: Context> {
@@ -99,7 +99,13 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
     fn get_stats(&self) -> Result<String, String> {
         let mut acc = String::from("");
 
-        let metrics = self.message_handler.context().get_metrics(5)?;
+        let metrics = self
+            .message_handler
+            .context()
+            .get_metrics(5)?
+            .into_iter()
+            .map(|m| m.into())
+            .collect::<Vec<Metric2>>();
 
         for metric in metrics {
             let metric = serde_json::to_string(&metric)

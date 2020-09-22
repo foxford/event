@@ -83,7 +83,7 @@ impl Context for AppContext {
         append_db_pools_stats(&mut metrics, self, now);
         append_redis_pool_metrics(&mut metrics, self, now);
 
-        append_profiler_stats(&mut metrics, self, now)?;
+        append_profiler_stats(&mut metrics, self, now, duration)?;
 
         if let Some(counter) = self.running_requests.clone() {
             metrics.push(Metric::RunningRequests(MetricValue::new(
@@ -231,8 +231,12 @@ fn append_profiler_stats(
     metrics: &mut Vec<Metric>,
     context: &dyn Context,
     now: DateTime<Utc>,
+    duration: u64,
 ) -> std::result::Result<(), String> {
-    let profiler_report = context.profiler().flush().map_err(|err| err.to_string())?;
+    let profiler_report = context
+        .profiler()
+        .flush(duration)
+        .map_err(|err| err.to_string())?;
 
     for (key, entry_report) in profiler_report {
         let metric_value_count = MetricValue::new(entry_report.count as u64, now);
