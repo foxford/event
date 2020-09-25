@@ -19,7 +19,6 @@ pub(crate) type Result = StdResult<MessageStream, SvcError>;
 #[async_trait]
 pub(crate) trait RequestHandler {
     type Payload: Send + DeserializeOwned;
-    const ERROR_TITLE: &'static str;
 
     async fn handle<C: Context>(
         context: &C,
@@ -124,5 +123,5 @@ mod subscription;
 
 pub(self) mod prelude {
     pub(super) use super::{helpers, EventHandler, RequestHandler, Result};
-    pub(super) use crate::app::message_handler::SvcErrorSugar;
+    pub(super) use crate::app::error::{AppError, ErrorExt};
 }

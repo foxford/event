@@ -1,16 +1,18 @@
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
+use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgPool as Db, Postgres};
-use sqlx::Error as SqlxError;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
+use svc_error::Error as SvcError;
 
 use crate::app::endpoint::metric::ProfilerKeys;
+use crate::app::error::{AppError, ErrorExt};
 use crate::app::metrics::{Metric, MetricValue};
 use crate::config::Config;
 use crate::profiler::Profiler;
@@ -29,16 +31,20 @@ pub(crate) trait Context: Sync {
     fn profiler(&self) -> Arc<Profiler<ProfilerKeys>>;
     fn get_metrics(&self, duration: u64) -> Result<Vec<crate::app::metrics::Metric>, String>;
 
-    async fn get_conn(&self) -> Result<PoolConnection<Postgres>, SqlxError> {
+    async fn get_conn(&self) -> Result<PoolConnection<Postgres>, SvcError> {
         self.profiler()
             .measure(ProfilerKeys::DbConnAcquisition, self.db().acquire())
             .await
+            .context("Failed to acquire DB connection")
+            .error(AppError::DbConnAcquisitionFailed)
     }
 
-    async fn get_ro_conn(&self) -> Result<PoolConnection<Postgres>, SqlxError> {
+    async fn get_ro_conn(&self) -> Result<PoolConnection<Postgres>, SvcError> {
         self.profiler()
             .measure(ProfilerKeys::RoDbConnAcquisition, self.ro_db().acquire())
             .await
+            .context("Failed to acquire read-only DB connection")
+            .error(AppError::DbConnAcquisitionFailed)
     }
 }
 

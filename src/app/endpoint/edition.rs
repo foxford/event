@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context as AnyhowContext};
 use async_std::prelude::*;
 use async_std::stream;
 use async_trait::async_trait;
@@ -34,7 +35,6 @@ pub(crate) struct CreateRequest {
 #[async_trait]
 impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
-    const ERROR_TITLE: &'static str = "Failed to create edition";
 
     async fn handle<C: Context>(
         context: &C,
@@ -49,9 +49,11 @@ impl RequestHandler for CreateHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
-                .status(ResponseStatus::NOT_FOUND)?
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
+                .error(AppError::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.room_id))
+                .error(AppError::RoomNotFound)?
         };
 
         let authz_time = context
@@ -71,7 +73,11 @@ impl RequestHandler for CreateHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::EditionInsertQuery, query.execute(&mut conn))
-                .await?
+                .await
+                .with_context(|| {
+                    format!("Failed to insert edition, room_id = '{}'", payload.room_id)
+                })
+                .error(AppError::DbQueryFailed)?
         };
 
         let response = helpers::build_response(
@@ -108,7 +114,6 @@ pub(crate) struct ListRequest {
 #[async_trait]
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
-    const ERROR_TITLE: &'static str = "Failed to list editions";
 
     async fn handle<C: Context>(
         context: &C,
@@ -123,9 +128,11 @@ impl RequestHandler for ListHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("Room not found, id = '{}'", payload.room_id))
-                .status(ResponseStatus::NOT_FOUND)?
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
+                .error(AppError::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.room_id))
+                .error(AppError::RoomNotFound)?
         };
 
         let room_id = room.id();
@@ -156,7 +163,11 @@ impl RequestHandler for ListHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::EditionListQuery, query.execute(&mut conn))
-                .await?
+                .await
+                .with_context(|| {
+                    format!("Failed to list editions, room_id = '{}'", payload.room_id)
+                })
+                .error(AppError::DbQueryFailed)?
         };
 
         // Respond with events list.
@@ -182,7 +193,6 @@ pub(crate) struct DeleteRequest {
 #[async_trait]
 impl RequestHandler for DeleteHandler {
     type Payload = DeleteRequest;
-    const ERROR_TITLE: &'static str = "Failed to delete edition";
 
     async fn handle<C: Context>(
         context: &C,
@@ -200,13 +210,20 @@ impl RequestHandler for DeleteHandler {
                     ProfilerKeys::EditionFindWithRoomQuery,
                     query.execute(&mut conn),
                 )
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to find edition with room, edition_id = '{}'",
+                        payload.id
+                    )
+                })
+                .error(AppError::DbQueryFailed)?;
 
             match maybe_edition {
                 Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(format!("Edition not found, id = '{}'", payload.id))
-                        .status(ResponseStatus::NOT_FOUND);
+                    return Err(anyhow!("Edition not found, id = '{}'", payload.id))
+                        .error(AppError::EditionNotFound);
                 }
             }
         };
@@ -228,7 +245,9 @@ impl RequestHandler for DeleteHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::EditionDeleteQuery, query.execute(&mut conn))
-                .await?;
+                .await
+                .with_context(|| format!("Failed to delete edition, id = '{}'", payload.id))
+                .error(AppError::DbQueryFailed)?;
         }
 
         let response = helpers::build_response(
@@ -255,7 +274,6 @@ pub(crate) struct CommitRequest {
 #[async_trait]
 impl RequestHandler for CommitHandler {
     type Payload = CommitRequest;
-    const ERROR_TITLE: &'static str = "Failed to commit edition";
 
     async fn handle<C: Context>(
         context: &C,
@@ -274,13 +292,20 @@ impl RequestHandler for CommitHandler {
                     ProfilerKeys::EditionFindWithRoomQuery,
                     query.execute(&mut conn),
                 )
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to find edition with room, edition_id = '{}'",
+                        payload.id
+                    )
+                })
+                .error(AppError::DbQueryFailed)?;
 
             match maybe_edition {
                 Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(format!("Edition not found, id = '{}'", payload.id))
-                        .status(ResponseStatus::NOT_FOUND);
+                    return Err(anyhow!("Edition not found, id = '{}'", payload.id))
+                        .error(AppError::EditionNotFound);
                 }
             }
         };
@@ -315,11 +340,7 @@ impl RequestHandler for CommitHandler {
                         err
                     );
 
-                    let error = SvcError::builder()
-                        .status(ResponseStatus::UNPROCESSABLE_ENTITY)
-                        .kind("edition.commit", CommitHandler::ERROR_TITLE)
-                        .detail(&err.to_string())
-                        .build();
+                    let error = AppError::EditionCommitTaskFailed.into_svc_error(err);
 
                     sentry::send(error.clone())
                         .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
@@ -452,6 +473,7 @@ mod tests {
                 assert_eq!(response.status_code(), ResponseStatus::FORBIDDEN);
             });
         }
+
         #[test]
         fn create_edition_missing_room() {
             async_std::task::block_on(async {
@@ -462,11 +484,12 @@ mod tests {
                     room_id: Uuid::new_v4(),
                 };
 
-                let response = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating edition for no room");
 
-                assert_eq!(response.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "room_not_found");
             });
         }
     }
@@ -562,11 +585,12 @@ mod tests {
                     limit: None,
                 };
 
-                let resp = handle_request::<ListHandler>(&context, &agent, payload)
+                let err = handle_request::<ListHandler>(&context, &agent, payload)
                     .await
                     .expect_err("Unexpected success listing editions for no room");
 
-                assert_eq!(resp.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "room_not_found");
             });
         }
     }
@@ -688,11 +712,12 @@ mod tests {
                 let context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = DeleteRequest { id: Uuid::new_v4() };
 
-                let resp = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let err = handle_request::<DeleteHandler>(&context, &agent, payload)
                     .await
                     .expect_err("Unexpected success listing editions for no room");
 
-                assert_eq!(resp.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "edition_not_found");
             });
         }
     }

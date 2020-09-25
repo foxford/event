@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use anyhow::anyhow;
 use async_std::prelude::*;
 use async_std::stream::{self, Stream};
 use chrono::{DateTime, Utc};
@@ -39,15 +40,9 @@ impl<C: Context + Sync> MessageHandler<C> {
         match message {
             Ok(ref message) => {
                 if let Err(err) = self.handle_message(message).await {
-                    error!("Error processing a message = '{:?}': {}", message, err,);
+                    error!("Error processing a message = '{:?}': {}", message, err);
 
-                    let svc_error = SvcError::builder()
-                        .status(ResponseStatus::UNPROCESSABLE_ENTITY)
-                        .kind("message_handler", "Message handling error")
-                        .detail(&err.to_string())
-                        .build();
-
-                    sentry::send(svc_error)
+                    sentry::send(err)
                         .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
                 }
             }
@@ -56,7 +51,7 @@ impl<C: Context + Sync> MessageHandler<C> {
 
                 let svc_error = SvcError::builder()
                     .status(ResponseStatus::UNPROCESSABLE_ENTITY)
-                    .kind("message_handler", "Message handling error")
+                    .kind("message_handling_failed", "Message handling failed")
                     .detail(&e.to_string())
                     .build();
 
@@ -92,7 +87,7 @@ impl<C: Context + Sync> MessageHandler<C> {
                 .unwrap_or_else(|| {
                     error_response(
                         ResponseStatus::METHOD_NOT_ALLOWED,
-                        "about:blank",
+                        "unknown_method",
                         "Unknown method",
                         &format!("Unknown method '{}'", request.properties().method()),
                         request.properties(),
@@ -170,10 +165,12 @@ pub(crate) fn publish_message(
     agent: &mut Agent,
     message: Box<dyn IntoPublishableMessage>,
 ) -> Result<(), SvcError> {
+    use crate::app::error::{AppError, ErrorExt};
+
     agent
         .publish_publishable(message)
-        .map_err(|err| format!("Failed to publish message: {}", err))
-        .status(ResponseStatus::UNPROCESSABLE_ENTITY)
+        .map_err(|err| anyhow!("Failed to publish message: {}", err))
+        .error(AppError::PublishFailed)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -219,8 +216,7 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                 Ok(payload) => {
                     H::handle(context, payload, reqp, start_timestamp)
                         .await
-                        .unwrap_or_else(|mut svc_error| {
-                            svc_error.set_kind(reqp.method(), H::ERROR_TITLE);
+                        .unwrap_or_else(|svc_error| {
                             error!(
                                 "Failed to handle request with method = '{}': {}",
                                 reqp.method(),
@@ -234,8 +230,8 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                             // Handler returned an error => 422.
                             error_response(
                                 svc_error.status_code(),
-                                reqp.method(),
-                                H::ERROR_TITLE,
+                                svc_error.kind(),
+                                svc_error.title(),
                                 &svc_error.to_string(),
                                 reqp,
                                 start_timestamp,
@@ -245,8 +241,8 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                 // Bad envelope or payload format => 400.
                 Err(err) => error_response(
                     ResponseStatus::BAD_REQUEST,
-                    reqp.method(),
-                    H::ERROR_TITLE,
+                    "invalid_payload",
+                    "Invalid payload",
                     &err.to_string(),
                     reqp,
                     start_timestamp,
@@ -289,12 +285,9 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                 // Call handler.
                 Ok(payload) => H::handle(context, payload, evp, start_timestamp)
                     .await
-                    .unwrap_or_else(|mut svc_error| {
+                    .unwrap_or_else(|svc_error| {
                         // Handler returned an error.
                         if let Some(label) = evp.label() {
-                            let error_title = format!("Failed to handle event '{}'", label);
-                            svc_error.set_kind(label, &error_title);
-
                             error!(
                                 "Failed to handle event with label = '{}': {}",
                                 label, svc_error
@@ -319,22 +312,5 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
         }
 
         Box::pin(handle_envelope::<H, C>(context, event, start_timestamp))
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-pub(crate) trait SvcErrorSugar<T> {
-    fn status(self, status: ResponseStatus) -> Result<T, SvcError>;
-}
-
-impl<T, E: AsRef<str>> SvcErrorSugar<T> for Result<T, E> {
-    fn status(self, status: ResponseStatus) -> Result<T, SvcError> {
-        self.map_err(|err| {
-            SvcError::builder()
-                .status(status)
-                .detail(err.as_ref())
-                .build()
-        })
     }
 }

@@ -1,5 +1,6 @@
 use std::ops::Bound;
 
+use anyhow::{anyhow, Context as AnyhowContext};
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -47,7 +48,6 @@ pub(crate) struct CreateHandler;
 #[async_trait]
 impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
-    const ERROR_TITLE: &'static str = "Failed to create event";
 
     async fn handle<C: Context>(
         context: &C,
@@ -64,9 +64,11 @@ impl RequestHandler for CreateHandler {
             let room = context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
-                .status(ResponseStatus::NOT_FOUND)?;
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
+                .error(AppError::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("the room = '{}' is not found or closed", payload.room_id))
+                .error(AppError::RoomNotFound)?;
 
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
@@ -87,7 +89,14 @@ impl RequestHandler for CreateHandler {
                             ProfilerKeys::EventOriginalEventQuery,
                             query.execute(&mut conn),
                         )
-                        .await?
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "Failed to find original event, room_id = '{}', set = '{}', label = '{}'", 
+                                room.id(), set, label,
+                            )
+                        })
+                        .error(AppError::DbQueryFailed)?
                         .map(|original_event| {
                             original_event.created_by().as_account_id().to_string()
                         })
@@ -120,8 +129,8 @@ impl RequestHandler for CreateHandler {
                 .num_nanoseconds()
                 .unwrap_or(std::i64::MAX),
             _ => {
-                return Err(format!("invalid time for room = '{}'", room.id()))
-                    .status(ResponseStatus::UNPROCESSABLE_ENTITY);
+                return Err(anyhow!("invalid time for room = '{}'", room.id()))
+                    .error(AppError::InvalidRoomTime);
             }
         };
 
@@ -157,8 +166,8 @@ impl RequestHandler for CreateHandler {
                     .profiler()
                     .measure(ProfilerKeys::EventInsertQuery, query.execute(&mut conn))
                     .await
-                    .map_err(|err| format!("failed to create event: {}", err))
-                    .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
+                    .with_context(|| format!("Failed to insert event, room_id = '{}'", room.id()))
+                    .error(AppError::DbQueryFailed)?
             }
         } else {
             let CreateRequest {
@@ -187,8 +196,8 @@ impl RequestHandler for CreateHandler {
 
             builder
                 .build()
-                .map_err(|err| format!("Error building transient event: {}", err,))
-                .status(ResponseStatus::UNPROCESSABLE_ENTITY)?
+                .map_err(|err| anyhow!("Error building transient event: {}", err,))
+                .error(AppError::TransientEventCreationFailed)?
         };
 
         let mut messages = Vec::with_capacity(3);
@@ -255,7 +264,6 @@ pub(crate) struct ListHandler;
 #[async_trait]
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
-    const ERROR_TITLE: &'static str = "Failed to list events";
 
     async fn handle<C: Context>(
         context: &C,
@@ -271,9 +279,11 @@ impl RequestHandler for ListHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
-                .status(ResponseStatus::NOT_FOUND)?
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
+                .error(AppError::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("the room = '{}' is not found", payload.room_id))
+                .error(AppError::RoomNotFound)?
         };
 
         // Authorize room events listing.
@@ -325,7 +335,9 @@ impl RequestHandler for ListHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::EventListQuery, query.execute(&mut conn))
-                .await?
+                .await
+                .with_context(|| format!("Failed to list events, room_id = '{}'", room.id()))
+                .error(AppError::DbQueryFailed)?
         };
 
         // Respond with events list.
@@ -783,6 +795,7 @@ mod tests {
                 .expect_err("Unexpected success on event creation");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         });
     }
 
@@ -807,6 +820,7 @@ mod tests {
                 .expect_err("Unexpected success on event creation");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         });
     }
 
@@ -1025,6 +1039,7 @@ mod tests {
                 .expect_err("Unexpected success on events listing");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         });
     }
 

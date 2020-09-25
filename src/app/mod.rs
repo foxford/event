@@ -214,6 +214,7 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
 
 pub(crate) mod context;
 pub(crate) mod endpoint;
+pub(crate) mod error;
 pub(crate) mod message_handler;
 pub(crate) mod metrics;
 pub(crate) mod operations;

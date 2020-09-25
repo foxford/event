@@ -1,5 +1,6 @@
 use std::ops::Bound;
 
+use anyhow::{anyhow, Context as AnyhowContext};
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -31,7 +32,6 @@ pub(crate) struct ReadHandler;
 #[async_trait]
 impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
-    const ERROR_TITLE: &'static str = "Failed to read state";
 
     async fn handle<C: Context>(
         context: &C,
@@ -41,13 +41,13 @@ impl RequestHandler for ReadHandler {
     ) -> Result {
         // Validate parameters.
         let validation_error = match payload.sets.len() {
-            0 => Some("'sets' can't be empty"),
-            len if len > MAX_SETS => Some("too many 'sets'"),
+            0 => Some(anyhow!("'sets' can't be empty")),
+            len if len > MAX_SETS => Some(anyhow!("too many 'sets'")),
             _ => None,
         };
 
         if let Some(err) = validation_error {
-            return Err(err).status(ResponseStatus::BAD_REQUEST);
+            return Err(err).error(AppError::InvalidStateSets);
         }
 
         // Choose limit.
@@ -64,9 +64,11 @@ impl RequestHandler for ReadHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("the room = '{}' is not found", payload.room_id))
-                .status(ResponseStatus::NOT_FOUND)?
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
+                .error(AppError::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("the room = '{}' is not found", payload.room_id))
+                .error(AppError::RoomNotFound)?
         };
 
         // Authorize room events listing.
@@ -88,7 +90,7 @@ impl RequestHandler for ReadHandler {
                 .map(|n| n + 1)
                 .unwrap_or(std::i64::MAX)
         } else {
-            return Err("Bad room time").status(ResponseStatus::UNPROCESSABLE_ENTITY);
+            return Err(anyhow!("Bad room time")).error(AppError::InvalidRoomTime);
         };
 
         // Retrieve state for each set from the DB and put them into a map.
@@ -114,13 +116,13 @@ impl RequestHandler for ReadHandler {
                         query.total_count(&mut conn),
                     )
                     .await
-                    .map_err(|err| {
+                    .with_context(|| {
                         format!(
-                            "failed to query state total count for set = '{}': {}",
-                            set, err
+                            "failed to query state total count for set = '{}', room_id = '{}'",
+                            set, room_id
                         )
                     })
-                    .status(ResponseStatus::UNPROCESSABLE_ENTITY)?;
+                    .error(AppError::DbQueryFailed)?;
 
                 let has_next = total_count as i64 > limit;
                 state.insert(String::from("has_next"), JsonValue::Bool(has_next));
@@ -131,13 +133,23 @@ impl RequestHandler for ReadHandler {
                 .profiler()
                 .measure(ProfilerKeys::StateQuery, query.execute(&mut conn))
                 .await
-                .map_err(|err| format!("failed to query state for set = '{}': {}", set, err))
-                .status(ResponseStatus::UNPROCESSABLE_ENTITY)?;
+                .with_context(|| {
+                    format!(
+                        "failed to query state for set = '{}', room_id = '{}'",
+                        set, room_id
+                    )
+                })
+                .error(AppError::DbQueryFailed)?;
 
             // Serialize to JSON and add to the state map.
             let serialized_set_state = serde_json::to_value(set_state)
-                .map_err(|err| format!("failed to serialize state for set = '{}': {}", set, err))
-                .status(ResponseStatus::UNPROCESSABLE_ENTITY)?;
+                .with_context(|| {
+                    format!(
+                        "failed to serialize state for set = '{}', room_id = '{}'",
+                        set, room_id
+                    )
+                })
+                .error(AppError::SerializationFailed)?;
 
             match serialized_set_state.as_array().and_then(|a| a.first()) {
                 Some(event) if event.get("label").is_none() => {
@@ -472,6 +484,7 @@ mod tests {
                 .expect_err("Unexpected success reading state");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         });
     }
 }
