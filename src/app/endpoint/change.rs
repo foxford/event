@@ -42,13 +42,13 @@ impl RequestHandler for CreateHandler {
                         payload.edition_id
                     )
                 })
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition_with_room {
                 Some(edition_with_room) => edition_with_room,
                 None => {
                     return Err(anyhow!("Edition not found, id = '{}'", payload.edition_id))
-                        .error(AppError::EditionNotFound)?;
+                        .error(AppErrorKind::EditionNotFound)?;
                 }
             }
         };
@@ -113,7 +113,7 @@ impl RequestHandler for CreateHandler {
                 .measure(ProfilerKeys::ChangeInsertQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to insert change, edition_id = '{}'", edition_id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         let response = helpers::build_response(
@@ -166,13 +166,13 @@ impl RequestHandler for ListHandler {
                         payload.id
                     )
                 })
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition_with_room {
                 Some(edition_with_room) => edition_with_room,
                 None => {
                     return Err(anyhow!("Edition not found, id = '{}'", payload.id))
-                        .error(AppError::EditionNotFound)?;
+                        .error(AppErrorKind::EditionNotFound)?;
                 }
             }
         };
@@ -205,7 +205,7 @@ impl RequestHandler for ListHandler {
                 .measure(ProfilerKeys::ChangeListQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to list changes, edition_id = '{}'", payload.id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         Ok(Box::new(stream::from_iter(vec![helpers::build_response(
@@ -254,13 +254,13 @@ impl RequestHandler for DeleteHandler {
                         payload.id
                     )
                 })
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_change_with_room {
                 Some(change_with_room) => change_with_room,
                 None => {
                     return Err(anyhow!("Change not found, id = '{}'", payload.id))
-                        .error(AppError::ChangeNotFound)?;
+                        .error(AppErrorKind::ChangeNotFound)?;
                 }
             }
         };
@@ -284,7 +284,7 @@ impl RequestHandler for DeleteHandler {
                 .measure(ProfilerKeys::ChangeDeleteQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to delete change, id = '{}'", payload.id))
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
         }
 
         let response = helpers::build_response(

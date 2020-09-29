@@ -72,7 +72,7 @@ impl RequestHandler for CreateHandler {
         // Validate opening time.
         match payload.time {
             (Bound::Included(opened_at), Bound::Excluded(closed_at)) if closed_at > opened_at => (),
-            _ => return Err(anyhow!("Invalid room time")).error(AppError::InvalidRoomTime),
+            _ => return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime),
         }
 
         // Authorize room creation on the tenant.
@@ -96,7 +96,7 @@ impl RequestHandler for CreateHandler {
                 .measure(ProfilerKeys::RoomInsertQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to insert room")
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         // Respond and broadcast to the audience topic.
@@ -148,9 +148,9 @@ impl RequestHandler for ReadHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.id))
-                .error(AppError::RoomNotFound)?
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize room reading on the tenant.
@@ -210,9 +210,9 @@ impl RequestHandler for UpdateHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("Room not found, id = '{}' or closed", payload.id))
-                .error(AppError::RoomNotFound)?
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize room reading on the tenant.
@@ -244,7 +244,7 @@ impl RequestHandler for UpdateHandler {
                         }
                     }
                 }
-                _ => return Err(anyhow!("Invalid room time")).error(AppError::InvalidRoomTime),
+                _ => return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime),
             }
         }
 
@@ -267,7 +267,7 @@ impl RequestHandler for UpdateHandler {
                 .measure(ProfilerKeys::RoomUpdateQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to update room, id = '{}'", room.id()))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         // Respond and broadcast to the audience topic.
@@ -319,9 +319,9 @@ impl RequestHandler for EnterHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("Room not found or closed, id = '{}'", payload.id))
-                .error(AppError::RoomNotFound)?
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize subscribing to the room's events.
@@ -349,7 +349,7 @@ impl RequestHandler for EnterHandler {
                         room.id(),
                     )
                 })
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
         }
 
         // Send dynamic subscription creation request to the broker.
@@ -408,9 +408,9 @@ impl RequestHandler for LeaveHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.id))
-                .error(AppError::RoomNotFound)?;
+                .error(AppErrorKind::RoomNotFound)?;
 
             // Check room presence.
             let query = agent::ListQuery::new()
@@ -423,7 +423,7 @@ impl RequestHandler for LeaveHandler {
                 .measure(ProfilerKeys::AgentListQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to list agents, room_id = '{}'", payload.id))
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
 
             (room, presence)
         };
@@ -434,7 +434,7 @@ impl RequestHandler for LeaveHandler {
                 reqp.as_agent_id(),
                 room.id()
             ))
-            .error(AppError::AgentNotEnteredTheRoom);
+            .error(AppErrorKind::AgentNotEnteredTheRoom);
         }
 
         // Send dynamic subscription deletion request to the broker.
@@ -501,9 +501,9 @@ impl RequestHandler for AdjustHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.id))
-                .error(AppError::RoomNotFound)?
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize trusted account for the room's audience.
@@ -546,12 +546,13 @@ impl RequestHandler for AdjustHandler {
                         err
                     );
 
-                    let error = AppError::RoomAdjustTaskFailed.into_svc_error(err);
+                    let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
+                    let svc_error: SvcError = app_error.into();
 
-                    sentry::send(error.clone())
+                    sentry::send(svc_error.clone())
                         .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
 
-                    RoomAdjustResult::Error { error }
+                    RoomAdjustResult::Error { error: svc_error }
                 }
             };
 

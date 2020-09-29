@@ -13,7 +13,10 @@ use svc_agent::mqtt::{
 };
 use svc_error::{extension::sentry, Error as SvcError};
 
+use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
 use crate::app::{context::Context, endpoint, API_VERSION};
+
+////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) type MessageStream =
     Box<dyn Stream<Item = Box<dyn IntoPublishableMessage + Send>> + Send + Unpin>;
@@ -41,19 +44,19 @@ impl<C: Context + Sync> MessageHandler<C> {
             Ok(ref message) => {
                 if let Err(err) = self.handle_message(message).await {
                     error!("Error processing a message = '{:?}': {}", message, err);
+                    let svc_error: SvcError = err.into();
 
-                    sentry::send(err)
+                    sentry::send(svc_error)
                         .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
                 }
             }
             Err(e) => {
-                error!("Error processing a message = '{:?}': {}", message, e,);
+                error!("Error processing a message = '{:?}': {}", message, e);
 
-                let svc_error = SvcError::builder()
-                    .status(ResponseStatus::UNPROCESSABLE_ENTITY)
-                    .kind("message_handling_failed", "Message handling failed")
-                    .detail(&e.to_string())
-                    .build();
+                let app_error =
+                    AppError::new(AppErrorKind::MessageHandlingFailed, anyhow!(e.to_string()));
+
+                let svc_error: SvcError = app_error.into();
 
                 sentry::send(svc_error)
                     .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
@@ -61,7 +64,7 @@ impl<C: Context + Sync> MessageHandler<C> {
         }
     }
 
-    async fn handle_message(&self, message: &IncomingMessage<String>) -> Result<(), SvcError> {
+    async fn handle_message(&self, message: &IncomingMessage<String>) -> Result<(), AppError> {
         let start_timestamp = Utc::now();
 
         match message {
@@ -80,19 +83,20 @@ impl<C: Context + Sync> MessageHandler<C> {
         &self,
         request: &IncomingRequest<String>,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<(), SvcError> {
+    ) -> Result<(), AppError> {
         let outgoing_message_stream =
             endpoint::route_request(&self.context, request, start_timestamp)
                 .await
                 .unwrap_or_else(|| {
-                    error_response(
-                        ResponseStatus::METHOD_NOT_ALLOWED,
-                        "unknown_method",
-                        "Unknown method",
-                        &format!("Unknown method '{}'", request.properties().method()),
-                        request.properties(),
-                        start_timestamp,
-                    )
+                    let detail = format!("Unknown method '{}'", request.properties().method());
+
+                    let svc_error = SvcError::builder()
+                        .status(ResponseStatus::METHOD_NOT_ALLOWED)
+                        .kind("unknown_method", "Unknown method")
+                        .detail(&detail)
+                        .build();
+
+                    error_response(svc_error, request.properties(), start_timestamp)
                 });
 
         self.publish_outgoing_messages(outgoing_message_stream)
@@ -103,7 +107,7 @@ impl<C: Context + Sync> MessageHandler<C> {
         &self,
         event: &IncomingEvent<String>,
         start_timestamp: DateTime<Utc>,
-    ) -> Result<(), SvcError> {
+    ) -> Result<(), AppError> {
         match event.properties().label() {
             Some(label) => {
                 let outgoing_message_stream =
@@ -127,7 +131,7 @@ impl<C: Context + Sync> MessageHandler<C> {
     async fn publish_outgoing_messages(
         &self,
         message_stream: MessageStream,
-    ) -> Result<(), SvcError> {
+    ) -> Result<(), AppError> {
         let mut agent = self.agent.clone();
         pin_mut!(message_stream);
 
@@ -140,22 +144,14 @@ impl<C: Context + Sync> MessageHandler<C> {
 }
 
 fn error_response(
-    status: ResponseStatus,
-    kind: &str,
-    title: &str,
-    detail: &str,
+    err: SvcError,
     reqp: &IncomingRequestProperties,
     start_timestamp: DateTime<Utc>,
 ) -> MessageStream {
-    let err = SvcError::builder()
-        .status(status)
-        .kind(kind, title)
-        .detail(detail)
-        .build();
-
     let timing = ShortTermTimingProperties::until_now(start_timestamp);
-    let props = reqp.to_response(status, timing);
+    let props = reqp.to_response(err.status_code(), timing);
     let resp = OutgoingResponse::unicast(err, props, reqp, API_VERSION);
+
     Box::new(stream::once(
         Box::new(resp) as Box<dyn IntoPublishableMessage + Send>
     ))
@@ -164,13 +160,11 @@ fn error_response(
 pub(crate) fn publish_message(
     agent: &mut Agent,
     message: Box<dyn IntoPublishableMessage>,
-) -> Result<(), SvcError> {
-    use crate::app::error::{AppError, ErrorExt};
-
+) -> Result<(), AppError> {
     agent
         .publish_publishable(message)
         .map_err(|err| anyhow!("Failed to publish message: {}", err))
-        .error(AppError::PublishFailed)
+        .error(AppErrorKind::PublishFailed)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -216,37 +210,33 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                 Ok(payload) => {
                     H::handle(context, payload, reqp, start_timestamp)
                         .await
-                        .unwrap_or_else(|svc_error| {
+                        .unwrap_or_else(|app_error| {
                             error!(
                                 "Failed to handle request with method = '{}': {}",
                                 reqp.method(),
-                                svc_error
+                                app_error,
                             );
+
+                            let svc_error: SvcError = app_error.into();
 
                             sentry::send(svc_error.clone()).unwrap_or_else(|err| {
                                 warn!("Error sending error to Sentry: {}", err)
                             });
 
                             // Handler returned an error => 422.
-                            error_response(
-                                svc_error.status_code(),
-                                svc_error.kind(),
-                                svc_error.title(),
-                                &svc_error.to_string(),
-                                reqp,
-                                start_timestamp,
-                            )
+                            error_response(svc_error, reqp, start_timestamp)
                         })
                 }
                 // Bad envelope or payload format => 400.
-                Err(err) => error_response(
-                    ResponseStatus::BAD_REQUEST,
-                    "invalid_payload",
-                    "Invalid payload",
-                    &err.to_string(),
-                    reqp,
-                    start_timestamp,
-                ),
+                Err(err) => {
+                    let svc_error = SvcError::builder()
+                        .status(ResponseStatus::BAD_REQUEST)
+                        .kind("invalid_payload", "Invalid payload")
+                        .detail(&err.to_string())
+                        .build();
+
+                    error_response(svc_error, reqp, start_timestamp)
+                }
             }
         }
 
@@ -285,13 +275,15 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                 // Call handler.
                 Ok(payload) => H::handle(context, payload, evp, start_timestamp)
                     .await
-                    .unwrap_or_else(|svc_error| {
+                    .unwrap_or_else(|app_error| {
                         // Handler returned an error.
                         if let Some(label) = evp.label() {
                             error!(
                                 "Failed to handle event with label = '{}': {}",
-                                label, svc_error
+                                label, app_error,
                             );
+
+                            let svc_error: SvcError = app_error.into();
 
                             sentry::send(svc_error).unwrap_or_else(|err| {
                                 warn!("Error sending error to Sentry: {}", err)

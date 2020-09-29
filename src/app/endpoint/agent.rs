@@ -43,9 +43,9 @@ impl RequestHandler for ListHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("the room = '{}' is not found or closed", payload.room_id))
-                .error(AppError::RoomNotFound)?
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize agents listing in the room.
@@ -75,7 +75,7 @@ impl RequestHandler for ListHandler {
                 .measure(ProfilerKeys::AgentListQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to list agents, room_id = '{}'", payload.room_id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         // Respond with agents list.

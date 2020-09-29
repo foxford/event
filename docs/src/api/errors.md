@@ -18,7 +18,13 @@ status | int    | _required_ | HTTP-compatible status code. The same code is in 
 - **422 Unprocessable Entity** – DB query error or some logic error.
 
 ## Error types
+
+One must rely on the `type` field of the error for error identification, not the `title` nor `status`.
+The following types are a part of the service's API and are guaranteed to maintain compatibility.
+
+- `access_denied` – The action was forbidden by [authorization](authz.md#Authorization).
 - `agent_not_entered_the_room` – The agent must preliminary make [room.enter](room/enter.md#room.enter) request.
+- `authorization_failed` – Authorization request failed due to a network error or another reason.
 - `change_not_found` – A [change](change.md#Change) is missing.
 - `database_connection_acquisition_failed` – The service couldn't obtain a DB connection from the pool.
 - `database_query_failed` – The database returned an error while executing a query.
@@ -28,6 +34,7 @@ status | int    | _required_ | HTTP-compatible status code. The same code is in 
 - `invalid_room_time` – [Room](room.md#room) opening period is wrong. Most likely closing date <= opening date or some of them are nulls.
 - `invalid_state_sets` – Zero or too many (> 100) sets passed to [state.read](state/read.md#state.read).
 - `invalid_subscription_object` – An object for dynamic subscription is not of format `["rooms", UUID, "events"]`.
+- `message_handling_failed` – An incoming message is likely to have non-valid JSON payload or missing required properties.
 - `serialization_failed` – JSON serialization failed.
 - `stats_collection_failed` – Couldn't collect metrics from one of the sources.
 - `publish_failed` – Failed to publish an MQTT message.

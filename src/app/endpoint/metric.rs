@@ -73,7 +73,7 @@ impl EventHandler for PullHandler {
             } => {
                 let metrics = context
                     .get_metrics(payload.duration)
-                    .error(AppError::StatsCollectionFailed)?;
+                    .error(AppErrorKind::StatsCollectionFailed)?;
 
                 let metrics2 = metrics
                     .clone()

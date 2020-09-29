@@ -11,7 +11,6 @@ use svc_agent::{
     },
     AgentId, Authenticable,
 };
-use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -27,7 +26,7 @@ pub(crate) struct SubscriptionEvent {
 }
 
 impl SubscriptionEvent {
-    fn try_room_id(&self) -> StdResult<Uuid, SvcError> {
+    fn try_room_id(&self) -> StdResult<Uuid, AppError> {
         let object: Vec<&str> = self.object.iter().map(AsRef::as_ref).collect();
 
         match object.as_slice() {
@@ -38,7 +37,7 @@ impl SubscriptionEvent {
                 "Bad 'object' format; expected [\"room\", <ROOM_ID>, \"events\"]",
             )),
         }
-        .error(AppError::InvalidSubscriptionObject)
+        .error(AppErrorKind::InvalidSubscriptionObject)
     }
 }
 
@@ -68,7 +67,7 @@ impl EventHandler for CreateHandler {
                 "Expected subscription.create event to be sent from the broker account '{}', got '{}'",
                 context.config().broker_id,
                 evp.as_account_id()
-            )).error(AppError::AccessDenied);
+            )).error(AppErrorKind::AccessDenied);
         }
 
         let room_id = payload.try_room_id()?;
@@ -83,9 +82,9 @@ impl EventHandler for CreateHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", room_id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("the room = '{}' is not found or closed", room_id))
-                .error(AppError::RoomNotFound)?;
+                .error(AppErrorKind::RoomNotFound)?;
 
             // Update agent state to `ready`.
             let q = agent::UpdateQuery::new(payload.subject.clone(), room_id)
@@ -101,7 +100,7 @@ impl EventHandler for CreateHandler {
                         payload.subject, room_id,
                     )
                 })
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
         }
 
         // Send broadcast notification that the agent has entered the room.
@@ -139,7 +138,7 @@ impl EventHandler for DeleteHandler {
                 "Expected subscription.delete event to be sent from the broker account '{}', got '{}'",
                 context.config().broker_id,
                 evp.as_account_id()
-            )).error(AppError::AccessDenied);
+            )).error(AppErrorKind::AccessDenied);
         }
 
         // Delete agent from the DB.
@@ -159,7 +158,7 @@ impl EventHandler for DeleteHandler {
                         payload.subject, room_id,
                     )
                 })
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         if row_count != 1 {
@@ -168,7 +167,7 @@ impl EventHandler for DeleteHandler {
                 payload.subject,
                 room_id
             ))
-            .error(AppError::AgentNotEnteredTheRoom);
+            .error(AppErrorKind::AgentNotEnteredTheRoom);
         }
 
         // Send broadcast notification that the agent has left the room.

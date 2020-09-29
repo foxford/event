@@ -66,9 +66,9 @@ impl RequestHandler for CreateHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("the room = '{}' is not found or closed", payload.room_id))
-                .error(AppError::RoomNotFound)?;
+                .error(AppErrorKind::RoomNotFound)?;
 
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
@@ -96,7 +96,7 @@ impl RequestHandler for CreateHandler {
                                 room.id(), set, label,
                             )
                         })
-                        .error(AppError::DbQueryFailed)?
+                        .error(AppErrorKind::DbQueryFailed)?
                         .map(|original_event| {
                             original_event.created_by().as_account_id().to_string()
                         })
@@ -130,7 +130,7 @@ impl RequestHandler for CreateHandler {
                 .unwrap_or(std::i64::MAX),
             _ => {
                 return Err(anyhow!("invalid time for room = '{}'", room.id()))
-                    .error(AppError::InvalidRoomTime);
+                    .error(AppErrorKind::InvalidRoomTime);
             }
         };
 
@@ -167,7 +167,7 @@ impl RequestHandler for CreateHandler {
                     .measure(ProfilerKeys::EventInsertQuery, query.execute(&mut conn))
                     .await
                     .with_context(|| format!("Failed to insert event, room_id = '{}'", room.id()))
-                    .error(AppError::DbQueryFailed)?
+                    .error(AppErrorKind::DbQueryFailed)?
             }
         } else {
             let CreateRequest {
@@ -197,7 +197,7 @@ impl RequestHandler for CreateHandler {
             builder
                 .build()
                 .map_err(|err| anyhow!("Error building transient event: {}", err,))
-                .error(AppError::TransientEventCreationFailed)?
+                .error(AppErrorKind::TransientEventCreationFailed)?
         };
 
         let mut messages = Vec::with_capacity(3);
@@ -281,9 +281,9 @@ impl RequestHandler for ListHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("the room = '{}' is not found", payload.room_id))
-                .error(AppError::RoomNotFound)?
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize room events listing.
@@ -337,7 +337,7 @@ impl RequestHandler for ListHandler {
                 .measure(ProfilerKeys::EventListQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to list events, room_id = '{}'", room.id()))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         // Respond with events list.

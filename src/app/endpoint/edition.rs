@@ -51,9 +51,9 @@ impl RequestHandler for CreateHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.room_id))
-                .error(AppError::RoomNotFound)?
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         let authz_time = context
@@ -77,7 +77,7 @@ impl RequestHandler for CreateHandler {
                 .with_context(|| {
                     format!("Failed to insert edition, room_id = '{}'", payload.room_id)
                 })
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         let response = helpers::build_response(
@@ -130,9 +130,9 @@ impl RequestHandler for ListHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.room_id))
-                .error(AppError::RoomNotFound)?
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         let room_id = room.id();
@@ -167,7 +167,7 @@ impl RequestHandler for ListHandler {
                 .with_context(|| {
                     format!("Failed to list editions, room_id = '{}'", payload.room_id)
                 })
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         // Respond with events list.
@@ -217,13 +217,13 @@ impl RequestHandler for DeleteHandler {
                         payload.id
                     )
                 })
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition {
                 Some(edition_with_room) => edition_with_room,
                 None => {
                     return Err(anyhow!("Edition not found, id = '{}'", payload.id))
-                        .error(AppError::EditionNotFound);
+                        .error(AppErrorKind::EditionNotFound);
                 }
             }
         };
@@ -247,7 +247,7 @@ impl RequestHandler for DeleteHandler {
                 .measure(ProfilerKeys::EditionDeleteQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to delete edition, id = '{}'", payload.id))
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
         }
 
         let response = helpers::build_response(
@@ -299,13 +299,13 @@ impl RequestHandler for CommitHandler {
                         payload.id
                     )
                 })
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition {
                 Some(edition_with_room) => edition_with_room,
                 None => {
                     return Err(anyhow!("Edition not found, id = '{}'", payload.id))
-                        .error(AppError::EditionNotFound);
+                        .error(AppErrorKind::EditionNotFound);
                 }
             }
         };
@@ -340,12 +340,13 @@ impl RequestHandler for CommitHandler {
                         err
                     );
 
-                    let error = AppError::EditionCommitTaskFailed.into_svc_error(err);
+                    let error = AppError::new(AppErrorKind::EditionCommitTaskFailed, err);
+                    let svc_error: SvcError = error.into();
 
-                    sentry::send(error.clone())
+                    sentry::send(svc_error.clone())
                         .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
 
-                    EditionCommitResult::Error { error }
+                    EditionCommitResult::Error { error: svc_error }
                 }
             };
 

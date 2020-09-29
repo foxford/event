@@ -47,7 +47,7 @@ impl RequestHandler for ReadHandler {
         };
 
         if let Some(err) = validation_error {
-            return Err(err).error(AppError::InvalidStateSets);
+            return Err(err).error(AppErrorKind::InvalidStateSets);
         }
 
         // Choose limit.
@@ -66,9 +66,9 @@ impl RequestHandler for ReadHandler {
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppError::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?
                 .ok_or_else(|| anyhow!("the room = '{}' is not found", payload.room_id))
-                .error(AppError::RoomNotFound)?
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize room events listing.
@@ -90,7 +90,7 @@ impl RequestHandler for ReadHandler {
                 .map(|n| n + 1)
                 .unwrap_or(std::i64::MAX)
         } else {
-            return Err(anyhow!("Bad room time")).error(AppError::InvalidRoomTime);
+            return Err(anyhow!("Bad room time")).error(AppErrorKind::InvalidRoomTime);
         };
 
         // Retrieve state for each set from the DB and put them into a map.
@@ -122,7 +122,7 @@ impl RequestHandler for ReadHandler {
                             set, room_id
                         )
                     })
-                    .error(AppError::DbQueryFailed)?;
+                    .error(AppErrorKind::DbQueryFailed)?;
 
                 let has_next = total_count as i64 > limit;
                 state.insert(String::from("has_next"), JsonValue::Bool(has_next));
@@ -139,7 +139,7 @@ impl RequestHandler for ReadHandler {
                         set, room_id
                     )
                 })
-                .error(AppError::DbQueryFailed)?;
+                .error(AppErrorKind::DbQueryFailed)?;
 
             // Serialize to JSON and add to the state map.
             let serialized_set_state = serde_json::to_value(set_state)
@@ -149,7 +149,7 @@ impl RequestHandler for ReadHandler {
                         set, room_id
                     )
                 })
-                .error(AppError::SerializationFailed)?;
+                .error(AppErrorKind::SerializationFailed)?;
 
             match serialized_set_state.as_array().and_then(|a| a.first()) {
                 Some(event) if event.get("label").is_none() => {
