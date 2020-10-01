@@ -1,17 +1,16 @@
 use std::result::Result as StdResult;
 
+use anyhow::{anyhow, Context as AnyhowContext};
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::{
     mqtt::{
-        IncomingEventProperties, IntoPublishableMessage, OutgoingEvent, ResponseStatus,
-        ShortTermTimingProperties,
+        IncomingEventProperties, IntoPublishableMessage, OutgoingEvent, ShortTermTimingProperties,
     },
     AgentId, Authenticable,
 };
-use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -27,18 +26,18 @@ pub(crate) struct SubscriptionEvent {
 }
 
 impl SubscriptionEvent {
-    fn try_room_id(&self) -> StdResult<Uuid, SvcError> {
+    fn try_room_id(&self) -> StdResult<Uuid, AppError> {
         let object: Vec<&str> = self.object.iter().map(AsRef::as_ref).collect();
 
         match object.as_slice() {
             ["rooms", room_id, "events"] => {
-                Uuid::parse_str(room_id).map_err(|err| format!("UUID parse error: {}", err))
+                Uuid::parse_str(room_id).map_err(|err| anyhow!("UUID parse error: {}", err))
             }
-            _ => Err(String::from(
+            _ => Err(anyhow!(
                 "Bad 'object' format; expected [\"room\", <ROOM_ID>, \"events\"]",
             )),
         }
-        .status(ResponseStatus::BAD_REQUEST)
+        .error(AppErrorKind::InvalidSubscriptionObject)
     }
 }
 
@@ -64,11 +63,11 @@ impl EventHandler for CreateHandler {
     ) -> Result {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
-            return Err(format!(
+            return Err(anyhow!(
                 "Expected subscription.create event to be sent from the broker account '{}', got '{}'",
                 context.config().broker_id,
                 evp.as_account_id()
-            )).status(ResponseStatus::FORBIDDEN);
+            )).error(AppErrorKind::AccessDenied);
         }
 
         let room_id = payload.try_room_id()?;
@@ -81,9 +80,11 @@ impl EventHandler for CreateHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("the room = '{}' is not found or closed", room_id))
-                .status(ResponseStatus::NOT_FOUND)?;
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", room_id))
+                .error(AppErrorKind::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("the room = '{}' is not found or closed", room_id))
+                .error(AppErrorKind::RoomNotFound)?;
 
             // Update agent state to `ready`.
             let q = agent::UpdateQuery::new(payload.subject.clone(), room_id)
@@ -92,7 +93,14 @@ impl EventHandler for CreateHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::AgentUpdateQuery, q.execute(&mut conn))
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to put agent into 'ready' status, agent_id = '{}', room_id = '{}'",
+                        payload.subject, room_id,
+                    )
+                })
+                .error(AppErrorKind::DbQueryFailed)?;
         }
 
         // Send broadcast notification that the agent has entered the room.
@@ -126,11 +134,11 @@ impl EventHandler for DeleteHandler {
     ) -> Result {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
-            return Err(format!(
+            return Err(anyhow!(
                 "Expected subscription.delete event to be sent from the broker account '{}', got '{}'",
                 context.config().broker_id,
                 evp.as_account_id()
-            )).status(ResponseStatus::FORBIDDEN);
+            )).error(AppErrorKind::AccessDenied);
         }
 
         // Delete agent from the DB.
@@ -143,15 +151,23 @@ impl EventHandler for DeleteHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::AgentDeleteQuery, query.execute(&mut conn))
-                .await?
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to delete agent, agent_id = '{}', room_id = '{}'",
+                        payload.subject, room_id,
+                    )
+                })
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         if row_count != 1 {
-            return Err(format!(
+            return Err(anyhow!(
                 "the agent is not found for agent_id = '{}', room = '{}'",
-                payload.subject, room_id
+                payload.subject,
+                room_id
             ))
-            .status(ResponseStatus::NOT_FOUND);
+            .error(AppErrorKind::AgentNotEnteredTheRoom);
         }
 
         // Send broadcast notification that the agent has left the room.
@@ -173,6 +189,8 @@ impl EventHandler for DeleteHandler {
 
 #[cfg(test)]
 mod tests {
+    use svc_agent::mqtt::ResponseStatus;
+
     use crate::db::agent::{ListQuery as AgentListQuery, Status as AgentStatus};
     use crate::test_helpers::prelude::*;
 
@@ -262,6 +280,7 @@ mod tests {
                 .expect_err("Unexpected success on subscription creation");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         });
     }
 
@@ -292,6 +311,7 @@ mod tests {
                 .expect_err("Unexpected success on subscription creation");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         });
     }
 
@@ -378,6 +398,7 @@ mod tests {
                 .expect_err("Unexpected success on subscription deletion");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "agent_not_entered_the_room");
         });
     }
 
@@ -401,6 +422,7 @@ mod tests {
                 .expect_err("Unexpected success on subscription deletion");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "agent_not_entered_the_room");
         });
     }
 }

@@ -1,16 +1,17 @@
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
+use anyhow::{anyhow, Context as AnyhowContext};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgPool as Db, Postgres};
-use sqlx::Error as SqlxError;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
 use crate::app::endpoint::metric::ProfilerKeys;
+use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
 use crate::app::metrics::{Metric, MetricValue};
 use crate::config::Config;
 use crate::profiler::Profiler;
@@ -27,18 +28,22 @@ pub(crate) trait Context: Sync {
     fn queue_counter(&self) -> &Option<QueueCounterHandle>;
     fn redis_pool(&self) -> &Option<RedisConnectionPool>;
     fn profiler(&self) -> Arc<Profiler<ProfilerKeys>>;
-    fn get_metrics(&self, duration: u64) -> Result<Vec<crate::app::metrics::Metric>, String>;
+    fn get_metrics(&self, duration: u64) -> anyhow::Result<Vec<crate::app::metrics::Metric>>;
 
-    async fn get_conn(&self) -> Result<PoolConnection<Postgres>, SqlxError> {
+    async fn get_conn(&self) -> Result<PoolConnection<Postgres>, AppError> {
         self.profiler()
             .measure(ProfilerKeys::DbConnAcquisition, self.db().acquire())
             .await
+            .context("Failed to acquire DB connection")
+            .error(AppErrorKind::DbConnAcquisitionFailed)
     }
 
-    async fn get_ro_conn(&self) -> Result<PoolConnection<Postgres>, SqlxError> {
+    async fn get_ro_conn(&self) -> Result<PoolConnection<Postgres>, AppError> {
         self.profiler()
             .measure(ProfilerKeys::RoDbConnAcquisition, self.ro_db().acquire())
             .await
+            .context("Failed to acquire read-only DB connection")
+            .error(AppErrorKind::DbConnAcquisitionFailed)
     }
 }
 
@@ -75,14 +80,13 @@ impl Context for AppContext {
         self.profiler.clone()
     }
 
-    fn get_metrics(&self, duration: u64) -> Result<Vec<crate::app::metrics::Metric>, String> {
+    fn get_metrics(&self, duration: u64) -> anyhow::Result<Vec<crate::app::metrics::Metric>> {
         let now = Utc::now();
         let mut metrics = vec![];
 
         append_mqtt_stats(&mut metrics, self, now, duration)?;
         append_db_pools_stats(&mut metrics, self, now);
         append_redis_pool_metrics(&mut metrics, self, now);
-
         append_profiler_stats(&mut metrics, self, now, duration)?;
 
         if let Some(counter) = self.running_requests.clone() {
@@ -188,9 +192,11 @@ fn append_mqtt_stats(
     context: &dyn Context,
     now: DateTime<Utc>,
     duration: u64,
-) -> std::result::Result<(), String> {
+) -> anyhow::Result<()> {
     if let Some(qc) = context.queue_counter() {
-        let stats = qc.get_stats(duration)?;
+        let stats = qc
+            .get_stats(duration)
+            .map_err(|err| anyhow!(err).context("Failed to get stats"))?;
 
         let m = [
             Metric::IncomingQueueRequests(MetricValue::new(stats.incoming_requests, now)),
@@ -232,11 +238,11 @@ fn append_profiler_stats(
     context: &dyn Context,
     now: DateTime<Utc>,
     duration: u64,
-) -> std::result::Result<(), String> {
+) -> anyhow::Result<()> {
     let profiler_report = context
         .profiler()
         .flush(duration)
-        .map_err(|err| err.to_string())?;
+        .context("Failed to flush profiler")?;
 
     for (key, entry_report) in profiler_report {
         let metric_value_count = MetricValue::new(entry_report.count as u64, now);

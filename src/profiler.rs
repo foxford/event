@@ -56,13 +56,12 @@ impl Entry {
                 max
             };
 
-            let report = EntryReport {
+            EntryReport {
                 count,
                 p95,
                 p99,
                 max,
-            };
-            report
+            }
         }
     }
 }

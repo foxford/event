@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context as AnyhowContext};
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -17,7 +18,6 @@ pub(crate) struct CreateHandler;
 #[async_trait]
 impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
-    const ERROR_TITLE: &'static str = "Failed to create change";
 
     async fn handle<C: Context>(
         context: &C,
@@ -35,13 +35,20 @@ impl RequestHandler for CreateHandler {
                     ProfilerKeys::EditionFindWithRoomQuery,
                     query.execute(&mut conn),
                 )
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to find edition with room, edition_id = '{}'",
+                        payload.edition_id
+                    )
+                })
+                .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition_with_room {
                 Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(format!("Edition not found, id = '{}'", payload.edition_id))
-                        .status(ResponseStatus::NOT_FOUND)?;
+                    return Err(anyhow!("Edition not found, id = '{}'", payload.edition_id))
+                        .error(AppErrorKind::EditionNotFound)?;
                 }
             }
         };
@@ -55,6 +62,8 @@ impl RequestHandler for CreateHandler {
                 "update",
             )
             .await?;
+
+        let edition_id = payload.edition_id;
 
         let query =
             db::change::InsertQuery::new(payload.edition_id, payload.changeset.as_changetype());
@@ -102,7 +111,9 @@ impl RequestHandler for CreateHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::ChangeInsertQuery, query.execute(&mut conn))
-                .await?
+                .await
+                .with_context(|| format!("Failed to insert change, edition_id = '{}'", edition_id))
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         let response = helpers::build_response(
@@ -131,7 +142,6 @@ pub(crate) struct ListRequest {
 #[async_trait]
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
-    const ERROR_TITLE: &'static str = "Failed to list changes";
 
     async fn handle<C: Context>(
         context: &C,
@@ -149,13 +159,20 @@ impl RequestHandler for ListHandler {
                     ProfilerKeys::EditionFindWithRoomQuery,
                     query.execute(&mut conn),
                 )
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to find edition with room, edition_id = '{}'",
+                        payload.id
+                    )
+                })
+                .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition_with_room {
                 Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(format!("Edition not found, id = '{}'", payload.id))
-                        .status(ResponseStatus::NOT_FOUND)?;
+                    return Err(anyhow!("Edition not found, id = '{}'", payload.id))
+                        .error(AppErrorKind::EditionNotFound)?;
                 }
             }
         };
@@ -186,7 +203,9 @@ impl RequestHandler for ListHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::ChangeListQuery, query.execute(&mut conn))
-                .await?
+                .await
+                .with_context(|| format!("Failed to list changes, edition_id = '{}'", payload.id))
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         Ok(Box::new(stream::from_iter(vec![helpers::build_response(
@@ -211,7 +230,6 @@ pub(crate) struct DeleteRequest {
 #[async_trait]
 impl RequestHandler for DeleteHandler {
     type Payload = DeleteRequest;
-    const ERROR_TITLE: &'static str = "Failed to delete change";
 
     async fn handle<C: Context>(
         context: &C,
@@ -229,13 +247,20 @@ impl RequestHandler for DeleteHandler {
                     ProfilerKeys::ChangeFindWithRoomQuery,
                     query.execute(&mut conn),
                 )
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to find change with room, change_id = '{}'",
+                        payload.id
+                    )
+                })
+                .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_change_with_room {
                 Some(change_with_room) => change_with_room,
                 None => {
-                    return Err(format!("Change not found, id = '{}'", payload.id))
-                        .status(ResponseStatus::NOT_FOUND)?;
+                    return Err(anyhow!("Change not found, id = '{}'", payload.id))
+                        .error(AppErrorKind::ChangeNotFound)?;
                 }
             }
         };
@@ -257,7 +282,9 @@ impl RequestHandler for DeleteHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::ChangeDeleteQuery, query.execute(&mut conn))
-                .await?;
+                .await
+                .with_context(|| format!("Failed to delete change, id = '{}'", payload.id))
+                .error(AppErrorKind::DbQueryFailed)?;
         }
 
         let response = helpers::build_response(
@@ -514,11 +541,12 @@ mod tests {
                     }),
                 };
 
-                let response = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating change with wrong params");
 
-                assert_eq!(response.status_code(), ResponseStatus::UNPROCESSABLE_ENTITY);
+                assert_eq!(err.status_code(), ResponseStatus::UNPROCESSABLE_ENTITY);
+                assert_eq!(err.kind(), "database_query_failed");
             });
         }
 
@@ -559,6 +587,7 @@ mod tests {
                 assert_eq!(response.status_code(), ResponseStatus::FORBIDDEN);
             });
         }
+
         #[test]
         fn create_change_missing_edition() {
             async_std::task::block_on(async {
@@ -577,11 +606,12 @@ mod tests {
                     }),
                 };
 
-                let response = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating change for no edition");
 
-                assert_eq!(response.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "edition_not_found");
             });
         }
     }
@@ -722,11 +752,12 @@ mod tests {
                     limit: None,
                 };
 
-                let resp = handle_request::<ListHandler>(&context, &agent, payload)
+                let err = handle_request::<ListHandler>(&context, &agent, payload)
                     .await
                     .expect_err("Unexpected success listing changes for no edition");
 
-                assert_eq!(resp.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "edition_not_found");
             });
         }
     }
@@ -917,11 +948,12 @@ mod tests {
                 let context = TestContext::new(db, authz);
                 let payload = DeleteRequest { id: Uuid::new_v4() };
 
-                let resp = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let err = handle_request::<DeleteHandler>(&context, &agent, payload)
                     .await
                     .expect_err("Failed to list changes");
 
-                assert_eq!(resp.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "change_not_found");
 
                 let mut conn = context
                     .db()

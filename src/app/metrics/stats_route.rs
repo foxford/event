@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::{Context as AnyhowContext, Result};
 use async_std::stream::StreamExt;
 use async_std::sync::Sender;
 use chrono::{serde::ts_seconds, DateTime, Utc};
@@ -23,7 +24,7 @@ struct StatsHandle {
 }
 
 enum StatsRouteCommand {
-    GetStats(Sender<Result<String, String>>),
+    GetStats(Sender<Result<String>>),
 }
 
 impl<C: Context + Send + 'static> StatsRoute<C> {
@@ -96,13 +97,14 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
         }
     }
 
-    fn get_stats(&self) -> Result<String, String> {
+    fn get_stats(&self) -> Result<String> {
         let mut acc = String::from("");
 
         let metrics = self
             .message_handler
             .context()
-            .get_metrics(5)?
+            .get_metrics(5)
+            .context("Failed to get metrics")?
             .into_iter()
             .map(|m| m.into())
             .collect::<Vec<Metric2>>();
@@ -137,10 +139,9 @@ struct MetricHelper {
 }
 
 impl StatsHandle {
-    pub async fn get_stats(&self) -> Result<Result<String, String>, async_std::sync::RecvError> {
+    pub async fn get_stats(&self) -> Result<Result<String>> {
         let (tx, rx) = async_std::sync::channel(1);
         self.tx.send(StatsRouteCommand::GetStats(tx)).await;
-
-        rx.recv().await
+        rx.recv().await.context("Stats handle recv error")
     }
 }

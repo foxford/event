@@ -5,8 +5,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{
-    IncomingEventProperties, IntoPublishableMessage, OutgoingEvent, ResponseStatus,
-    ShortTermTimingProperties,
+    IncomingEventProperties, IntoPublishableMessage, OutgoingEvent, ShortTermTimingProperties,
 };
 
 use crate::app::context::Context;
@@ -74,7 +73,7 @@ impl EventHandler for PullHandler {
             } => {
                 let metrics = context
                     .get_metrics(payload.duration)
-                    .status(ResponseStatus::INTERNAL_SERVER_ERROR)?;
+                    .error(AppErrorKind::StatsCollectionFailed)?;
 
                 let metrics2 = metrics
                     .clone()

@@ -98,7 +98,7 @@ impl Context for TestContext {
         self.profiler.clone()
     }
 
-    fn get_metrics(&self, _duration: u64) -> Result<Vec<Metric>, String> {
+    fn get_metrics(&self, _duration: u64) -> anyhow::Result<Vec<Metric>> {
         Ok(vec![])
     }
 }

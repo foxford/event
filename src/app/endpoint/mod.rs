@@ -6,20 +6,19 @@ use serde::de::DeserializeOwned;
 use svc_agent::mqtt::{
     IncomingEvent, IncomingEventProperties, IncomingRequest, IncomingRequestProperties,
 };
-use svc_error::Error as SvcError;
 
 use crate::app::context::Context;
+use crate::app::error::Error as AppError;
 pub(self) use crate::app::message_handler::MessageStream;
 use crate::app::message_handler::{EventEnvelopeHandler, RequestEnvelopeHandler};
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) type Result = StdResult<MessageStream, SvcError>;
+pub(crate) type Result = StdResult<MessageStream, AppError>;
 
 #[async_trait]
 pub(crate) trait RequestHandler {
     type Payload: Send + DeserializeOwned;
-    const ERROR_TITLE: &'static str;
 
     async fn handle<C: Context>(
         context: &C,
@@ -124,5 +123,5 @@ mod subscription;
 
 pub(self) mod prelude {
     pub(super) use super::{helpers, EventHandler, RequestHandler, Result};
-    pub(super) use crate::app::message_handler::SvcErrorSugar;
+    pub(super) use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
 }

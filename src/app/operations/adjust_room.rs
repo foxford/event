@@ -58,7 +58,13 @@ pub(crate) async fn call(
             ProfilerKeys::AdjustmentInsertQuery,
             query.execute(&mut conn),
         )
-        .await?;
+        .await
+        .with_context(|| {
+            format!(
+                "Failed to insert adjustment, room_id = '{}'",
+                real_time_room.id(),
+            )
+        })?;
 
     ///////////////////////////////////////////////////////////////////////////
 

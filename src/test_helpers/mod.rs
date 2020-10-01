@@ -47,7 +47,13 @@ pub(crate) async fn handle_request<H: RequestHandler>(
     let reqp = serde_json::from_value::<IncomingRequestProperties>(reqp_json)
         .expect("Failed to parse reqp");
 
-    let messages = H::handle(context, payload, &reqp, Utc::now()).await?;
+    let messages = H::handle(context, payload, &reqp, Utc::now())
+        .await
+        .map_err(|err| {
+            let svc_error: SvcError = err.into();
+            svc_error
+        })?;
+
     Ok(parse_messages(messages).await)
 }
 
@@ -76,7 +82,13 @@ pub(crate) async fn handle_event<H: EventHandler>(
     let evp =
         serde_json::from_value::<IncomingEventProperties>(evp_json).expect("Failed to parse evp");
 
-    let messages = H::handle(context, payload, &evp, Utc::now()).await?;
+    let messages = H::handle(context, payload, &evp, Utc::now())
+        .await
+        .map_err(|err| {
+            let svc_error: SvcError = err.into();
+            svc_error
+        })?;
+
     Ok(parse_messages(messages).await)
 }
 

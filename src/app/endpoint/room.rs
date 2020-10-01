@@ -1,5 +1,6 @@
 use std::ops::Bound;
 
+use anyhow::{anyhow, Context as AnyhowContext};
 use async_std::prelude::*;
 use async_std::stream;
 use async_trait::async_trait;
@@ -61,7 +62,6 @@ pub(crate) struct CreateHandler;
 #[async_trait]
 impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
-    const ERROR_TITLE: &'static str = "Failed to create room";
 
     async fn handle<C: Context>(
         context: &C,
@@ -72,7 +72,7 @@ impl RequestHandler for CreateHandler {
         // Validate opening time.
         match payload.time {
             (Bound::Included(opened_at), Bound::Excluded(closed_at)) if closed_at > opened_at => (),
-            _ => return Err("Invalid room time").status(ResponseStatus::BAD_REQUEST),
+            _ => return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime),
         }
 
         // Authorize room creation on the tenant.
@@ -94,7 +94,9 @@ impl RequestHandler for CreateHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomInsertQuery, query.execute(&mut conn))
-                .await?
+                .await
+                .context("Failed to insert room")
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         // Respond and broadcast to the audience topic.
@@ -130,7 +132,6 @@ pub(crate) struct ReadHandler;
 #[async_trait]
 impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
-    const ERROR_TITLE: &'static str = "Failed to read room";
 
     async fn handle<C: Context>(
         context: &C,
@@ -145,9 +146,11 @@ impl RequestHandler for ReadHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
-                .status(ResponseStatus::NOT_FOUND)?
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.id))
+                .error(AppErrorKind::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.id))
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize room reading on the tenant.
@@ -185,7 +188,6 @@ pub(crate) struct UpdateHandler;
 #[async_trait]
 impl RequestHandler for UpdateHandler {
     type Payload = UpdateRequest;
-    const ERROR_TITLE: &'static str = "Failed to update room";
 
     async fn handle<C: Context>(
         context: &C,
@@ -206,9 +208,11 @@ impl RequestHandler for UpdateHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("Room not found, id = '{}' or closed", payload.id))
-                .status(ResponseStatus::NOT_FOUND)?
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.id))
+                .error(AppErrorKind::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("Room not found, id = '{}' or closed", payload.id))
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize room reading on the tenant.
@@ -240,7 +244,7 @@ impl RequestHandler for UpdateHandler {
                         }
                     }
                 }
-                _ => return Err("Invalid room time").status(ResponseStatus::BAD_REQUEST),
+                _ => return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime),
             }
         }
 
@@ -261,7 +265,9 @@ impl RequestHandler for UpdateHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomUpdateQuery, query.execute(&mut conn))
-                .await?
+                .await
+                .with_context(|| format!("Failed to update room, id = '{}'", room.id()))
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         // Respond and broadcast to the audience topic.
@@ -297,7 +303,6 @@ pub(crate) struct EnterHandler;
 #[async_trait]
 impl RequestHandler for EnterHandler {
     type Payload = EnterRequest;
-    const ERROR_TITLE: &'static str = "Failed to enter room";
 
     async fn handle<C: Context>(
         context: &C,
@@ -312,9 +317,11 @@ impl RequestHandler for EnterHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("Room not found or closed, id = '{}'", payload.id))
-                .status(ResponseStatus::NOT_FOUND)?
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.id))
+                .error(AppErrorKind::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("Room not found or closed, id = '{}'", payload.id))
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize subscribing to the room's events.
@@ -334,7 +341,15 @@ impl RequestHandler for EnterHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::AgentInsertQuery, query.execute(&mut conn))
-                .await?;
+                .await
+                .with_context(|| {
+                    format!(
+                        "Failed to insert agent into room, agent_id = '{}', room_id = '{}'",
+                        reqp.as_agent_id(),
+                        room.id(),
+                    )
+                })
+                .error(AppErrorKind::DbQueryFailed)?;
         }
 
         // Send dynamic subscription creation request to the broker.
@@ -377,7 +392,6 @@ pub(crate) struct LeaveHandler;
 #[async_trait]
 impl RequestHandler for LeaveHandler {
     type Payload = LeaveRequest;
-    const ERROR_TITLE: &'static str = "Failed to leave room";
 
     async fn handle<C: Context>(
         context: &C,
@@ -392,9 +406,11 @@ impl RequestHandler for LeaveHandler {
             let room = context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
-                .status(ResponseStatus::NOT_FOUND)?;
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.id))
+                .error(AppErrorKind::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.id))
+                .error(AppErrorKind::RoomNotFound)?;
 
             // Check room presence.
             let query = agent::ListQuery::new()
@@ -405,18 +421,20 @@ impl RequestHandler for LeaveHandler {
             let presence = context
                 .profiler()
                 .measure(ProfilerKeys::AgentListQuery, query.execute(&mut conn))
-                .await?;
+                .await
+                .with_context(|| format!("Failed to list agents, room_id = '{}'", payload.id))
+                .error(AppErrorKind::DbQueryFailed)?;
 
             (room, presence)
         };
 
         if presence.is_empty() {
-            return Err(format!(
+            return Err(anyhow!(
                 "agent = '{}' is not online in the room = '{}'",
                 reqp.as_agent_id(),
                 room.id()
             ))
-            .status(ResponseStatus::NOT_FOUND);
+            .error(AppErrorKind::AgentNotEnteredTheRoom);
         }
 
         // Send dynamic subscription deletion request to the broker.
@@ -466,7 +484,6 @@ pub(crate) struct AdjustHandler;
 #[async_trait]
 impl RequestHandler for AdjustHandler {
     type Payload = AdjustRequest;
-    const ERROR_TITLE: &'static str = "Failed to adjust room";
 
     async fn handle<C: Context>(
         context: &C,
@@ -482,9 +499,11 @@ impl RequestHandler for AdjustHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("Room not found, id = '{}'", payload.id))
-                .status(ResponseStatus::NOT_FOUND)?
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.id))
+                .error(AppErrorKind::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.id))
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize trusted account for the room's audience.
@@ -527,16 +546,13 @@ impl RequestHandler for AdjustHandler {
                         err
                     );
 
-                    let error = SvcError::builder()
-                        .status(ResponseStatus::UNPROCESSABLE_ENTITY)
-                        .kind("room.adjust", AdjustHandler::ERROR_TITLE)
-                        .detail(&err.to_string())
-                        .build();
+                    let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
+                    let svc_error: SvcError = app_error.into();
 
-                    sentry::send(error.clone())
+                    sentry::send(svc_error.clone())
                         .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
 
-                    RoomAdjustResult::Error { error }
+                    RoomAdjustResult::Error { error: svc_error }
                 }
             };
 
@@ -723,6 +739,7 @@ mod tests {
                     .expect_err("Unexpected success on room creation");
 
                 assert_eq!(err.status_code(), ResponseStatus::BAD_REQUEST);
+                assert_eq!(err.kind(), "invalid_room_time");
             });
         }
     }
@@ -803,6 +820,7 @@ mod tests {
                     .expect_err("Unexpected success on room reading");
 
                 assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "room_not_found");
             });
         }
     }
@@ -1035,6 +1053,7 @@ mod tests {
                     .expect_err("Unexpected success on room update");
 
                 assert_eq!(err.status_code(), ResponseStatus::BAD_REQUEST);
+                assert_eq!(err.kind(), "invalid_room_time");
             });
         }
 
@@ -1083,6 +1102,7 @@ mod tests {
                     .expect_err("Unexpected success on room update");
 
                 assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "room_not_found");
             });
         }
 
@@ -1117,6 +1137,7 @@ mod tests {
                     .expect_err("Unexpected success on room update");
 
                 assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "room_not_found");
             });
         }
     }
@@ -1210,6 +1231,7 @@ mod tests {
                     .expect_err("Unexpected success on room entering");
 
                 assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "room_not_found");
             });
         }
 
@@ -1244,6 +1266,7 @@ mod tests {
                     .expect_err("Unexpected success on room entering");
 
                 assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "room_not_found");
             });
         }
     }
@@ -1318,6 +1341,7 @@ mod tests {
                     .expect_err("Unexpected success on room leaving");
 
                 assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "agent_not_entered_the_room");
             });
         }
 
@@ -1333,6 +1357,7 @@ mod tests {
                     .expect_err("Unexpected success on room leaving");
 
                 assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "room_not_found");
             });
         }
     }
@@ -1392,6 +1417,7 @@ mod tests {
                     .expect_err("Unexpected success on room adjustment");
 
                 assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.kind(), "room_not_found");
             });
         }
     }

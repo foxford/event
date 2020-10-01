@@ -1,3 +1,4 @@
+use anyhow::{anyhow, Context as AnyhowContext};
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -25,7 +26,6 @@ pub(crate) struct ListHandler;
 #[async_trait]
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
-    const ERROR_TITLE: &'static str = "Failed to list agents";
 
     async fn handle<C: Context>(
         context: &C,
@@ -41,9 +41,11 @@ impl RequestHandler for ListHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
-                .await?
-                .ok_or_else(|| format!("the room = '{}' is not found or closed", payload.room_id))
-                .status(ResponseStatus::NOT_FOUND)?
+                .await
+                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
+                .error(AppErrorKind::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("the room = '{}' is not found or closed", payload.room_id))
+                .error(AppErrorKind::RoomNotFound)?
         };
 
         // Authorize agents listing in the room.
@@ -71,7 +73,9 @@ impl RequestHandler for ListHandler {
             context
                 .profiler()
                 .measure(ProfilerKeys::AgentListQuery, query.execute(&mut conn))
-                .await?
+                .await
+                .with_context(|| format!("Failed to list agents, room_id = '{}'", payload.room_id))
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         // Respond with agents list.
@@ -214,6 +218,7 @@ mod tests {
                 .expect_err("Unexpected success on agents listing");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         });
     }
 
@@ -234,6 +239,7 @@ mod tests {
                 .expect_err("Unexpected success on agents listing");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         });
     }
 }
