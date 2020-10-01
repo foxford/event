@@ -5,7 +5,7 @@ use chrono::Utc;
 use log::info;
 use sqlx::postgres::{PgConnection, PgPool as Db};
 
-use crate::app::endpoint::metric::ProfilerKeys;
+use crate::app::metrics::ProfilerKeys;
 use crate::app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND};
 use crate::db::adjustment::Segments;
 use crate::db::change::{ListQuery as ChangeListQuery, Object as Change};
@@ -20,7 +20,7 @@ use crate::profiler::Profiler;
 
 pub(crate) async fn call(
     db: &Db,
-    profiler: &Profiler<ProfilerKeys>,
+    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
     edition: &Edition,
     source: &Room,
 ) -> Result<(Room, Segments)> {
@@ -32,8 +32,8 @@ pub(crate) async fn call(
 
     let start_timestamp = Utc::now();
 
-    let mut txn = profiler
-        .measure(ProfilerKeys::DbConnAcquisition, db.begin())
+    let mut txn = db
+        .begin()
         .await
         .context("Failed to begin sqlx db transaction")?;
 
@@ -49,14 +49,20 @@ pub(crate) async fn call(
         .kind("stream".to_string());
 
     let cut_events = profiler
-        .measure(ProfilerKeys::EventListQuery, query.execute(&mut txn))
+        .measure(
+            (ProfilerKeys::EventListQuery, Some("edition.commit".into())),
+            query.execute(&mut txn),
+        )
         .await
         .with_context(|| format!("failed to fetch cut events for room_id = '{}'", source.id()))?;
 
     let query = ChangeListQuery::new(edition.id()).kind("stream");
 
     let cut_changes = profiler
-        .measure(ProfilerKeys::ChangeListQuery, query.execute(&mut txn))
+        .measure(
+            (ProfilerKeys::ChangeListQuery, Some("edition.commit".into())),
+            query.execute(&mut txn),
+        )
         .await
         .with_context(|| {
             format!(
@@ -81,7 +87,13 @@ pub(crate) async fn call(
     let query = EventDeleteQuery::new(destination.id(), "stream");
 
     profiler
-        .measure(ProfilerKeys::EventDeleteQuery, query.execute(&mut txn))
+        .measure(
+            (
+                ProfilerKeys::EventDeleteQuery,
+                Some("edition.commit".into()),
+            ),
+            query.execute(&mut txn),
+        )
         .await
         .with_context(|| {
             format!(
@@ -101,7 +113,13 @@ pub(crate) async fn call(
         .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
 
     profiler
-        .measure(ProfilerKeys::EditionCommitTxnCommit, txn.commit())
+        .measure(
+            (
+                ProfilerKeys::EditionCommitTxnCommit,
+                Some("edition.commit".into()),
+            ),
+            txn.commit(),
+        )
         .await?;
 
     info!(
@@ -115,7 +133,7 @@ pub(crate) async fn call(
 
 async fn clone_room(
     conn: &mut PgConnection,
-    profiler: &Profiler<ProfilerKeys>,
+    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
     source: &Room,
 ) -> Result<Room> {
     let mut query = RoomInsertQuery::new(&source.audience(), source.time().to_owned().into());
@@ -126,14 +144,17 @@ async fn clone_room(
     }
 
     profiler
-        .measure(ProfilerKeys::RoomInsertQuery, query.execute(conn))
+        .measure(
+            (ProfilerKeys::RoomInsertQuery, Some("edition.commit".into())),
+            query.execute(conn),
+        )
         .await
         .context("Failed to insert room")
 }
 
 async fn clone_events(
     conn: &mut PgConnection,
-    profiler: &Profiler<ProfilerKeys>,
+    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
     source: &Room,
     destination: &Room,
     edition: &Edition,
@@ -241,7 +262,13 @@ async fn clone_events(
     );
 
     profiler
-        .measure(ProfilerKeys::EditionCloneEventsQuery, query.execute(conn))
+        .measure(
+            (
+                ProfilerKeys::EditionCloneEventsQuery,
+                Some("edition.commit".into()),
+            ),
+            query.execute(conn),
+        )
         .await
         .map(|_| ())
         .with_context(|| {
@@ -353,7 +380,7 @@ mod tests {
         InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,
     };
 
-    use crate::app::endpoint::metric::ProfilerKeys;
+    use crate::app::metrics::ProfilerKeys;
     use crate::db::change::ChangeType;
     use crate::db::room::Object as Room;
     use crate::profiler::Profiler;

@@ -1,5 +1,3 @@
-use std::hash::Hash;
-
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -12,38 +10,6 @@ use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::app::metrics::Metric2;
 use crate::config::TelemetryConfig;
-
-#[allow(clippy::enum_variant_names)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum ProfilerKeys {
-    DbConnAcquisition,
-    RoDbConnAcquisition,
-    AdjustmentInsertQuery,
-    AgentDeleteQuery,
-    AgentInsertQuery,
-    AgentListQuery,
-    AgentUpdateQuery,
-    ChangeDeleteQuery,
-    ChangeFindWithRoomQuery,
-    ChangeInsertQuery,
-    ChangeListQuery,
-    EditionCloneEventsQuery,
-    EditionCommitTxnCommit,
-    EditionDeleteQuery,
-    EditionFindWithRoomQuery,
-    EditionInsertQuery,
-    EditionListQuery,
-    EventDeleteQuery,
-    EventInsertQuery,
-    EventListQuery,
-    EventOriginalEventQuery,
-    RoomAdjustCloneEventsQuery,
-    RoomFindQuery,
-    RoomInsertQuery,
-    RoomUpdateQuery,
-    StateTotalCountQuery,
-    StateQuery,
-}
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct PullPayload {

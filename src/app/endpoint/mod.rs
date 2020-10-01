@@ -124,4 +124,5 @@ mod subscription;
 pub(self) mod prelude {
     pub(super) use super::{helpers, EventHandler, RequestHandler, Result};
     pub(super) use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
+    pub(super) use crate::app::metrics::ProfilerKeys;
 }

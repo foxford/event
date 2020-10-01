@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::change::create_request::{Changeset, CreateRequest};
-use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
+use crate::app::endpoint::prelude::*;
 use crate::db;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -32,7 +32,10 @@ impl RequestHandler for CreateHandler {
             let maybe_edition_with_room = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindWithRoomQuery,
+                    (
+                        ProfilerKeys::EditionFindWithRoomQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
                     query.execute(&mut conn),
                 )
                 .await
@@ -110,7 +113,13 @@ impl RequestHandler for CreateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::ChangeInsertQuery, query.execute(&mut conn))
+                .measure(
+                    (
+                        ProfilerKeys::ChangeInsertQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to insert change, edition_id = '{}'", edition_id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -156,7 +165,10 @@ impl RequestHandler for ListHandler {
             let maybe_edition_with_room = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindWithRoomQuery,
+                    (
+                        ProfilerKeys::EditionFindWithRoomQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
                     query.execute(&mut conn),
                 )
                 .await
@@ -202,7 +214,13 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::ChangeListQuery, query.execute(&mut conn))
+                .measure(
+                    (
+                        ProfilerKeys::ChangeListQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to list changes, edition_id = '{}'", payload.id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -244,7 +262,10 @@ impl RequestHandler for DeleteHandler {
             let maybe_change_with_room = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::ChangeFindWithRoomQuery,
+                    (
+                        ProfilerKeys::ChangeFindWithRoomQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
                     query.execute(&mut conn),
                 )
                 .await
@@ -281,7 +302,13 @@ impl RequestHandler for DeleteHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::ChangeDeleteQuery, query.execute(&mut conn))
+                .measure(
+                    (
+                        ProfilerKeys::ChangeDeleteQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to delete change, id = '{}'", payload.id))
                 .error(AppErrorKind::DbQueryFailed)?;

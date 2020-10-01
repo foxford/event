@@ -10,7 +10,7 @@ use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
+use crate::app::endpoint::prelude::*;
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -63,7 +63,10 @@ impl RequestHandler for ReadHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -112,7 +115,10 @@ impl RequestHandler for ReadHandler {
                 let total_count = context
                     .profiler()
                     .measure(
-                        ProfilerKeys::StateTotalCountQuery,
+                        (
+                            ProfilerKeys::StateTotalCountQuery,
+                            Some(reqp.method().to_owned()),
+                        ),
                         query.total_count(&mut conn),
                     )
                     .await
@@ -131,7 +137,10 @@ impl RequestHandler for ReadHandler {
             // Limit the query and retrieve the state.
             let set_state = context
                 .profiler()
-                .measure(ProfilerKeys::StateQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::StateQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| {
                     format!(
