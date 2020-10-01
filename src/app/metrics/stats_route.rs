@@ -6,7 +6,6 @@ use async_std::sync::Sender;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use log::{error, warn};
 use serde_derive::Deserialize;
-use svc_authn::AccountId;
 
 use crate::app::metrics::Metric2;
 use crate::app::{Context, MessageHandler};
@@ -14,8 +13,6 @@ use crate::app::{Context, MessageHandler};
 #[derive(Clone)]
 pub(crate) struct StatsRoute<C: Context> {
     message_handler: Arc<MessageHandler<C>>,
-    agent_label: String,
-    id: AccountId,
 }
 
 #[derive(Debug, Clone)]
@@ -33,11 +30,7 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
             let (tx, mut rx) = async_std::sync::channel(1000);
             let handle = StatsHandle { tx };
 
-            let route = Self {
-                message_handler,
-                id: config.id.clone(),
-                agent_label: config.agent_label,
-            };
+            let route = Self { message_handler };
 
             async_std::task::spawn(async move {
                 loop {
@@ -98,7 +91,7 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
     }
 
     fn get_stats(&self) -> Result<String> {
-        let mut acc = String::from("");
+        let mut acc = String::new();
 
         let metrics = self
             .message_handler
@@ -114,10 +107,29 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
                 .and_then(|json| serde_json::from_str::<MetricHelper>(&json));
             match metric {
                 Ok(metric) => {
-                    acc.push_str(&format!(
-                        "{}{{agent_label=\"{}\",account_id=\"{}\"}} {}\n",
-                        metric.key, self.agent_label, self.id, metric.value
-                    ));
+                    if let Some(tags) = metric.tags.as_object() {
+                        let tags_acc = tags.iter().filter_map(|(key, val)| {
+                            let val = if val.is_null() {
+                                Some("")
+                            } else if val.is_string() {
+                                val.as_str()
+                            } else {
+                                warn!("StatsRoute: improper tag value, expected string or null, metric: {:?}", metric);
+                                None
+                            };
+                            val.map(|v| format!("{}=\"{}\"", key, v))
+                        }).collect::<Vec<String>>().join(", ");
+
+                        acc.push_str(&format!(
+                            "{}{{{}}} {}\n",
+                            metric.key, tags_acc, metric.value
+                        ));
+                    } else {
+                        warn!(
+                            "StatsRoute: failed to parse metric tags, metric: {:?}",
+                            metric
+                        );
+                    }
                 }
                 Err(e) => warn!(
                     "Conversion from Metric to MetricHelper failed, reason = {:?}",
@@ -129,13 +141,14 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 struct MetricHelper {
     pub value: serde_json::Value,
     #[serde(rename = "metric")]
     pub key: String,
     #[serde(with = "ts_seconds")]
     pub timestamp: DateTime<Utc>,
+    pub tags: serde_json::Value,
 }
 
 impl StatsHandle {

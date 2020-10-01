@@ -20,7 +20,7 @@ use svc_error::{extension::sentry, Error as SvcError};
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
+use crate::app::endpoint::prelude::*;
 use crate::app::operations::adjust_room;
 use crate::db::adjustment::Segments;
 use crate::db::agent;
@@ -93,7 +93,13 @@ impl RequestHandler for CreateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomInsertQuery, query.execute(&mut conn))
+                .measure(
+                    (
+                        ProfilerKeys::RoomInsertQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
+                    query.execute(&mut conn),
+                )
                 .await
                 .context("Failed to insert room")
                 .error(AppErrorKind::DbQueryFailed)?
@@ -145,7 +151,10 @@ impl RequestHandler for ReadHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -207,7 +216,10 @@ impl RequestHandler for UpdateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -264,7 +276,13 @@ impl RequestHandler for UpdateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomUpdateQuery, query.execute(&mut conn))
+                .measure(
+                    (
+                        ProfilerKeys::RoomUpdateQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to update room, id = '{}'", room.id()))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -316,7 +334,10 @@ impl RequestHandler for EnterHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -340,7 +361,13 @@ impl RequestHandler for EnterHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::AgentInsertQuery, query.execute(&mut conn))
+                .measure(
+                    (
+                        ProfilerKeys::AgentInsertQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| {
                     format!(
@@ -405,7 +432,10 @@ impl RequestHandler for LeaveHandler {
 
             let room = context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -420,7 +450,10 @@ impl RequestHandler for LeaveHandler {
 
             let presence = context
                 .profiler()
-                .measure(ProfilerKeys::AgentListQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::AgentListQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to list agents, room_id = '{}'", payload.id))
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -498,7 +531,10 @@ impl RequestHandler for AdjustHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.id))
                 .error(AppErrorKind::DbQueryFailed)?

@@ -18,7 +18,7 @@ use svc_error::{extension::sentry, Error as SvcError};
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
+use crate::app::endpoint::prelude::*;
 use crate::app::operations::commit_edition;
 use crate::db;
 use crate::db::adjustment::Segments;
@@ -48,7 +48,10 @@ impl RequestHandler for CreateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -72,7 +75,13 @@ impl RequestHandler for CreateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::EditionInsertQuery, query.execute(&mut conn))
+                .measure(
+                    (
+                        ProfilerKeys::EditionInsertQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| {
                     format!("Failed to insert edition, room_id = '{}'", payload.room_id)
@@ -127,7 +136,10 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -162,7 +174,13 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::EditionListQuery, query.execute(&mut conn))
+                .measure(
+                    (
+                        ProfilerKeys::EditionListQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| {
                     format!("Failed to list editions, room_id = '{}'", payload.room_id)
@@ -207,7 +225,10 @@ impl RequestHandler for DeleteHandler {
             let maybe_edition = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindWithRoomQuery,
+                    (
+                        ProfilerKeys::EditionFindWithRoomQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
                     query.execute(&mut conn),
                 )
                 .await
@@ -244,7 +265,13 @@ impl RequestHandler for DeleteHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::EditionDeleteQuery, query.execute(&mut conn))
+                .measure(
+                    (
+                        ProfilerKeys::EditionDeleteQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to delete edition, id = '{}'", payload.id))
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -289,7 +316,10 @@ impl RequestHandler for CommitHandler {
             let maybe_edition = context
                 .profiler()
                 .measure(
-                    ProfilerKeys::EditionFindWithRoomQuery,
+                    (
+                        ProfilerKeys::EditionFindWithRoomQuery,
+                        Some(reqp.method().to_owned()),
+                    ),
                     query.execute(&mut conn),
                 )
                 .await

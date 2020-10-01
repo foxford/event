@@ -2,12 +2,16 @@ use std::env::var;
 
 use anyhow::Result;
 use dotenv::dotenv;
+use log::warn;
 use svc_authz::cache::{create_pool, Cache};
+
+const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[async_std::main]
 async fn main() -> Result<()> {
     dotenv().ok();
     env_logger::init();
+    warn!("Launching event, version: {}", APP_VERSION);
 
     let (db, maybe_ro_db) = {
         let url = var("DATABASE_URL").expect("DATABASE_URL must be specified");

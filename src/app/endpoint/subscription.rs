@@ -14,7 +14,7 @@ use svc_agent::{
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
+use crate::app::endpoint::prelude::*;
 use crate::db::{agent, room};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -79,7 +79,10 @@ impl EventHandler for CreateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, None),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", room_id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -92,7 +95,7 @@ impl EventHandler for CreateHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::AgentUpdateQuery, q.execute(&mut conn))
+                .measure((ProfilerKeys::AgentUpdateQuery, None), q.execute(&mut conn))
                 .await
                 .with_context(|| {
                     format!(
@@ -150,7 +153,10 @@ impl EventHandler for DeleteHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::AgentDeleteQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::AgentDeleteQuery, None),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| {
                     format!(

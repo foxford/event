@@ -9,7 +9,6 @@ use log::warn;
 
 #[derive(Default)]
 pub(crate) struct EntryReport {
-    pub(crate) count: usize,
     pub(crate) p95: usize,
     pub(crate) p99: usize,
     pub(crate) max: usize,
@@ -56,12 +55,7 @@ impl Entry {
                 max
             };
 
-            EntryReport {
-                count,
-                p95,
-                p99,
-                max,
-            }
+            EntryReport { p95, p99, max }
         }
     }
 }
@@ -77,7 +71,7 @@ pub(crate) struct Profiler<K> {
     back_rx: crossbeam_channel::Receiver<Vec<(K, EntryReport)>>,
 }
 
-impl<K: 'static + Eq + Hash + Send + Copy> Profiler<K> {
+impl<K: 'static + Eq + Hash + Send + Clone> Profiler<K> {
     pub(crate) fn start() -> Self {
         let (tx, rx) = crossbeam_channel::unbounded();
         let (back_tx, back_rx) = crossbeam_channel::unbounded();
@@ -98,7 +92,7 @@ impl<K: 'static + Eq + Hash + Send + Copy> Profiler<K> {
                     Message::Flush(duration) => {
                         let report = data
                             .iter_mut()
-                            .map(|(k, v)| (*k, v.flush(duration)))
+                            .map(|(k, v)| (k.clone(), v.flush(duration)))
                             .collect();
 
                         if let Err(err) = back_tx.send(report) {

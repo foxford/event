@@ -1,20 +1,92 @@
+use std::hash::Hash;
+
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use serde_derive::Serialize;
+use svc_agent::{mqtt::MetricTags, AgentId, Authenticable};
 
-#[derive(Serialize, Copy, Clone)]
+#[derive(Serialize, Clone)]
 pub(crate) struct MetricValue<T: serde::Serialize> {
     value: T,
     #[serde(with = "ts_seconds")]
     timestamp: DateTime<Utc>,
+    tags: Tags,
 }
 
-impl<T: serde::Serialize> MetricValue<T> {
-    pub fn new(value: T, timestamp: DateTime<Utc>) -> Self {
-        Self { value, timestamp }
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum Tags {
+    Internal {
+        version: String,
+        agent_label: String,
+        account_label: String,
+        account_audience: String,
+    },
+    Queues {
+        version: String,
+        agent_label: String,
+        account_label: String,
+        account_audience: String,
+        #[serde(flatten)]
+        tags: MetricTags,
+    },
+    Queries {
+        version: String,
+        agent_label: String,
+        account_label: String,
+        account_audience: String,
+        request_method: Option<String>,
+        query_label: ProfilerKeys,
+    },
+}
+
+impl Tags {
+    pub fn build_internal_tags(version: &str, agent_id: &AgentId) -> Self {
+        Tags::Internal {
+            version: version.to_owned(),
+            agent_label: agent_id.label().to_owned(),
+            account_label: agent_id.as_account_id().label().to_owned(),
+            account_audience: agent_id.as_account_id().audience().to_owned(),
+        }
+    }
+
+    pub fn build_queues_tags(version: &str, agent_id: &AgentId, tags: MetricTags) -> Self {
+        Tags::Queues {
+            version: version.to_owned(),
+            agent_label: agent_id.label().to_owned(),
+            account_label: agent_id.as_account_id().label().to_owned(),
+            account_audience: agent_id.as_account_id().audience().to_owned(),
+            tags,
+        }
+    }
+
+    pub fn build_queries_tags(
+        version: &str,
+        agent_id: &AgentId,
+        query_label: ProfilerKeys,
+        request_method: Option<String>,
+    ) -> Self {
+        Tags::Queries {
+            version: version.to_owned(),
+            agent_label: agent_id.label().to_owned(),
+            account_label: agent_id.as_account_id().label().to_owned(),
+            account_audience: agent_id.as_account_id().audience().to_owned(),
+            query_label,
+            request_method,
+        }
     }
 }
 
-#[derive(Serialize, Copy, Clone)]
+impl<T: serde::Serialize> MetricValue<T> {
+    pub fn new(value: T, timestamp: DateTime<Utc>, tags: Tags) -> Self {
+        Self {
+            value,
+            timestamp,
+            tags,
+        }
+    }
+}
+
+#[derive(Serialize, Clone)]
 #[serde(tag = "metric")]
 pub(crate) enum Metric {
     // MQTT queues.
@@ -36,28 +108,12 @@ pub(crate) enum Metric {
     DbConnections(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.idle_db_connections_total"))]
     IdleDbConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.db_conn_acquisition_total"))]
-    DbConnAcquisitionCount(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.db_conn_acquisition_p95_microseconds"))]
-    DbConnAcquisitionP95(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.db_conn_acquisition_p99_microseconds"))]
-    DbConnAcquisitionP99(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.db_conn_acquisition_max_microseconds"))]
-    DbConnAcquisitionMax(MetricValue<u64>),
 
     // Read-only DB pool.
     #[serde(rename(serialize = "apps.event.ro_db_connections_total"))]
     RoDbConnections(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.idle_ro_db_connections_total"))]
     IdleRoDbConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.ro_db_conn_acquisition_total"))]
-    RoDbConnAcquisitionCount(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.ro_db_conn_acquisition_p95_microseconds"))]
-    RoDbConnAcquisitionP95(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.ro_db_conn_acquisition_p99_microseconds"))]
-    RoDbConnAcquisitionP99(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.ro_db_conn_acquisition_max_microseconds"))]
-    RoDbConnAcquisitionMax(MetricValue<u64>),
 
     // Redis pool.
     #[serde(rename(serialize = "apps.event.redis_connections_total"))]
@@ -222,7 +278,7 @@ pub(crate) enum Metric {
     RunningRequests(MetricValue<i64>),
 }
 
-#[derive(Serialize, Copy, Clone)]
+#[derive(Serialize, Clone)]
 #[serde(tag = "metric")]
 pub(crate) enum Metric2 {
     // MQTT queues.
@@ -244,28 +300,12 @@ pub(crate) enum Metric2 {
     DbConnections(MetricValue<u64>),
     #[serde(rename(serialize = "idle_db_connections_total"))]
     IdleDbConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "db_conn_acquisition_total"))]
-    DbConnAcquisitionCount(MetricValue<u64>),
-    #[serde(rename(serialize = "db_conn_acquisition_p95_microseconds"))]
-    DbConnAcquisitionP95(MetricValue<u64>),
-    #[serde(rename(serialize = "db_conn_acquisition_p99_microseconds"))]
-    DbConnAcquisitionP99(MetricValue<u64>),
-    #[serde(rename(serialize = "db_conn_acquisition_max_microseconds"))]
-    DbConnAcquisitionMax(MetricValue<u64>),
 
     // Read-only DB pool.
     #[serde(rename(serialize = "ro_db_connections_total"))]
     RoDbConnections(MetricValue<u64>),
     #[serde(rename(serialize = "idle_ro_db_connections_total"))]
     IdleRoDbConnections(MetricValue<u64>),
-    #[serde(rename(serialize = "ro_db_conn_acquisition_total"))]
-    RoDbConnAcquisitionCount(MetricValue<u64>),
-    #[serde(rename(serialize = "ro_db_conn_acquisition_p95_microseconds"))]
-    RoDbConnAcquisitionP95(MetricValue<u64>),
-    #[serde(rename(serialize = "ro_db_conn_acquisition_p99_microseconds"))]
-    RoDbConnAcquisitionP99(MetricValue<u64>),
-    #[serde(rename(serialize = "ro_db_conn_acquisition_max_microseconds"))]
-    RoDbConnAcquisitionMax(MetricValue<u64>),
 
     // Redis pool.
     #[serde(rename(serialize = "redis_connections_total"))]
@@ -441,16 +481,8 @@ impl From<Metric> for Metric2 {
             Metric::OutgoingQueueEvents(v) => Metric2::OutgoingQueueEvents(v),
             Metric::DbConnections(v) => Metric2::DbConnections(v),
             Metric::IdleDbConnections(v) => Metric2::IdleDbConnections(v),
-            Metric::DbConnAcquisitionCount(v) => Metric2::DbConnAcquisitionCount(v),
-            Metric::DbConnAcquisitionP95(v) => Metric2::DbConnAcquisitionP95(v),
-            Metric::DbConnAcquisitionP99(v) => Metric2::DbConnAcquisitionP99(v),
-            Metric::DbConnAcquisitionMax(v) => Metric2::DbConnAcquisitionMax(v),
             Metric::RoDbConnections(v) => Metric2::RoDbConnections(v),
             Metric::IdleRoDbConnections(v) => Metric2::IdleRoDbConnections(v),
-            Metric::RoDbConnAcquisitionCount(v) => Metric2::RoDbConnAcquisitionCount(v),
-            Metric::RoDbConnAcquisitionP95(v) => Metric2::RoDbConnAcquisitionP95(v),
-            Metric::RoDbConnAcquisitionP99(v) => Metric2::RoDbConnAcquisitionP99(v),
-            Metric::RoDbConnAcquisitionMax(v) => Metric2::RoDbConnAcquisitionMax(v),
             Metric::RedisConnections(v) => Metric2::RedisConnections(v),
             Metric::IdleRedisConnections(v) => Metric2::IdleRedisConnections(v),
             Metric::AdjustmentInsertQueryP95(v) => Metric2::AdjustmentInsertQueryP95(v),
@@ -531,4 +563,34 @@ impl From<Metric> for Metric2 {
             Metric::RunningRequests(v) => Metric2::RunningRequests(v),
         }
     }
+}
+
+#[allow(clippy::enum_variant_names)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
+pub enum ProfilerKeys {
+    AdjustmentInsertQuery,
+    AgentDeleteQuery,
+    AgentInsertQuery,
+    AgentListQuery,
+    AgentUpdateQuery,
+    ChangeDeleteQuery,
+    ChangeFindWithRoomQuery,
+    ChangeInsertQuery,
+    ChangeListQuery,
+    EditionCloneEventsQuery,
+    EditionCommitTxnCommit,
+    EditionDeleteQuery,
+    EditionFindWithRoomQuery,
+    EditionInsertQuery,
+    EditionListQuery,
+    EventDeleteQuery,
+    EventInsertQuery,
+    EventListQuery,
+    EventOriginalEventQuery,
+    RoomAdjustCloneEventsQuery,
+    RoomFindQuery,
+    RoomInsertQuery,
+    RoomUpdateQuery,
+    StateTotalCountQuery,
+    StateQuery,
 }

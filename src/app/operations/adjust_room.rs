@@ -6,7 +6,7 @@ use chrono::{DateTime, Duration, Utc};
 use log::info;
 use sqlx::postgres::{PgConnection, PgPool as Db};
 
-use crate::app::endpoint::metric::ProfilerKeys;
+use crate::app::metrics::ProfilerKeys;
 use crate::db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segments};
 use crate::db::event::{
     DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event,
@@ -20,7 +20,7 @@ pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 
 pub(crate) async fn call(
     db: &Db,
-    profiler: &Profiler<ProfilerKeys>,
+    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
     real_time_room: &Room,
     started_at: DateTime<Utc>,
     segments: &Segments,
@@ -45,8 +45,8 @@ pub(crate) async fn call(
     }
 
     // Create adjustment.
-    let mut conn = profiler
-        .measure(ProfilerKeys::DbConnAcquisition, db.acquire())
+    let mut conn = db
+        .acquire()
         .await
         .context("Failed to acquire db connection")?;
 
@@ -55,7 +55,10 @@ pub(crate) async fn call(
 
     profiler
         .measure(
-            ProfilerKeys::AdjustmentInsertQuery,
+            (
+                ProfilerKeys::AdjustmentInsertQuery,
+                Some("room.adjust".into()),
+            ),
             query.execute(&mut conn),
         )
         .await
@@ -112,7 +115,10 @@ pub(crate) async fn call(
         .kind("stream".to_string());
 
     let cut_events = profiler
-        .measure(ProfilerKeys::EventListQuery, query.execute(&mut conn))
+        .measure(
+            (ProfilerKeys::EventListQuery, Some("room.adjust".into())),
+            query.execute(&mut conn),
+        )
         .await
         .with_context(|| {
             format!(
@@ -131,7 +137,10 @@ pub(crate) async fn call(
     let query = EventDeleteQuery::new(modified_room.id(), "stream");
 
     profiler
-        .measure(ProfilerKeys::EventDeleteQuery, query.execute(&mut conn))
+        .measure(
+            (ProfilerKeys::EventDeleteQuery, Some("room.adjust".into())),
+            query.execute(&mut conn),
+        )
         .await
         .with_context(|| {
             format!(
@@ -179,7 +188,7 @@ pub(crate) async fn call(
 /// Creates a derived room from the source room.
 async fn create_room(
     conn: &mut PgConnection,
-    profiler: &Profiler<ProfilerKeys>,
+    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
     source_room: &Room,
     started_at: DateTime<Utc>,
 ) -> Result<Room> {
@@ -192,7 +201,10 @@ async fn create_room(
     }
 
     profiler
-        .measure(ProfilerKeys::RoomInsertQuery, query.execute(conn))
+        .measure(
+            (ProfilerKeys::RoomInsertQuery, Some("room.adjust".into())),
+            query.execute(conn),
+        )
         .await
         .context("failed to insert room")
 }
@@ -201,7 +213,7 @@ async fn create_room(
 /// adding `offset` (both in nanoseconds).
 async fn clone_events(
     conn: &mut PgConnection,
-    profiler: &Profiler<ProfilerKeys>,
+    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
     room: &Room,
     gaps: &[(i64, i64)],
     offset: i64,
@@ -280,7 +292,10 @@ async fn clone_events(
 
     profiler
         .measure(
-            ProfilerKeys::RoomAdjustCloneEventsQuery,
+            (
+                ProfilerKeys::RoomAdjustCloneEventsQuery,
+                Some("room.adjust".into()),
+            ),
             query.execute(conn),
         )
         .await
@@ -374,7 +389,7 @@ mod tests {
     use sqlx::postgres::PgConnection;
     use svc_agent::{AccountId, AgentId};
 
-    use crate::app::endpoint::metric::ProfilerKeys;
+    use crate::app::metrics::ProfilerKeys;
     use crate::db::adjustment::Segments;
     use crate::db::event::{
         InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,

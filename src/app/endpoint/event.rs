@@ -14,7 +14,7 @@ use svc_agent::{
 use uuid::Uuid;
 
 use crate::app::context::Context;
-use crate::app::endpoint::{metric::ProfilerKeys, prelude::*};
+use crate::app::endpoint::prelude::*;
 use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -63,7 +63,10 @@ impl RequestHandler for CreateHandler {
 
             let room = context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -86,7 +89,10 @@ impl RequestHandler for CreateHandler {
                     context
                         .profiler()
                         .measure(
-                            ProfilerKeys::EventOriginalEventQuery,
+                            (
+                                ProfilerKeys::EventOriginalEventQuery,
+                                Some(reqp.method().to_owned()),
+                            ),
                             query.execute(&mut conn),
                         )
                         .await
@@ -164,7 +170,13 @@ impl RequestHandler for CreateHandler {
 
                 context
                     .profiler()
-                    .measure(ProfilerKeys::EventInsertQuery, query.execute(&mut conn))
+                    .measure(
+                        (
+                            ProfilerKeys::EventInsertQuery,
+                            Some(reqp.method().to_owned()),
+                        ),
+                        query.execute(&mut conn),
+                    )
                     .await
                     .with_context(|| format!("Failed to insert event, room_id = '{}'", room.id()))
                     .error(AppErrorKind::DbQueryFailed)?
@@ -278,7 +290,10 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::RoomFindQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
                 .error(AppErrorKind::DbQueryFailed)?
@@ -334,7 +349,10 @@ impl RequestHandler for ListHandler {
 
             context
                 .profiler()
-                .measure(ProfilerKeys::EventListQuery, query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::EventListQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
                 .await
                 .with_context(|| format!("Failed to list events, room_id = '{}'", room.id()))
                 .error(AppErrorKind::DbQueryFailed)?
