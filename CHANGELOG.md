@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.21 (October 5, 2020)
+
+### Changes
+- Introduced meaningful error types ([a6d7f25](https://github.com/netology-group/event/commit/a6d7f2541addd43ca21bd56cd1bdb0afc01a4035))
+- Tagged metrics ([cea280c](https://github.com/netology-group/event/commit/cea280cdca5bee2de38140248997911c4323d812))
+
 ## v0.2.20 (September 23, 2020)
 
 ### Changes
