@@ -392,7 +392,7 @@ mod tests {
     #[test]
     fn commit_edition() {
         async_std::task::block_on(async {
-            let profiler = Profiler::<ProfilerKeys>::start();
+            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
             let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut conn = db.get_conn().await;
@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn commit_edition_with_cut_changes() {
         async_std::task::block_on(async {
-            let profiler = Profiler::<ProfilerKeys>::start();
+            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
             let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut conn = db.get_conn().await;
@@ -643,7 +643,7 @@ mod tests {
     #[test]
     fn commit_edition_with_intersecting_gaps() {
         async_std::task::block_on(async {
-            let profiler = Profiler::<ProfilerKeys>::start();
+            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
             let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut conn = db.get_conn().await;

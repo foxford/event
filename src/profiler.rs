@@ -167,7 +167,6 @@ mod tests {
         }
 
         let report = entry.flush(5);
-        assert_eq!(report.count, 999);
         assert_eq!(report.p95, 974);
         assert_eq!(report.p99, 994);
         assert_eq!(report.max, 999);

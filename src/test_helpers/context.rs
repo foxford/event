@@ -1,3 +1,4 @@
+use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use serde_json::json;
@@ -7,7 +8,7 @@ use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
 use crate::app::context::Context;
-use crate::app::endpoint::metric::ProfilerKeys;
+use crate::app::metrics::ProfilerKeys;
 use crate::app::metrics::Metric;
 use crate::config::Config;
 use crate::profiler::Profiler;
@@ -47,7 +48,7 @@ pub(crate) struct TestContext {
     authz: Authz,
     db: TestDb,
     agent_id: AgentId,
-    profiler: Arc<Profiler<ProfilerKeys>>,
+    profiler: Arc<Profiler<(ProfilerKeys, Option<String>)>>,
 }
 
 impl TestContext {
@@ -60,7 +61,7 @@ impl TestContext {
             authz: authz.into(),
             db,
             agent_id,
-            profiler: Arc::new(Profiler::<ProfilerKeys>::start()),
+            profiler: Arc::new(Profiler::<(ProfilerKeys, Option<String>)>::start()),
         }
     }
 }
@@ -94,11 +95,15 @@ impl Context for TestContext {
         &None
     }
 
-    fn profiler(&self) -> Arc<Profiler<ProfilerKeys>> {
+    fn profiler(&self) -> Arc<Profiler<(ProfilerKeys, Option<String>)>> {
         self.profiler.clone()
     }
 
     fn get_metrics(&self, _duration: u64) -> anyhow::Result<Vec<Metric>> {
         Ok(vec![])
+    }
+
+    fn running_requests(&self) -> Option<Arc<AtomicI64>> {
+        None
     }
 }

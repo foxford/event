@@ -403,7 +403,7 @@ mod tests {
     #[test]
     fn adjust_room() {
         async_std::task::block_on(async {
-            let profiler = Profiler::<ProfilerKeys>::start();
+            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
             let db = TestDb::new().await;
             let mut conn = db.get_conn().await;
 
