@@ -1,4 +1,4 @@
-use std::ops::Bound;
+use std::ops::{Bound, RangeBounds};
 
 use anyhow::anyhow;
 use chrono::{serde::ts_seconds, DateTime, Utc};
@@ -42,6 +42,14 @@ impl Object {
 
     pub(crate) fn tags(&self) -> Option<&JsonValue> {
         self.tags.as_ref()
+    }
+
+    pub(crate) fn is_closed(&self) -> bool {
+        match self.time.0.end_bound() {
+            Bound::Included(t) => *t < Utc::now(),
+            Bound::Excluded(t) => *t <= Utc::now(),
+            Bound::Unbounded => false,
+        }
     }
 }
 
@@ -224,18 +232,12 @@ impl UpdateQuery {
         }
     }
 
-    pub(crate) fn time(self, time: Time) -> Self {
-        Self {
-            time: Some(time),
-            ..self
-        }
+    pub(crate) fn time(self, time: Option<Time>) -> Self {
+        Self { time, ..self }
     }
 
-    pub(crate) fn tags(self, tags: JsonValue) -> Self {
-        Self {
-            tags: Some(tags),
-            ..self
-        }
+    pub(crate) fn tags(self, tags: Option<JsonValue>) -> Self {
+        Self { tags, ..self }
     }
 
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {

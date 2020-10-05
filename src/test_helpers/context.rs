@@ -8,8 +8,8 @@ use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
 use crate::app::context::Context;
-use crate::app::metrics::ProfilerKeys;
 use crate::app::metrics::Metric;
+use crate::app::metrics::ProfilerKeys;
 use crate::config::Config;
 use crate::profiler::Profiler;
 

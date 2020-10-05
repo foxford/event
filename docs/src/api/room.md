@@ -22,3 +22,21 @@ source_room_id |       uuid | _optional_ | The identifier of the source room for
 time           | [int, int] | _required_ | Opening and closing timestamps in seconds.
 tags           |       json | _optional_ | Tags object associated with the room.
 created_at     |        int | _required_ | Room creation timestamp in seconds.
+
+
+## Lifecycle events
+
+### room.close event
+
+If either
+  * the room was updated so that the closure datetime was moved from future into the past,
+  * the room was vacuumed
+
+`room.close` event will be sent to room topic.
+This event is not guaranteed to be unique, that is two `room.close` events could be sent by the service.
+
+**URI:** `rooms/:room_id/events`
+
+**Label:** `room.close`.
+
+**Payload:** [room](#properties) object.

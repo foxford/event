@@ -123,6 +123,25 @@ where
     panic!("Event not found");
 }
 
+pub(crate) fn find_event_by_predicate<P, F>(
+    messages: &[OutgoingEnvelope],
+    f: F,
+) -> Option<(P, &OutgoingEventProperties, &str)>
+where
+    P: DeserializeOwned,
+    F: Fn(&OutgoingEventProperties, P) -> bool,
+{
+    for message in messages {
+        if let OutgoingEnvelopeProperties::Event(evp) = message.properties() {
+            if f(evp, message.payload::<P>()) {
+                return Some((message.payload::<P>(), evp, message.topic()));
+            }
+        }
+    }
+
+    return None;
+}
+
 pub(crate) fn find_response<P>(messages: &[OutgoingEnvelope]) -> (P, &OutgoingResponseProperties)
 where
     P: DeserializeOwned,
@@ -157,8 +176,8 @@ pub(crate) mod prelude {
     #[allow(unused_imports)]
     pub(crate) use super::{
         agent::TestAgent, authz::TestAuthz, context::TestContext, db::TestDb, factory, find_event,
-        find_request, find_response, handle_event, handle_request, shared_helpers, SVC_AUDIENCE,
-        USR_AUDIENCE,
+        find_event_by_predicate, find_request, find_response, handle_event, handle_request,
+        shared_helpers, SVC_AUDIENCE, USR_AUDIENCE,
     };
 }
 
