@@ -260,17 +260,13 @@ impl RequestHandler for UpdateHandler {
             }
         }
 
+        let room_was_open = !room.is_closed();
+
         // Update room.
         let room = {
-            let mut query = UpdateQuery::new(room.id());
-
-            if let Some(time) = time {
-                query = query.time(time.into());
-            }
-
-            if let Some(tags) = payload.tags {
-                query = query.tags(tags);
-            }
+            let query = UpdateQuery::new(room.id())
+                .time(time.map(|t| t.into()))
+                .tags(payload.tags);
 
             let mut conn = context.get_conn().await?;
 
@@ -300,12 +296,40 @@ impl RequestHandler for UpdateHandler {
         let notification = helpers::build_notification(
             "room.update",
             &format!("audiences/{}/events", room.audience()),
-            room,
+            room.clone(),
             reqp,
             start_timestamp,
         );
 
-        Ok(Box::new(stream::from_iter(vec![response, notification])))
+        let mut responses = vec![response, notification];
+
+        let append_closed_notification = || {
+            let closed_notification = helpers::build_notification(
+                "room.close",
+                &format!("rooms/{}/events", room.id()),
+                room,
+                reqp,
+                start_timestamp,
+            );
+            responses.push(closed_notification);
+        };
+
+        // Publish room closed notification
+        if room_was_open {
+            if let Some(time) = payload.time {
+                match time.1 {
+                    Bound::Included(t) if Utc::now() > t => {
+                        append_closed_notification();
+                    }
+                    Bound::Excluded(t) if Utc::now() >= t => {
+                        append_closed_notification();
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        Ok(Box::new(stream::from_iter(responses)))
     }
 }
 
@@ -1041,6 +1065,14 @@ mod tests {
                         Bound::Excluded(now),
                     )
                 );
+
+                // since we just closed the room we must receive a room.close event
+                let (ev_room, _, _) =
+                    find_event_by_predicate::<Room, _>(messages.as_slice(), |evp, _| {
+                        evp.label() == "room.close"
+                    })
+                    .expect("Failed to find room.close event");
+                assert_eq!(ev_room.id(), room.id());
             });
         }
 
