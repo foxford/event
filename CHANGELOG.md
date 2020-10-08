@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.22 (October 9, 2020)
+
+### Changes
+- Added room.close notification ([dbb353f](https://github.com/netology-group/conference/commit/dbb353f63e783771dd94358f001c74ed9237e1ec))
+- Added bytesize constraint on event.data column ([eb1dab6](https://github.com/netology-group/conference/commit/eb1dab64d1157807f1a03b5c749a56910775a795))
+
 ## v0.2.21 (October 5, 2020)
 
 ### Changes
