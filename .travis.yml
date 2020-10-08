@@ -10,12 +10,7 @@ addons:
       - postgresql-11
       - postgresql-client-11
 
-cache:
-  directories:
-    - ${TRAVIS_HOME}/.cargo
-
-before_cache:
-  - rm -rf ${TRAVIS_HOME}/.cargo/registry
+cache: cargo
 
 services:
   - docker
@@ -30,6 +25,10 @@ install:
 
 jobs:
   include:
+    - stage: build
+      name: Compilation
+      script: cargo build
+
     - stage: check
       name: Format
 
@@ -61,15 +60,12 @@ jobs:
         - cargo test
 
     - stage: deploy
-      name: Kubernetes
-      script: ./deploy.init.sh && ./deploy/travis-run.sh
-
-    - stage: deploy
       name: Docs
       install: cargo install mdbook --vers 0.3.5 --force
       script: mdbook build docs && ./deploy.init.sh && PROJECT='event' ./deploy/s3-docs.sh
 
 stages:
+  - name: build
   - name: check
   - name: deploy
     if: tag IS present
