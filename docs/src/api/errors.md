@@ -39,6 +39,7 @@ The following types are a part of the service's API and are guaranteed to mainta
 - `stats_collection_failed` – Couldn't collect metrics from one of the sources.
 - `publish_failed` – Failed to publish an MQTT message.
 - `room_adjust_task_failed` – An error in the asynchronous room adjustment task called by [room.adjust](room/adjust.md#room.adjust).
-- `room_not_found` – A [room](room.md#Room) is missing or closed.
+- `room_not_found` – The [room](room.md#Room) is missing.
+- `room_closed` - The [room](room.md#Room) exists but already closed.
 - `transient_event_creation_failed` – An error [creating](event/create.md#event.create) a non-persistent event.
 - `unknown_method` – An unsupported value in `method` property of the request message.

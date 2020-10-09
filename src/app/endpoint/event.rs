@@ -56,22 +56,13 @@ impl RequestHandler for CreateHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, author) = {
-            let mut conn = context.get_ro_conn().await?;
-
-            // Check whether the room exists and open.
-            let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
-
-            let room = context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("the room = '{}' is not found or closed", payload.room_id))
-                .error(AppErrorKind::RoomNotFound)?;
+            let room = helpers::find_room(
+                context,
+                payload.room_id,
+                helpers::RoomTimeRequirement::Open,
+                reqp.method(),
+            )
+            .await?;
 
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
@@ -85,6 +76,8 @@ impl RequestHandler for CreateHandler {
                         set.to_owned(),
                         label.to_owned(),
                     );
+
+                    let mut conn = context.get_ro_conn().await?;
 
                     context
                         .profiler()
@@ -283,23 +276,13 @@ impl RequestHandler for ListHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        // Check whether the room exists.
-        let room = {
-            let query = db::room::FindQuery::new(payload.room_id);
-            let mut conn = context.get_ro_conn().await?;
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("the room = '{}' is not found", payload.room_id))
-                .error(AppErrorKind::RoomNotFound)?
-        };
+        let room = helpers::find_room(
+            context,
+            payload.room_id,
+            helpers::RoomTimeRequirement::Any,
+            reqp.method(),
+        )
+        .await?;
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
@@ -813,7 +796,7 @@ mod tests {
                 .expect_err("Unexpected success on event creation");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
-            assert_eq!(err.kind(), "room_not_found");
+            assert_eq!(err.kind(), "room_closed");
         });
     }
 

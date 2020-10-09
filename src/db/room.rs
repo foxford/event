@@ -134,13 +134,6 @@ impl FindQuery {
         Self { id, time: None }
     }
 
-    pub(crate) fn time(self, time: Time) -> Self {
-        Self {
-            time: Some(time),
-            ..self
-        }
-    }
-
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
         let time: Option<PgRange<DateTime<Utc>>> = self.time.map(|t| t.into());
 
@@ -287,29 +280,6 @@ impl Into<PgRange<DateTime<Utc>>> for Time {
     fn into(self) -> PgRange<DateTime<Utc>> {
         self.0
     }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-/// Use to filter by not expired room allowing time before room opening.
-///
-///    [-----room.time-----]
-/// [---------------------------- OK
-///              [--------------- OK
-///                           [-- NOT OK
-pub(crate) fn since_now() -> Time {
-    (Bound::Included(Utc::now()), Bound::Unbounded).into()
-}
-
-/// Use to filter strictly by room time range.
-///
-///    [-----room.time-----]
-///  |                            NOT OK
-///              |                OK
-///                          |    NOT OK
-pub(crate) fn now() -> Time {
-    let now = Utc::now();
-    (Bound::Included(now), Bound::Included(now)).into()
 }
 
 ////////////////////////////////////////////////////////////////////////////////
