@@ -23,6 +23,7 @@ pub(crate) enum ErrorKind {
     StatsCollectionFailed,
     PublishFailed,
     RoomAdjustTaskFailed,
+    RoomClosed,
     RoomNotFound,
     SerializationFailed,
     TransientEventCreationFailed,
@@ -107,6 +108,7 @@ impl Into<(ResponseStatus, &'static str, &'static str)> for ErrorKind {
                 "room_adjust_task_failed",
                 "Room adjust task failed",
             ),
+            Self::RoomClosed => (ResponseStatus::NOT_FOUND, "room_closed", "Room closed"),
             Self::RoomNotFound => (
                 ResponseStatus::NOT_FOUND,
                 "room_not_found",

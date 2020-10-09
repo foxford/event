@@ -15,7 +15,7 @@ use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
-use crate::db::{agent, room};
+use crate::db::agent;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -74,24 +74,19 @@ impl EventHandler for CreateHandler {
 
         {
             // Find room.
-            let query = room::FindQuery::new(room_id).time(room::now());
-            let mut conn = context.get_conn().await?;
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, None),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", room_id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("the room = '{}' is not found or closed", room_id))
-                .error(AppErrorKind::RoomNotFound)?;
+            helpers::find_room(
+                context,
+                room_id,
+                helpers::RoomTimeRequirement::Open,
+                evp.label().unwrap_or("about:blank"),
+            )
+            .await?;
 
             // Update agent state to `ready`.
             let q = agent::UpdateQuery::new(payload.subject.clone(), room_id)
                 .status(agent::Status::Ready);
+
+            let mut conn = context.get_conn().await?;
 
             context
                 .profiler()
@@ -317,7 +312,7 @@ mod tests {
                 .expect_err("Unexpected success on subscription creation");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
-            assert_eq!(err.kind(), "room_not_found");
+            assert_eq!(err.kind(), "room_closed");
         });
     }
 

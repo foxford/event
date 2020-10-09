@@ -57,22 +57,13 @@ impl RequestHandler for ReadHandler {
         );
 
         // Check whether the room exists.
-        let room = {
-            let query = db::room::FindQuery::new(payload.room_id);
-            let mut conn = context.get_ro_conn().await?;
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("the room = '{}' is not found", payload.room_id))
-                .error(AppErrorKind::RoomNotFound)?
-        };
+        let room = helpers::find_room(
+            context,
+            payload.room_id,
+            helpers::RoomTimeRequirement::Any,
+            reqp.method(),
+        )
+        .await?;
 
         // Authorize room events listing.
         let room_id = room.id().to_string();

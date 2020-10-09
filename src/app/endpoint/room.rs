@@ -24,7 +24,7 @@ use crate::app::endpoint::prelude::*;
 use crate::app::operations::adjust_room;
 use crate::db::adjustment::Segments;
 use crate::db::agent;
-use crate::db::room::{now, since_now, FindQuery, InsertQuery, UpdateQuery};
+use crate::db::room::{InsertQuery, UpdateQuery};
 
 type Time = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
 
@@ -145,22 +145,13 @@ impl RequestHandler for ReadHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let room = {
-            let query = FindQuery::new(payload.id);
-            let mut conn = context.get_ro_conn().await?;
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.id))
-                .error(AppErrorKind::RoomNotFound)?
-        };
+        let room = helpers::find_room(
+            context,
+            payload.id,
+            helpers::RoomTimeRequirement::Any,
+            reqp.method(),
+        )
+        .await?;
 
         // Authorize room reading on the tenant.
         let room_id = room.id().to_string();
@@ -204,28 +195,14 @@ impl RequestHandler for UpdateHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        // Find not closed room.
-        let mut query = FindQuery::new(payload.id);
-
-        if payload.time.is_some() {
-            query = query.time(since_now());
-        }
-
-        let room = {
-            let mut conn = context.get_ro_conn().await?;
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("Room not found, id = '{}' or closed", payload.id))
-                .error(AppErrorKind::RoomNotFound)?
+        let time_requirement = if payload.time.is_some() {
+            // Forbid changing time of a closed room.
+            helpers::RoomTimeRequirement::NotClosed
+        } else {
+            helpers::RoomTimeRequirement::Any
         };
+
+        let room = helpers::find_room(context, payload.id, time_requirement, reqp.method()).await?;
 
         // Authorize room reading on the tenant.
         let room_id = room.id().to_string();
@@ -352,22 +329,13 @@ impl RequestHandler for EnterHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let room = {
-            let query = FindQuery::new(payload.id).time(now());
-            let mut conn = context.get_ro_conn().await?;
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("Room not found or closed, id = '{}'", payload.id))
-                .error(AppErrorKind::RoomNotFound)?
-        };
+        let room = helpers::find_room(
+            context,
+            payload.id,
+            helpers::RoomTimeRequirement::Open,
+            reqp.method(),
+        )
+        .await?;
 
         // Authorize subscribing to the room's events.
         let room_id = room.id().to_string();
@@ -451,26 +419,21 @@ impl RequestHandler for LeaveHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, presence) = {
-            let query = FindQuery::new(payload.id);
-            let mut conn = context.get_ro_conn().await?;
-
-            let room = context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.id))
-                .error(AppErrorKind::RoomNotFound)?;
+            let room = helpers::find_room(
+                context,
+                payload.id,
+                helpers::RoomTimeRequirement::Any,
+                reqp.method(),
+            )
+            .await?;
 
             // Check room presence.
             let query = agent::ListQuery::new()
                 .room_id(room.id())
                 .agent_id(reqp.as_agent_id().to_owned())
                 .status(agent::Status::Ready);
+
+            let mut conn = context.get_ro_conn().await?;
 
             let presence = context
                 .profiler()
@@ -549,22 +512,13 @@ impl RequestHandler for AdjustHandler {
         start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Find realtime room.
-        let room = {
-            let query = FindQuery::new(payload.id);
-            let mut conn = context.get_ro_conn().await?;
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.id))
-                .error(AppErrorKind::RoomNotFound)?
-        };
+        let room = helpers::find_room(
+            context,
+            payload.id,
+            helpers::RoomTimeRequirement::Any,
+            reqp.method(),
+        )
+        .await?;
 
         // Authorize trusted account for the room's audience.
         let room_id = room.id().to_string();
@@ -1205,7 +1159,7 @@ mod tests {
                     .expect_err("Unexpected success on room update");
 
                 assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_not_found");
+                assert_eq!(err.kind(), "room_closed");
             });
         }
     }
@@ -1334,7 +1288,7 @@ mod tests {
                     .expect_err("Unexpected success on room entering");
 
                 assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_not_found");
+                assert_eq!(err.kind(), "room_closed");
             });
         }
     }

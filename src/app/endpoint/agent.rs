@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -33,23 +33,13 @@ impl RequestHandler for ListHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let room = {
-            // Check whether the room exists and open.
-            let query = db::room::FindQuery::new(payload.room_id).time(db::room::now());
-            let mut conn = context.get_ro_conn().await?;
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("the room = '{}' is not found or closed", payload.room_id))
-                .error(AppErrorKind::RoomNotFound)?
-        };
+        let room = helpers::find_room(
+            context,
+            payload.room_id,
+            helpers::RoomTimeRequirement::Open,
+            reqp.method(),
+        )
+        .await?;
 
         // Authorize agents listing in the room.
         let room_id = room.id().to_string();
@@ -224,7 +214,7 @@ mod tests {
                 .expect_err("Unexpected success on agents listing");
 
             assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
-            assert_eq!(err.kind(), "room_not_found");
+            assert_eq!(err.kind(), "room_closed");
         });
     }
 

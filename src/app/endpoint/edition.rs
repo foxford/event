@@ -42,22 +42,13 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let room = {
-            let query = db::room::FindQuery::new(payload.room_id);
-            let mut conn = context.get_ro_conn().await?;
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.room_id))
-                .error(AppErrorKind::RoomNotFound)?
-        };
+        let room = helpers::find_room(
+            context,
+            payload.room_id,
+            helpers::RoomTimeRequirement::Any,
+            reqp.method(),
+        )
+        .await?;
 
         let authz_time = context
             .authz()
@@ -130,22 +121,13 @@ impl RequestHandler for ListHandler {
         reqp: &IncomingRequestProperties,
         start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let room = {
-            let query = db::room::FindQuery::new(payload.room_id);
-            let mut conn = context.get_ro_conn().await?;
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::RoomFindQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
-                .await
-                .with_context(|| format!("Failed to find room = '{}'", payload.room_id))
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("Room not found, id = '{}'", payload.room_id))
-                .error(AppErrorKind::RoomNotFound)?
-        };
+        let room = helpers::find_room(
+            context,
+            payload.room_id,
+            helpers::RoomTimeRequirement::Any,
+            reqp.method(),
+        )
+        .await?;
 
         let room_id = room.id();
 
