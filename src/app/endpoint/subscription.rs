@@ -1,15 +1,14 @@
 use std::result::Result as StdResult;
 
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::{
     mqtt::{
         IncomingEventProperties, IntoPublishableMessage, OutgoingEvent, ShortTermTimingProperties,
     },
-    AgentId, Authenticable,
+    Addressable, AgentId, Authenticable,
 };
 use uuid::Uuid;
 
@@ -56,10 +55,9 @@ impl EventHandler for CreateHandler {
     type Payload = SubscriptionEvent;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
@@ -71,6 +69,12 @@ impl EventHandler for CreateHandler {
         }
 
         let room_id = payload.try_room_id()?;
+
+        context.add_logger_tags(o!(
+            "agent_label" => evp.as_agent_id().label().to_owned(),
+            "account_label" => evp.as_account_id().label().to_owned(),
+            "audience" => evp.as_account_id().audience().to_owned(),
+        ));
 
         {
             // Find room.
@@ -92,12 +96,7 @@ impl EventHandler for CreateHandler {
                 .profiler()
                 .measure((ProfilerKeys::AgentUpdateQuery, None), q.execute(&mut conn))
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to put agent into 'ready' status, agent_id = '{}', room_id = '{}'",
-                        payload.subject, room_id,
-                    )
-                })
+                .context("Failed to put agent into 'ready' status")
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
@@ -107,6 +106,7 @@ impl EventHandler for CreateHandler {
             agent_id: payload.subject,
         };
 
+        let start_timestamp = context.start_timestamp();
         let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
         let props = evp.to_event("room.enter", short_term_timing);
         let to_uri = format!("rooms/{}/events", room_id);
@@ -125,10 +125,9 @@ impl EventHandler for DeleteHandler {
     type Payload = SubscriptionEvent;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
@@ -141,6 +140,7 @@ impl EventHandler for DeleteHandler {
 
         // Delete agent from the DB.
         let room_id = payload.try_room_id()?;
+        context.add_logger_tags(o!("room_id" => room_id.to_string()));
 
         let row_count = {
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
@@ -153,22 +153,13 @@ impl EventHandler for DeleteHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to delete agent, agent_id = '{}', room_id = '{}'",
-                        payload.subject, room_id,
-                    )
-                })
+                .context("Failed to delete agent")
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
         if row_count != 1 {
-            return Err(anyhow!(
-                "the agent is not found for agent_id = '{}', room = '{}'",
-                payload.subject,
-                room_id
-            ))
-            .error(AppErrorKind::AgentNotEnteredTheRoom);
+            return Err(anyhow!("The agent is not found"))
+                .error(AppErrorKind::AgentNotEnteredTheRoom);
         }
 
         // Send broadcast notification that the agent has left the room.
@@ -177,6 +168,7 @@ impl EventHandler for DeleteHandler {
             agent_id: payload.subject,
         };
 
+        let start_timestamp = context.start_timestamp();
         let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
         let props = evp.to_event("room.leave", short_term_timing);
         let to_uri = format!("rooms/{}/events", room_id);
@@ -221,7 +213,7 @@ mod tests {
             };
 
             // Send subscription.create event.
-            let context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
             let room_id = room.id().to_string();
 
             let payload = SubscriptionEvent {
@@ -232,7 +224,7 @@ mod tests {
             let broker_account_label = context.config().broker_id.label();
             let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
 
-            let messages = handle_event::<CreateHandler>(&context, &broker, payload)
+            let messages = handle_event::<CreateHandler>(&mut context, &broker, payload)
                 .await
                 .expect("Subscription creation failed");
 
@@ -265,7 +257,7 @@ mod tests {
     fn create_subscription_missing_room() {
         async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
             let room_id = Uuid::new_v4().to_string();
 
             let payload = SubscriptionEvent {
@@ -276,7 +268,7 @@ mod tests {
             let broker_account_label = context.config().broker_id.label();
             let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
 
-            let err = handle_event::<CreateHandler>(&context, &broker, payload)
+            let err = handle_event::<CreateHandler>(&mut context, &broker, payload)
                 .await
                 .expect_err("Unexpected success on subscription creation");
 
@@ -295,7 +287,7 @@ mod tests {
                 shared_helpers::insert_closed_room(&mut conn).await
             };
 
-            let context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let room_id = room.id().to_string();
 
@@ -307,7 +299,7 @@ mod tests {
             let broker_account_label = context.config().broker_id.label();
             let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
 
-            let err = handle_event::<CreateHandler>(&context, &broker, payload)
+            let err = handle_event::<CreateHandler>(&mut context, &broker, payload)
                 .await
                 .expect_err("Unexpected success on subscription creation");
 
@@ -333,7 +325,7 @@ mod tests {
             };
 
             // Send subscription.delete event.
-            let context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
             let room_id = room.id().to_string();
 
             let payload = SubscriptionEvent {
@@ -344,7 +336,7 @@ mod tests {
             let broker_account_label = context.config().broker_id.label();
             let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
 
-            let messages = handle_event::<DeleteHandler>(&context, &broker, payload)
+            let messages = handle_event::<DeleteHandler>(&mut context, &broker, payload)
                 .await
                 .expect("Subscription deletion failed");
 
@@ -383,7 +375,7 @@ mod tests {
                 shared_helpers::insert_room(&mut conn).await
             };
 
-            let context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
             let room_id = room.id().to_string();
 
             let payload = SubscriptionEvent {
@@ -394,7 +386,7 @@ mod tests {
             let broker_account_label = context.config().broker_id.label();
             let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
 
-            let err = handle_event::<DeleteHandler>(&context, &broker, payload)
+            let err = handle_event::<DeleteHandler>(&mut context, &broker, payload)
                 .await
                 .expect_err("Unexpected success on subscription deletion");
 
@@ -407,7 +399,7 @@ mod tests {
     fn delete_subscription_missing_room() {
         async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
             let room_id = Uuid::new_v4().to_string();
 
             let payload = SubscriptionEvent {
@@ -418,7 +410,7 @@ mod tests {
             let broker_account_label = context.config().broker_id.label();
             let broker = TestAgent::new("alpha", broker_account_label, SVC_AUDIENCE);
 
-            let err = handle_event::<DeleteHandler>(&context, &broker, payload)
+            let err = handle_event::<DeleteHandler>(&mut context, &broker, payload)
                 .await
                 .expect_err("Unexpected success on subscription deletion");
 

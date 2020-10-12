@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -20,12 +20,11 @@ impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
-        let (_edition, room) = {
+        let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.edition_id);
             let mut conn = context.get_ro_conn().await?;
 
@@ -39,22 +38,20 @@ impl RequestHandler for CreateHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to find edition with room, edition_id = '{}'",
-                        payload.edition_id
-                    )
-                })
+                .context("Failed to find edition with room")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition_with_room {
                 Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(anyhow!("Edition not found, id = '{}'", payload.edition_id))
-                        .error(AppErrorKind::EditionNotFound)?;
+                    return Err(anyhow!("Edition not found"))
+                        .error(AppErrorKind::EditionNotFound)?
                 }
             }
         };
+
+        helpers::add_room_logger_tags(context, &room);
+        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
         let authz_time = context
             .authz()
@@ -65,8 +62,6 @@ impl RequestHandler for CreateHandler {
                 "update",
             )
             .await?;
-
-        let edition_id = payload.edition_id;
 
         let query =
             db::change::InsertQuery::new(payload.edition_id, payload.changeset.as_changetype());
@@ -121,15 +116,17 @@ impl RequestHandler for CreateHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to insert change, edition_id = '{}'", edition_id))
+                .context("Failed to insert change")
                 .error(AppErrorKind::DbQueryFailed)?
         };
+
+        context.add_logger_tags(o!("change_id" => change.id().to_string()));
 
         let response = helpers::build_response(
             ResponseStatus::CREATED,
             change,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         );
 
@@ -153,10 +150,9 @@ impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
@@ -172,22 +168,20 @@ impl RequestHandler for ListHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to find edition with room, edition_id = '{}'",
-                        payload.id
-                    )
-                })
+                .context("Failed to find edition")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition_with_room {
                 Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(anyhow!("Edition not found, id = '{}'", payload.id))
+                    return Err(anyhow!("Edition not found"))
                         .error(AppErrorKind::EditionNotFound)?;
                 }
             }
         };
+
+        helpers::add_room_logger_tags(context, &room);
+        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
         let authz_time = context
             .authz()
@@ -222,7 +216,7 @@ impl RequestHandler for ListHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to list changes, edition_id = '{}'", payload.id))
+                .context("Failed to list changes")
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
@@ -230,7 +224,7 @@ impl RequestHandler for ListHandler {
             ResponseStatus::OK,
             changes,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         )])))
     }
@@ -250,10 +244,9 @@ impl RequestHandler for DeleteHandler {
     type Payload = DeleteRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (change, room) = {
             let query = db::change::FindWithRoomQuery::new(payload.id);
@@ -269,22 +262,20 @@ impl RequestHandler for DeleteHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to find change with room, change_id = '{}'",
-                        payload.id
-                    )
-                })
+                .context("Failed to find change with room")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_change_with_room {
                 Some(change_with_room) => change_with_room,
                 None => {
-                    return Err(anyhow!("Change not found, id = '{}'", payload.id))
-                        .error(AppErrorKind::ChangeNotFound)?;
+                    return Err(anyhow!("Change not found")).error(AppErrorKind::ChangeNotFound)?;
                 }
             }
         };
+
+        helpers::add_room_logger_tags(context, &room);
+        context.add_logger_tags(o!("edition_id" => change.edition_id().to_string()));
+        context.add_logger_tags(o!("change_id" => change.id().to_string()));
 
         let authz_time = context
             .authz()
@@ -310,7 +301,7 @@ impl RequestHandler for DeleteHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to delete change, id = '{}'", payload.id))
+                .context("Failed to delete change")
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
@@ -318,7 +309,7 @@ impl RequestHandler for DeleteHandler {
             ResponseStatus::OK,
             change,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         );
 
@@ -364,7 +355,7 @@ mod tests {
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = CreateRequest {
                     edition_id: edition.id(),
@@ -378,7 +369,7 @@ mod tests {
                     }),
                 };
 
-                let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to create change");
 
@@ -435,7 +426,7 @@ mod tests {
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = CreateRequest {
                     edition_id: edition.id(),
@@ -447,7 +438,7 @@ mod tests {
                     }),
                 };
 
-                let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to create change");
 
@@ -498,7 +489,7 @@ mod tests {
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = CreateRequest {
                     edition_id: edition.id(),
@@ -513,7 +504,7 @@ mod tests {
                     }),
                 };
 
-                let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to create change");
 
@@ -556,7 +547,7 @@ mod tests {
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = CreateRequest {
                     edition_id: edition.id(),
@@ -568,7 +559,7 @@ mod tests {
                     }),
                 };
 
-                let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating change with wrong params");
 
@@ -593,7 +584,7 @@ mod tests {
                     (room, edition)
                 };
 
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
 
                 let payload = CreateRequest {
                     edition_id: edition.id(),
@@ -607,7 +598,7 @@ mod tests {
                     }),
                 };
 
-                let response = handle_request::<CreateHandler>(&context, &agent, payload)
+                let response = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating change with no authorization");
 
@@ -619,7 +610,7 @@ mod tests {
         fn create_change_missing_edition() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = CreateRequest {
                     edition_id: Uuid::new_v4(),
@@ -633,7 +624,7 @@ mod tests {
                     }),
                 };
 
-                let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating change for no edition");
 
@@ -692,7 +683,7 @@ mod tests {
                 let object = vec!["rooms", &room_id];
                 authz.allow(agent.account_id(), object, "update");
 
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = ListRequest {
                     id: edition.id(),
@@ -700,7 +691,7 @@ mod tests {
                     limit: None,
                 };
 
-                let messages = handle_request::<ListHandler>(&context, &agent, payload)
+                let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to list changes");
 
@@ -751,7 +742,7 @@ mod tests {
                     (room, edition, changes)
                 };
 
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
 
                 let payload = ListRequest {
                     id: edition.id(),
@@ -759,7 +750,7 @@ mod tests {
                     limit: None,
                 };
 
-                let resp = handle_request::<ListHandler>(&context, &agent, payload)
+                let resp = handle_request::<ListHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success without authorization on changes list");
 
@@ -771,7 +762,7 @@ mod tests {
         fn list_changes_missing_edition() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = ListRequest {
                     id: Uuid::new_v4(),
@@ -779,7 +770,7 @@ mod tests {
                     limit: None,
                 };
 
-                let err = handle_request::<ListHandler>(&context, &agent, payload)
+                let err = handle_request::<ListHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success listing changes for no edition");
 
@@ -837,13 +828,13 @@ mod tests {
                 let object = vec!["rooms", &room_id];
                 authz.allow(agent.account_id(), object, "update");
 
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = DeleteRequest {
                     id: changes[0].id(),
                 };
 
-                let messages = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let messages = handle_request::<DeleteHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to list editions");
 
@@ -903,13 +894,13 @@ mod tests {
                     (room, edition, changes)
                 };
 
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
 
                 let payload = DeleteRequest {
                     id: changes[0].id(),
                 };
 
-                let response = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let response = handle_request::<DeleteHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success deleting change without authorization");
 
@@ -972,10 +963,10 @@ mod tests {
                 let object = vec!["rooms", &room_id];
                 authz.allow(agent.account_id(), object, "update");
 
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
                 let payload = DeleteRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let err = handle_request::<DeleteHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Failed to list changes");
 

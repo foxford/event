@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
+use slog::{Logger, OwnedKV, SendSyncRefUnwindSafeKV};
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgPool as Db, Postgres};
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
@@ -16,8 +18,10 @@ use crate::profiler::Profiler;
 
 ///////////////////////////////////////////////////////////////////////////////
 
+pub(crate) trait Context: GlobalContext + MessageContext {}
+
 #[async_trait]
-pub(crate) trait Context: Sync {
+pub(crate) trait GlobalContext: Sync {
     fn authz(&self) -> &Authz;
     fn config(&self) -> &Config;
     fn db(&self) -> &Db;
@@ -46,7 +50,31 @@ pub(crate) trait Context: Sync {
     }
 }
 
-impl Context for AppContext {
+pub(crate) trait MessageContext: Send {
+    fn start_timestamp(&self) -> DateTime<Utc>;
+    fn logger(&self) -> &Logger;
+
+    fn add_logger_tags<T>(&mut self, tags: OwnedKV<T>)
+    where
+        T: SendSyncRefUnwindSafeKV + Sized + 'static;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+#[derive(Clone)]
+pub(crate) struct AppContext {
+    config: Arc<Config>,
+    authz: Authz,
+    db: Db,
+    ro_db: Option<Db>,
+    agent_id: AgentId,
+    queue_counter: Option<QueueCounterHandle>,
+    redis_pool: Option<RedisConnectionPool>,
+    profiler: Arc<Profiler<(ProfilerKeys, Option<String>)>>,
+    running_requests: Option<Arc<AtomicI64>>,
+}
+
+impl GlobalContext for AppContext {
     fn authz(&self) -> &Authz {
         &self.authz
     }
@@ -90,18 +118,82 @@ impl Context for AppContext {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Clone)]
-pub(crate) struct AppContext {
-    config: Arc<Config>,
-    authz: Authz,
-    db: Db,
-    ro_db: Option<Db>,
-    agent_id: AgentId,
-    queue_counter: Option<QueueCounterHandle>,
-    redis_pool: Option<RedisConnectionPool>,
-    profiler: Arc<Profiler<(ProfilerKeys, Option<String>)>>,
-    running_requests: Option<Arc<AtomicI64>>,
+pub(crate) struct AppMessageContext<'a, C: GlobalContext> {
+    global_context: &'a C,
+    start_timestamp: DateTime<Utc>,
+    logger: Logger,
 }
+
+impl<'a, C: GlobalContext> AppMessageContext<'a, C> {
+    pub(crate) fn new(global_context: &'a C, start_timestamp: DateTime<Utc>) -> Self {
+        Self {
+            global_context,
+            start_timestamp,
+            logger: crate::LOG.new(o!()),
+        }
+    }
+}
+
+impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
+    fn authz(&self) -> &Authz {
+        self.global_context.authz()
+    }
+
+    fn config(&self) -> &Config {
+        self.global_context.config()
+    }
+
+    fn db(&self) -> &Db {
+        self.global_context.db()
+    }
+
+    fn ro_db(&self) -> &Db {
+        self.global_context.ro_db()
+    }
+
+    fn agent_id(&self) -> &AgentId {
+        self.global_context.agent_id()
+    }
+
+    fn queue_counter(&self) -> &Option<QueueCounterHandle> {
+        self.global_context.queue_counter()
+    }
+
+    fn redis_pool(&self) -> &Option<RedisConnectionPool> {
+        self.global_context.redis_pool()
+    }
+
+    fn profiler(&self) -> Arc<Profiler<(ProfilerKeys, Option<String>)>> {
+        self.global_context.profiler()
+    }
+
+    fn get_metrics(&self, duration: u64) -> anyhow::Result<Vec<crate::app::metrics::Metric>> {
+        self.global_context.get_metrics(duration)
+    }
+
+    fn running_requests(&self) -> Option<Arc<AtomicI64>> {
+        self.global_context.running_requests()
+    }
+}
+
+impl<'a, C: GlobalContext> MessageContext for AppMessageContext<'a, C> {
+    fn start_timestamp(&self) -> DateTime<Utc> {
+        self.start_timestamp
+    }
+
+    fn logger(&self) -> &Logger {
+        &self.logger
+    }
+
+    fn add_logger_tags<T>(&mut self, tags: OwnedKV<T>)
+    where
+        T: SendSyncRefUnwindSafeKV + Sized + 'static,
+    {
+        self.logger = self.logger.new(tags);
+    }
+}
+
+impl<'a, C: GlobalContext> Context for AppMessageContext<'a, C> {}
 
 ///////////////////////////////////////////////////////////////////////////////
 

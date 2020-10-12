@@ -1,18 +1,18 @@
 use std::sync::atomic::Ordering;
 
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use chrono::{DateTime, Utc};
 
+use crate::app::context::GlobalContext;
 use crate::app::metrics::{Metric, MetricValue, ProfilerKeys, Tags};
-use crate::app::Context;
 
-pub(crate) struct Collector<'a> {
-    context: &'a dyn Context,
+pub(crate) struct Collector<'a, C: GlobalContext> {
+    context: &'a C,
     duration: u64,
 }
 
-impl<'a> Collector<'a> {
-    pub(crate) fn new(context: &'a dyn Context, duration: u64) -> Self {
+impl<'a, C: GlobalContext> Collector<'a, C> {
+    pub(crate) fn new(context: &'a C, duration: u64) -> Self {
         Self { context, duration }
     }
 
@@ -41,7 +41,7 @@ impl<'a> Collector<'a> {
 
 fn append_mqtt_stats(
     metrics: &mut Vec<Metric>,
-    context: &dyn Context,
+    context: &impl GlobalContext,
     now: DateTime<Utc>,
     duration: u64,
 ) -> anyhow::Result<()> {
@@ -89,7 +89,11 @@ fn append_mqtt_stats(
     Ok(())
 }
 
-fn append_internal_stats(metrics: &mut Vec<Metric>, context: &dyn Context, now: DateTime<Utc>) {
+fn append_internal_stats(
+    metrics: &mut Vec<Metric>,
+    context: &impl GlobalContext,
+    now: DateTime<Utc>,
+) {
     let tags = Tags::build_internal_tags(crate::APP_VERSION, context.agent_id());
 
     metrics.extend_from_slice(&[
@@ -116,7 +120,11 @@ fn append_internal_stats(metrics: &mut Vec<Metric>, context: &dyn Context, now: 
     ])
 }
 
-fn append_redis_pool_metrics(metrics: &mut Vec<Metric>, context: &dyn Context, now: DateTime<Utc>) {
+fn append_redis_pool_metrics(
+    metrics: &mut Vec<Metric>,
+    context: &impl GlobalContext,
+    now: DateTime<Utc>,
+) {
     if let Some(pool) = context.redis_pool() {
         let state = pool.state();
         let tags = Tags::build_internal_tags(crate::APP_VERSION, context.agent_id());
@@ -138,7 +146,7 @@ fn append_redis_pool_metrics(metrics: &mut Vec<Metric>, context: &dyn Context, n
 
 fn append_profiler_stats(
     metrics: &mut Vec<Metric>,
-    context: &dyn Context,
+    context: &impl GlobalContext,
     now: DateTime<Utc>,
     duration: u64,
 ) -> anyhow::Result<()> {

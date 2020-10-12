@@ -1,12 +1,11 @@
 use std::ops::Bound;
 
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::prelude::*;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
-use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
@@ -64,10 +63,9 @@ impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Validate opening time.
         match payload.time {
@@ -105,12 +103,14 @@ impl RequestHandler for CreateHandler {
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
+        helpers::add_room_logger_tags(context, &room);
+
         // Respond and broadcast to the audience topic.
         let response = helpers::build_response(
             ResponseStatus::CREATED,
             room.clone(),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         );
 
@@ -119,7 +119,7 @@ impl RequestHandler for CreateHandler {
             &format!("audiences/{}/events", payload.audience),
             room,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
         );
 
         Ok(Box::new(stream::from_iter(vec![response, notification])))
@@ -140,10 +140,9 @@ impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = helpers::find_room(
             context,
@@ -166,7 +165,7 @@ impl RequestHandler for ReadHandler {
             ResponseStatus::OK,
             room,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ))))
     }
@@ -190,10 +189,9 @@ impl RequestHandler for UpdateHandler {
     type Payload = UpdateRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let time_requirement = if payload.time.is_some() {
             // Forbid changing time of a closed room.
@@ -257,7 +255,7 @@ impl RequestHandler for UpdateHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to update room, id = '{}'", room.id()))
+                .context("Failed to update room")
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
@@ -266,7 +264,7 @@ impl RequestHandler for UpdateHandler {
             ResponseStatus::OK,
             room.clone(),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         );
 
@@ -275,7 +273,7 @@ impl RequestHandler for UpdateHandler {
             &format!("audiences/{}/events", room.audience()),
             room.clone(),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
         );
 
         let mut responses = vec![response, notification];
@@ -286,7 +284,7 @@ impl RequestHandler for UpdateHandler {
                 &format!("rooms/{}/events", room.id()),
                 room,
                 reqp,
-                start_timestamp,
+                context.start_timestamp(),
             );
             responses.push(closed_notification);
         };
@@ -324,10 +322,9 @@ impl RequestHandler for EnterHandler {
     type Payload = EnterRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = helpers::find_room(
             context,
@@ -361,19 +358,13 @@ impl RequestHandler for EnterHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to insert agent into room, agent_id = '{}', room_id = '{}'",
-                        reqp.as_agent_id(),
-                        room.id(),
-                    )
-                })
+                .context("Failed to insert agent into room")
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
         // Send dynamic subscription creation request to the broker.
         let payload = SubscriptionRequest::new(reqp.as_agent_id().to_owned(), object);
-
+        let start_timestamp = context.start_timestamp();
         let mut short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
         short_term_timing.set_authorization_time(authz_time);
 
@@ -413,10 +404,9 @@ impl RequestHandler for LeaveHandler {
     type Payload = LeaveRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, presence) = {
             let room = helpers::find_room(
@@ -442,19 +432,15 @@ impl RequestHandler for LeaveHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to list agents, room_id = '{}'", payload.id))
+                .context("Failed to list agents")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             (room, presence)
         };
 
         if presence.is_empty() {
-            return Err(anyhow!(
-                "agent = '{}' is not online in the room = '{}'",
-                reqp.as_agent_id(),
-                room.id()
-            ))
-            .error(AppErrorKind::AgentNotEnteredTheRoom);
+            return Err(anyhow!("Agent is not online in the room"))
+                .error(AppErrorKind::AgentNotEnteredTheRoom);
         }
 
         // Send dynamic subscription deletion request to the broker.
@@ -469,7 +455,7 @@ impl RequestHandler for LeaveHandler {
             "subscription.delete",
             reqp.response_topic(),
             reqp.correlation_data(),
-            ShortTermTimingProperties::until_now(start_timestamp),
+            ShortTermTimingProperties::until_now(context.start_timestamp()),
         );
 
         // FIXME: It looks like sending a request to the client but the broker intercepts it
@@ -506,10 +492,9 @@ impl RequestHandler for AdjustHandler {
     type Payload = AdjustRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Find realtime room.
         let room = helpers::find_room(
@@ -532,6 +517,7 @@ impl RequestHandler for AdjustHandler {
         // Run asynchronous task for adjustment.
         let db = context.db().to_owned();
         let profiler = context.profiler();
+        let logger = context.logger().new(o!());
 
         let notification_future = async_std::task::spawn(async move {
             let operation_result = adjust_room(
@@ -554,17 +540,14 @@ impl RequestHandler for AdjustHandler {
                     }
                 }
                 Err(err) => {
-                    error!(
-                        "Room adjustment job failed for room_id = '{}': {}",
-                        room.id(),
-                        err
-                    );
+                    error!(logger, "Room adjustment job failed: {}", err);
 
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
                     let svc_error: SvcError = app_error.into();
 
-                    sentry::send(svc_error.clone())
-                        .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
+                    sentry::send(svc_error.clone()).unwrap_or_else(|err| {
+                        warn!(logger, "Error sending error to Sentry: {}", err)
+                    });
 
                     RoomAdjustResult::Error { error: svc_error }
                 }
@@ -591,7 +574,7 @@ impl RequestHandler for AdjustHandler {
             ResponseStatus::ACCEPTED,
             json!({}),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ));
 
@@ -666,7 +649,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms"], "create");
 
                 // Make room.create request.
-                let context = TestContext::new(TestDb::new().await, authz);
+                let mut context = TestContext::new(TestDb::new().await, authz);
                 let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
@@ -682,7 +665,7 @@ mod tests {
                     tags: Some(tags.clone()),
                 };
 
-                let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room creation failed");
 
@@ -709,7 +692,7 @@ mod tests {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 // Make room.create request.
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
@@ -723,7 +706,7 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room creation");
 
@@ -740,7 +723,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms"], "create");
 
                 // Make room.create request.
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = CreateRequest {
                     time: (Bound::Unbounded, Bound::Unbounded),
@@ -748,7 +731,7 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room creation");
 
@@ -782,10 +765,10 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
 
                 // Make room.read request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
                 let payload = ReadRequest { id: room.id() };
 
-                let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room reading failed");
 
@@ -811,10 +794,10 @@ mod tests {
                 };
 
                 // Make room.read request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = ReadRequest { id: room.id() };
 
-                let err = handle_request::<ReadHandler>(&context, &agent, payload)
+                let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room reading");
 
@@ -826,10 +809,10 @@ mod tests {
         fn read_room_missing() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = ReadRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<ReadHandler>(&context, &agent, payload)
+                let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room reading");
 
@@ -877,7 +860,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
 
                 // Make room.update request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let time = (
                     Bound::Included(now + Duration::hours(2)),
@@ -892,7 +875,7 @@ mod tests {
                     tags: Some(tags.clone()),
                 };
 
-                let messages = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room update failed");
 
@@ -933,7 +916,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
 
                 // Make room.update request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let time = (
                     Bound::Included(now + Duration::hours(1)),
@@ -946,7 +929,7 @@ mod tests {
                     tags: None,
                 };
 
-                let messages = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room update failed");
 
@@ -991,7 +974,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
 
                 // Make room.update request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let time = (
                     Bound::Included(now - Duration::hours(2)),
@@ -1004,7 +987,7 @@ mod tests {
                     tags: None,
                 };
 
-                let messages = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room update failed");
 
@@ -1057,7 +1040,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
 
                 // Make room.update request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let time = (
                     Bound::Included(now + Duration::hours(1)),
@@ -1070,7 +1053,7 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room update");
 
@@ -1092,14 +1075,14 @@ mod tests {
                 };
 
                 // Make room.update request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = UpdateRequest {
                     id: room.id(),
                     time: None,
                     tags: None,
                 };
 
-                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room update");
 
@@ -1111,7 +1094,7 @@ mod tests {
         fn update_room_missing() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = UpdateRequest {
                     id: Uuid::new_v4(),
@@ -1119,7 +1102,7 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room update");
 
@@ -1140,7 +1123,7 @@ mod tests {
                     shared_helpers::insert_closed_room(&mut conn).await
                 };
 
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
@@ -1154,7 +1137,7 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room update");
 
@@ -1193,10 +1176,10 @@ mod tests {
                 );
 
                 // Make room.enter request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
                 let payload = EnterRequest { id: room.id() };
 
-                let messages = handle_request::<EnterHandler>(&context, &agent, payload)
+                let messages = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room entrance failed");
 
@@ -1230,10 +1213,10 @@ mod tests {
                 };
 
                 // Make room.enter request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = EnterRequest { id: room.id() };
 
-                let err = handle_request::<EnterHandler>(&context, &agent, payload)
+                let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room entering");
 
@@ -1245,10 +1228,10 @@ mod tests {
         fn enter_room_missing() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = EnterRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<EnterHandler>(&context, &agent, payload)
+                let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room entering");
 
@@ -1280,10 +1263,10 @@ mod tests {
                 );
 
                 // Make room.enter request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = EnterRequest { id: room.id() };
 
-                let err = handle_request::<EnterHandler>(&context, &agent, payload)
+                let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room entering");
 
@@ -1316,10 +1299,10 @@ mod tests {
                 };
 
                 // Make room.leave request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = LeaveRequest { id: room.id() };
 
-                let messages = handle_request::<LeaveHandler>(&context, &agent, payload)
+                let messages = handle_request::<LeaveHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room leaving failed");
 
@@ -1355,10 +1338,10 @@ mod tests {
                 };
 
                 // Make room.leave request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = LeaveRequest { id: room.id() };
 
-                let err = handle_request::<LeaveHandler>(&context, &agent, payload)
+                let err = handle_request::<LeaveHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room leaving");
 
@@ -1371,10 +1354,10 @@ mod tests {
         fn leave_room_missing() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = LeaveRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<LeaveHandler>(&context, &agent, payload)
+                let err = handle_request::<LeaveHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room leaving");
 
@@ -1404,7 +1387,7 @@ mod tests {
                 };
 
                 // Make room.adjust request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
 
                 let payload = AdjustRequest {
                     id: room.id(),
@@ -1413,7 +1396,7 @@ mod tests {
                     offset: 0,
                 };
 
-                let err = handle_request::<AdjustHandler>(&context, &agent, payload)
+                let err = handle_request::<AdjustHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room adjustment");
 
@@ -1425,7 +1408,7 @@ mod tests {
         fn adjust_room_missing() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = AdjustRequest {
                     id: Uuid::new_v4(),
@@ -1434,7 +1417,7 @@ mod tests {
                     offset: 0,
                 };
 
-                let err = handle_request::<AdjustHandler>(&context, &agent, payload)
+                let err = handle_request::<AdjustHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room adjustment");
 

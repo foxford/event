@@ -1,6 +1,5 @@
 use async_std::stream;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{
     IncomingEventProperties, IntoPublishableMessage, OutgoingEvent, ShortTermTimingProperties,
@@ -28,10 +27,9 @@ impl EventHandler for PullHandler {
     type Payload = PullPayload;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         match context.config().telemetry {
             TelemetryConfig {
@@ -47,6 +45,7 @@ impl EventHandler for PullHandler {
                     .map(|m| m.into())
                     .collect::<Vec<Metric2>>();
 
+                let start_timestamp = context.start_timestamp();
                 let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
                 let props = evp.to_event("metric.create", short_term_timing.clone());
                 let props2 = evp.to_event("metric.create", short_term_timing);

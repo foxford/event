@@ -1,7 +1,6 @@
 use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
 use uuid::Uuid;
@@ -28,10 +27,9 @@ impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = helpers::find_room(
             context,
@@ -70,7 +68,7 @@ impl RequestHandler for ListHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to list agents, room_id = '{}'", payload.room_id))
+                .context("Failed to list agents")
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
@@ -79,7 +77,7 @@ impl RequestHandler for ListHandler {
             ResponseStatus::OK,
             agents,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ))))
     }
@@ -130,7 +128,7 @@ mod tests {
             );
 
             // Make agent.list request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = ListRequest {
                 room_id: room.id(),
@@ -138,7 +136,7 @@ mod tests {
                 limit: None,
             };
 
-            let messages = handle_request::<ListHandler>(&context, &agent, payload)
+            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
                 .await
                 .expect("Agents listing failed");
 
@@ -162,7 +160,7 @@ mod tests {
                 shared_helpers::insert_room(&mut conn).await
             };
 
-            let context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
 
             let payload = ListRequest {
                 room_id: room.id(),
@@ -170,7 +168,7 @@ mod tests {
                 limit: None,
             };
 
-            let err = handle_request::<ListHandler>(&context, &agent, payload)
+            let err = handle_request::<ListHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success on agents listing");
 
@@ -201,7 +199,7 @@ mod tests {
             );
 
             // Make agent.list request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = ListRequest {
                 room_id: room.id(),
@@ -209,7 +207,7 @@ mod tests {
                 limit: None,
             };
 
-            let err = handle_request::<ListHandler>(&context, &agent, payload)
+            let err = handle_request::<ListHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success on agents listing");
 
@@ -222,7 +220,7 @@ mod tests {
     fn list_agents_missing_room() {
         async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
             let payload = ListRequest {
                 room_id: Uuid::new_v4(),
@@ -230,7 +228,7 @@ mod tests {
                 limit: None,
             };
 
-            let err = handle_request::<ListHandler>(&context, &agent, payload)
+            let err = handle_request::<ListHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success on agents listing");
 

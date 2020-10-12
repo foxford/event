@@ -1,17 +1,30 @@
+#[macro_use]
+extern crate anyhow;
+#[macro_use]
+extern crate lazy_static;
+#[macro_use]
+extern crate slog;
+
 use std::env::var;
 
 use anyhow::Result;
-use dotenv::dotenv;
-use log::warn;
+use slog::Drain;
 use svc_authz::cache::{create_pool, Cache};
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
+lazy_static! {
+    static ref LOG: slog::Logger = {
+        let drain = slog_json::Json::default(std::io::stdout()).fuse();
+        let drain = slog_envlogger::new(drain).fuse();
+        let drain = slog_async::Async::new(drain).build().fuse();
+        slog::Logger::root(drain, o!("version" => APP_VERSION))
+    };
+}
+
 #[async_std::main]
 async fn main() -> Result<()> {
-    dotenv().ok();
-    env_logger::init();
-    warn!("Launching event, version: {}", APP_VERSION);
+    warn!(crate::LOG, "Launching event, version: {}", APP_VERSION);
 
     let (db, maybe_ro_db) = {
         let url = var("DATABASE_URL").expect("DATABASE_URL must be specified");

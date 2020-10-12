@@ -1,13 +1,15 @@
 use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
+use chrono::{DateTime, Utc};
 use serde_json::json;
+use slog::{Logger, OwnedKV, SendSyncRefUnwindSafeKV};
 use sqlx::postgres::PgPool as Db;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
-use crate::app::context::Context;
+use crate::app::context::{Context, GlobalContext, MessageContext};
 use crate::app::metrics::Metric;
 use crate::app::metrics::ProfilerKeys;
 use crate::config::Config;
@@ -49,6 +51,8 @@ pub(crate) struct TestContext {
     db: TestDb,
     agent_id: AgentId,
     profiler: Arc<Profiler<(ProfilerKeys, Option<String>)>>,
+    logger: Logger,
+    start_timestamp: DateTime<Utc>,
 }
 
 impl TestContext {
@@ -62,11 +66,13 @@ impl TestContext {
             db,
             agent_id,
             profiler: Arc::new(Profiler::<(ProfilerKeys, Option<String>)>::start()),
+            logger: crate::LOG.new(o!()),
+            start_timestamp: Utc::now(),
         }
     }
 }
 
-impl Context for TestContext {
+impl GlobalContext for TestContext {
     fn authz(&self) -> &Authz {
         &self.authz
     }
@@ -107,3 +113,22 @@ impl Context for TestContext {
         None
     }
 }
+
+impl MessageContext for TestContext {
+    fn start_timestamp(&self) -> DateTime<Utc> {
+        self.start_timestamp
+    }
+
+    fn logger(&self) -> &Logger {
+        &self.logger
+    }
+
+    fn add_logger_tags<T>(&mut self, tags: OwnedKV<T>)
+    where
+        T: SendSyncRefUnwindSafeKV + Sized + 'static,
+    {
+        self.logger = self.logger.new(tags);
+    }
+}
+
+impl Context for TestContext {}

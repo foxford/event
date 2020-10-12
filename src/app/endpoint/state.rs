@@ -1,9 +1,8 @@
 use std::ops::Bound;
 
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::{map::Map as JsonMap, Value as JsonValue};
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
@@ -34,10 +33,9 @@ impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Validate parameters.
         let validation_error = match payload.sets.len() {
@@ -92,6 +90,8 @@ impl RequestHandler for ReadHandler {
         let mut conn = context.get_ro_conn().await?;
 
         for set in payload.sets.iter() {
+            context.add_logger_tags(o!("set" => set.to_string()));
+
             // Build a query for the particular set state.
             let mut query =
                 db::event::SetStateQuery::new(room.id(), set.clone(), original_occurred_at, limit);
@@ -113,12 +113,7 @@ impl RequestHandler for ReadHandler {
                         query.total_count(&mut conn),
                     )
                     .await
-                    .with_context(|| {
-                        format!(
-                            "failed to query state total count for set = '{}', room_id = '{}'",
-                            set, room_id
-                        )
-                    })
+                    .context("Failed to get state total count")
                     .error(AppErrorKind::DbQueryFailed)?;
 
                 let has_next = total_count as i64 > limit;
@@ -133,22 +128,12 @@ impl RequestHandler for ReadHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "failed to query state for set = '{}', room_id = '{}'",
-                        set, room_id
-                    )
-                })
+                .context("Failed to get state")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             // Serialize to JSON and add to the state map.
             let serialized_set_state = serde_json::to_value(set_state)
-                .with_context(|| {
-                    format!(
-                        "failed to serialize state for set = '{}', room_id = '{}'",
-                        set, room_id
-                    )
-                })
+                .context("Failed to serialize state")
                 .error(AppErrorKind::SerializationFailed)?;
 
             match serialized_set_state.as_array().and_then(|a| a.first()) {
@@ -168,7 +153,7 @@ impl RequestHandler for ReadHandler {
             ResponseStatus::OK,
             JsonValue::Object(state),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ))))
     }
@@ -237,7 +222,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "list");
 
             // Make state.read request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = ReadRequest {
                 room_id: room.id(),
@@ -247,7 +232,7 @@ mod tests {
                 limit: None,
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect("State reading failed");
 
@@ -307,7 +292,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "list");
 
             // Make state.read request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = ReadRequest {
                 room_id: room.id(),
@@ -317,7 +302,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect("State reading failed (page 1)");
 
@@ -338,7 +323,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect("State reading failed (page 2)");
 
@@ -392,7 +377,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "list");
 
             // Make state.read request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = ReadRequest {
                 room_id: room.id(),
@@ -402,7 +387,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect("State reading failed (page 1)");
 
@@ -423,7 +408,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect("State reading failed (page 2)");
 
@@ -447,7 +432,7 @@ mod tests {
                 shared_helpers::insert_room(&mut conn).await
             };
 
-            let context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
 
             let payload = ReadRequest {
                 room_id: room.id(),
@@ -457,7 +442,7 @@ mod tests {
                 limit: None,
             };
 
-            let err = handle_request::<ReadHandler>(&context, &agent, payload)
+            let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success reading state");
 
@@ -469,7 +454,7 @@ mod tests {
     fn read_state_missing_room() {
         async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
             let payload = ReadRequest {
                 room_id: Uuid::new_v4(),
@@ -479,7 +464,7 @@ mod tests {
                 limit: None,
             };
 
-            let err = handle_request::<ReadHandler>(&context, &agent, payload)
+            let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success reading state");
 

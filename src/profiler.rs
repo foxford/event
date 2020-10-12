@@ -4,8 +4,7 @@ use std::hash::Hash;
 use std::thread;
 use std::time::Instant;
 
-use anyhow::{anyhow, Context, Result};
-use log::warn;
+use anyhow::{Context, Result};
 
 #[derive(Default)]
 pub(crate) struct EntryReport {
@@ -96,7 +95,7 @@ impl<K: 'static + Eq + Hash + Send + Clone> Profiler<K> {
                             .collect();
 
                         if let Err(err) = back_tx.send(report) {
-                            warn!("Failed to send profiler report: {}", err);
+                            warn!(crate::LOG, "Failed to send profiler report: {}", err);
                         }
                     }
                     Message::Stop => break,
@@ -121,7 +120,7 @@ impl<K: 'static + Eq + Hash + Send + Clone> Profiler<K> {
         };
 
         if let Err(err) = self.tx.send(message) {
-            warn!("Failed to register profiler value: {}", err);
+            warn!(crate::LOG, "Failed to register profiler value: {}", err);
         }
 
         result
@@ -142,7 +141,7 @@ impl<K: 'static + Eq + Hash + Send + Clone> Profiler<K> {
 impl<K> Drop for Profiler<K> {
     fn drop(&mut self) {
         if let Err(err) = self.tx.send(Message::Stop) {
-            warn!("Failed to stop profiler: {}", err);
+            warn!(crate::LOG, "Failed to stop profiler: {}", err);
         }
     }
 }

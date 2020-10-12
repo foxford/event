@@ -1,6 +1,5 @@
 use std::ops::{Bound, RangeBounds};
 
-use anyhow::anyhow;
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;

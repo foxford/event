@@ -50,7 +50,6 @@ impl Object {
         self.id
     }
 
-    #[cfg(test)]
     pub(crate) fn edition_id(&self) -> Uuid {
         self.edition_id
     }

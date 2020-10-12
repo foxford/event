@@ -1,8 +1,7 @@
 use std::ops::Bound;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use chrono::Utc;
-use log::info;
 use sqlx::postgres::{PgConnection, PgPool as Db};
 
 use crate::app::metrics::ProfilerKeys;
@@ -25,6 +24,7 @@ pub(crate) async fn call(
     source: &Room,
 ) -> Result<(Room, Segments)> {
     info!(
+        crate::LOG,
         "Edition commit task started for edition_id = '{}', source room id = {}",
         edition.id(),
         source.id()
@@ -123,6 +123,7 @@ pub(crate) async fn call(
         .await?;
 
     info!(
+        crate::LOG,
         "Edition commit successfully finished for edition_id = '{}', duration = {} ms",
         edition.id(),
         (Utc::now() - start_timestamp).num_milliseconds()
