@@ -1,6 +1,6 @@
 use std::ops::Bound;
 
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use chrono::{DateTime, Duration, Utc};
 use serde::ser::Serialize;
 use svc_agent::mqtt::{
@@ -56,7 +56,7 @@ pub(crate) enum RoomTimeRequirement {
 }
 
 pub(crate) async fn find_room<C: Context>(
-    context: &C,
+    context: &mut C,
     id: Uuid,
     opening_requirement: RoomTimeRequirement,
     key: &str,

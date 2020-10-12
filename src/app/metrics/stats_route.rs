@@ -4,14 +4,13 @@ use anyhow::{Context as AnyhowContext, Result};
 use async_std::stream::StreamExt;
 use async_std::sync::Sender;
 use chrono::{serde::ts_seconds, DateTime, Utc};
-use log::{error, warn};
 use serde_derive::Deserialize;
 
 use crate::app::metrics::Metric2;
-use crate::app::{Context, MessageHandler};
+use crate::app::{context::GlobalContext, MessageHandler};
 
 #[derive(Clone)]
-pub(crate) struct StatsRoute<C: Context> {
+pub(crate) struct StatsRoute<C: GlobalContext> {
     message_handler: Arc<MessageHandler<C>>,
 }
 
@@ -24,7 +23,7 @@ enum StatsRouteCommand {
     GetStats(Sender<Result<String>>),
 }
 
-impl<C: Context + Send + 'static> StatsRoute<C> {
+impl<C: GlobalContext + Send + 'static> StatsRoute<C> {
     pub fn start(config: crate::app::config::Config, message_handler: Arc<MessageHandler<C>>) {
         if let Some(metrics_conf) = config.metrics {
             let (tx, mut rx) = async_std::sync::channel(1000);
@@ -48,8 +47,8 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
                 .name(String::from("tide-metrics-server"))
                 .spawn(move || {
                     warn!(
-                        "StatsRoute listening on http://{}",
-                        metrics_conf.http.bind_address
+                        crate::LOG,
+                        "StatsRoute listening on http://{}", metrics_conf.http.bind_address
                     );
 
                     let mut app = tide::with_state(handle);
@@ -62,7 +61,7 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
                                     Ok(res)
                                 }
                                 Ok(Err(e)) => {
-                                    error!("Something went wrong: {:?}", e);
+                                    error!(crate::LOG, "Something went wrong: {:?}", e);
                                     let mut res = tide::Response::new(500);
                                     res.set_body(tide::Body::from_string(
                                         "Something went wrong".into(),
@@ -70,7 +69,7 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
                                     Ok(res)
                                 }
                                 Err(e) => {
-                                    error!("Something went wrong: {:?}", e);
+                                    error!(crate::LOG, "Something went wrong: {:?}", e);
                                     let mut res = tide::Response::new(500);
                                     res.set_body(tide::Body::from_string(
                                         "Something went wrong".into(),
@@ -83,7 +82,7 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
                     if let Err(e) =
                         async_std::task::block_on(app.listen(metrics_conf.http.bind_address))
                     {
-                        error!("Tide future completed with error = {:?}", e);
+                        error!(crate::LOG, "Tide future completed with error: {:?}", e);
                     }
                 })
                 .expect("Failed to spawn tide-metrics-server thread");
@@ -95,7 +94,7 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
 
         let metrics = self
             .message_handler
-            .context()
+            .global_context()
             .get_metrics(5)
             .context("Failed to get metrics")?
             .into_iter()
@@ -114,7 +113,12 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
                             } else if val.is_string() {
                                 val.as_str()
                             } else {
-                                warn!("StatsRoute: improper tag value, expected string or null, metric: {:?}", metric);
+                                warn!(
+                                    crate::LOG,
+                                    "StatsRoute: improper tag value, expected string or null, metric: {:?}",
+                                    metric
+                                );
+
                                 None
                             };
                             val.map(|v| format!("{}=\"{}\"", key, v))
@@ -126,14 +130,14 @@ impl<C: Context + Send + 'static> StatsRoute<C> {
                         ));
                     } else {
                         warn!(
-                            "StatsRoute: failed to parse metric tags, metric: {:?}",
-                            metric
+                            crate::LOG,
+                            "StatsRoute: failed to parse metric tags, metric: {:?}", metric
                         );
                     }
                 }
                 Err(e) => warn!(
-                    "Conversion from Metric to MetricHelper failed, reason = {:?}",
-                    e
+                    crate::LOG,
+                    "Conversion from Metric to MetricHelper failed, reason = {:?}", e
                 ),
             }
         }

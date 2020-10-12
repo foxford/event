@@ -1,7 +1,6 @@
 use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
 use uuid::Uuid;
@@ -28,10 +27,9 @@ impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = helpers::find_room(
             context,
@@ -79,7 +77,7 @@ impl RequestHandler for ListHandler {
             ResponseStatus::OK,
             agents,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ))))
     }

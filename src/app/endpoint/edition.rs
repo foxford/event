@@ -1,10 +1,9 @@
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::prelude::*;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::future::FutureExt;
-use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
@@ -37,10 +36,9 @@ impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = helpers::find_room(
             context,
@@ -84,7 +82,7 @@ impl RequestHandler for CreateHandler {
             ResponseStatus::CREATED,
             edition.clone(),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         );
 
@@ -93,7 +91,7 @@ impl RequestHandler for CreateHandler {
             &format!("rooms/{}/editions", payload.room_id),
             edition,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
         );
 
         Ok(Box::new(stream::from_iter(vec![response, notification])))
@@ -116,10 +114,9 @@ impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = helpers::find_room(
             context,
@@ -175,7 +172,7 @@ impl RequestHandler for ListHandler {
             ResponseStatus::OK,
             editions,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ))))
     }
@@ -195,10 +192,9 @@ impl RequestHandler for DeleteHandler {
     type Payload = DeleteRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
@@ -263,7 +259,7 @@ impl RequestHandler for DeleteHandler {
             ResponseStatus::OK,
             edition,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         );
 
@@ -285,10 +281,9 @@ impl RequestHandler for CommitHandler {
     type Payload = CommitRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Find edition with its source room.
         let (edition, room) = {
@@ -334,6 +329,7 @@ impl RequestHandler for CommitHandler {
         // Run commit task asynchronously.
         let db = context.db().to_owned();
         let profiler = context.profiler();
+        let logger = context.logger().new(o!());
 
         let notification_future = async_std::task::spawn(async move {
             let result = commit_edition(&db, &profiler, &edition, &room).await;
@@ -347,6 +343,7 @@ impl RequestHandler for CommitHandler {
                 },
                 Err(err) => {
                     error!(
+                        logger,
                         "Room adjustment job failed for room_id = '{}': {}",
                         room.id(),
                         err
@@ -355,8 +352,9 @@ impl RequestHandler for CommitHandler {
                     let error = AppError::new(AppErrorKind::EditionCommitTaskFailed, err);
                     let svc_error: SvcError = error.into();
 
-                    sentry::send(svc_error.clone())
-                        .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
+                    sentry::send(svc_error.clone()).unwrap_or_else(|err| {
+                        warn!(logger, "Error sending error to Sentry: {}", err)
+                    });
 
                     EditionCommitResult::Error { error: svc_error }
                 }
@@ -383,7 +381,7 @@ impl RequestHandler for CommitHandler {
             ResponseStatus::ACCEPTED,
             json!({}),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ));
 

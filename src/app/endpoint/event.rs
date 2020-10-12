@@ -1,9 +1,9 @@
 use std::ops::Bound;
 
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use serde_derive::Deserialize;
 use serde_json::Value as JsonValue;
 use svc_agent::Authenticable;
@@ -50,10 +50,9 @@ impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, author) = {
             let room = helpers::find_room(
@@ -212,7 +211,7 @@ impl RequestHandler for CreateHandler {
             ResponseStatus::CREATED,
             event.clone(),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ));
 
@@ -223,7 +222,7 @@ impl RequestHandler for CreateHandler {
                 &format!("audiences/{}/events", room.audience()),
                 event.clone(),
                 reqp,
-                start_timestamp,
+                context.start_timestamp(),
             ));
         }
 
@@ -233,7 +232,7 @@ impl RequestHandler for CreateHandler {
             &format!("rooms/{}/events", room.id()),
             event,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
         ));
 
         Ok(Box::new(stream::from_iter(messages)))
@@ -271,10 +270,9 @@ impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = helpers::find_room(
             context,
@@ -346,7 +344,7 @@ impl RequestHandler for ListHandler {
             ResponseStatus::OK,
             events,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ))))
     }

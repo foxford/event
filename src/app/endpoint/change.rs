@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -20,10 +20,9 @@ impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (_edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.edition_id);
@@ -129,7 +128,7 @@ impl RequestHandler for CreateHandler {
             ResponseStatus::CREATED,
             change,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         );
 
@@ -153,10 +152,9 @@ impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
@@ -230,7 +228,7 @@ impl RequestHandler for ListHandler {
             ResponseStatus::OK,
             changes,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         )])))
     }
@@ -250,10 +248,9 @@ impl RequestHandler for DeleteHandler {
     type Payload = DeleteRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (change, room) = {
             let query = db::change::FindWithRoomQuery::new(payload.id);
@@ -318,7 +315,7 @@ impl RequestHandler for DeleteHandler {
             ResponseStatus::OK,
             change,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         );
 

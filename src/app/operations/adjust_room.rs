@@ -1,9 +1,8 @@
 use std::cmp;
 use std::ops::Bound;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
-use log::info;
 use sqlx::postgres::{PgConnection, PgPool as Db};
 
 use crate::app::metrics::ProfilerKeys;
@@ -27,6 +26,7 @@ pub(crate) async fn call(
     offset: i64,
 ) -> Result<(Room, Room, Segments)> {
     info!(
+        crate::LOG,
         "Room adjustment task started for room_id = '{}'",
         real_time_room.id()
     );
@@ -173,6 +173,7 @@ pub(crate) async fn call(
 
     // Done.
     info!(
+        crate::LOG,
         "Room adjustment task successfully finished for room_id = '{}', duration = {} ms",
         real_time_room.id(),
         (Utc::now() - start_timestamp).num_milliseconds()

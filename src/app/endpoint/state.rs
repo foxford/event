@@ -1,9 +1,8 @@
 use std::ops::Bound;
 
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::{map::Map as JsonMap, Value as JsonValue};
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
@@ -34,10 +33,9 @@ impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Validate parameters.
         let validation_error = match payload.sets.len() {
@@ -168,7 +166,7 @@ impl RequestHandler for ReadHandler {
             ResponseStatus::OK,
             JsonValue::Object(state),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ))))
     }

@@ -1,9 +1,8 @@
 use std::result::Result as StdResult;
 
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::{
     mqtt::{
@@ -56,10 +55,9 @@ impl EventHandler for CreateHandler {
     type Payload = SubscriptionEvent;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
@@ -107,6 +105,7 @@ impl EventHandler for CreateHandler {
             agent_id: payload.subject,
         };
 
+        let start_timestamp = context.start_timestamp();
         let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
         let props = evp.to_event("room.enter", short_term_timing);
         let to_uri = format!("rooms/{}/events", room_id);
@@ -125,10 +124,9 @@ impl EventHandler for DeleteHandler {
     type Payload = SubscriptionEvent;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
@@ -177,6 +175,7 @@ impl EventHandler for DeleteHandler {
             agent_id: payload.subject,
         };
 
+        let start_timestamp = context.start_timestamp();
         let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
         let props = evp.to_event("room.leave", short_term_timing);
         let to_uri = format!("rooms/{}/events", room_id);

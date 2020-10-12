@@ -1,12 +1,11 @@
 use std::ops::Bound;
 
-use anyhow::{anyhow, Context as AnyhowContext};
+use anyhow::Context as AnyhowContext;
 use async_std::prelude::*;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::FutureExt;
-use log::{error, warn};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
@@ -64,10 +63,9 @@ impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Validate opening time.
         match payload.time {
@@ -110,7 +108,7 @@ impl RequestHandler for CreateHandler {
             ResponseStatus::CREATED,
             room.clone(),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         );
 
@@ -119,7 +117,7 @@ impl RequestHandler for CreateHandler {
             &format!("audiences/{}/events", payload.audience),
             room,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
         );
 
         Ok(Box::new(stream::from_iter(vec![response, notification])))
@@ -140,10 +138,9 @@ impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = helpers::find_room(
             context,
@@ -166,7 +163,7 @@ impl RequestHandler for ReadHandler {
             ResponseStatus::OK,
             room,
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ))))
     }
@@ -190,10 +187,9 @@ impl RequestHandler for UpdateHandler {
     type Payload = UpdateRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let time_requirement = if payload.time.is_some() {
             // Forbid changing time of a closed room.
@@ -266,7 +262,7 @@ impl RequestHandler for UpdateHandler {
             ResponseStatus::OK,
             room.clone(),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         );
 
@@ -275,7 +271,7 @@ impl RequestHandler for UpdateHandler {
             &format!("audiences/{}/events", room.audience()),
             room.clone(),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
         );
 
         let mut responses = vec![response, notification];
@@ -286,7 +282,7 @@ impl RequestHandler for UpdateHandler {
                 &format!("rooms/{}/events", room.id()),
                 room,
                 reqp,
-                start_timestamp,
+                context.start_timestamp(),
             );
             responses.push(closed_notification);
         };
@@ -324,10 +320,9 @@ impl RequestHandler for EnterHandler {
     type Payload = EnterRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let room = helpers::find_room(
             context,
@@ -373,7 +368,7 @@ impl RequestHandler for EnterHandler {
 
         // Send dynamic subscription creation request to the broker.
         let payload = SubscriptionRequest::new(reqp.as_agent_id().to_owned(), object);
-
+        let start_timestamp = context.start_timestamp();
         let mut short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
         short_term_timing.set_authorization_time(authz_time);
 
@@ -413,10 +408,9 @@ impl RequestHandler for LeaveHandler {
     type Payload = LeaveRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         let (room, presence) = {
             let room = helpers::find_room(
@@ -469,7 +463,7 @@ impl RequestHandler for LeaveHandler {
             "subscription.delete",
             reqp.response_topic(),
             reqp.correlation_data(),
-            ShortTermTimingProperties::until_now(start_timestamp),
+            ShortTermTimingProperties::until_now(context.start_timestamp()),
         );
 
         // FIXME: It looks like sending a request to the client but the broker intercepts it
@@ -506,10 +500,9 @@ impl RequestHandler for AdjustHandler {
     type Payload = AdjustRequest;
 
     async fn handle<C: Context>(
-        context: &C,
+        context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
-        start_timestamp: DateTime<Utc>,
     ) -> Result {
         // Find realtime room.
         let room = helpers::find_room(
@@ -532,6 +525,7 @@ impl RequestHandler for AdjustHandler {
         // Run asynchronous task for adjustment.
         let db = context.db().to_owned();
         let profiler = context.profiler();
+        let logger = context.logger().new(o!());
 
         let notification_future = async_std::task::spawn(async move {
             let operation_result = adjust_room(
@@ -555,6 +549,7 @@ impl RequestHandler for AdjustHandler {
                 }
                 Err(err) => {
                     error!(
+                        logger,
                         "Room adjustment job failed for room_id = '{}': {}",
                         room.id(),
                         err
@@ -563,8 +558,9 @@ impl RequestHandler for AdjustHandler {
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
                     let svc_error: SvcError = app_error.into();
 
-                    sentry::send(svc_error.clone())
-                        .unwrap_or_else(|err| warn!("Error sending error to Sentry: {}", err));
+                    sentry::send(svc_error.clone()).unwrap_or_else(|err| {
+                        warn!(logger, "Error sending error to Sentry: {}", err)
+                    });
 
                     RoomAdjustResult::Error { error: svc_error }
                 }
@@ -591,7 +587,7 @@ impl RequestHandler for AdjustHandler {
             ResponseStatus::ACCEPTED,
             json!({}),
             reqp,
-            start_timestamp,
+            context.start_timestamp(),
             Some(authz_time),
         ));
 
