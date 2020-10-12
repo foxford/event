@@ -649,7 +649,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms"], "create");
 
                 // Make room.create request.
-                let context = TestContext::new(TestDb::new().await, authz);
+                let mut context = TestContext::new(TestDb::new().await, authz);
                 let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
@@ -665,7 +665,7 @@ mod tests {
                     tags: Some(tags.clone()),
                 };
 
-                let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room creation failed");
 
@@ -692,7 +692,7 @@ mod tests {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
                 // Make room.create request.
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
@@ -706,7 +706,7 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room creation");
 
@@ -723,7 +723,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms"], "create");
 
                 // Make room.create request.
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = CreateRequest {
                     time: (Bound::Unbounded, Bound::Unbounded),
@@ -731,7 +731,7 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room creation");
 
@@ -765,10 +765,10 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
 
                 // Make room.read request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
                 let payload = ReadRequest { id: room.id() };
 
-                let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+                let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room reading failed");
 
@@ -794,10 +794,10 @@ mod tests {
                 };
 
                 // Make room.read request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = ReadRequest { id: room.id() };
 
-                let err = handle_request::<ReadHandler>(&context, &agent, payload)
+                let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room reading");
 
@@ -809,10 +809,10 @@ mod tests {
         fn read_room_missing() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = ReadRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<ReadHandler>(&context, &agent, payload)
+                let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room reading");
 
@@ -860,7 +860,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
 
                 // Make room.update request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let time = (
                     Bound::Included(now + Duration::hours(2)),
@@ -875,7 +875,7 @@ mod tests {
                     tags: Some(tags.clone()),
                 };
 
-                let messages = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room update failed");
 
@@ -916,7 +916,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
 
                 // Make room.update request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let time = (
                     Bound::Included(now + Duration::hours(1)),
@@ -929,7 +929,7 @@ mod tests {
                     tags: None,
                 };
 
-                let messages = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room update failed");
 
@@ -974,7 +974,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
 
                 // Make room.update request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let time = (
                     Bound::Included(now - Duration::hours(2)),
@@ -987,7 +987,7 @@ mod tests {
                     tags: None,
                 };
 
-                let messages = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room update failed");
 
@@ -1040,7 +1040,7 @@ mod tests {
                 authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
 
                 // Make room.update request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let time = (
                     Bound::Included(now + Duration::hours(1)),
@@ -1053,7 +1053,7 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room update");
 
@@ -1075,14 +1075,14 @@ mod tests {
                 };
 
                 // Make room.update request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = UpdateRequest {
                     id: room.id(),
                     time: None,
                     tags: None,
                 };
 
-                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room update");
 
@@ -1094,7 +1094,7 @@ mod tests {
         fn update_room_missing() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = UpdateRequest {
                     id: Uuid::new_v4(),
@@ -1102,7 +1102,7 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room update");
 
@@ -1123,7 +1123,7 @@ mod tests {
                     shared_helpers::insert_closed_room(&mut conn).await
                 };
 
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let now = Utc::now().trunc_subsecs(0);
 
                 let time = (
@@ -1137,7 +1137,7 @@ mod tests {
                     tags: None,
                 };
 
-                let err = handle_request::<UpdateHandler>(&context, &agent, payload)
+                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room update");
 
@@ -1176,10 +1176,10 @@ mod tests {
                 );
 
                 // Make room.enter request.
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
                 let payload = EnterRequest { id: room.id() };
 
-                let messages = handle_request::<EnterHandler>(&context, &agent, payload)
+                let messages = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room entrance failed");
 
@@ -1213,10 +1213,10 @@ mod tests {
                 };
 
                 // Make room.enter request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = EnterRequest { id: room.id() };
 
-                let err = handle_request::<EnterHandler>(&context, &agent, payload)
+                let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room entering");
 
@@ -1228,10 +1228,10 @@ mod tests {
         fn enter_room_missing() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = EnterRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<EnterHandler>(&context, &agent, payload)
+                let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room entering");
 
@@ -1263,10 +1263,10 @@ mod tests {
                 );
 
                 // Make room.enter request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = EnterRequest { id: room.id() };
 
-                let err = handle_request::<EnterHandler>(&context, &agent, payload)
+                let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room entering");
 
@@ -1299,10 +1299,10 @@ mod tests {
                 };
 
                 // Make room.leave request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = LeaveRequest { id: room.id() };
 
-                let messages = handle_request::<LeaveHandler>(&context, &agent, payload)
+                let messages = handle_request::<LeaveHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Room leaving failed");
 
@@ -1338,10 +1338,10 @@ mod tests {
                 };
 
                 // Make room.leave request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = LeaveRequest { id: room.id() };
 
-                let err = handle_request::<LeaveHandler>(&context, &agent, payload)
+                let err = handle_request::<LeaveHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room leaving");
 
@@ -1354,10 +1354,10 @@ mod tests {
         fn leave_room_missing() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = LeaveRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<LeaveHandler>(&context, &agent, payload)
+                let err = handle_request::<LeaveHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room leaving");
 
@@ -1387,7 +1387,7 @@ mod tests {
                 };
 
                 // Make room.adjust request.
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
 
                 let payload = AdjustRequest {
                     id: room.id(),
@@ -1396,7 +1396,7 @@ mod tests {
                     offset: 0,
                 };
 
-                let err = handle_request::<AdjustHandler>(&context, &agent, payload)
+                let err = handle_request::<AdjustHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room adjustment");
 
@@ -1408,7 +1408,7 @@ mod tests {
         fn adjust_room_missing() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = AdjustRequest {
                     id: Uuid::new_v4(),
@@ -1417,7 +1417,7 @@ mod tests {
                     offset: 0,
                 };
 
-                let err = handle_request::<AdjustHandler>(&context, &agent, payload)
+                let err = handle_request::<AdjustHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success on room adjustment");
 

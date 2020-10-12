@@ -397,7 +397,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "create");
 
             // Make event.create request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = CreateRequest {
                 room_id: room.id(),
@@ -409,7 +409,7 @@ mod tests {
                 is_persistent: true,
             };
 
-            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                 .await
                 .expect("Event creation failed");
 
@@ -484,7 +484,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "create");
 
             // Make event.create request with the same set/label as existing event.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = CreateRequest {
                 room_id: room.id(),
@@ -496,7 +496,7 @@ mod tests {
                 is_persistent: true,
             };
 
-            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                 .await
                 .expect("Event creation failed");
 
@@ -529,7 +529,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "create");
 
             // Make event.create request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = CreateRequest {
                 room_id: room.id(),
@@ -541,7 +541,7 @@ mod tests {
                 is_persistent: true,
             };
 
-            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                 .await
                 .expect("Event creation failed");
 
@@ -619,7 +619,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "create");
 
             // Make event.create request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let data = json!({
                 "agent_id": agent.agent_id().to_string(),
@@ -637,7 +637,7 @@ mod tests {
                 is_persistent: false,
             };
 
-            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                 .await
                 .expect("Event creation failed");
 
@@ -679,7 +679,7 @@ mod tests {
             };
 
             // Make event.create request.
-            let context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
 
             let payload = CreateRequest {
                 room_id: room.id(),
@@ -691,7 +691,7 @@ mod tests {
                 is_persistent: true,
             };
 
-            let err = handle_request::<CreateHandler>(&context, &agent, payload)
+            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success on event creation");
 
@@ -728,7 +728,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "create");
 
             // Make event.create request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = CreateRequest {
                 room_id: room.id(),
@@ -740,7 +740,7 @@ mod tests {
                 is_persistent: true,
             };
 
-            let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                 .await
                 .expect("Event creation failed");
 
@@ -779,7 +779,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "create");
 
             // Make event.create request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = CreateRequest {
                 room_id: room.id(),
@@ -791,7 +791,7 @@ mod tests {
                 is_persistent: true,
             };
 
-            let err = handle_request::<CreateHandler>(&context, &agent, payload)
+            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success on event creation");
 
@@ -804,7 +804,7 @@ mod tests {
     fn create_event_missing_room() {
         async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
             let payload = CreateRequest {
                 room_id: Uuid::new_v4(),
@@ -816,7 +816,7 @@ mod tests {
                 is_persistent: true,
             };
 
-            let err = handle_request::<CreateHandler>(&context, &agent, payload)
+            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success on event creation");
 
@@ -864,7 +864,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "list");
 
             // Make event.list request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = ListRequest {
                 room_id: room.id(),
@@ -876,7 +876,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ListHandler>(&context, &agent, payload)
+            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
                 .await
                 .expect("Events listing failed (page 1)");
 
@@ -898,7 +898,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ListHandler>(&context, &agent, payload)
+            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
                 .await
                 .expect("Events listing failed (page 2)");
 
@@ -943,7 +943,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "list");
 
             // Make event.list request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = ListRequest {
                 room_id: room.id(),
@@ -955,7 +955,7 @@ mod tests {
                 limit: None,
             };
 
-            let messages = handle_request::<ListHandler>(&context, &agent, payload)
+            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
                 .await
                 .expect("Events listing failed");
 
@@ -977,7 +977,7 @@ mod tests {
                 limit: None,
             };
 
-            let messages = handle_request::<ListHandler>(&context, &agent, payload)
+            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
                 .await
                 .expect("Events listing failed");
 
@@ -999,7 +999,7 @@ mod tests {
                 shared_helpers::insert_room(&mut conn).await
             };
 
-            let context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
 
             let payload = ListRequest {
                 room_id: room.id(),
@@ -1011,7 +1011,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let err = handle_request::<ListHandler>(&context, &agent, payload)
+            let err = handle_request::<ListHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success on events listing");
 
@@ -1023,7 +1023,7 @@ mod tests {
     fn list_events_missing_room() {
         async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
             let payload = ListRequest {
                 room_id: Uuid::new_v4(),
@@ -1035,7 +1035,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let err = handle_request::<ListHandler>(&context, &agent, payload)
+            let err = handle_request::<ListHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success on events listing");
 

@@ -355,7 +355,7 @@ mod tests {
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = CreateRequest {
                     edition_id: edition.id(),
@@ -369,7 +369,7 @@ mod tests {
                     }),
                 };
 
-                let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to create change");
 
@@ -426,7 +426,7 @@ mod tests {
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = CreateRequest {
                     edition_id: edition.id(),
@@ -438,7 +438,7 @@ mod tests {
                     }),
                 };
 
-                let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to create change");
 
@@ -489,7 +489,7 @@ mod tests {
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = CreateRequest {
                     edition_id: edition.id(),
@@ -504,7 +504,7 @@ mod tests {
                     }),
                 };
 
-                let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to create change");
 
@@ -547,7 +547,7 @@ mod tests {
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = CreateRequest {
                     edition_id: edition.id(),
@@ -559,7 +559,7 @@ mod tests {
                     }),
                 };
 
-                let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating change with wrong params");
 
@@ -584,7 +584,7 @@ mod tests {
                     (room, edition)
                 };
 
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
 
                 let payload = CreateRequest {
                     edition_id: edition.id(),
@@ -598,7 +598,7 @@ mod tests {
                     }),
                 };
 
-                let response = handle_request::<CreateHandler>(&context, &agent, payload)
+                let response = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating change with no authorization");
 
@@ -610,7 +610,7 @@ mod tests {
         fn create_change_missing_edition() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = CreateRequest {
                     edition_id: Uuid::new_v4(),
@@ -624,7 +624,7 @@ mod tests {
                     }),
                 };
 
-                let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating change for no edition");
 
@@ -683,7 +683,7 @@ mod tests {
                 let object = vec!["rooms", &room_id];
                 authz.allow(agent.account_id(), object, "update");
 
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = ListRequest {
                     id: edition.id(),
@@ -691,7 +691,7 @@ mod tests {
                     limit: None,
                 };
 
-                let messages = handle_request::<ListHandler>(&context, &agent, payload)
+                let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to list changes");
 
@@ -742,7 +742,7 @@ mod tests {
                     (room, edition, changes)
                 };
 
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
 
                 let payload = ListRequest {
                     id: edition.id(),
@@ -750,7 +750,7 @@ mod tests {
                     limit: None,
                 };
 
-                let resp = handle_request::<ListHandler>(&context, &agent, payload)
+                let resp = handle_request::<ListHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success without authorization on changes list");
 
@@ -762,7 +762,7 @@ mod tests {
         fn list_changes_missing_edition() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = ListRequest {
                     id: Uuid::new_v4(),
@@ -770,7 +770,7 @@ mod tests {
                     limit: None,
                 };
 
-                let err = handle_request::<ListHandler>(&context, &agent, payload)
+                let err = handle_request::<ListHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success listing changes for no edition");
 
@@ -828,13 +828,13 @@ mod tests {
                 let object = vec!["rooms", &room_id];
                 authz.allow(agent.account_id(), object, "update");
 
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = DeleteRequest {
                     id: changes[0].id(),
                 };
 
-                let messages = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let messages = handle_request::<DeleteHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to list editions");
 
@@ -894,13 +894,13 @@ mod tests {
                     (room, edition, changes)
                 };
 
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
 
                 let payload = DeleteRequest {
                     id: changes[0].id(),
                 };
 
-                let response = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let response = handle_request::<DeleteHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success deleting change without authorization");
 
@@ -963,10 +963,10 @@ mod tests {
                 let object = vec!["rooms", &room_id];
                 authz.allow(agent.account_id(), object, "update");
 
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
                 let payload = DeleteRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let err = handle_request::<DeleteHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Failed to list changes");
 

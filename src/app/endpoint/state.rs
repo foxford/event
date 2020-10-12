@@ -222,7 +222,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "list");
 
             // Make state.read request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = ReadRequest {
                 room_id: room.id(),
@@ -232,7 +232,7 @@ mod tests {
                 limit: None,
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect("State reading failed");
 
@@ -292,7 +292,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "list");
 
             // Make state.read request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = ReadRequest {
                 room_id: room.id(),
@@ -302,7 +302,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect("State reading failed (page 1)");
 
@@ -323,7 +323,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect("State reading failed (page 2)");
 
@@ -377,7 +377,7 @@ mod tests {
             authz.allow(agent.account_id(), object, "list");
 
             // Make state.read request.
-            let context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
             let payload = ReadRequest {
                 room_id: room.id(),
@@ -387,7 +387,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect("State reading failed (page 1)");
 
@@ -408,7 +408,7 @@ mod tests {
                 limit: Some(2),
             };
 
-            let messages = handle_request::<ReadHandler>(&context, &agent, payload)
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect("State reading failed (page 2)");
 
@@ -432,7 +432,7 @@ mod tests {
                 shared_helpers::insert_room(&mut conn).await
             };
 
-            let context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
 
             let payload = ReadRequest {
                 room_id: room.id(),
@@ -442,7 +442,7 @@ mod tests {
                 limit: None,
             };
 
-            let err = handle_request::<ReadHandler>(&context, &agent, payload)
+            let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success reading state");
 
@@ -454,7 +454,7 @@ mod tests {
     fn read_state_missing_room() {
         async_std::task::block_on(async {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
             let payload = ReadRequest {
                 room_id: Uuid::new_v4(),
@@ -464,7 +464,7 @@ mod tests {
                 limit: None,
             };
 
-            let err = handle_request::<ReadHandler>(&context, &agent, payload)
+            let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
                 .await
                 .expect_err("Unexpected success reading state");
 

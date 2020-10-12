@@ -436,10 +436,10 @@ mod tests {
                 authz.allow(agent.account_id(), object, "update");
 
                 // Make edition.create request
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
                 let payload = CreateRequest { room_id: room.id() };
 
-                let messages = handle_request::<CreateHandler>(&context, &agent, payload)
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to create edition");
 
@@ -461,10 +461,10 @@ mod tests {
                     shared_helpers::insert_room(&mut conn).await
                 };
 
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
                 let payload = CreateRequest { room_id: room.id() };
 
-                let response = handle_request::<CreateHandler>(&context, &agent, payload)
+                let response = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating edition with no authorization");
 
@@ -476,13 +476,13 @@ mod tests {
         fn create_edition_missing_room() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = CreateRequest {
                     room_id: Uuid::new_v4(),
                 };
 
-                let err = handle_request::<CreateHandler>(&context, &agent, payload)
+                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success creating edition for no room");
 
@@ -519,7 +519,7 @@ mod tests {
                 let object = vec!["rooms", &room_id];
                 authz.allow(agent.account_id(), object, "update");
 
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = ListRequest {
                     room_id: room.id(),
@@ -527,7 +527,7 @@ mod tests {
                     limit: None,
                 };
 
-                let messages = handle_request::<ListHandler>(&context, &agent, payload)
+                let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to list editions");
 
@@ -555,7 +555,7 @@ mod tests {
                     (room, vec![edition])
                 };
 
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
 
                 let payload = ListRequest {
                     room_id: room.id(),
@@ -563,7 +563,7 @@ mod tests {
                     limit: None,
                 };
 
-                let resp = handle_request::<ListHandler>(&context, &agent, payload)
+                let resp = handle_request::<ListHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success without authorization on editions list");
 
@@ -575,7 +575,7 @@ mod tests {
         fn list_editions_missing_room() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
                 let payload = ListRequest {
                     room_id: Uuid::new_v4(),
@@ -583,7 +583,7 @@ mod tests {
                     limit: None,
                 };
 
-                let err = handle_request::<ListHandler>(&context, &agent, payload)
+                let err = handle_request::<ListHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success listing editions for no room");
 
@@ -625,13 +625,13 @@ mod tests {
                 let object = vec!["rooms", &room_id];
                 authz.allow(agent.account_id(), object, "update");
 
-                let context = TestContext::new(db, authz);
+                let mut context = TestContext::new(db, authz);
 
                 let payload = DeleteRequest {
                     id: editions[0].id(),
                 };
 
-                let messages = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let messages = handle_request::<DeleteHandler>(&mut context, &agent, payload)
                     .await
                     .expect("Failed to find deleted edition");
 
@@ -676,13 +676,13 @@ mod tests {
                     (room, editions)
                 };
 
-                let context = TestContext::new(db, TestAuthz::new());
+                let mut context = TestContext::new(db, TestAuthz::new());
 
                 let payload = DeleteRequest {
                     id: editions[0].id(),
                 };
 
-                let resp = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let resp = handle_request::<DeleteHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success without authorization on editions list");
 
@@ -707,10 +707,10 @@ mod tests {
         fn delete_editions_missing_room() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let context = TestContext::new(TestDb::new().await, TestAuthz::new());
+                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
                 let payload = DeleteRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<DeleteHandler>(&context, &agent, payload)
+                let err = handle_request::<DeleteHandler>(&mut context, &agent, payload)
                     .await
                     .expect_err("Unexpected success listing editions for no room");
 
