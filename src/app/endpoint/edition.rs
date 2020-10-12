@@ -72,11 +72,11 @@ impl RequestHandler for CreateHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!("Failed to insert edition, room_id = '{}'", payload.room_id)
-                })
+                .context("Failed to insert edition")
                 .error(AppErrorKind::DbQueryFailed)?
         };
+
+        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
         let response = helpers::build_response(
             ResponseStatus::CREATED,
@@ -161,9 +161,7 @@ impl RequestHandler for ListHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!("Failed to list editions, room_id = '{}'", payload.room_id)
-                })
+                .context("Failed to list editions")
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
@@ -210,22 +208,19 @@ impl RequestHandler for DeleteHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to find edition with room, edition_id = '{}'",
-                        payload.id
-                    )
-                })
+                .context("Failed to find edition with room")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition {
                 Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(anyhow!("Edition not found, id = '{}'", payload.id))
-                        .error(AppErrorKind::EditionNotFound);
+                    return Err(anyhow!("Edition not found")).error(AppErrorKind::EditionNotFound);
                 }
             }
         };
+
+        helpers::add_room_logger_tags(context, &room);
+        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
         let authz_time = context
             .authz()
@@ -251,7 +246,7 @@ impl RequestHandler for DeleteHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to delete edition, id = '{}'", payload.id))
+                .context("Failed to delete edition")
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
@@ -300,22 +295,19 @@ impl RequestHandler for CommitHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to find edition with room, edition_id = '{}'",
-                        payload.id
-                    )
-                })
+                .context("Failed to find edition with room")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition {
                 Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(anyhow!("Edition not found, id = '{}'", payload.id))
-                        .error(AppErrorKind::EditionNotFound);
+                    return Err(anyhow!("Edition not found")).error(AppErrorKind::EditionNotFound);
                 }
             }
         };
+
+        helpers::add_room_logger_tags(context, &room);
+        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
         // Authorize room update.
         let room_id = room.id().to_string();
@@ -342,12 +334,7 @@ impl RequestHandler for CommitHandler {
                     modified_segments,
                 },
                 Err(err) => {
-                    error!(
-                        logger,
-                        "Room adjustment job failed for room_id = '{}': {}",
-                        room.id(),
-                        err
-                    );
+                    error!(logger, "Room adjustment job failed: {}", err);
 
                     let error = AppError::new(AppErrorKind::EditionCommitTaskFailed, err);
                     let svc_error: SvcError = error.into();

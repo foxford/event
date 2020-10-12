@@ -70,6 +70,11 @@ impl RequestHandler for CreateHandler {
                     label: Some(ref label),
                     ..
                 } => {
+                    context.add_logger_tags(o!(
+                        "set" => set.to_string(),
+                        "set_label" => label.to_string(),
+                    ));
+
                     let query = db::event::OriginalEventQuery::new(
                         room.id(),
                         set.to_owned(),
@@ -88,12 +93,7 @@ impl RequestHandler for CreateHandler {
                             query.execute(&mut conn),
                         )
                         .await
-                        .with_context(|| {
-                            format!(
-                                "Failed to find original event, room_id = '{}', set = '{}', label = '{}'", 
-                                room.id(), set, label,
-                            )
-                        })
+                        .context("Failed to find original event")
                         .error(AppErrorKind::DbQueryFailed)?
                         .map(|original_event| {
                             original_event.created_by().as_account_id().to_string()
@@ -127,8 +127,7 @@ impl RequestHandler for CreateHandler {
                 .num_nanoseconds()
                 .unwrap_or(std::i64::MAX),
             _ => {
-                return Err(anyhow!("invalid time for room = '{}'", room.id()))
-                    .error(AppErrorKind::InvalidRoomTime);
+                return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime);
             }
         };
 
@@ -160,7 +159,7 @@ impl RequestHandler for CreateHandler {
             {
                 let mut conn = context.get_conn().await?;
 
-                context
+                let event = context
                     .profiler()
                     .measure(
                         (
@@ -170,8 +169,11 @@ impl RequestHandler for CreateHandler {
                         query.execute(&mut conn),
                     )
                     .await
-                    .with_context(|| format!("Failed to insert event, room_id = '{}'", room.id()))
-                    .error(AppErrorKind::DbQueryFailed)?
+                    .context("Failed to insert event")
+                    .error(AppErrorKind::DbQueryFailed)?;
+
+                context.add_logger_tags(o!("event_id" => event.id().to_string()));
+                event
             }
         } else {
             let CreateRequest {
@@ -335,7 +337,7 @@ impl RequestHandler for ListHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to list events, room_id = '{}'", room.id()))
+                .context("Failed to list events")
                 .error(AppErrorKind::DbQueryFailed)?
         };
 

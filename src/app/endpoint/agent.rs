@@ -68,7 +68,7 @@ impl RequestHandler for ListHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to list agents, room_id = '{}'", payload.room_id))
+                .context("Failed to list agents")
                 .error(AppErrorKind::DbQueryFailed)?
         };
 

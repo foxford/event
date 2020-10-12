@@ -61,6 +61,8 @@ pub(crate) async fn find_room<C: Context>(
     opening_requirement: RoomTimeRequirement,
     key: &str,
 ) -> Result<db::room::Object, AppError> {
+    context.add_logger_tags(o!("room_id" => id.to_string()));
+
     let query = db::room::FindQuery::new(id);
     let mut conn = context.get_ro_conn().await?;
 
@@ -71,10 +73,12 @@ pub(crate) async fn find_room<C: Context>(
             query.execute(&mut conn),
         )
         .await
-        .with_context(|| format!("Failed to find room = '{}'", id))
+        .context("Failed to find room")
         .error(AppErrorKind::DbQueryFailed)?
-        .ok_or_else(|| anyhow!("Room not found, id = '{}'", id))
+        .ok_or_else(|| anyhow!("Room not found"))
         .error(AppErrorKind::RoomNotFound)?;
+
+    add_room_logger_tags(context, &room);
 
     match opening_requirement {
         // Room time doesn't matter.
@@ -107,6 +111,16 @@ pub(crate) async fn find_room<C: Context>(
                 Err(anyhow!("Room already closed or not yet opened"))
                     .error(AppErrorKind::RoomClosed)
             }
+        }
+    }
+}
+
+pub(crate) fn add_room_logger_tags<C: Context>(context: &mut C, room: &db::room::Object) {
+    context.add_logger_tags(o!("room_id" => room.id().to_string()));
+
+    if let Some(tags) = room.tags() {
+        if let Some(scope) = tags.get("scope") {
+            context.add_logger_tags(o!("scope" => scope.to_string()));
         }
     }
 }

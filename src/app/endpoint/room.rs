@@ -103,6 +103,8 @@ impl RequestHandler for CreateHandler {
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
+        helpers::add_room_logger_tags(context, &room);
+
         // Respond and broadcast to the audience topic.
         let response = helpers::build_response(
             ResponseStatus::CREATED,
@@ -253,7 +255,7 @@ impl RequestHandler for UpdateHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to update room, id = '{}'", room.id()))
+                .context("Failed to update room")
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
@@ -356,13 +358,7 @@ impl RequestHandler for EnterHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to insert agent into room, agent_id = '{}', room_id = '{}'",
-                        reqp.as_agent_id(),
-                        room.id(),
-                    )
-                })
+                .context("Failed to insert agent into room")
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
@@ -436,19 +432,15 @@ impl RequestHandler for LeaveHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to list agents, room_id = '{}'", payload.id))
+                .context("Failed to list agents")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             (room, presence)
         };
 
         if presence.is_empty() {
-            return Err(anyhow!(
-                "agent = '{}' is not online in the room = '{}'",
-                reqp.as_agent_id(),
-                room.id()
-            ))
-            .error(AppErrorKind::AgentNotEnteredTheRoom);
+            return Err(anyhow!("Agent is not online in the room"))
+                .error(AppErrorKind::AgentNotEnteredTheRoom);
         }
 
         // Send dynamic subscription deletion request to the broker.
@@ -548,12 +540,7 @@ impl RequestHandler for AdjustHandler {
                     }
                 }
                 Err(err) => {
-                    error!(
-                        logger,
-                        "Room adjustment job failed for room_id = '{}': {}",
-                        room.id(),
-                        err
-                    );
+                    error!(logger, "Room adjustment job failed: {}", err);
 
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
                     let svc_error: SvcError = app_error.into();

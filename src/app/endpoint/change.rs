@@ -24,7 +24,7 @@ impl RequestHandler for CreateHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
     ) -> Result {
-        let (_edition, room) = {
+        let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.edition_id);
             let mut conn = context.get_ro_conn().await?;
 
@@ -38,22 +38,20 @@ impl RequestHandler for CreateHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to find edition with room, edition_id = '{}'",
-                        payload.edition_id
-                    )
-                })
+                .context("Failed to find edition with room")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition_with_room {
                 Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(anyhow!("Edition not found, id = '{}'", payload.edition_id))
-                        .error(AppErrorKind::EditionNotFound)?;
+                    return Err(anyhow!("Edition not found"))
+                        .error(AppErrorKind::EditionNotFound)?
                 }
             }
         };
+
+        helpers::add_room_logger_tags(context, &room);
+        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
         let authz_time = context
             .authz()
@@ -64,8 +62,6 @@ impl RequestHandler for CreateHandler {
                 "update",
             )
             .await?;
-
-        let edition_id = payload.edition_id;
 
         let query =
             db::change::InsertQuery::new(payload.edition_id, payload.changeset.as_changetype());
@@ -120,9 +116,11 @@ impl RequestHandler for CreateHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to insert change, edition_id = '{}'", edition_id))
+                .context("Failed to insert change")
                 .error(AppErrorKind::DbQueryFailed)?
         };
+
+        context.add_logger_tags(o!("change_id" => change.id().to_string()));
 
         let response = helpers::build_response(
             ResponseStatus::CREATED,
@@ -170,22 +168,20 @@ impl RequestHandler for ListHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to find edition with room, edition_id = '{}'",
-                        payload.id
-                    )
-                })
+                .context("Failed to find edition")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_edition_with_room {
                 Some(edition_with_room) => edition_with_room,
                 None => {
-                    return Err(anyhow!("Edition not found, id = '{}'", payload.id))
+                    return Err(anyhow!("Edition not found"))
                         .error(AppErrorKind::EditionNotFound)?;
                 }
             }
         };
+
+        helpers::add_room_logger_tags(context, &room);
+        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
         let authz_time = context
             .authz()
@@ -220,7 +216,7 @@ impl RequestHandler for ListHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to list changes, edition_id = '{}'", payload.id))
+                .context("Failed to list changes")
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
@@ -266,22 +262,20 @@ impl RequestHandler for DeleteHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to find change with room, change_id = '{}'",
-                        payload.id
-                    )
-                })
+                .context("Failed to find change with room")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             match maybe_change_with_room {
                 Some(change_with_room) => change_with_room,
                 None => {
-                    return Err(anyhow!("Change not found, id = '{}'", payload.id))
-                        .error(AppErrorKind::ChangeNotFound)?;
+                    return Err(anyhow!("Change not found")).error(AppErrorKind::ChangeNotFound)?;
                 }
             }
         };
+
+        helpers::add_room_logger_tags(context, &room);
+        context.add_logger_tags(o!("edition_id" => change.edition_id().to_string()));
+        context.add_logger_tags(o!("change_id" => change.id().to_string()));
 
         let authz_time = context
             .authz()
@@ -307,7 +301,7 @@ impl RequestHandler for DeleteHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| format!("Failed to delete change, id = '{}'", payload.id))
+                .context("Failed to delete change")
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 

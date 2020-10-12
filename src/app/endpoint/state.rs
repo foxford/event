@@ -90,6 +90,8 @@ impl RequestHandler for ReadHandler {
         let mut conn = context.get_ro_conn().await?;
 
         for set in payload.sets.iter() {
+            context.add_logger_tags(o!("set" => set.to_string()));
+
             // Build a query for the particular set state.
             let mut query =
                 db::event::SetStateQuery::new(room.id(), set.clone(), original_occurred_at, limit);
@@ -111,12 +113,7 @@ impl RequestHandler for ReadHandler {
                         query.total_count(&mut conn),
                     )
                     .await
-                    .with_context(|| {
-                        format!(
-                            "failed to query state total count for set = '{}', room_id = '{}'",
-                            set, room_id
-                        )
-                    })
+                    .context("Failed to get state total count")
                     .error(AppErrorKind::DbQueryFailed)?;
 
                 let has_next = total_count as i64 > limit;
@@ -131,22 +128,12 @@ impl RequestHandler for ReadHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "failed to query state for set = '{}', room_id = '{}'",
-                        set, room_id
-                    )
-                })
+                .context("Failed to get state")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             // Serialize to JSON and add to the state map.
             let serialized_set_state = serde_json::to_value(set_state)
-                .with_context(|| {
-                    format!(
-                        "failed to serialize state for set = '{}', room_id = '{}'",
-                        set, room_id
-                    )
-                })
+                .context("Failed to serialize state")
                 .error(AppErrorKind::SerializationFailed)?;
 
             match serialized_set_state.as_array().and_then(|a| a.first()) {

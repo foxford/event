@@ -8,7 +8,7 @@ use svc_agent::{
     mqtt::{
         IncomingEventProperties, IntoPublishableMessage, OutgoingEvent, ShortTermTimingProperties,
     },
-    AgentId, Authenticable,
+    Addressable, AgentId, Authenticable,
 };
 use uuid::Uuid;
 
@@ -70,6 +70,12 @@ impl EventHandler for CreateHandler {
 
         let room_id = payload.try_room_id()?;
 
+        context.add_logger_tags(o!(
+            "agent_label" => evp.as_agent_id().label().to_owned(),
+            "account_label" => evp.as_account_id().label().to_owned(),
+            "audience" => evp.as_account_id().audience().to_owned(),
+        ));
+
         {
             // Find room.
             helpers::find_room(
@@ -90,12 +96,7 @@ impl EventHandler for CreateHandler {
                 .profiler()
                 .measure((ProfilerKeys::AgentUpdateQuery, None), q.execute(&mut conn))
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to put agent into 'ready' status, agent_id = '{}', room_id = '{}'",
-                        payload.subject, room_id,
-                    )
-                })
+                .context("Failed to put agent into 'ready' status")
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
@@ -139,6 +140,7 @@ impl EventHandler for DeleteHandler {
 
         // Delete agent from the DB.
         let room_id = payload.try_room_id()?;
+        context.add_logger_tags(o!("room_id" => room_id.to_string()));
 
         let row_count = {
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
@@ -151,22 +153,13 @@ impl EventHandler for DeleteHandler {
                     query.execute(&mut conn),
                 )
                 .await
-                .with_context(|| {
-                    format!(
-                        "Failed to delete agent, agent_id = '{}', room_id = '{}'",
-                        payload.subject, room_id,
-                    )
-                })
+                .context("Failed to delete agent")
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
         if row_count != 1 {
-            return Err(anyhow!(
-                "the agent is not found for agent_id = '{}', room = '{}'",
-                payload.subject,
-                room_id
-            ))
-            .error(AppErrorKind::AgentNotEnteredTheRoom);
+            return Err(anyhow!("The agent is not found"))
+                .error(AppErrorKind::AgentNotEnteredTheRoom);
         }
 
         // Send broadcast notification that the agent has left the room.
