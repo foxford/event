@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.23 (October 9, 2020)
+
+### Changes
+- Separated missing and closed room error types ([f308070](https://github.com/netology-group/conference/commit/f308070a5823a77f11e69a631b05e4e0682131c5))
+- Contextual JSON logging ([d1f2af0](https://github.com/netology-group/conference/commit/d1f2af09b813e5b864b02c6c37a5c1fb5ee014bc))
+
 ## v0.2.22 (October 9, 2020)
 
 ### Changes
