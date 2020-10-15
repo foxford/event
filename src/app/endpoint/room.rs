@@ -543,11 +543,14 @@ impl RequestHandler for AdjustHandler {
                     error!(logger, "Room adjustment job failed: {}", err);
 
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
+                    let is_notify_sentry = app_error.is_notify_sentry();
                     let svc_error: SvcError = app_error.into();
 
-                    sentry::send(svc_error.clone()).unwrap_or_else(|err| {
-                        warn!(logger, "Error sending error to Sentry: {}", err)
-                    });
+                    if is_notify_sentry {
+                        sentry::send(svc_error.clone()).unwrap_or_else(|err| {
+                            warn!(logger, "Error sending error to Sentry: {}", err);
+                        });
+                    }
 
                     RoomAdjustResult::Error { error: svc_error }
                 }

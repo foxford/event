@@ -337,11 +337,14 @@ impl RequestHandler for CommitHandler {
                     error!(logger, "Room adjustment job failed: {}", err);
 
                     let error = AppError::new(AppErrorKind::EditionCommitTaskFailed, err);
+                    let is_notify_sentry = error.is_notify_sentry();
                     let svc_error: SvcError = error.into();
 
-                    sentry::send(svc_error.clone()).unwrap_or_else(|err| {
-                        warn!(logger, "Error sending error to Sentry: {}", err)
-                    });
+                    if is_notify_sentry {
+                        sentry::send(svc_error.clone()).unwrap_or_else(|err| {
+                            warn!(logger, "Error sending error to Sentry: {}", err);
+                        });
+                    }
 
                     EditionCommitResult::Error { error: svc_error }
                 }
