@@ -10,6 +10,7 @@
         - [Leave](api/room/leave.md)
         - [Adjust](api/room/adjust.md)
     - [Agent](api/agent.md)
+        - [Ban](api/agent/ban.md)
         - [List](api/agent/list.md)
     - [Event](api/event.md)
         - [Create](api/event/create.md)

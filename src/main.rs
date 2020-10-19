@@ -9,7 +9,7 @@ use std::env::var;
 
 use anyhow::Result;
 use slog::Drain;
-use svc_authz::cache::{create_pool, Cache};
+use svc_authz::cache::{create_pool, AuthzCache, RedisCache};
 
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -95,13 +95,13 @@ async fn main() -> Result<()> {
 
         let expiration_time = var("CACHE_EXPIRATION_TIME")
             .map(|val| {
-                val.parse::<u64>()
+                val.parse::<usize>()
                     .expect("Error converting CACHE_EXPIRATION_TIME variable into u64")
             })
             .unwrap_or_else(|_| 300);
 
         let pool = create_pool(&url, size, idle_size, timeout);
-        let cache = Cache::new(pool.clone(), expiration_time);
+        let cache = Box::new(RedisCache::new(pool.clone(), expiration_time)) as Box<dyn AuthzCache>;
         (Some(pool), Some(cache))
     } else {
         (None, None)

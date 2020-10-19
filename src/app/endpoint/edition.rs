@@ -13,6 +13,7 @@ use svc_agent::{
     },
     Addressable,
 };
+use svc_authn::Authenticable;
 use svc_error::Error as SvcError;
 use uuid::Uuid;
 
@@ -48,13 +49,15 @@ impl RequestHandler for CreateHandler {
         )
         .await?;
 
+        let object = AuthzObject::new(&["rooms", &room.id().to_string()]).into();
+
         let authz_time = context
             .authz()
             .authorize(
-                room.audience(),
-                reqp,
-                vec!["rooms", &room.id().to_string()],
-                "update",
+                room.audience().to_owned(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "update".into(),
             )
             .await?;
 
@@ -127,14 +130,15 @@ impl RequestHandler for ListHandler {
         .await?;
 
         let room_id = room.id();
+        let object = AuthzObject::new(&["rooms", &room_id.to_string()]).into();
 
         let authz_time = context
             .authz()
             .authorize(
-                room.audience(),
-                reqp,
-                vec!["rooms", &room_id.to_string()],
-                "update",
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "update".into(),
             )
             .await?;
 
@@ -222,13 +226,15 @@ impl RequestHandler for DeleteHandler {
         helpers::add_room_logger_tags(context, &room);
         context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
+        let object = AuthzObject::new(&["rooms", &room.id().to_string()]).into();
+
         let authz_time = context
             .authz()
             .authorize(
-                room.audience(),
-                reqp,
-                vec!["rooms", &room.id().to_string()],
-                "update",
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "update".into(),
             )
             .await?;
 
@@ -311,11 +317,16 @@ impl RequestHandler for CommitHandler {
 
         // Authorize room update.
         let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id];
+        let object = AuthzObject::new(&["rooms", &room_id]).into();
 
         let authz_time = context
             .authz()
-            .authorize(room.audience(), reqp, object, "update")
+            .authorize(
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "update".into(),
+            )
             .await?;
 
         // Run commit task asynchronously.

@@ -15,7 +15,7 @@ use svc_agent::mqtt::{
 };
 use svc_agent::{AccountId, AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
-use svc_authz::cache::{Cache as AuthzCache, ConnectionPool as RedisConnectionPool};
+use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::{extension::sentry, Error as SvcError};
 
 use crate::app::context::GlobalContext;
@@ -32,7 +32,7 @@ pub(crate) async fn run(
     db: Db,
     ro_db: Option<Db>,
     redis_pool: Option<RedisConnectionPool>,
-    authz_cache: Option<AuthzCache>,
+    authz_cache: Option<Box<dyn AuthzCache>>,
 ) -> Result<()> {
     // Config
     let config = config::load().context("Failed to load config")?;
@@ -71,9 +71,12 @@ pub(crate) async fn run(
         })
         .expect("Failed to start event notifications loop");
 
+    let is_banned_f = crate::app::endpoint::authz::db_ban_callback(db.clone());
+
     // Authz
-    let authz = svc_authz::ClientMap::new(&config.id, authz_cache, config.authz.clone())
-        .context("Error converting authz config to clients")?;
+    let authz =
+        svc_authz::ClientMap::new(&config.id, authz_cache, config.authz.clone(), is_banned_f)
+            .context("Error converting authz config to clients")?;
 
     // Sentry
     if let Some(sentry_config) = config.sentry.as_ref() {

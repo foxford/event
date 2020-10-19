@@ -3149,8 +3149,7 @@ dependencies = [
 [[package]]
 name = "svc-authz"
 version = "0.10.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff4137d7f29bd8aa8018930f5148296cf45f6d735ede3a786f2540278699e8ac"
+source = "git+https://github.com/netology-group/svc-authz-rs?branch=cache_ban#ed3e700ea071af2105bee15bb2a2e18a25ba6178"
 dependencies = [
  "async-std",
  "async-trait",
@@ -3161,6 +3160,7 @@ dependencies = [
  "http-types",
  "jsonwebtoken",
  "log",
+ "pin-project-lite",
  "r2d2_redis",
  "serde 1.0.114",
  "serde_derive",
@@ -3922,7 +3922,7 @@ version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65923dd1784f44da1d2c3dbbc5e822045628c590ba72123e1c73d3c230c4434d"
 dependencies = [
- "linked-hash-map 0.5.3",
+ "linked-hash-map 0.3.0",
 ]
 
 [[package]]

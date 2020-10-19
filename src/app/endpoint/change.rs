@@ -4,6 +4,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
+use svc_authn::Authenticable;
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -53,13 +54,15 @@ impl RequestHandler for CreateHandler {
         helpers::add_room_logger_tags(context, &room);
         context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
+        let object = AuthzObject::new(&["rooms", &room.id().to_string()]).into();
+
         let authz_time = context
             .authz()
             .authorize(
-                room.audience(),
-                reqp,
-                vec!["rooms", &room.id().to_string()],
-                "update",
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "update".into(),
             )
             .await?;
 
@@ -183,13 +186,15 @@ impl RequestHandler for ListHandler {
         helpers::add_room_logger_tags(context, &room);
         context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
+        let object = AuthzObject::new(&["rooms", &room.id().to_string()]).into();
+
         let authz_time = context
             .authz()
             .authorize(
-                room.audience(),
-                reqp,
-                vec!["rooms", &room.id().to_string()],
-                "update",
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "update".into(),
             )
             .await?;
 
@@ -277,13 +282,15 @@ impl RequestHandler for DeleteHandler {
         context.add_logger_tags(o!("edition_id" => change.edition_id().to_string()));
         context.add_logger_tags(o!("change_id" => change.id().to_string()));
 
+        let object = AuthzObject::new(&["rooms", &room.id().to_string()]).into();
+
         let authz_time = context
             .authz()
             .authorize(
-                room.audience(),
-                reqp,
-                vec!["rooms", &room.id().to_string()],
-                "update",
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "update".into(),
             )
             .await?;
 

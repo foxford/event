@@ -47,6 +47,7 @@ macro_rules! request_routes {
 // Request routes configuration: method => RequestHandler
 request_routes!(
     "agent.list" => agent::ListHandler,
+    "agent.update" => agent::UpdateHandler,
     "change.create" => change::CreateHandler,
     "change.delete" => change::DeleteHandler,
     "change.list" => change::ListHandler,
@@ -107,6 +108,7 @@ event_routes!(
 ///////////////////////////////////////////////////////////////////////////////
 
 mod agent;
+pub(crate) mod authz;
 mod change;
 mod edition;
 mod event;
@@ -118,6 +120,9 @@ mod subscription;
 
 pub(self) mod prelude {
     pub(super) use super::{helpers, EventHandler, RequestHandler, Result};
+    pub(super) use crate::app::endpoint::authz::AuthzObject;
     pub(super) use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
     pub(super) use crate::app::metrics::ProfilerKeys;
+
+    pub(super) use svc_authn::Authenticable;
 }

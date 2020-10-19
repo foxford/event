@@ -73,10 +73,17 @@ impl RequestHandler for CreateHandler {
             _ => return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime),
         }
 
+        let object = AuthzObject::new(&["rooms"]).into();
+
         // Authorize room creation on the tenant.
         let authz_time = context
             .authz()
-            .authorize(&payload.audience, reqp, vec!["rooms"], "create")
+            .authorize(
+                payload.audience.clone(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "create".into(),
+            )
             .await?;
 
         // Insert room.
@@ -154,11 +161,16 @@ impl RequestHandler for ReadHandler {
 
         // Authorize room reading on the tenant.
         let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id];
+        let object = AuthzObject::new(&["rooms", &room_id]).into();
 
         let authz_time = context
             .authz()
-            .authorize(room.audience(), reqp, object, "read")
+            .authorize(
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "read".into(),
+            )
             .await?;
 
         Ok(Box::new(stream::once(helpers::build_response(
@@ -204,11 +216,16 @@ impl RequestHandler for UpdateHandler {
 
         // Authorize room reading on the tenant.
         let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id];
+        let object = AuthzObject::new(&["rooms", &room_id]).into();
 
         let authz_time = context
             .authz()
-            .authorize(room.audience(), reqp, object, "update")
+            .authorize(
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "update".into(),
+            )
             .await?;
 
         // Validate opening time.
@@ -336,11 +353,17 @@ impl RequestHandler for EnterHandler {
 
         // Authorize subscribing to the room's events.
         let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id, "events"];
+        let object: Box<dyn svc_authz::IntentObject> =
+            AuthzObject::new(&["rooms", &room_id, "events"]).into();
 
         let authz_time = context
             .authz()
-            .authorize(room.audience(), reqp, object.clone(), "subscribe")
+            .authorize(
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object.clone(),
+                "subscribe".into(),
+            )
             .await?;
 
         // Register agent in `in_progress` state.
@@ -362,8 +385,13 @@ impl RequestHandler for EnterHandler {
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
+        let v = object.to_vec();
+
         // Send dynamic subscription creation request to the broker.
-        let payload = SubscriptionRequest::new(reqp.as_agent_id().to_owned(), object);
+        let payload = SubscriptionRequest::new(
+            reqp.as_agent_id().to_owned(),
+            v.iter().map(|s| s.as_ref()).collect(),
+        );
         let start_timestamp = context.start_timestamp();
         let mut short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
         short_term_timing.set_authorization_time(authz_time);
@@ -507,11 +535,16 @@ impl RequestHandler for AdjustHandler {
 
         // Authorize trusted account for the room's audience.
         let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id];
+        let object = AuthzObject::new(&["rooms", &room_id]).into();
 
         let authz_time = context
             .authz()
-            .authorize(room.audience(), reqp, object, "update")
+            .authorize(
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "update".into(),
+            )
             .await?;
 
         // Run asynchronous task for adjustment.

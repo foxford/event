@@ -17,7 +17,7 @@ pub(crate) enum Status {
     Ready,
 }
 
-#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+#[derive(Debug, Serialize, sqlx::FromRow)]
 pub(crate) struct Object {
     #[serde(skip_serializing)]
     id: Uuid,
@@ -34,6 +34,20 @@ impl Object {
     pub(crate) fn status(&self) -> Status {
         self.status
     }
+}
+
+#[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub(crate) struct AgentWithBan {
+    #[serde(skip_serializing)]
+    id: Uuid,
+    agent_id: AgentId,
+    room_id: Uuid,
+    #[serde(skip_serializing)]
+    status: Status,
+    #[serde(with = "ts_seconds")]
+    created_at: DateTime<Utc>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    banned: Option<bool>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -75,20 +89,6 @@ impl ListQuery {
     pub(crate) fn status(self, status: Status) -> Self {
         Self {
             status: Some(status),
-            ..self
-        }
-    }
-
-    pub(crate) fn offset(self, offset: usize) -> Self {
-        Self {
-            offset: Some(offset),
-            ..self
-        }
-    }
-
-    pub(crate) fn limit(self, limit: usize) -> Self {
-        Self {
-            limit: Some(limit),
             ..self
         }
     }
@@ -149,6 +149,55 @@ impl ListQuery {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+pub(crate) struct ListWithBansQuery {
+    room_id: Uuid,
+    status: Status,
+    offset: usize,
+    limit: usize,
+}
+
+impl ListWithBansQuery {
+    pub(crate) fn new(room_id: Uuid, status: Status, offset: usize, limit: usize) -> Self {
+        Self {
+            room_id,
+            status,
+            offset,
+            limit,
+        }
+    }
+
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<AgentWithBan>> {
+        sqlx::query_as!(
+            AgentWithBan,
+            r#"
+            SELECT
+                agent.id,
+                agent_id AS "agent_id!: AgentId",
+                agent.room_id,
+                status AS "status!: Status",
+                agent.created_at,
+                (rban.created_at IS NOT NULL)::boolean AS banned
+            FROM agent
+            LEFT OUTER JOIN room_ban rban
+            ON rban.room_id = agent.room_id AND rban.account_id = (agent.agent_id).account_id
+            WHERE agent.room_id = $1 AND agent.status = $2
+            ORDER BY created_at DESC
+            LIMIT $3
+            OFFSET $4
+            "#,
+            self.room_id,
+            self.status as Status,
+            self.limit as u32,
+            self.offset as u32
+        )
+        .fetch_all(conn)
+        .await
+    }
+}
 
 #[derive(Debug)]
 pub(crate) struct InsertQuery {
