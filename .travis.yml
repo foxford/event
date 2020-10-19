@@ -27,7 +27,16 @@ jobs:
   include:
     - stage: build
       name: Compilation
-      script: cargo build
+
+      env:
+        - RUST_BACKTRACE=1
+        - PGPORT=5433
+        - DATABASE_URL=postgres://postgres@localhost:5433/event.test
+
+      script:
+        - cargo install sqlx-cli --version 0.1.0-beta.1
+        - cargo sqlx database create && cargo sqlx migrate run
+        - cargo build
 
     - stage: check
       name: Format

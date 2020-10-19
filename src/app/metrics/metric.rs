@@ -152,6 +152,24 @@ pub(crate) enum Metric {
     AgentListQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_list_query_max_microseconds"))]
     AgentListQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ban_delete_query_max_microseconds"))]
+    BanDeleteQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ban_delete_query_max_microseconds"))]
+    BanDeleteQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ban_delete_query_max_microseconds"))]
+    BanDeleteQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ban_find_query_max_microseconds"))]
+    BanFindQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ban_find_query_max_microseconds"))]
+    BanFindQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ban_find_query_max_microseconds"))]
+    BanFindQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ban_insert_query_max_microseconds"))]
+    BanInsertQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ban_insert_query_max_microseconds"))]
+    BanInsertQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.ban_insert_query_max_microseconds"))]
+    BanInsertQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.change_delete_query_p95_microseconds"))]
     ChangeDeleteQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.change_delete_query_p99_microseconds"))]
@@ -344,6 +362,24 @@ pub(crate) enum Metric2 {
     AgentUpdateQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "agent_update_query_max_microseconds"))]
     AgentUpdateQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "ban_delete_query_max_microseconds"))]
+    BanDeleteQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "ban_delete_query_max_microseconds"))]
+    BanDeleteQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "ban_delete_query_max_microseconds"))]
+    BanDeleteQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "ban_find_query_max_microseconds"))]
+    BanFindQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "ban_find_query_max_microseconds"))]
+    BanFindQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "ban_find_query_max_microseconds"))]
+    BanFindQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "ban_insert_query_max_microseconds"))]
+    BanInsertQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "ban_insert_query_max_microseconds"))]
+    BanInsertQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "ban_insert_query_max_microseconds"))]
+    BanInsertQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "change_delete_query_p95_microseconds"))]
     ChangeDeleteQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "change_delete_query_p99_microseconds"))]
@@ -500,6 +536,15 @@ impl From<Metric> for Metric2 {
             Metric::AgentUpdateQueryP95(v) => Metric2::AgentUpdateQueryP95(v),
             Metric::AgentUpdateQueryP99(v) => Metric2::AgentUpdateQueryP99(v),
             Metric::AgentUpdateQueryMax(v) => Metric2::AgentUpdateQueryMax(v),
+            Metric::BanDeleteQueryP95(v) => Metric2::BanDeleteQueryP95(v),
+            Metric::BanDeleteQueryP99(v) => Metric2::BanDeleteQueryP99(v),
+            Metric::BanDeleteQueryMax(v) => Metric2::BanDeleteQueryMax(v),
+            Metric::BanFindQueryP95(v) => Metric2::BanFindQueryP95(v),
+            Metric::BanFindQueryP99(v) => Metric2::BanFindQueryP99(v),
+            Metric::BanFindQueryMax(v) => Metric2::BanFindQueryMax(v),
+            Metric::BanInsertQueryP95(v) => Metric2::BanInsertQueryP95(v),
+            Metric::BanInsertQueryP99(v) => Metric2::BanInsertQueryP99(v),
+            Metric::BanInsertQueryMax(v) => Metric2::BanInsertQueryMax(v),
             Metric::ChangeDeleteQueryP95(v) => Metric2::ChangeDeleteQueryP95(v),
             Metric::ChangeDeleteQueryP99(v) => Metric2::ChangeDeleteQueryP99(v),
             Metric::ChangeDeleteQueryMax(v) => Metric2::ChangeDeleteQueryMax(v),
@@ -573,6 +618,9 @@ pub enum ProfilerKeys {
     AgentInsertQuery,
     AgentListQuery,
     AgentUpdateQuery,
+    BanDeleteQuery,
+    BanFindQuery,
+    BanInsertQuery,
     ChangeDeleteQuery,
     ChangeFindWithRoomQuery,
     ChangeInsertQuery,

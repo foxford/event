@@ -4,6 +4,8 @@ use svc_authn::jose::Algorithm;
 use svc_authz::ConfigMap as Authz;
 use svc_error::extension::sentry::Config as SentryConfig;
 
+const DEFAULT_BAN_DUR_SECS: u64 = 5 * 3600;
+
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct Config {
     pub(crate) id: AccountId,
@@ -18,6 +20,13 @@ pub(crate) struct Config {
     #[serde(default)]
     pub(crate) kruonis: KruonisConfig,
     pub(crate) metrics: Option<MetricsConfig>,
+    ban_duration_s: Option<u64>,
+}
+
+impl Config {
+    pub fn ban_duration(&self) -> u64 {
+        self.ban_duration_s.unwrap_or(DEFAULT_BAN_DUR_SECS)
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]

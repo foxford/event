@@ -1,13 +1,18 @@
 use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
-use serde_derive::Deserialize;
+use serde_derive::{Deserialize, Serialize};
+use serde_json::json;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
+use svc_agent::AccountId;
+use svc_authn::Authenticable;
 use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::db;
+use crate::db::agent::Object as Agent;
+use crate::db::room_ban::{DeleteQuery as BanDeleteQuery, InsertQuery as BanInsertQuery};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -18,6 +23,13 @@ pub(crate) struct ListRequest {
     room_id: Uuid,
     offset: Option<usize>,
     limit: Option<usize>,
+}
+
+#[derive(Serialize)]
+struct MaybeBannedAgent {
+    #[serde(flatten)]
+    agent: Agent,
+    banned: bool,
 }
 
 pub(crate) struct ListHandler;
@@ -41,25 +53,28 @@ impl RequestHandler for ListHandler {
 
         // Authorize agents listing in the room.
         let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id, "agents"];
+        let object = AuthzObject::new(&["rooms", &room_id, "agents"]).into();
 
         let authz_time = context
             .authz()
-            .authorize(room.audience(), reqp, object, "list")
+            .authorize(
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "list".into(),
+            )
             .await?;
 
         // Get agents list in the room.
         let agents = {
             let mut conn = context.get_ro_conn().await?;
 
-            let query = db::agent::ListQuery::new()
-                .room_id(payload.room_id)
-                .status(db::agent::Status::Ready)
-                .offset(payload.offset.unwrap_or(0))
-                .limit(std::cmp::min(
-                    payload.limit.unwrap_or_else(|| MAX_LIMIT),
-                    MAX_LIMIT,
-                ));
+            let query = db::agent::ListWithBansQuery::new(
+                payload.room_id,
+                db::agent::Status::Ready,
+                payload.offset.unwrap_or(0),
+                std::cmp::min(payload.limit.unwrap_or(MAX_LIMIT), MAX_LIMIT),
+            );
 
             context
                 .profiler()
@@ -85,6 +100,136 @@ impl RequestHandler for ListHandler {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug, Deserialize)]
+pub(crate) struct UpdateRequest {
+    account_id: AccountId,
+    room_id: Uuid,
+    value: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct BanNotification {
+    account_id: AccountId,
+    banned: bool,
+}
+
+pub(crate) struct UpdateHandler;
+
+#[async_trait]
+impl RequestHandler for UpdateHandler {
+    type Payload = UpdateRequest;
+
+    async fn handle<C: Context>(
+        context: &mut C,
+        payload: Self::Payload,
+        reqp: &IncomingRequestProperties,
+    ) -> Result {
+        let room = helpers::find_room(
+            context,
+            payload.room_id,
+            helpers::RoomTimeRequirement::Open,
+            reqp.method(),
+        )
+        .await?;
+
+        helpers::add_room_logger_tags(context, &room);
+
+        let room_id = room.id().to_string();
+        let author = reqp.as_account_id().to_string();
+
+        let object = AuthzObject::new(&["rooms", &room_id, "claims", "role", "authors", &author]);
+
+        let authz_time = context
+            .authz()
+            .authorize(
+                room.audience().into(),
+                reqp.to_owned(),
+                object.into(),
+                "create".into(),
+            )
+            .await?;
+
+        let object = AuthzObject::new(&["rooms", &room_id, "events"]);
+
+        if payload.value {
+            let query = BanInsertQuery::new(payload.account_id.clone(), payload.room_id);
+
+            let mut conn = context.get_conn().await?;
+            context
+                .profiler()
+                .measure(
+                    (ProfilerKeys::BanInsertQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
+                .await
+                .context("Failed to insert room ban")
+                .error(AppErrorKind::DbQueryFailed)?;
+        } else {
+            let query = BanDeleteQuery::new(payload.account_id.clone(), payload.room_id);
+
+            let mut conn = context.get_conn().await?;
+            context
+                .profiler()
+                .measure(
+                    (ProfilerKeys::BanDeleteQuery, Some(reqp.method().to_owned())),
+                    query.execute(&mut conn),
+                )
+                .await
+                .context("Failed to delete room ban")
+                .error(AppErrorKind::DbQueryFailed)?;
+        }
+
+        if let Err(e) = context
+            .authz()
+            .ban(
+                room.audience().into(),
+                payload.account_id.clone(),
+                object.into(),
+                payload.value,
+                context.config().ban_duration() as usize,
+            )
+            .await
+        {
+            error!(
+                context.logger(),
+                "Failed to write account ban into redis, account = {}, ban = {}, reason = {}",
+                &author,
+                payload.value,
+                e
+            );
+        }
+
+        let mut messages = Vec::with_capacity(3);
+
+        // Respond to the agent.
+        messages.push(helpers::build_response(
+            ResponseStatus::OK,
+            json!({}),
+            reqp,
+            context.start_timestamp(),
+            Some(authz_time),
+        ));
+
+        let notification = BanNotification {
+            account_id: payload.account_id,
+            banned: payload.value,
+        };
+
+        // Notify room subscribers.
+        messages.push(helpers::build_notification(
+            "agent.update",
+            &format!("rooms/{}/events", room.id()),
+            notification,
+            reqp,
+            context.start_timestamp(),
+        ));
+
+        Ok(Box::new(stream::from_iter(messages)))
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 #[cfg(test)]
 mod tests {
     use serde_derive::Deserialize;
@@ -98,9 +243,10 @@ mod tests {
     ///////////////////////////////////////////////////////////////////////////
 
     #[derive(Deserialize)]
-    struct Agent {
+    struct MaybeBannedAgent {
         agent_id: AgentId,
         room_id: Uuid,
+        banned: Option<bool>,
     }
 
     #[test]
@@ -108,12 +254,20 @@ mod tests {
         async_std::task::block_on(async {
             let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let banned_agent = TestAgent::new("web", "user456", USR_AUDIENCE);
 
             let room = {
                 // Create room and put the agent online.
                 let mut conn = db.get_conn().await;
                 let room = shared_helpers::insert_room(&mut conn).await;
+
                 shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+                shared_helpers::insert_agent(&mut conn, banned_agent.agent_id(), room.id()).await;
+                BanInsertQuery::new(banned_agent.account_id().to_owned(), room.id())
+                    .execute(&mut conn)
+                    .await
+                    .expect("Failed to insert ban");
+
                 room
             };
 
@@ -141,11 +295,16 @@ mod tests {
                 .expect("Agents listing failed");
 
             // Assert response.
-            let (agents, respp) = find_response::<Vec<Agent>>(messages.as_slice());
+            let (agents, respp) = find_response::<Vec<MaybeBannedAgent>>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
-            assert_eq!(agents.len(), 1);
-            assert_eq!(&agents[0].agent_id, agent.agent_id());
+            assert_eq!(agents.len(), 2);
+            assert_eq!(&agents[1].agent_id, agent.agent_id());
+            assert_eq!(agents[1].room_id, room.id());
+            assert_eq!(agents[1].banned, Some(false));
+
+            assert_eq!(&agents[0].agent_id, banned_agent.agent_id());
             assert_eq!(agents[0].room_id, room.id());
+            assert_eq!(agents[0].banned, Some(true));
         });
     }
 
@@ -234,6 +393,206 @@ mod tests {
 
             assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
             assert_eq!(err.kind(), "room_not_found");
+        });
+    }
+
+    #[test]
+    fn ban_agent() {
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
+            let user = TestAgent::new("web", "user", USR_AUDIENCE);
+            let admin = TestAgent::new("web", "admin", USR_AUDIENCE);
+
+            let room = {
+                // Create room and put the agent online.
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+                shared_helpers::insert_agent(&mut conn, user.agent_id(), room.id()).await;
+                shared_helpers::insert_agent(&mut conn, admin.agent_id(), room.id()).await;
+                room
+            };
+
+            let is_banned_f = test_db_ban_callback(db.clone());
+
+            // Allow agent to list agents in the room.
+            let mut authz = DbBanTestAuthz::new(is_banned_f);
+            let room_id = room.id().to_string();
+
+            authz.allow(
+                admin.account_id(),
+                vec![
+                    "rooms",
+                    &room_id,
+                    "claims",
+                    "role",
+                    "authors",
+                    &admin.account_id().to_string(),
+                ],
+                "create",
+            );
+
+            authz.allow(
+                user.account_id(),
+                vec![
+                    "rooms",
+                    &room_id,
+                    "events",
+                    "message",
+                    "authors",
+                    &user.account_id().to_string(),
+                ],
+                "create",
+            );
+
+            let mut context = TestContext::new_with_ban(db, authz);
+
+            // User posts something bad and is allowed to do so
+            let payload = super::super::event::CreateRequest {
+                room_id: room.id(),
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "banmsg" }),
+                is_claim: false,
+                is_persistent: true,
+            };
+
+            let messages = handle_request::<crate::app::endpoint::event::CreateHandler>(
+                &mut context,
+                &user,
+                payload,
+            )
+            .await
+            .expect("Event creation failed");
+
+            assert_eq!(messages.len(), 2);
+
+            // Assert response.
+            let (_, respp) = find_response::<crate::db::event::Object>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+
+            // Admin bans user
+            let payload = UpdateRequest {
+                room_id: room.id(),
+                account_id: user.account_id().to_owned(),
+                value: true,
+            };
+
+            let messages = handle_request::<UpdateHandler>(&mut context, &admin, payload)
+                .await
+                .expect("Agent ban failed");
+
+            // Assert response.
+            let (_, respp) = find_response::<serde_json::Value>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+
+            let (ev_body, evp, _) = find_event::<BanNotification>(messages.as_slice());
+            assert_eq!(evp.label(), "agent.update");
+            assert_eq!(ev_body.account_id, *user.account_id());
+            assert_eq!(ev_body.banned, true);
+
+            let mut conn = context.db().acquire().await.expect("Failed conn checkout");
+            let db_ban = db::room_ban::FindQuery::new(ev_body.account_id, room.id())
+                .execute(&mut conn)
+                .await
+                .expect("Failed to query ban in db")
+                .expect("Missing ban in db");
+
+            assert_eq!(db_ban.account_id(), user.account_id());
+            assert_eq!(*db_ban.room_id(), room.id());
+
+            drop(conn);
+
+            // Ban once again, this should do nothing
+            let payload = UpdateRequest {
+                room_id: room.id(),
+                account_id: user.account_id().to_owned(),
+                value: true,
+            };
+
+            let messages = handle_request::<UpdateHandler>(&mut context, &admin, payload)
+                .await
+                .expect("Agent ban failed");
+
+            // Assert response.
+            let (_, respp) = find_response::<serde_json::Value>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+
+            // Make event.create request to check that user is actually banned
+            let payload = super::super::event::CreateRequest {
+                room_id: room.id(),
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+            };
+
+            let err =
+                handle_request::<super::super::event::CreateHandler>(&mut context, &user, payload)
+                    .await
+                    .expect_err("Unexpected success on event creation");
+
+            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
+
+            // Unban the user
+            let payload = UpdateRequest {
+                room_id: room.id(),
+                account_id: user.account_id().to_owned(),
+                value: false,
+            };
+
+            let messages = handle_request::<UpdateHandler>(&mut context, &admin, payload)
+                .await
+                .expect("Agent ban failed");
+
+            // Assert response.
+            let (_, respp) = find_response::<serde_json::Value>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+
+            let (ev_body, evp, _) = find_event::<BanNotification>(messages.as_slice());
+            assert_eq!(evp.label(), "agent.update");
+            assert_eq!(ev_body.account_id, *user.account_id());
+            assert_eq!(ev_body.banned, false);
+
+            let mut conn = context.db().acquire().await.expect("Failed conn checkout");
+            let db_ban = db::room_ban::FindQuery::new(ev_body.account_id, room.id())
+                .execute(&mut conn)
+                .await
+                .expect("Failed to query ban in db");
+
+            assert!(db_ban.is_none());
+
+            drop(conn);
+
+            // Make event.create request to check that user is unbanned
+            let payload = super::super::event::CreateRequest {
+                room_id: room.id(),
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "hello 2" }),
+                is_claim: false,
+                is_persistent: true,
+            };
+
+            let messages = handle_request::<crate::app::endpoint::event::CreateHandler>(
+                &mut context,
+                &user,
+                payload,
+            )
+            .await
+            .expect("Event creation failed");
+
+            assert_eq!(messages.len(), 2);
+
+            // Assert response.
+            let (_, respp) = find_response::<crate::db::event::Object>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
         });
     }
 }

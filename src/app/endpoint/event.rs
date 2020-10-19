@@ -21,17 +21,17 @@ use crate::db;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct CreateRequest {
-    room_id: Uuid,
+    pub room_id: Uuid,
     #[serde(rename = "type")]
-    kind: String,
-    set: Option<String>,
-    label: Option<String>,
-    attribute: Option<String>,
-    data: JsonValue,
+    pub kind: String,
+    pub set: Option<String>,
+    pub label: Option<String>,
+    pub attribute: Option<String>,
+    pub data: JsonValue,
     #[serde(default = "CreateRequest::default_is_claim")]
-    is_claim: bool,
+    pub is_claim: bool,
     #[serde(default = "CreateRequest::default_is_persistent")]
-    is_persistent: bool,
+    pub is_persistent: bool,
 }
 
 impl CreateRequest {
@@ -123,11 +123,17 @@ impl RequestHandler for CreateHandler {
             "events"
         };
 
-        let object = vec!["rooms", &room_id, key, &payload.kind, "authors", &author];
+        let object =
+            AuthzObject::new(&["rooms", &room_id, key, &payload.kind, "authors", &author]).into();
 
         let authz_time = context
             .authz()
-            .authorize(room.audience(), reqp, object.clone(), "create")
+            .authorize(
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "create".into(),
+            )
             .await?;
 
         // Calculate occurrence date.
@@ -307,11 +313,16 @@ impl RequestHandler for ListHandler {
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id, "events"];
+        let object = AuthzObject::new(&["rooms", &room_id, "events"]).into();
 
         let authz_time = context
             .authz()
-            .authorize(room.audience(), reqp, object, "list")
+            .authorize(
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "list".into(),
+            )
             .await?;
 
         // Retrieve events from the DB.

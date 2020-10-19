@@ -15,7 +15,7 @@ use crate::app::metrics::ProfilerKeys;
 use crate::config::Config;
 use crate::profiler::Profiler;
 
-use super::authz::TestAuthz;
+use super::authz::{DbBanTestAuthz, TestAuthz};
 use super::db::TestDb;
 use super::SVC_AUDIENCE;
 
@@ -57,6 +57,21 @@ pub(crate) struct TestContext {
 
 impl TestContext {
     pub(crate) fn new(db: TestDb, authz: TestAuthz) -> Self {
+        let config = build_config();
+        let agent_id = AgentId::new(&config.agent_label, config.id.clone());
+
+        Self {
+            config,
+            authz: authz.into(),
+            db,
+            agent_id,
+            profiler: Arc::new(Profiler::<(ProfilerKeys, Option<String>)>::start()),
+            logger: crate::LOG.new(o!()),
+            start_timestamp: Utc::now(),
+        }
+    }
+
+    pub(crate) fn new_with_ban(db: TestDb, authz: DbBanTestAuthz) -> Self {
         let config = build_config();
         let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 

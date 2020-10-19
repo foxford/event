@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
-use crate::db::agent;
+use crate::db::{agent, room_ban};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -44,6 +44,7 @@ impl SubscriptionEvent {
 pub(crate) struct RoomEnterLeaveEvent {
     id: Uuid,
     agent_id: AgentId,
+    banned: bool,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -76,7 +77,7 @@ impl EventHandler for CreateHandler {
             "audience" => evp.as_account_id().audience().to_owned(),
         ));
 
-        {
+        let banned = {
             // Find room.
             helpers::find_room(
                 context,
@@ -98,12 +99,23 @@ impl EventHandler for CreateHandler {
                 .await
                 .context("Failed to put agent into 'ready' status")
                 .error(AppErrorKind::DbQueryFailed)?;
-        }
+
+            let query =
+                room_ban::FindQuery::new(payload.subject.as_account_id().to_owned(), room_id);
+            context
+                .profiler()
+                .measure((ProfilerKeys::BanFindQuery, None), query.execute(&mut conn))
+                .await
+                .context("Failed to find room ban")
+                .error(AppErrorKind::DbQueryFailed)?
+                .is_some()
+        };
 
         // Send broadcast notification that the agent has entered the room.
         let outgoing_event_payload = RoomEnterLeaveEvent {
             id: room_id.to_owned(),
             agent_id: payload.subject,
+            banned: banned,
         };
 
         let start_timestamp = context.start_timestamp();
@@ -142,11 +154,11 @@ impl EventHandler for DeleteHandler {
         let room_id = payload.try_room_id()?;
         context.add_logger_tags(o!("room_id" => room_id.to_string()));
 
-        let row_count = {
+        let (row_count, banned) = {
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
             let mut conn = context.get_conn().await?;
 
-            context
+            let row_count = context
                 .profiler()
                 .measure(
                     (ProfilerKeys::AgentDeleteQuery, None),
@@ -154,7 +166,19 @@ impl EventHandler for DeleteHandler {
                 )
                 .await
                 .context("Failed to delete agent")
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            let query =
+                room_ban::FindQuery::new(payload.subject.as_account_id().to_owned(), room_id);
+            let banned = context
+                .profiler()
+                .measure((ProfilerKeys::BanFindQuery, None), query.execute(&mut conn))
+                .await
+                .context("Failed to find room ban")
                 .error(AppErrorKind::DbQueryFailed)?
+                .is_some();
+
+            (row_count, banned)
         };
 
         if row_count != 1 {
@@ -166,6 +190,7 @@ impl EventHandler for DeleteHandler {
         let outgoing_event_payload = RoomEnterLeaveEvent {
             id: room_id,
             agent_id: payload.subject,
+            banned: banned,
         };
 
         let start_timestamp = context.start_timestamp();

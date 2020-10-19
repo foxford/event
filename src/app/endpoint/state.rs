@@ -66,11 +66,16 @@ impl RequestHandler for ReadHandler {
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id, "events"];
+        let object = AuthzObject::new(&["rooms", &room_id, "events"]).into();
 
         let authz_time = context
             .authz()
-            .authorize(room.audience(), reqp, object, "list")
+            .authorize(
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                "list".into(),
+            )
             .await?;
 
         // Default `occurred_at`: closing time of the room.

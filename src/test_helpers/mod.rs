@@ -166,9 +166,12 @@ pub(crate) mod prelude {
 
     #[allow(unused_imports)]
     pub(crate) use super::{
-        agent::TestAgent, authz::TestAuthz, context::TestContext, db::TestDb, factory, find_event,
-        find_event_by_predicate, find_request, find_response, handle_event, handle_request,
-        shared_helpers, SVC_AUDIENCE, USR_AUDIENCE,
+        agent::TestAgent,
+        authz::{DbBanTestAuthz, TestAuthz},
+        context::TestContext,
+        db::{test_db_ban_callback, TestDb},
+        factory, find_event, find_event_by_predicate, find_request, find_response, handle_event,
+        handle_request, shared_helpers, SVC_AUDIENCE, USR_AUDIENCE,
     };
 }
 
