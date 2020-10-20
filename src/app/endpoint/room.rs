@@ -15,7 +15,7 @@ use svc_agent::{
     },
     Addressable, AgentId,
 };
-use svc_error::{extension::sentry, Error as SvcError};
+use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -541,15 +541,11 @@ impl RequestHandler for AdjustHandler {
                 }
                 Err(err) => {
                     error!(logger, "Room adjustment job failed: {}", err);
-
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
-                    let svc_error: SvcError = app_error.into();
-
-                    sentry::send(svc_error.clone()).unwrap_or_else(|err| {
-                        warn!(logger, "Error sending error to Sentry: {}", err)
-                    });
-
-                    RoomAdjustResult::Error { error: svc_error }
+                    app_error.notify_sentry(&logger);
+                    RoomAdjustResult::Error {
+                        error: app_error.to_svc_error(),
+                    }
                 }
             };
 
@@ -710,7 +706,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room creation");
 
-                assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
             });
         }
 
@@ -735,7 +731,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room creation");
 
-                assert_eq!(err.status_code(), ResponseStatus::BAD_REQUEST);
+                assert_eq!(err.status(), ResponseStatus::BAD_REQUEST);
                 assert_eq!(err.kind(), "invalid_room_time");
             });
         }
@@ -801,7 +797,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room reading");
 
-                assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
             });
         }
 
@@ -816,7 +812,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room reading");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "room_not_found");
             });
         }
@@ -1057,7 +1053,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room update");
 
-                assert_eq!(err.status_code(), ResponseStatus::BAD_REQUEST);
+                assert_eq!(err.status(), ResponseStatus::BAD_REQUEST);
                 assert_eq!(err.kind(), "invalid_room_time");
             });
         }
@@ -1086,7 +1082,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room update");
 
-                assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
             });
         }
 
@@ -1106,7 +1102,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room update");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "room_not_found");
             });
         }
@@ -1141,7 +1137,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room update");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "room_closed");
             });
         }
@@ -1220,7 +1216,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room entering");
 
-                assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
             });
         }
 
@@ -1235,7 +1231,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room entering");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "room_not_found");
             });
         }
@@ -1270,7 +1266,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room entering");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "room_closed");
             });
         }
@@ -1345,7 +1341,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room leaving");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "agent_not_entered_the_room");
             });
         }
@@ -1361,7 +1357,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room leaving");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "room_not_found");
             });
         }
@@ -1400,7 +1396,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room adjustment");
 
-                assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
             });
         }
 
@@ -1421,7 +1417,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success on room adjustment");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "room_not_found");
             });
         }

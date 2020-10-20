@@ -563,7 +563,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success creating change with wrong params");
 
-                assert_eq!(err.status_code(), ResponseStatus::UNPROCESSABLE_ENTITY);
+                assert_eq!(err.status(), ResponseStatus::UNPROCESSABLE_ENTITY);
                 assert_eq!(err.kind(), "database_query_failed");
             });
         }
@@ -602,7 +602,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success creating change with no authorization");
 
-                assert_eq!(response.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(response.status(), ResponseStatus::FORBIDDEN);
             });
         }
 
@@ -628,7 +628,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success creating change for no edition");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "edition_not_found");
             });
         }
@@ -754,7 +754,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success without authorization on changes list");
 
-                assert_eq!(resp.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(resp.status(), ResponseStatus::FORBIDDEN);
             });
         }
 
@@ -774,7 +774,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success listing changes for no edition");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "edition_not_found");
             });
         }
@@ -904,7 +904,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success deleting change without authorization");
 
-                assert_eq!(response.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(response.status(), ResponseStatus::FORBIDDEN);
 
                 let mut conn = context
                     .db()
@@ -970,7 +970,7 @@ mod tests {
                     .await
                     .expect_err("Failed to list changes");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "change_not_found");
 
                 let mut conn = context
