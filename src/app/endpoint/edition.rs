@@ -13,7 +13,7 @@ use svc_agent::{
     },
     Addressable,
 };
-use svc_error::{extension::sentry, Error as SvcError};
+use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -335,18 +335,11 @@ impl RequestHandler for CommitHandler {
                 },
                 Err(err) => {
                     error!(logger, "Room adjustment job failed: {}", err);
-
-                    let error = AppError::new(AppErrorKind::EditionCommitTaskFailed, err);
-                    let is_notify_sentry = error.is_notify_sentry();
-                    let svc_error: SvcError = error.into();
-
-                    if is_notify_sentry {
-                        sentry::send(svc_error.clone()).unwrap_or_else(|err| {
-                            warn!(logger, "Error sending error to Sentry: {}", err);
-                        });
+                    let app_error = AppError::new(AppErrorKind::EditionCommitTaskFailed, err);
+                    app_error.notify_sentry(&logger);
+                    EditionCommitResult::Error {
+                        error: app_error.to_svc_error(),
                     }
-
-                    EditionCommitResult::Error { error: svc_error }
                 }
             };
 
@@ -471,7 +464,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success creating edition with no authorization");
 
-                assert_eq!(response.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(response.status(), ResponseStatus::FORBIDDEN);
             });
         }
 
@@ -489,7 +482,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success creating edition for no room");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "room_not_found");
             });
         }
@@ -570,7 +563,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success without authorization on editions list");
 
-                assert_eq!(resp.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(resp.status(), ResponseStatus::FORBIDDEN);
             });
         }
 
@@ -590,7 +583,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success listing editions for no room");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "room_not_found");
             });
         }
@@ -689,7 +682,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success without authorization on editions list");
 
-                assert_eq!(resp.status_code(), ResponseStatus::FORBIDDEN);
+                assert_eq!(resp.status(), ResponseStatus::FORBIDDEN);
 
                 let mut conn = context
                     .db()
@@ -717,7 +710,7 @@ mod tests {
                     .await
                     .expect_err("Unexpected success listing editions for no room");
 
-                assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
                 assert_eq!(err.kind(), "edition_not_found");
             });
         }

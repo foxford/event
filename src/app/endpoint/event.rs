@@ -695,7 +695,7 @@ mod tests {
                 .await
                 .expect_err("Unexpected success on event creation");
 
-            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
         });
     }
 
@@ -795,7 +795,7 @@ mod tests {
                 .await
                 .expect_err("Unexpected success on event creation");
 
-            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
             assert_eq!(err.kind(), "room_closed");
         });
     }
@@ -820,7 +820,7 @@ mod tests {
                 .await
                 .expect_err("Unexpected success on event creation");
 
-            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
             assert_eq!(err.kind(), "room_not_found");
         });
     }
@@ -1015,7 +1015,7 @@ mod tests {
                 .await
                 .expect_err("Unexpected success on events listing");
 
-            assert_eq!(err.status_code(), ResponseStatus::FORBIDDEN);
+            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
         });
     }
 
@@ -1039,7 +1039,7 @@ mod tests {
                 .await
                 .expect_err("Unexpected success on events listing");
 
-            assert_eq!(err.status_code(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
             assert_eq!(err.kind(), "room_not_found");
         });
     }

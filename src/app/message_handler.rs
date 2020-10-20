@@ -8,11 +8,10 @@ use futures_util::pin_mut;
 use svc_agent::{
     mqtt::{
         Agent, IncomingEvent, IncomingMessage, IncomingRequest, IncomingRequestProperties,
-        IntoPublishableMessage, OutgoingResponse, ResponseStatus, ShortTermTimingProperties,
+        IntoPublishableMessage, OutgoingResponse, ShortTermTimingProperties,
     },
     Addressable, Authenticable,
 };
-use svc_error::{extension::sentry, Error as SvcError};
 
 use crate::app::context::{AppMessageContext, Context, GlobalContext, MessageContext};
 use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
@@ -75,14 +74,7 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
             anyhow!(err.to_string()),
         );
 
-        let svc_error: SvcError = app_error.into();
-
-        sentry::send(svc_error).unwrap_or_else(|err| {
-            warn!(
-                msg_context.logger(),
-                "Error sending error to Sentry: {}", err
-            );
-        });
+        app_error.notify_sentry(msg_context.logger());
     }
 
     async fn handle_message(
@@ -119,16 +111,11 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
         let outgoing_message_stream = endpoint::route_request(msg_context, request)
             .await
             .unwrap_or_else(|| {
-                let detail = format!("Unknown method '{}'", request.properties().method());
-
-                let svc_error = SvcError::builder()
-                    .status(ResponseStatus::METHOD_NOT_ALLOWED)
-                    .kind("unknown_method", "Unknown method")
-                    .detail(&detail)
-                    .build();
+                let err = anyhow!("Unknown method '{}'", request.properties().method());
+                let app_error = AppError::new(AppErrorKind::UnknownMethod, err);
 
                 error_response(
-                    svc_error,
+                    app_error,
                     request.properties(),
                     msg_context.start_timestamp(),
                 )
@@ -193,13 +180,13 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
 }
 
 fn error_response(
-    err: SvcError,
+    err: AppError,
     reqp: &IncomingRequestProperties,
     start_timestamp: DateTime<Utc>,
 ) -> MessageStream {
     let timing = ShortTermTimingProperties::until_now(start_timestamp);
-    let props = reqp.to_response(err.status_code(), timing);
-    let resp = OutgoingResponse::unicast(err, props, reqp, API_VERSION);
+    let props = reqp.to_response(err.status(), timing);
+    let resp = OutgoingResponse::unicast(err.source().to_string(), props, reqp, API_VERSION);
 
     Box::new(stream::once(
         Box::new(resp) as Box<dyn IntoPublishableMessage + Send>
@@ -257,36 +244,27 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                     H::handle(context, payload, reqp)
                         .await
                         .unwrap_or_else(|app_error| {
-                            let svc_error: SvcError = app_error.into();
-
                             context.add_logger_tags(o!(
-                                "status" => svc_error.status_code().as_u16(),
-                                "kind" => svc_error.kind().to_owned(),
+                                "status" => app_error.status().as_u16(),
+                                "kind" => app_error.kind().to_owned(),
                             ));
 
                             error!(
                                 context.logger(),
                                 "Failed to handle request: {}",
-                                svc_error.to_string(),
+                                app_error.source(),
                             );
 
-                            sentry::send(svc_error.clone()).unwrap_or_else(|err| {
-                                warn!(context.logger(), "Error sending error to Sentry: {}", err)
-                            });
+                            app_error.notify_sentry(context.logger());
 
-                            // Handler returned an error => 422.
-                            error_response(svc_error, reqp, context.start_timestamp())
+                            // Handler returned an error.
+                            error_response(app_error, reqp, context.start_timestamp())
                         })
                 }
                 // Bad envelope or payload format => 400.
                 Err(err) => {
-                    let svc_error = SvcError::builder()
-                        .status(ResponseStatus::BAD_REQUEST)
-                        .kind("invalid_payload", "Invalid payload")
-                        .detail(&err.to_string())
-                        .build();
-
-                    error_response(svc_error, reqp, context.start_timestamp())
+                    let app_error = AppError::new(AppErrorKind::InvalidPayload, anyhow!("{}", err));
+                    error_response(app_error, reqp, context.start_timestamp())
                 }
             }
         }
@@ -325,23 +303,18 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                     .await
                     .unwrap_or_else(|app_error| {
                         // Handler returned an error.
-                        let svc_error: SvcError = app_error.into();
-
                         context.add_logger_tags(o!(
-                            "status" => svc_error.status_code().as_u16(),
-                            "kind" => svc_error.kind().to_owned(),
+                            "status" => app_error.status().as_u16(),
+                            "kind" => app_error.kind().to_owned(),
                         ));
 
                         error!(
                             context.logger(),
                             "Failed to handle event: {}",
-                            svc_error.detail().unwrap_or("No detail")
+                            app_error.source(),
                         );
 
-                        sentry::send(svc_error).unwrap_or_else(|err| {
-                            warn!(context.logger(), "Error sending error to Sentry: {}", err)
-                        });
-
+                        app_error.notify_sentry(context.logger());
                         Box::new(stream::empty())
                     }),
                 Err(err) => {
