@@ -26,6 +26,7 @@ pub(crate) struct CreateRequest {
     kind: String,
     set: Option<String>,
     label: Option<String>,
+    attribute: Option<String>,
     data: JsonValue,
     #[serde(default = "CreateRequest::default_is_claim")]
     is_claim: bool,
@@ -113,7 +114,15 @@ impl RequestHandler for CreateHandler {
 
         // Authorize event creation on tenant with cache.
         let room_id = room.id().to_string();
-        let key = if payload.is_claim { "claims" } else { "events" };
+
+        let key = if let Some(ref attribute) = payload.attribute {
+            attribute
+        } else if payload.is_claim {
+            "claims"
+        } else {
+            "events"
+        };
+
         let object = vec!["rooms", &room_id, key, &payload.kind, "authors", &author];
 
         let authz_time = context
@@ -138,8 +147,10 @@ impl RequestHandler for CreateHandler {
                 data,
                 set,
                 label,
+                attribute,
                 ..
             } = payload;
+
             let mut query = db::event::InsertQuery::new(
                 room.id(),
                 kind,
@@ -154,6 +165,10 @@ impl RequestHandler for CreateHandler {
 
             if let Some(label) = label {
                 query = query.label(label);
+            }
+
+            if let Some(attribute) = attribute {
+                query = query.attribute(attribute);
             }
 
             {
@@ -181,6 +196,7 @@ impl RequestHandler for CreateHandler {
                 data,
                 set,
                 label,
+                attribute,
                 ..
             } = payload;
 
@@ -198,6 +214,10 @@ impl RequestHandler for CreateHandler {
 
             if let Some(ref label) = label {
                 builder = builder.label(label)
+            }
+
+            if let Some(ref attribute) = attribute {
+                builder = builder.attribute(attribute)
             }
 
             builder
@@ -259,6 +279,7 @@ pub(crate) struct ListRequest {
     kind: Option<ListTypesFilter>,
     set: Option<String>,
     label: Option<String>,
+    attribute: Option<String>,
     last_occurred_at: Option<i64>,
     #[serde(default)]
     direction: db::event::Direction,
@@ -300,6 +321,7 @@ impl RequestHandler for ListHandler {
             kind,
             set,
             label,
+            attribute,
             last_occurred_at,
             ..
         } = payload;
@@ -310,12 +332,16 @@ impl RequestHandler for ListHandler {
             None => query,
         };
 
-        if let Some(set) = set {
+        if let Some(ref set) = set {
             query = query.set(set);
         }
 
-        if let Some(label) = label {
+        if let Some(ref label) = label {
             query = query.label(label);
+        }
+
+        if let Some(ref attribute) = attribute {
+            query = query.attribute(attribute);
         }
 
         if let Some(last_occurred_at) = last_occurred_at {
@@ -388,7 +414,7 @@ mod tests {
             let object = vec![
                 "rooms",
                 &room_id,
-                "events",
+                "pinned",
                 "message",
                 "authors",
                 &account_id,
@@ -404,6 +430,7 @@ mod tests {
                 kind: String::from("message"),
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
+                attribute: Some(String::from("pinned")),
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
@@ -422,6 +449,7 @@ mod tests {
             assert_eq!(event.kind(), "message");
             assert_eq!(event.set(), "messages");
             assert_eq!(event.label(), Some("message-1"));
+            assert_eq!(event.attribute(), Some("pinned"));
             assert_eq!(event.data(), &json!({ "text": "hello" }));
 
             // Assert notification.
@@ -432,6 +460,7 @@ mod tests {
             assert_eq!(event.kind(), "message");
             assert_eq!(event.set(), "messages");
             assert_eq!(event.label(), Some("message-1"));
+            assert_eq!(event.attribute(), Some("pinned"));
             assert_eq!(event.data(), &json!({ "text": "hello" }));
         });
     }
@@ -491,6 +520,7 @@ mod tests {
                 kind: String::from("message"),
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
+                attribute: None,
                 data: json!({ "text": "modified text" }),
                 is_claim: false,
                 is_persistent: true,
@@ -536,6 +566,7 @@ mod tests {
                 kind: String::from("block"),
                 set: Some(String::from("blocks")),
                 label: Some(String::from("user-1")),
+                attribute: None,
                 data: json!({ "blocked": true }),
                 is_claim: true,
                 is_persistent: true,
@@ -632,6 +663,7 @@ mod tests {
                 kind: String::from("cursor"),
                 set: None,
                 label: None,
+                attribute: None,
                 data: data.clone(),
                 is_claim: false,
                 is_persistent: false,
@@ -686,6 +718,7 @@ mod tests {
                 kind: String::from("message"),
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
+                attribute: None,
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
@@ -735,6 +768,7 @@ mod tests {
                 kind: String::from("message"),
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
+                attribute: None,
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
@@ -786,6 +820,7 @@ mod tests {
                 kind: String::from("message"),
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
+                attribute: None,
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
@@ -811,6 +846,7 @@ mod tests {
                 kind: String::from("message"),
                 set: Some(String::from("messages")),
                 label: Some(String::from("message-1")),
+                attribute: None,
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
@@ -871,6 +907,7 @@ mod tests {
                 kind: None,
                 set: None,
                 label: None,
+                attribute: None,
                 last_occurred_at: None,
                 direction: Direction::Backward,
                 limit: Some(2),
@@ -893,6 +930,7 @@ mod tests {
                 kind: None,
                 set: None,
                 label: None,
+                attribute: None,
                 last_occurred_at: Some(events[1].occurred_at()),
                 direction: Direction::Backward,
                 limit: Some(2),
@@ -950,6 +988,7 @@ mod tests {
                 kind: Some(ListTypesFilter::Single("B".to_string())),
                 set: None,
                 label: None,
+                attribute: None,
                 last_occurred_at: None,
                 direction: Direction::Backward,
                 limit: None,
@@ -972,6 +1011,7 @@ mod tests {
                 ])),
                 set: None,
                 label: None,
+                attribute: None,
                 last_occurred_at: None,
                 direction: Direction::Backward,
                 limit: None,
@@ -985,6 +1025,68 @@ mod tests {
             let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(events.len(), 3);
+        });
+    }
+
+    #[test]
+    fn list_events_filter_by_attribute() {
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+
+                // Create events in the room.
+                for (i, attr) in [None, Some("pinned"), Some("other")].iter().enumerate() {
+                    let mut factory = factory::Event::new()
+                        .room_id(room.id())
+                        .kind("message")
+                        .data(&json!({ "text": format!("message {}", i) }))
+                        .occurred_at(i as i64 * 1000)
+                        .created_by(&agent.agent_id());
+
+                    if let Some(attribute) = attr {
+                        factory = factory.attribute(attribute);
+                    }
+
+                    factory.insert(&mut conn).await;
+                }
+
+                room
+            };
+
+            // Allow agent to list events in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id, "events"];
+            authz.allow(agent.account_id(), object, "list");
+
+            // Make event.list request.
+            let mut context = TestContext::new(db, authz);
+
+            let payload = ListRequest {
+                room_id: room.id(),
+                kind: None,
+                set: None,
+                label: None,
+                attribute: Some(String::from("pinned")),
+                last_occurred_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            };
+
+            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Events listing failed");
+
+            // Expect only the event with the `pinned` attribute value.
+            let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].attribute(), Some("pinned"));
         });
     }
 
@@ -1006,6 +1108,7 @@ mod tests {
                 kind: None,
                 set: None,
                 label: None,
+                attribute: None,
                 last_occurred_at: None,
                 direction: Direction::Backward,
                 limit: Some(2),
@@ -1030,6 +1133,7 @@ mod tests {
                 kind: None,
                 set: None,
                 label: None,
+                attribute: None,
                 last_occurred_at: None,
                 direction: Direction::Backward,
                 limit: Some(2),

@@ -17,6 +17,7 @@ pub(crate) struct Object {
     set: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     label: Option<String>,
+    attribute: Option<String>,
     data: JsonValue,
     occurred_at: i64,
     created_by: AgentId,
@@ -54,7 +55,12 @@ impl Object {
 
     #[cfg(test)]
     pub(crate) fn label(&self) -> Option<&str> {
-        self.label.as_ref().map(|val| val.as_ref())
+        self.label.as_deref()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn attribute(&self) -> Option<&str> {
+        self.attribute.as_deref()
     }
 
     pub(crate) fn data(&self) -> &JsonValue {
@@ -77,6 +83,7 @@ impl Object {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Default)]
 pub(crate) struct Builder {
     room_id: Option<Uuid>,
     kind: Option<String>,
@@ -85,19 +92,12 @@ pub(crate) struct Builder {
     data: Option<JsonValue>,
     occurred_at: Option<i64>,
     created_by: Option<AgentId>,
+    attribute: Option<String>,
 }
 
 impl Builder {
     pub(crate) fn new() -> Self {
-        Self {
-            room_id: None,
-            kind: None,
-            set: None,
-            label: None,
-            data: None,
-            occurred_at: None,
-            created_by: None,
-        }
+        Default::default()
     }
 
     pub(crate) fn room_id(self, room_id: Uuid) -> Self {
@@ -124,6 +124,13 @@ impl Builder {
     pub(crate) fn label(self, label: &str) -> Self {
         Self {
             label: Some(label.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn attribute(self, attribute: &str) -> Self {
+        Self {
+            attribute: Some(attribute.to_owned()),
             ..self
         }
     }
@@ -163,6 +170,7 @@ impl Builder {
             kind,
             set,
             label: self.label,
+            attribute: self.attribute,
             data,
             occurred_at,
             created_by,
@@ -196,28 +204,21 @@ enum KindFilter {
     Multiple(Vec<String>),
 }
 
-#[derive(Debug)]
-pub(crate) struct ListQuery {
+#[derive(Debug, Default)]
+pub(crate) struct ListQuery<'a> {
     room_id: Option<Uuid>,
     kind: Option<KindFilter>,
-    set: Option<String>,
-    label: Option<String>,
+    set: Option<&'a str>,
+    label: Option<&'a str>,
+    attribute: Option<&'a str>,
     last_occurred_at: Option<i64>,
     direction: Direction,
     limit: Option<usize>,
 }
 
-impl ListQuery {
+impl<'a> ListQuery<'a> {
     pub(crate) fn new() -> Self {
-        Self {
-            room_id: None,
-            kind: None,
-            set: None,
-            label: None,
-            last_occurred_at: None,
-            direction: Default::default(),
-            limit: None,
-        }
+        Default::default()
     }
 
     pub(crate) fn room_id(self, room_id: Uuid) -> Self {
@@ -241,16 +242,23 @@ impl ListQuery {
         }
     }
 
-    pub(crate) fn set(self, set: String) -> Self {
+    pub(crate) fn set(self, set: &'a str) -> Self {
         Self {
             set: Some(set),
             ..self
         }
     }
 
-    pub(crate) fn label(self, label: String) -> Self {
+    pub(crate) fn label(self, label: &'a str) -> Self {
         Self {
             label: Some(label),
+            ..self
+        }
+    }
+
+    pub(crate) fn attribute(self, attribute: &'a str) -> Self {
+        Self {
+            attribute: Some(attribute),
             ..self
         }
     }
@@ -292,12 +300,16 @@ impl ListQuery {
             None => q,
         };
 
-        if let Some(set) = &self.set {
-            q = q.and_where("set".equals(set.as_str()));
+        if let Some(set) = self.set {
+            q = q.and_where("set".equals(set));
         }
 
-        if let Some(label) = &self.label {
-            q = q.and_where("label".equals(label.as_str()));
+        if let Some(label) = self.label {
+            q = q.and_where("label".equals(label));
+        }
+
+        if let Some(attribute) = self.attribute {
+            q = q.and_where("attribute".equals(attribute));
         }
 
         if let Some(limit) = self.limit {
@@ -347,6 +359,7 @@ pub(crate) struct InsertQuery {
     set: String,
     label: Option<String>,
     data: JsonValue,
+    attribute: Option<String>,
     occurred_at: i64,
     created_by: AgentId,
     created_at: Option<DateTime<Utc>>,
@@ -365,6 +378,7 @@ impl InsertQuery {
             set: kind.clone(),
             kind,
             label: None,
+            attribute: None,
             data,
             occurred_at,
             created_by,
@@ -383,6 +397,13 @@ impl InsertQuery {
         }
     }
 
+    pub(crate) fn attribute(self, attribute: String) -> Self {
+        Self {
+            attribute: Some(attribute),
+            ..self
+        }
+    }
+
     #[cfg(test)]
     pub(crate) fn created_at(self, created_at: DateTime<Utc>) -> Self {
         Self {
@@ -395,14 +416,15 @@ impl InsertQuery {
         sqlx::query_as!(
             Object,
             r#"
-            INSERT INTO event (room_id, set, kind, label, data, occurred_at, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO event (room_id, set, kind, label, attribute, data, occurred_at, created_by)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING
                 id,
                 room_id,
                 kind,
                 set,
                 label,
+                attribute,
                 data,
                 occurred_at,
                 created_by AS "created_by!: AgentId",
@@ -414,6 +436,7 @@ impl InsertQuery {
             self.set,
             self.kind,
             self.label,
+            self.attribute,
             self.data,
             self.occurred_at,
             self.created_by as AgentId,
@@ -456,19 +479,21 @@ impl<'a> DeleteQuery<'a> {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
-pub(crate) struct SetStateQuery {
+pub(crate) struct SetStateQuery<'a> {
     room_id: Uuid,
     set: String,
+    attribute: Option<&'a str>,
     occurred_at: Option<i64>,
     original_occurred_at: i64,
     limit: i64,
 }
 
-impl SetStateQuery {
+impl<'a> SetStateQuery<'a> {
     pub(crate) fn new(room_id: Uuid, set: String, original_occurred_at: i64, limit: i64) -> Self {
         Self {
             room_id,
             set,
+            attribute: None,
             occurred_at: None,
             original_occurred_at,
             limit,
@@ -478,6 +503,13 @@ impl SetStateQuery {
     pub(crate) fn occurred_at(self, occurred_at: i64) -> Self {
         Self {
             occurred_at: Some(occurred_at),
+            ..self
+        }
+    }
+
+    pub(crate) fn attribute(self, attribute: &'a str) -> Self {
+        Self {
+            attribute: Some(attribute),
             ..self
         }
     }
@@ -492,6 +524,7 @@ impl SetStateQuery {
                 kind,
                 set,
                 label,
+                attribute,
                 data,
                 occurred_at,
                 created_by as "created_by!: AgentId",
@@ -502,13 +535,15 @@ impl SetStateQuery {
             WHERE deleted_at IS NULL
             AND   room_id = $1
             AND   set = $2
-            AND   original_occurred_at < $3
-            AND   occurred_at < COALESCE($4, 9223372036854775807)
+            AND   ($3::TEXT IS NULL OR attribute = $3::TEXT)
+            AND   original_occurred_at < $4
+            AND   occurred_at < COALESCE($5, 9223372036854775807)
             ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC
-            LIMIT $5
+            LIMIT $6
             "#,
             self.room_id,
             self.set,
+            self.attribute,
             self.original_occurred_at,
             self.occurred_at,
             self.limit,
@@ -525,11 +560,13 @@ impl SetStateQuery {
             WHERE deleted_at IS NULL
             AND   room_id = $1
             AND   set = $2
-            AND   original_occurred_at < $3
-            AND   occurred_at < COALESCE($4, 9223372036854775807)
+            AND   ($3::TEXT IS NULL OR attribute = $3::TEXT)
+            AND   original_occurred_at < $4
+            AND   occurred_at < COALESCE($5, 9223372036854775807)
             ",
             self.room_id,
             self.set,
+            self.attribute,
             self.original_occurred_at,
             self.occurred_at,
         )
@@ -567,6 +604,7 @@ impl OriginalEventQuery {
                 kind,
                 set,
                 label,
+                attribute,
                 data,
                 occurred_at,
                 created_by as "created_by!: AgentId",

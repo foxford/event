@@ -25,11 +25,12 @@ are configured through the application configuration file.
 
 Possible values for `OBJECT` and `ACTION`:
 
-| object / action                                           | create | read | list | subscribe | update
-| --------------------------------------------------------- | ------ | ---- | ---- | --------- | ----
-| ["rooms"]                                                 | +      |      |      |           |
-| ["rooms", ROOM_ID]                                        |        | +    |      |           | +
-| ["rooms", ROOM_ID, "agents"]                              |        |      | +    |           |
-| ["rooms", ROOM_ID, "events"]                              |        |      | +    | +         |
-| ["rooms", ROOM_ID, "events", TYPE, "authors", ACCOUNT_ID] | +      |      |      |           |
-| ["rooms", ROOM_ID, "claims", TYPE, "authors", ACCOUNT_ID] | +      |      |      |           |
+| object / action                                            | create | read | list | subscribe | update
+| ---------------------------------------------------------- | ------ | ---- | ---- | --------- | ----
+| ["rooms"]                                                  | +      |      |      |           |
+| ["rooms", ROOM_ID]                                         |        | +    |      |           | +
+| ["rooms", ROOM_ID, "agents"]                               |        |      | +    |           |
+| ["rooms", ROOM_ID, "events"]                               |        |      | +    | +         |
+| ["rooms", ROOM_ID, "events", TYPE, "authors", ACCOUNT_ID]  | +      |      |      |           |
+| ["rooms", ROOM_ID, "claims", TYPE, "authors", ACCOUNT_ID]  | +      |      |      |           |
+| ["rooms", ROOM_ID, ATTRIBUTE, TYPE, "authors", ACCOUNT_ID] | +      |      |      |           |

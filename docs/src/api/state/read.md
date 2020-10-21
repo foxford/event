@@ -12,6 +12,7 @@ Name                 | Type     | Default    | Description
 -------------------- | -------- | ---------- | ---------------------------------------------------------------
 room_id              | string   | _required_ | The room's identifier.
 sets                 | [string] | _required_ | Set's names to calculate the state for. Up to 10 elements.
+attribute            | string   | _optional_ | Attribute filter.
 occurred_at          | int      | _optional_ | The number of nanoseconds since the room opening to specify the moment of state calculation.
 original_occurred_at | int      | _optional_ | The number of nanoseconds since the room opening for pagination.
 limit                | int      |        100 | Limits the number of events in the response.
