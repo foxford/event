@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.24 (October 23, 2020)
+
+### Changes
+- Added selective sentry notifications ([f0e51de](https://github.com/netology-group/conference/commit/f0e51de3400316ef13803218c3ae91f9f76e268b))
+
+### Fixes
+- Fixed mqtt metrics ([35256f7](https://github.com/netology-group/conference/commit/35256f750371882700061ca868fec1f511787a03))
+
+
 ## v0.2.23 (October 9, 2020)
 
 ### Changes
