@@ -21,6 +21,7 @@ const MAX_LIMIT_PER_SET: i64 = 100;
 pub(crate) struct ReadRequest {
     room_id: Uuid,
     sets: Vec<String>,
+    attribute: Option<String>,
     occurred_at: Option<i64>,
     original_occurred_at: Option<i64>,
     limit: Option<i64>,
@@ -95,6 +96,10 @@ impl RequestHandler for ReadHandler {
             // Build a query for the particular set state.
             let mut query =
                 db::event::SetStateQuery::new(room.id(), set.clone(), original_occurred_at, limit);
+
+            if let Some(ref attribute) = payload.attribute {
+                query = query.attribute(attribute);
+            }
 
             if let Some(occurred_at) = payload.occurred_at {
                 query = query.occurred_at(occurred_at);
@@ -227,6 +232,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages"), String::from("layout")],
+                attribute: None,
                 occurred_at: None,
                 original_occurred_at: None,
                 limit: None,
@@ -297,6 +303,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages")],
+                attribute: None,
                 occurred_at: Some(2001),
                 original_occurred_at: None,
                 limit: Some(2),
@@ -318,6 +325,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages")],
+                attribute: None,
                 occurred_at: Some(1),
                 original_occurred_at: Some(state.messages[1].original_occurred_at()),
                 limit: Some(2),
@@ -333,6 +341,73 @@ mod tests {
             assert_eq!(state.messages.len(), 1);
             assert_eq!(state.messages[0].id(), db_events[0].id());
             assert_eq!(state.has_next, false);
+        });
+    }
+
+    #[test]
+    fn read_state_collection_with_attribute_filter() {
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let room = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+
+                // Create events in the room.
+                let mut events = vec![];
+
+                for i in 0..6 {
+                    let mut factory = factory::Event::new()
+                        .room_id(room.id())
+                        .kind("message")
+                        .set("messages")
+                        .label(&format!("message-{}", i % 3 + 1))
+                        .data(&json!({
+                            "text": format!("message {}, version {}", i % 3 + 1, i / 3 + 1),
+                        }))
+                        .occurred_at(i * 1000)
+                        .created_by(&agent.agent_id());
+
+                    if i % 3 == 0 {
+                        factory = factory.attribute("pinned");
+                    }
+
+                    let event = factory.insert(&mut conn).await;
+                    events.push(event);
+                }
+
+                room
+            };
+
+            // Allow agent to list events in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id, "events"];
+            authz.allow(agent.account_id(), object, "list");
+
+            // Make state.read request.
+            let mut context = TestContext::new(db, authz);
+
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages")],
+                attribute: Some(String::from("pinned")),
+                occurred_at: None,
+                original_occurred_at: None,
+                limit: None,
+            };
+
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
+                .await
+                .expect("State reading failed");
+
+            // Expect only an event with the expected attribute.
+            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(state.messages.len(), 1);
+            assert_eq!(state.messages[0].attribute(), Some("pinned"));
         });
     }
 
@@ -382,6 +457,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages")],
+                attribute: None,
                 occurred_at: Some(2001),
                 original_occurred_at: None,
                 limit: Some(2),
@@ -403,6 +479,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages")],
+                attribute: None,
                 occurred_at: Some(1),
                 original_occurred_at: Some(state.messages[1].original_occurred_at()),
                 limit: Some(2),
@@ -437,6 +514,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: room.id(),
                 sets: vec![String::from("messages"), String::from("layout")],
+                attribute: None,
                 occurred_at: None,
                 original_occurred_at: None,
                 limit: None,
@@ -459,6 +537,7 @@ mod tests {
             let payload = ReadRequest {
                 room_id: Uuid::new_v4(),
                 sets: vec![String::from("messages"), String::from("layout")],
+                attribute: None,
                 occurred_at: None,
                 original_occurred_at: None,
                 limit: None,

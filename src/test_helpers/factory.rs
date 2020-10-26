@@ -114,11 +114,13 @@ impl Agent {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Default)]
 pub(crate) struct Event {
     room_id: Option<Uuid>,
     kind: Option<String>,
     set: Option<String>,
     label: Option<String>,
+    attribute: Option<String>,
     data: Option<JsonValue>,
     occurred_at: Option<i64>,
     created_by: Option<AgentId>,
@@ -126,15 +128,7 @@ pub(crate) struct Event {
 
 impl Event {
     pub(crate) fn new() -> Self {
-        Self {
-            room_id: None,
-            kind: None,
-            set: None,
-            label: None,
-            data: None,
-            occurred_at: None,
-            created_by: None,
-        }
+        Default::default()
     }
 
     pub(crate) fn room_id(self, room_id: Uuid) -> Self {
@@ -161,6 +155,13 @@ impl Event {
     pub(crate) fn label(self, label: &str) -> Self {
         Self {
             label: Some(label.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) fn attribute(self, attribute: &str) -> Self {
+        Self {
+            attribute: Some(attribute.to_owned()),
             ..self
         }
     }
@@ -201,6 +202,10 @@ impl Event {
 
         if let Some(label) = self.label {
             query = query.label(label);
+        }
+
+        if let Some(attribute) = self.attribute {
+            query = query.attribute(attribute);
         }
 
         query.execute(conn).await.expect("Failed to insert event")

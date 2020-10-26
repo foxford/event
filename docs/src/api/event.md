@@ -22,6 +22,7 @@ room_id              | uuid     | _required_ | The room's identifier to which th
 type                 | string   | _required_ | The event type.
 set                  | string   |       type | The set to which the event is related.
 label                | string   | _optional_ | A label to identify an element within the set.
+attribute            | string   | _optional_ | An attribute for authorization and filtering.
 data                 | json     | _required_ | Schemaless payload of the event.
 occurred_at          | int      | _required_ | Number of nanoseconds since the room's opening when the event took place.
 original_occurred_at | int      | _required_ | `occurred_at` of the first event with the same `label`.

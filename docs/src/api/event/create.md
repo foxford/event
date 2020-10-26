@@ -20,6 +20,7 @@ room_id       | uuid    | _required_ | The room's identifier.
 type          | string  | _required_ | The event type.
 set           | string  |       type | Collection set's name.
 label         | string  | _optional_ | Collection item's label.
+attribute     | string  | _optional_ | An attribute for authorization and filtering.
 data          | json    | _required_ | The event JSON payload.
 is_claim      | boolean |      false | Whether to notify the tenant.
 is_persistent | boolean |       true | Whether to persist the event.
