@@ -37,4 +37,4 @@ uuid = { version = "0.8", features = ["v4", "serde"] }
 tide = "0.13.0"
 
 [patch.crates-io]
-sqlx = { git = "https://github.com/feymartynov/sqlx", branch = "patch" }
+sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "master" }
