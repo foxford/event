@@ -51,7 +51,7 @@ impl RequestHandler for ReadHandler {
 
         // Choose limit.
         let limit = std::cmp::min(
-            payload.limit.unwrap_or_else(|| MAX_LIMIT_PER_SET),
+            payload.limit.unwrap_or(MAX_LIMIT_PER_SET),
             MAX_LIMIT_PER_SET,
         );
 
@@ -248,7 +248,7 @@ mod tests {
                 .expect("State reading failed");
 
             // Assert last two events response.
-            let (state, respp) = find_response::<State>(messages.as_slice());
+            let (state, respp, _) = find_response::<State>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(state.messages.len(), 1);
             assert_eq!(state.messages[0].id(), message_event.id());
@@ -319,7 +319,7 @@ mod tests {
                 .expect("State reading failed (page 1)");
 
             // Assert last two events response.
-            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            let (state, respp, _) = find_response::<CollectionState>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(state.messages.len(), 2);
             assert_eq!(state.messages[0].id(), db_events[2].id());
@@ -341,7 +341,7 @@ mod tests {
                 .expect("State reading failed (page 2)");
 
             // Assert the first event.
-            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            let (state, respp, _) = find_response::<CollectionState>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(state.messages.len(), 1);
             assert_eq!(state.messages[0].id(), db_events[0].id());
@@ -409,7 +409,7 @@ mod tests {
                 .expect("State reading failed");
 
             // Expect only an event with the expected attribute.
-            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            let (state, respp, _) = find_response::<CollectionState>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(state.messages.len(), 1);
             assert_eq!(state.messages[0].attribute(), Some("pinned"));
@@ -473,7 +473,7 @@ mod tests {
                 .expect("State reading failed (page 1)");
 
             // Assert last two events response.
-            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            let (state, respp, _) = find_response::<CollectionState>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(state.messages.len(), 2);
             assert_eq!(state.messages[0].id(), db_events[2].id());
@@ -495,7 +495,7 @@ mod tests {
                 .expect("State reading failed (page 2)");
 
             // Assert the first event.
-            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            let (state, respp, _) = find_response::<CollectionState>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(state.messages.len(), 1);
             assert_eq!(state.messages[0].id(), db_events[0].id());

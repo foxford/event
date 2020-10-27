@@ -1,6 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
 
+use anyhow::Context as AnyhowContext;
 use async_std::prelude::*;
 use async_std::stream::{self, Stream};
 use chrono::{DateTime, Utc};
@@ -8,7 +9,7 @@ use futures_util::pin_mut;
 use svc_agent::{
     mqtt::{
         Agent, IncomingEvent, IncomingMessage, IncomingRequest, IncomingRequestProperties,
-        IntoPublishableMessage, OutgoingResponse, ShortTermTimingProperties,
+        IncomingResponse, IntoPublishableMessage, OutgoingResponse, ShortTermTimingProperties,
     },
     Addressable, Authenticable,
 };
@@ -85,12 +86,7 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
         match message {
             IncomingMessage::Request(req) => self.handle_request(msg_context, req).await,
             IncomingMessage::Event(ev) => self.handle_event(msg_context, ev).await,
-            IncomingMessage::Response(_) => {
-                // This service doesn't send any requests to other services so we don't
-                // expect any responses.
-                warn!(msg_context.logger(), "Unexpected incoming response message");
-                Ok(())
-            }
+            IncomingMessage::Response(resp) => self.handle_response(msg_context, resp).await,
         }
     }
 
@@ -120,6 +116,40 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
                     msg_context.start_timestamp(),
                 )
             });
+
+        self.publish_outgoing_messages(outgoing_message_stream)
+            .await
+    }
+
+    async fn handle_response(
+        &self,
+        msg_context: &mut AppMessageContext<'_, C>,
+        response: &IncomingResponse<String>,
+    ) -> Result<(), AppError> {
+        let agent_id = response.properties().as_agent_id();
+
+        msg_context.add_logger_tags(o!(
+            "agent_label" => agent_id.label().to_owned(),
+            "account_id" => agent_id.as_account_id().label().to_owned(),
+            "audience" => agent_id.as_account_id().audience().to_owned()
+        ));
+
+        let raw_corr_data = response.properties().correlation_data();
+
+        let corr_data = match endpoint::CorrelationData::parse(raw_corr_data) {
+            Ok(corr_data) => corr_data,
+            Err(err) => {
+                warn!(
+                    msg_context.logger(),
+                    "Failed to parse response correlation data '{}': {}", raw_corr_data, err
+                );
+
+                return Ok(());
+            }
+        };
+
+        let outgoing_message_stream =
+            endpoint::route_response(msg_context, response, &corr_data).await;
 
         self.publish_outgoing_messages(outgoing_message_stream)
             .await
@@ -274,6 +304,67 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
     }
 }
 
+// This is the same as with the above.
+pub(crate) trait ResponseEnvelopeHandler<'async_trait, CD> {
+    fn handle_envelope<C: Context>(
+        context: &'async_trait mut C,
+        envelope: &'async_trait IncomingResponse<String>,
+        corr_data: &'async_trait CD,
+    ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>>;
+}
+
+impl<'async_trait, H: 'async_trait + endpoint::ResponseHandler>
+    ResponseEnvelopeHandler<'async_trait, H::CorrelationData> for H
+{
+    fn handle_envelope<C: Context>(
+        context: &'async_trait mut C,
+        response: &'async_trait IncomingResponse<String>,
+        corr_data: &'async_trait H::CorrelationData,
+    ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>> {
+        // The actual implementation.
+        async fn handle_envelope<H: endpoint::ResponseHandler, C: Context>(
+            context: &mut C,
+            response: &IncomingResponse<String>,
+            corr_data: &H::CorrelationData,
+        ) -> MessageStream {
+            // Parse response envelope with the payload from the handler.
+            let payload = IncomingResponse::convert_payload::<H::Payload>(response);
+            let respp = response.properties();
+
+            match payload {
+                // Call handler.
+                Ok(payload) => {
+                    H::handle(context, payload, respp, corr_data)
+                        .await
+                        .unwrap_or_else(|app_error| {
+                            // Handler returned an error.
+                            context.add_logger_tags(o!(
+                                "status" => app_error.status().as_u16(),
+                                "kind" => app_error.kind().to_owned(),
+                            ));
+
+                            error!(
+                                context.logger(),
+                                "Failed to handle response: {}",
+                                app_error.source(),
+                            );
+
+                            app_error.notify_sentry(context.logger());
+                            Box::new(stream::empty())
+                        })
+                }
+                Err(err) => {
+                    // Bad envelope or payload format.
+                    error!(context.logger(), "Failed to parse response: {}", err);
+                    Box::new(stream::empty())
+                }
+            }
+        }
+
+        Box::pin(handle_envelope::<H, C>(context, response, corr_data))
+    }
+}
+
 pub(crate) trait EventEnvelopeHandler<'async_trait> {
     fn handle_envelope<C: Context>(
         context: &'async_trait mut C,
@@ -281,7 +372,6 @@ pub(crate) trait EventEnvelopeHandler<'async_trait> {
     ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>>;
 }
 
-// This is the same as with the above.
 impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandler<'async_trait>
     for H
 {
@@ -327,5 +417,17 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
         }
 
         Box::pin(handle_envelope::<H, C>(context, event))
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+impl endpoint::CorrelationData {
+    pub(crate) fn dump(&self) -> anyhow::Result<String> {
+        serde_json::to_string(self).context("Failed to dump correlation data")
+    }
+
+    fn parse(raw_corr_data: &str) -> anyhow::Result<Self> {
+        serde_json::from_str::<Self>(raw_corr_data).context("Failed to parse correlation data")
     }
 }

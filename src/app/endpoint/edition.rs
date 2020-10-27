@@ -451,7 +451,7 @@ mod tests {
                     .expect("Failed to create edition");
 
                 // Assert response
-                let (edition, respp) = find_response::<Edition>(messages.as_slice());
+                let (edition, respp, _) = find_response::<Edition>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::CREATED);
                 assert_eq!(edition.source_room_id(), room.id());
             });
@@ -538,7 +538,7 @@ mod tests {
                     .await
                     .expect("Failed to list editions");
 
-                let (resp_editions, respp) = find_response::<Vec<Edition>>(messages.as_slice());
+                let (resp_editions, respp, _) = find_response::<Vec<Edition>>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::OK);
                 assert_eq!(resp_editions.len(), editions.len());
                 assert_eq!(resp_editions[0].id(), editions[0].id());
@@ -642,7 +642,7 @@ mod tests {
                     .await
                     .expect("Failed to find deleted edition");
 
-                let (resp_edition, resp) = find_response::<Edition>(messages.as_slice());
+                let (resp_edition, resp, _) = find_response::<Edition>(messages.as_slice());
                 assert_eq!(resp.status(), ResponseStatus::OK);
                 assert_eq!(resp_edition.id(), editions[0].id());
 

@@ -319,7 +319,7 @@ mod tests {
                 .expect("Agents listing failed");
 
             // Assert response.
-            let (agents, respp) = find_response::<Vec<MaybeBannedAgent>>(messages.as_slice());
+            let (agents, respp, _) = find_response::<Vec<MaybeBannedAgent>>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(agents.len(), 2);
             assert_eq!(&agents[1].agent_id, agent.agent_id());
@@ -493,7 +493,7 @@ mod tests {
             assert_eq!(messages.len(), 2);
 
             // Assert response.
-            let (_, respp) = find_response::<crate::db::event::Object>(messages.as_slice());
+            let (_, respp, _) = find_response::<crate::db::event::Object>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::CREATED);
 
             // Admin bans user
@@ -509,7 +509,7 @@ mod tests {
                 .expect("Agent ban failed");
 
             // Assert response.
-            let (_, respp) = find_response::<serde_json::Value>(messages.as_slice());
+            let (_, respp, _) = find_response::<serde_json::Value>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
 
             let (ev_body, evp, _) =
@@ -556,7 +556,7 @@ mod tests {
                 .expect("Agent ban failed");
 
             // Assert response.
-            let (_, respp) = find_response::<serde_json::Value>(messages.as_slice());
+            let (_, respp, _) = find_response::<serde_json::Value>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
 
             // Make event.create request to check that user is actually banned
@@ -591,7 +591,7 @@ mod tests {
                 .expect("Agent ban failed");
 
             // Assert response.
-            let (_, respp) = find_response::<serde_json::Value>(messages.as_slice());
+            let (_, respp, _) = find_response::<serde_json::Value>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
 
             let (ev_body, evp, _) = find_event::<BanNotification>(messages.as_slice());
@@ -632,7 +632,7 @@ mod tests {
             assert_eq!(messages.len(), 2);
 
             // Assert response.
-            let (_, respp) = find_response::<crate::db::event::Object>(messages.as_slice());
+            let (_, respp, _) = find_response::<crate::db::event::Object>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::CREATED);
         });
     }

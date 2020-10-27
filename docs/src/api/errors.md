@@ -25,6 +25,7 @@ The following types are a part of the service's API and are guaranteed to mainta
 - `access_denied` – The action was forbidden by [authorization](authz.md#Authorization).
 - `agent_not_entered_the_room` – The agent must preliminary make [room.enter](room/enter.md#room.enter) request.
 - `authorization_failed` – Authorization request failed due to a network error or another reason.
+- `broker_request_failed` – Failed to make a request to the broker.
 - `change_not_found` – A [change](change.md#Change) is missing.
 - `database_connection_acquisition_failed` – The service couldn't obtain a DB connection from the pool.
 - `database_query_failed` – The database returned an error while executing a query.
