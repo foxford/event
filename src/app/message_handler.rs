@@ -186,7 +186,8 @@ fn error_response(
 ) -> MessageStream {
     let timing = ShortTermTimingProperties::until_now(start_timestamp);
     let props = reqp.to_response(err.status(), timing);
-    let resp = OutgoingResponse::unicast(err.source().to_string(), props, reqp, API_VERSION);
+    let e = err.to_svc_error();
+    let resp = OutgoingResponse::unicast(e, props, reqp, API_VERSION);
 
     Box::new(stream::once(
         Box::new(resp) as Box<dyn IntoPublishableMessage + Send>
