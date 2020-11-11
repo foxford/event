@@ -20,7 +20,7 @@ impl<'a, C: GlobalContext> Collector<'a, C> {
         let now = Utc::now();
         let mut metrics = vec![];
 
-        append_mqtt_stats(&mut metrics, self.context, now)?;
+        append_mqtt_stats(&mut metrics, self.context, now, self.duration)?;
         append_internal_stats(&mut metrics, self.context, now);
         append_redis_pool_metrics(&mut metrics, self.context, now);
 
@@ -43,57 +43,46 @@ fn append_mqtt_stats(
     metrics: &mut Vec<Metric>,
     context: &impl GlobalContext,
     now: DateTime<Utc>,
+    duration: u64,
 ) -> anyhow::Result<()> {
     if let Some(qc) = context.queue_counter() {
         let stats = qc
-            .get_stats()
+            .get_stats(duration)
             .map_err(|err| anyhow!(err).context("Failed to get stats"))?;
 
         stats.into_iter().for_each(|(tags, value)| {
             let tags = Tags::build_queues_tags(crate::APP_VERSION, context.agent_id(), tags);
 
-            if value.incoming_requests > 0 {
-                metrics.push(Metric::IncomingQueueRequests(MetricValue::new(
+            let m = [
+                Metric::IncomingQueueRequests(MetricValue::new(
                     value.incoming_requests,
                     now,
                     tags.clone(),
-                )));
-            }
-            if value.incoming_responses > 0 {
-                metrics.push(Metric::IncomingQueueResponses(MetricValue::new(
+                )),
+                Metric::IncomingQueueResponses(MetricValue::new(
                     value.incoming_responses,
                     now,
                     tags.clone(),
-                )));
-            }
-            if value.incoming_events > 0 {
-                metrics.push(Metric::IncomingQueueEvents(MetricValue::new(
+                )),
+                Metric::IncomingQueueEvents(MetricValue::new(
                     value.incoming_events,
                     now,
                     tags.clone(),
-                )));
-            }
-            if value.outgoing_requests > 0 {
-                metrics.push(Metric::OutgoingQueueRequests(MetricValue::new(
+                )),
+                Metric::OutgoingQueueRequests(MetricValue::new(
                     value.outgoing_requests,
                     now,
                     tags.clone(),
-                )));
-            }
-            if value.outgoing_responses > 0 {
-                metrics.push(Metric::OutgoingQueueResponses(MetricValue::new(
+                )),
+                Metric::OutgoingQueueResponses(MetricValue::new(
                     value.outgoing_responses,
                     now,
                     tags.clone(),
-                )))
-            }
-            if value.outgoing_events > 0 {
-                metrics.push(Metric::OutgoingQueueEvents(MetricValue::new(
-                    value.outgoing_events,
-                    now,
-                    tags,
-                )));
-            }
+                )),
+                Metric::OutgoingQueueEvents(MetricValue::new(value.outgoing_events, now, tags)),
+            ];
+
+            metrics.extend_from_slice(&m);
         });
     }
 

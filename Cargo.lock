@@ -3110,9 +3110,9 @@ dependencies = [
 
 [[package]]
 name = "svc-agent"
-version = "0.14.11"
+version = "0.14.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14132aff4eda68a9f78c46bf5bee3dc2e5a67779a71169090e43cc4f6451dfb0"
+checksum = "35f7eecd834c81cdde33ed0435b31d5086fb8b8c8f6162a6c44346a2bceb6ace"
 dependencies = [
  "base64 0.10.1",
  "chrono",
