@@ -38,4 +38,3 @@ tide = "0.13.0"
 
 [patch.crates-io]
 sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "master" }
-svc-authz = { git = "https://github.com/netology-group/svc-authz-rs", branch = "cache_ban" }
