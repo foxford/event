@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.25 (November 18, 2020)
+### Features
+- Added agent.update method ([1d95568](https://github.com/netology-group/conference/commit/1d9556864fe81490c360677b6e263fb445e859be))
+
+### Changes
+- Added attribute to events ([4e5c63b](https://github.com/netology-group/conference/commit/4e5c63b91a4cfd4d06c925e6de9657add54a635e))
+- Added sentry extras to invalid room time errors ([b810ce9](https://github.com/netology-group/conference/commit/b810ce9dc05c873d3f4718eedcadf97184239e8d))
+
+### Fixes
+- Reverted svc-agent update ([ebf18bc](https://github.com/netology-group/conference/commit/ebf18bc0c3e303e222c5747727bfd7cd834d4ef7))
+- Fixed errors format ([71eb7d2](https://github.com/netology-group/conference/commit/71eb7d283cfc41db5bb11be0c5f365510a180ca9))
+
+
 ## v0.2.24 (October 23, 2020)
 
 ### Changes
