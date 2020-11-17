@@ -198,9 +198,12 @@ impl Into<ErrorKindProperties> for ErrorKind {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+use std::collections::HashMap;
+
 pub(crate) struct Error {
     kind: ErrorKind,
     source: Box<dyn AsRef<dyn StdError + Send + Sync + 'static> + Send + 'static>,
+    tags: HashMap<String, String>,
 }
 
 impl Error {
@@ -211,6 +214,7 @@ impl Error {
         Self {
             kind,
             source: Box::new(source),
+            tags: HashMap::new(),
         }
     }
 
@@ -226,14 +230,23 @@ impl Error {
         self.source.as_ref().as_ref()
     }
 
+    pub(crate) fn tag(&mut self, k: &str, v: &str) {
+        self.tags.insert(k.to_owned(), v.to_owned());
+    }
+
     pub(crate) fn to_svc_error(&self) -> SvcError {
         let properties: ErrorKindProperties = self.kind.into();
 
-        SvcError::builder()
+        let mut e = SvcError::builder()
             .status(properties.status)
             .kind(properties.kind, properties.title)
             .detail(&self.source.as_ref().as_ref().to_string())
-            .build()
+            .build();
+
+        for (tag, val) in self.tags.iter() {
+            e.set_extra(tag, val);
+        }
+        e
     }
 
     pub(crate) fn notify_sentry(&self, logger: &Logger) {
@@ -278,6 +291,7 @@ impl From<svc_authz::Error> for Error {
         Self {
             kind,
             source: Box::new(anyhow::Error::from(source)),
+            tags: HashMap::new(),
         }
     }
 }

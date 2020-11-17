@@ -70,7 +70,26 @@ impl RequestHandler for CreateHandler {
         // Validate opening time.
         match payload.time {
             (Bound::Included(opened_at), Bound::Excluded(closed_at)) if closed_at > opened_at => (),
-            _ => return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime),
+            _ => {
+                return Err(anyhow!("Invalid room time"))
+                    .error(AppErrorKind::InvalidRoomTime)
+                    .map_err(|mut e| {
+                        e.tag("audience", &payload.audience);
+                        e.tag(
+                            "time",
+                            serde_json::to_string(&payload.time)
+                                .as_deref()
+                                .unwrap_or("Failed to serialize time"),
+                        );
+                        e.tag(
+                            "tags",
+                            serde_json::to_string(&payload.tags)
+                                .as_deref()
+                                .unwrap_or("Failed to serialize tags"),
+                        );
+                        e
+                    })
+            }
         }
 
         let object = AuthzObject::new(&["rooms"]).into();
@@ -1025,12 +1044,19 @@ mod tests {
                 assert_eq!(resp_room.id(), room.id());
                 assert_eq!(resp_room.audience(), room.audience());
                 assert_eq!(
-                    resp_room.time(),
-                    (
-                        Bound::Included(now - Duration::hours(2)),
-                        Bound::Excluded(now),
-                    )
+                    resp_room.time().0,
+                    Bound::Included(now - Duration::hours(2))
                 );
+
+                match resp_room.time().1 {
+                    Bound::Excluded(t) => {
+                        let x = t - now;
+                        // Less than 1 second apart is basically 'now'
+                        // avoids intermittent failures
+                        assert!(x.num_seconds().abs() < 1);
+                    }
+                    v => panic!("Expected Excluded bound, got {:?}", v),
+                }
 
                 // since we just closed the room we must receive a room.close event
                 let (ev_room, _, _) =
