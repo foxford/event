@@ -1060,7 +1060,7 @@ mod tests {
 
                 // since we just closed the room we must receive a room.close event
                 let (ev_room, _, _) =
-                    find_event_by_predicate::<Room, _>(messages.as_slice(), |evp, _| {
+                    find_event_by_predicate::<Room, _>(messages.as_slice(), |evp| {
                         evp.label() == "room.close"
                     })
                     .expect("Failed to find room.close event");

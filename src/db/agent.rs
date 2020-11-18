@@ -48,6 +48,8 @@ pub(crate) struct AgentWithBan {
     created_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     banned: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -148,8 +150,6 @@ impl ListQuery {
     }
 }
 
-///////////////////////////////////////////////////////////////////////////////
-
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
@@ -180,7 +180,8 @@ impl ListWithBansQuery {
                 agent.room_id,
                 status AS "status!: Status",
                 agent.created_at,
-                (rban.created_at IS NOT NULL)::boolean AS banned
+                (rban.created_at IS NOT NULL)::boolean AS banned,
+                rban.reason
             FROM agent
             LEFT OUTER JOIN room_ban rban
             ON rban.room_id = agent.room_id AND rban.account_id = (agent.agent_id).account_id

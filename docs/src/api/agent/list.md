@@ -28,6 +28,7 @@ Name       | Type     | Default    | Description
 ---------- | -------- | ---------- | ----------------------------------------------------
 agent_id   | agent_id | _required_ | The agent's identifier who has entered the room.
 room_id    | uuid     | _required_ | The room's identifier where the agent has entered.
+status     | string   | _required_ | `in_progress` or `ready`.
 created_at | int      | _required_ | Entrance's timestamp in seconds.
-banned     | bool     | _optional_ | Whether the agent is banned in room or not
-
+banned     | bool     | _required_ | Whether the agent is banned in room or not.
+reason     | string   | _optional_ | Ban reason in case of the agent is banned.

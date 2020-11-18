@@ -13,6 +13,7 @@ Name             | Type                 | Default    | Description
 room_id          | string               | _required_ | The room's identifier.
 agent_id         | agent_id             | _required_ | The agent id of account to ban.
 value            | bool                 | _required_ | Whether to ban (value = true) or unban (value = false) the account.
+reason           | string               | _optional_ | Ban reason.
 
 ## Unicast response
 
@@ -36,3 +37,18 @@ Name             | Type        | Default    | Description
 ---------------- | ----------- | ---------- | -----------------------------------
 account_id       | account_id  | _required_ | Altered account.
 banned           | bool        | _required_ | Whether the account was banned or unbanned.
+reason           | string      | _optional_ | Ban reason if specified
+
+If banned is true a notification will be sent to audience topic.
+
+**URI:** `audiences/:audience/events`
+
+**Label:** `agent.ban`
+
+**Payload:**
+
+Name             | Type        | Default    | Description
+---------------- | ----------- | ---------- | -----------------------------------
+room_id          | string      | _required_ | Room where ban happened.
+account_id       | account_id  | _required_ | Altered account.
+reason           | string      | _optional_ | Ban reason if specified
