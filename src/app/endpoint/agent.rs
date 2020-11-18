@@ -11,7 +11,6 @@ use uuid::Uuid;
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::db;
-use crate::db::agent::Object as Agent;
 use crate::db::room_ban::{DeleteQuery as BanDeleteQuery, InsertQuery as BanInsertQuery};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -23,13 +22,6 @@ pub(crate) struct ListRequest {
     room_id: Uuid,
     offset: Option<usize>,
     limit: Option<usize>,
-}
-
-#[derive(Serialize)]
-struct MaybeBannedAgent {
-    #[serde(flatten)]
-    agent: Agent,
-    banned: bool,
 }
 
 pub(crate) struct ListHandler;
@@ -105,12 +97,23 @@ pub(crate) struct UpdateRequest {
     account_id: AccountId,
     room_id: Uuid,
     value: bool,
+    reason: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
 pub(crate) struct BanNotification {
     account_id: AccountId,
     banned: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub(crate) struct TenantBanNotification {
+    room_id: Uuid,
+    account_id: AccountId,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reason: Option<String>,
 }
 
 pub(crate) struct UpdateHandler;
@@ -152,7 +155,11 @@ impl RequestHandler for UpdateHandler {
         let object = AuthzObject::new(&["rooms", &room_id, "events"]);
 
         if payload.value {
-            let query = BanInsertQuery::new(payload.account_id.clone(), payload.room_id);
+            let mut query = BanInsertQuery::new(payload.account_id.clone(), payload.room_id);
+
+            if let Some(ref reason) = payload.reason {
+                query.reason(reason);
+            }
 
             let mut conn = context.get_conn().await?;
             context
@@ -210,16 +217,33 @@ impl RequestHandler for UpdateHandler {
             Some(authz_time),
         ));
 
-        let notification = BanNotification {
+        if payload.value {
+            let tenant_notification = TenantBanNotification {
+                room_id: room.id(),
+                account_id: payload.account_id.clone(),
+                reason: payload.reason.clone(),
+            };
+
+            messages.push(helpers::build_notification(
+                "agent.ban",
+                &format!("audiences/{}/events", room.audience()),
+                tenant_notification,
+                reqp,
+                context.start_timestamp(),
+            ));
+        }
+
+        let room_notification = BanNotification {
             account_id: payload.account_id,
             banned: payload.value,
+            reason: payload.reason,
         };
 
         // Notify room subscribers.
         messages.push(helpers::build_notification(
             "agent.update",
             &format!("rooms/{}/events", room.id()),
-            notification,
+            room_notification,
             reqp,
             context.start_timestamp(),
         ));
@@ -477,6 +501,7 @@ mod tests {
                 room_id: room.id(),
                 account_id: user.account_id().to_owned(),
                 value: true,
+                reason: Some("some reason".into()),
             };
 
             let messages = handle_request::<UpdateHandler>(&mut context, &admin, payload)
@@ -487,10 +512,23 @@ mod tests {
             let (_, respp) = find_response::<serde_json::Value>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
 
-            let (ev_body, evp, _) = find_event::<BanNotification>(messages.as_slice());
+            let (ev_body, evp, _) =
+                find_event_by_predicate::<BanNotification, _>(messages.as_slice(), |evp| {
+                    evp.label() == "agent.update"
+                })
+                .expect("Failed to find agent.update event");
             assert_eq!(evp.label(), "agent.update");
             assert_eq!(ev_body.account_id, *user.account_id());
             assert_eq!(ev_body.banned, true);
+
+            let (ev_body, evp, _) =
+                find_event_by_predicate::<TenantBanNotification, _>(messages.as_slice(), |evp| {
+                    evp.label() == "agent.ban"
+                })
+                .expect("Failed to find agent.ban event");
+            assert_eq!(evp.label(), "agent.ban");
+            assert_eq!(ev_body.account_id, *user.account_id());
+            assert_eq!(ev_body.room_id, room.id());
 
             let mut conn = context.db().acquire().await.expect("Failed conn checkout");
             let db_ban = db::room_ban::FindQuery::new(ev_body.account_id, room.id())
@@ -501,6 +539,7 @@ mod tests {
 
             assert_eq!(db_ban.account_id(), user.account_id());
             assert_eq!(*db_ban.room_id(), room.id());
+            assert_eq!(db_ban.reason(), Some("some reason"));
 
             drop(conn);
 
@@ -509,6 +548,7 @@ mod tests {
                 room_id: room.id(),
                 account_id: user.account_id().to_owned(),
                 value: true,
+                reason: None,
             };
 
             let messages = handle_request::<UpdateHandler>(&mut context, &admin, payload)
@@ -543,6 +583,7 @@ mod tests {
                 room_id: room.id(),
                 account_id: user.account_id().to_owned(),
                 value: false,
+                reason: None,
             };
 
             let messages = handle_request::<UpdateHandler>(&mut context, &admin, payload)
