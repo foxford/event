@@ -1,4 +1,4 @@
-FROM rust:1.46.0-slim-buster
+FROM rust:1.48.0-slim-buster
 
 RUN apt update && apt install -y --no-install-recommends \
   pkg-config \
@@ -6,7 +6,9 @@ RUN apt update && apt install -y --no-install-recommends \
   libcurl4-openssl-dev \
   libpq-dev
 
-RUN cargo install sqlx-cli --version 0.1.0-beta.1
+RUN cargo install sqlx-cli --version 0.2.0 --no-default-features --features postgres
 WORKDIR /app
 CMD ["cargo", "sqlx", "migrate", "run"]
 COPY ./migrations /app/migrations
+COPY Cargo.toml /app/Cargo.toml
+COPY Cargo.lock /app/Cargo.lock
