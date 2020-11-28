@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.26 (November 29, 2020)
+### Features
+- Added reason field to agent.update method ([a994b73](https://github.com/netology-group/conference/commit/a994b73e61e247f0903cfda7244a7a871b190899))
+
+
 ## v0.2.25 (November 18, 2020)
 ### Features
 - Added agent.update method ([1d95568](https://github.com/netology-group/conference/commit/1d9556864fe81490c360677b6e263fb445e859be))
