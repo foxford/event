@@ -50,6 +50,25 @@ pub(crate) async fn call(
         .await
         .context("Failed to acquire db connection")?;
 
+    if real_time_room.time().1 == Bound::Unbounded {
+        let query = crate::db::room::UpdateQuery::new(real_time_room.id()).time(Some(
+            (real_time_room.time().0, Bound::Excluded(start_timestamp)).into(),
+        ));
+
+        profiler
+            .measure(
+                (ProfilerKeys::RoomUpdateQuery, Some("room.adjust".into())),
+                query.execute(&mut conn),
+            )
+            .await
+            .with_context(|| {
+                format!(
+                    "Failed to update room time bound, room_id = '{}'",
+                    real_time_room.id(),
+                )
+            })?;
+    }
+
     let query =
         AdjustmentInsertQuery::new(real_time_room.id(), started_at, segments.to_owned(), offset);
 
