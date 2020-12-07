@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.27 (December 8, 2020)
+### Features
+- Added unbounded rooms closure on adjustment ([31b7df7](https://github.com/netology-group/conference/commit/31b7df7f8f8a93f1e554bd9c10dcdcb0cd4e428f))
+- Updated svc-agent to v0.14.12 ([87d748f](https://github.com/netology-group/conference/commit/87d748fdfc53756c6ce92ba1d4fce6c9ae71841a))
+
+
 ## v0.2.26 (November 29, 2020)
 ### Features
 - Added reason field to agent.update method ([a994b73](https://github.com/netology-group/conference/commit/a994b73e61e247f0903cfda7244a7a871b190899))
