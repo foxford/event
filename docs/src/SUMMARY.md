@@ -31,7 +31,6 @@
 - [Implementation details](impl.md)
     - [Database schema](impl/database_schema.md)
     - [Message handling](impl/message_handling.md)
-    - [Room entrance](impl/room_entrance.md)
     - [State calculation](impl/state_calculation.md)
     - [Room adjustment](impl/room_adjustment.md)
 - [Integration](integration.md)

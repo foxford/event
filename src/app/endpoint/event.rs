@@ -360,10 +360,9 @@ impl RequestHandler for ListHandler {
         let events = {
             let mut conn = context.get_ro_conn().await?;
 
-            query = query.direction(payload.direction).limit(std::cmp::min(
-                payload.limit.unwrap_or_else(|| MAX_LIMIT),
-                MAX_LIMIT,
-            ));
+            query = query
+                .direction(payload.direction)
+                .limit(std::cmp::min(payload.limit.unwrap_or(MAX_LIMIT), MAX_LIMIT));
 
             context
                 .profiler()
@@ -452,7 +451,7 @@ mod tests {
             assert_eq!(messages.len(), 2);
 
             // Assert response.
-            let (event, respp) = find_response::<Event>(messages.as_slice());
+            let (event, respp, _) = find_response::<Event>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::CREATED);
             assert_eq!(event.room_id(), room.id());
             assert_eq!(event.kind(), "message");
@@ -540,7 +539,7 @@ mod tests {
                 .expect("Event creation failed");
 
             // Assert response.
-            let (event, respp) = find_response::<Event>(messages.as_slice());
+            let (event, respp, _) = find_response::<Event>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::CREATED);
             assert_eq!(event.created_by(), agent.agent_id());
         });
@@ -588,7 +587,7 @@ mod tests {
             assert_eq!(messages.len(), 3);
 
             // Assert response.
-            let (event, respp) = find_response::<Event>(messages.as_slice());
+            let (event, respp, _) = find_response::<Event>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::CREATED);
             assert_eq!(event.room_id(), room.id());
             assert_eq!(event.kind(), "block");
@@ -685,7 +684,7 @@ mod tests {
             assert_eq!(messages.len(), 2);
 
             // Assert response.
-            let (event, respp) = find_response::<Event>(messages.as_slice());
+            let (event, respp, _) = find_response::<Event>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::CREATED);
             assert_eq!(event.room_id(), room.id());
             assert_eq!(event.kind(), "cursor");
@@ -927,7 +926,7 @@ mod tests {
                 .expect("Events listing failed (page 1)");
 
             // Assert last two events response.
-            let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
+            let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(events.len(), 2);
             assert_eq!(events[0].id(), db_events[2].id());
@@ -950,7 +949,7 @@ mod tests {
                 .expect("Events listing failed (page 2)");
 
             // Assert the first event.
-            let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
+            let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].id(), db_events[0].id());
@@ -1008,7 +1007,7 @@ mod tests {
                 .expect("Events listing failed");
 
             // we have only two kind=B events
-            let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
+            let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(events.len(), 1);
 
@@ -1031,7 +1030,7 @@ mod tests {
                 .expect("Events listing failed");
 
             // we have two kind=B events and one kind=A event
-            let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
+            let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(events.len(), 3);
         });
@@ -1092,7 +1091,7 @@ mod tests {
                 .expect("Events listing failed");
 
             // Expect only the event with the `pinned` attribute value.
-            let (events, respp) = find_response::<Vec<Event>>(messages.as_slice());
+            let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
             assert_eq!(respp.status(), ResponseStatus::OK);
             assert_eq!(events.len(), 1);
             assert_eq!(events[0].attribute(), Some("pinned"));

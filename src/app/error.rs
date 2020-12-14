@@ -19,6 +19,7 @@ pub(crate) enum ErrorKind {
     AccessDenied,
     AgentNotEnteredTheRoom,
     AuthorizationFailed,
+    BrokerRequestFailed,
     ChangeNotFound,
     DbConnAcquisitionFailed,
     DbQueryFailed,
@@ -83,6 +84,12 @@ impl Into<ErrorKindProperties> for ErrorKind {
                 kind: "authorization_failed",
                 title: "Authorization failed",
                 is_notify_sentry: false,
+            },
+            Self::BrokerRequestFailed => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "broker_request_failed",
+                title: "Broker request failed",
+                is_notify_sentry: true,
             },
             Self::ChangeNotFound => ErrorKindProperties {
                 status: ResponseStatus::NOT_FOUND,

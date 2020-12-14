@@ -18,15 +18,7 @@ room_id = response.payload['id']
 
 # Enter room.
 response = conn.make_request 'room.enter', to: event, payload: { id: room_id }
-assert response.properties['status'] == '202'
-
-# Wait to be appear actually in the room to avoid race condition.
-conn.receive do |msg|
-  msg.properties['type'] == "event" &&
-    msg.properties['label'] == 'room.enter' &&
-    msg.payload['agent_id'] == me.to_s &&
-    msg.payload['id'] == room_id
-end
+assert response.properties['status'] == '200'
 
 # Create event.
 response = conn.make_request 'event.create', to: event, payload: {

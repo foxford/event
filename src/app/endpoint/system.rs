@@ -96,7 +96,7 @@ mod tests {
                     .await
                     .expect("System vacuum failed");
 
-                let (payload, respp) = find_response::<JsonValue>(messages.as_slice());
+                let (payload, respp, _) = find_response::<JsonValue>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::ACCEPTED);
                 assert_eq!(payload, json!({}));
             });

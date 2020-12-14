@@ -11,24 +11,24 @@ use serde_json::{json, Value as JsonValue};
 use svc_agent::{
     mqtt::{
         IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
-        OutgoingRequest, ResponseStatus, ShortTermTimingProperties,
+        OutgoingRequest, ResponseStatus, ShortTermTimingProperties, SubscriptionTopic,
     },
-    Addressable, AgentId,
+    Addressable, AgentId, Subscription,
 };
 use svc_error::Error as SvcError;
 use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
+use crate::app::endpoint::subscription::CorrelationDataPayload;
 use crate::app::operations::adjust_room;
+use crate::app::API_VERSION;
 use crate::db::adjustment::Segments;
 use crate::db::agent;
 use crate::db::room::{InsertQuery, UpdateQuery};
 use crate::db::room_time::{BoundedDateTimeTuple, RoomTime};
 
 ///////////////////////////////////////////////////////////////////////////////
-
-const MQTT_GW_API_VERSION: &str = "v1";
 
 #[derive(Debug, Serialize)]
 struct SubscriptionRequest {
@@ -37,11 +37,8 @@ struct SubscriptionRequest {
 }
 
 impl SubscriptionRequest {
-    fn new(subject: AgentId, object: Vec<&str>) -> Self {
-        Self {
-            subject,
-            object: object.iter().map(|&s| s.into()).collect(),
-        }
+    fn new(subject: AgentId, object: Vec<String>) -> Self {
+        Self { subject, object }
     }
 }
 
@@ -366,6 +363,7 @@ impl RequestHandler for EnterHandler {
 
         // Authorize subscribing to the room's events.
         let room_id = room.id().to_string();
+
         let object: Box<dyn svc_authz::IntentObject> =
             AuthzObject::new(&["rooms", &room_id, "events"]).into();
 
@@ -398,34 +396,31 @@ impl RequestHandler for EnterHandler {
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
-        let v = object.to_vec();
-
         // Send dynamic subscription creation request to the broker.
-        let payload = SubscriptionRequest::new(
-            reqp.as_agent_id().to_owned(),
-            v.iter().map(|s| s.as_ref()).collect(),
-        );
-        let start_timestamp = context.start_timestamp();
-        let mut short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
-        short_term_timing.set_authorization_time(authz_time);
+        let subject = reqp.as_agent_id().to_owned();
+        let object = object.to_vec().into_iter().collect::<Vec<String>>();
+        let payload = SubscriptionRequest::new(subject.clone(), object.clone());
 
-        let props = reqp.to_request(
-            "subscription.create",
-            reqp.response_topic(),
-            reqp.correlation_data(),
-            short_term_timing,
-        );
+        let broker_id = AgentId::new("nevermind", context.config().broker_id.to_owned());
 
-        // FIXME: It looks like sending a request to the client but the broker intercepts it
-        //        creates a subscription and replaces the request with the response.
-        //        This is kind of ugly but it guaranties that the request will be processed by
-        //        the broker node where the client is connected to. We need that because
-        //        the request changes local state on that node.
-        //        A better solution will be possible after resolution of this issue:
-        //        https://github.com/vernemq/vernemq/issues/1326.
-        //        Then we won't need the local state on the broker at all and will be able
-        //        to send a multicast request to the broker.
-        let outgoing_request = OutgoingRequest::unicast(payload, props, reqp, MQTT_GW_API_VERSION);
+        let response_topic = Subscription::unicast_responses_from(&broker_id)
+            .subscription_topic(context.agent_id(), API_VERSION)
+            .context("Failed to build response topic")
+            .error(AppErrorKind::BrokerRequestFailed)?;
+
+        let corr_data_payload = CorrelationDataPayload::new(reqp.to_owned(), subject, object);
+
+        let corr_data = CorrelationData::SubscriptionCreate(corr_data_payload)
+            .dump()
+            .context("Failed to dump correlation data")
+            .error(AppErrorKind::BrokerRequestFailed)?;
+
+        let mut timing = ShortTermTimingProperties::until_now(context.start_timestamp());
+        timing.set_authorization_time(authz_time);
+
+        let props = reqp.to_request("subscription.create", &response_topic, &corr_data, timing);
+        let to = &context.config().broker_id;
+        let outgoing_request = OutgoingRequest::multicast(payload, props, to);
         let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableMessage + Send>;
         Ok(Box::new(stream::once(boxed_request)))
     }
@@ -485,30 +480,30 @@ impl RequestHandler for LeaveHandler {
         }
 
         // Send dynamic subscription deletion request to the broker.
+        let subject = reqp.as_agent_id().to_owned();
         let room_id = room.id().to_string();
+        let object = vec![String::from("rooms"), room_id, String::from("events")];
+        let payload = SubscriptionRequest::new(subject.clone(), object.clone());
 
-        let payload = SubscriptionRequest::new(
-            reqp.as_agent_id().to_owned(),
-            vec!["rooms", &room_id, "events"],
-        );
+        let broker_id = AgentId::new("nevermind", context.config().broker_id.to_owned());
 
-        let props = reqp.to_request(
-            "subscription.delete",
-            reqp.response_topic(),
-            reqp.correlation_data(),
-            ShortTermTimingProperties::until_now(context.start_timestamp()),
-        );
+        let response_topic = Subscription::unicast_responses_from(&broker_id)
+            .subscription_topic(context.agent_id(), API_VERSION)
+            .context("Failed to build response topic")
+            .error(AppErrorKind::BrokerRequestFailed)?;
 
-        // FIXME: It looks like sending a request to the client but the broker intercepts it
-        //        deletes the subscription and replaces the request with the response.
-        //        This is kind of ugly but it guaranties that the request will be processed by
-        //        the broker node where the client is connected to. We need that because
-        //        the request changes local state on that node.
-        //        A better solution will be possible after resolution of this issue:
-        //        https://github.com/vernemq/vernemq/issues/1326.
-        //        Then we won't need the local state on the broker at all and will be able
-        //        to send a multicast request to the broker.
-        let outgoing_request = OutgoingRequest::unicast(payload, props, reqp, MQTT_GW_API_VERSION);
+        let corr_data_payload = CorrelationDataPayload::new(reqp.to_owned(), subject, object);
+
+        let corr_data = CorrelationData::SubscriptionDelete(corr_data_payload)
+            .dump()
+            .context("Failed to dump correlation data")
+            .error(AppErrorKind::BrokerRequestFailed)?;
+
+        let timing = ShortTermTimingProperties::until_now(context.start_timestamp());
+
+        let props = reqp.to_request("subscription.delete", &response_topic, &corr_data, timing);
+        let to = &context.config().broker_id;
+        let outgoing_request = OutgoingRequest::multicast(payload, props, to);
         let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableMessage + Send>;
         Ok(Box::new(stream::once(boxed_request)))
     }
@@ -713,7 +708,7 @@ mod tests {
                     .expect("Room creation failed");
 
                 // Assert response.
-                let (room, respp) = find_response::<Room>(messages.as_slice());
+                let (room, respp, _) = find_response::<Room>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::CREATED);
                 assert_eq!(room.audience(), USR_AUDIENCE);
                 assert_eq!(room.time().map(|t| t.into()), Ok(time));
@@ -758,7 +753,7 @@ mod tests {
                     .expect("Room creation failed");
 
                 // Assert response.
-                let (room, respp) = find_response::<Room>(messages.as_slice());
+                let (room, respp, _) = find_response::<Room>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::CREATED);
                 assert_eq!(room.audience(), USR_AUDIENCE);
                 assert_eq!(room.time().map(|t| t.into()), Ok(time));
@@ -864,7 +859,7 @@ mod tests {
                     .expect("Room reading failed");
 
                 // Assert response.
-                let (resp_room, respp) = find_response::<Room>(messages.as_slice());
+                let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::OK);
                 assert_eq!(resp_room.audience(), room.audience());
                 assert_eq!(resp_room.time(), room.time());
@@ -973,7 +968,7 @@ mod tests {
                     .expect("Room update failed");
 
                 // Assert response.
-                let (resp_room, respp) = find_response::<Room>(messages.as_slice());
+                let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::OK);
                 assert_eq!(resp_room.id(), room.id());
                 assert_eq!(resp_room.audience(), room.audience());
@@ -1026,7 +1021,7 @@ mod tests {
                     .await
                     .expect("Room update failed");
 
-                let (resp_room, respp) = find_response::<Room>(messages.as_slice());
+                let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::OK);
                 assert_eq!(resp_room.id(), room.id());
                 assert_eq!(resp_room.audience(), room.audience());
@@ -1084,7 +1079,7 @@ mod tests {
                     .await
                     .expect("Room update failed");
 
-                let (resp_room, respp) = find_response::<Room>(messages.as_slice());
+                let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::OK);
                 assert_eq!(resp_room.id(), room.id());
                 assert_eq!(resp_room.audience(), room.audience());
@@ -1248,6 +1243,7 @@ mod tests {
     }
 
     mod enter {
+        use crate::app::API_VERSION;
         use crate::test_helpers::prelude::*;
 
         use super::super::*;
@@ -1287,10 +1283,11 @@ mod tests {
                 let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
 
                 let expected_topic = format!(
-                    "agents/{}/api/{}/in/{}",
-                    agent.agent_id(),
-                    MQTT_GW_API_VERSION,
+                    "agents/{}.{}/api/{}/out/{}",
+                    context.config().agent_label,
                     context.config().id,
+                    API_VERSION,
+                    context.config().broker_id,
                 );
 
                 assert_eq!(topic, expected_topic);
@@ -1377,6 +1374,7 @@ mod tests {
     }
 
     mod leave {
+        use crate::app::API_VERSION;
         use crate::test_helpers::prelude::*;
 
         use super::super::*;
@@ -1410,10 +1408,11 @@ mod tests {
                 let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
 
                 let expected_topic = format!(
-                    "agents/{}/api/{}/in/{}",
-                    agent.agent_id(),
-                    MQTT_GW_API_VERSION,
+                    "agents/{}.{}/api/{}/out/{}",
+                    context.config().agent_label,
                     context.config().id,
+                    API_VERSION,
+                    context.config().broker_id,
                 );
 
                 assert_eq!(topic, expected_topic);

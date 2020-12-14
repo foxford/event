@@ -381,7 +381,7 @@ mod tests {
                     .expect("Failed to create change");
 
                 // Assert response
-                let (change, respp) = find_response::<Change>(messages.as_slice());
+                let (change, respp, _) = find_response::<Change>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::CREATED);
                 assert_eq!(change.edition_id(), edition.id());
                 assert_eq!(change.kind(), ChangeType::Addition);
@@ -450,7 +450,7 @@ mod tests {
                     .expect("Failed to create change");
 
                 // Assert response
-                let (change, respp) = find_response::<Change>(messages.as_slice());
+                let (change, respp, _) = find_response::<Change>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::CREATED);
                 assert_eq!(change.edition_id(), edition.id());
                 assert_eq!(change.kind(), ChangeType::Removal);
@@ -516,7 +516,7 @@ mod tests {
                     .expect("Failed to create change");
 
                 // Assert response
-                let (change, respp) = find_response::<Change>(messages.as_slice());
+                let (change, respp, _) = find_response::<Change>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::CREATED);
                 assert_eq!(change.edition_id(), edition.id());
                 assert_eq!(change.kind(), ChangeType::Modification);
@@ -702,7 +702,8 @@ mod tests {
                     .await
                     .expect("Failed to list changes");
 
-                let (response_changes, respp) = find_response::<Vec<Change>>(messages.as_slice());
+                let (response_changes, respp, _) =
+                    find_response::<Vec<Change>>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::OK);
                 assert_eq!(response_changes.len(), 25);
 
@@ -845,7 +846,7 @@ mod tests {
                     .await
                     .expect("Failed to list editions");
 
-                let (_, resp) = find_response::<Change>(messages.as_slice());
+                let (_, resp, _) = find_response::<Change>(messages.as_slice());
 
                 assert_eq!(resp.status(), ResponseStatus::OK);
 
