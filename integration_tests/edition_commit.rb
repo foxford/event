@@ -44,14 +44,7 @@ end
 
 def create_events(room_id)
   response = @conn.make_request 'room.enter', to: @event, payload: { id: room_id }
-  assert response.properties['status'] == '202'
-
-  @conn.receive do |msg|
-    msg.properties['type'] == "event" &&
-      msg.properties['label'] == 'room.enter' &&
-      msg.payload['agent_id'] == @me.to_s &&
-      msg.payload['id'] == room_id
-  end
+  assert response.properties['status'] == '200'
 
   [
     ['message', { message: 'hi' }],
@@ -133,10 +126,9 @@ def create_changes(edition_id, event_ids)
 end
 
 def commit_edition(id, source_room_id)
-  response = @conn.make_request 'edition.commit', to: @event, payload: {
-    id: id
-  }
+  response = @conn.make_request 'edition.commit', to: @event, payload: { id: id }
   assert response.properties['status'] == '202'
+
   msg = @conn.receive do |msg|
     msg.properties['type'] == "event" &&
       msg.properties['label'] == 'edition.commit' &&

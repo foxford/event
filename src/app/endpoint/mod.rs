@@ -2,14 +2,18 @@ use std::result::Result as StdResult;
 
 use async_trait::async_trait;
 use serde::de::DeserializeOwned;
+use serde_derive::{Deserialize, Serialize};
 use svc_agent::mqtt::{
     IncomingEvent, IncomingEventProperties, IncomingRequest, IncomingRequestProperties,
+    IncomingResponse, IncomingResponseProperties,
 };
 
 use crate::app::context::Context;
 use crate::app::error::Error as AppError;
 pub(self) use crate::app::message_handler::MessageStream;
-use crate::app::message_handler::{EventEnvelopeHandler, RequestEnvelopeHandler};
+use crate::app::message_handler::{
+    EventEnvelopeHandler, RequestEnvelopeHandler, ResponseEnvelopeHandler,
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -69,6 +73,49 @@ request_routes!(
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug, Deserialize, Serialize)]
+pub(crate) enum CorrelationData {
+    SubscriptionCreate(subscription::CorrelationDataPayload),
+    SubscriptionDelete(subscription::CorrelationDataPayload),
+}
+
+#[async_trait]
+pub(crate) trait ResponseHandler {
+    type Payload: Send + DeserializeOwned;
+    type CorrelationData: Sync;
+
+    async fn handle<C: Context>(
+        context: &mut C,
+        payload: Self::Payload,
+        respp: &IncomingResponseProperties,
+        corr_data: &Self::CorrelationData,
+    ) -> Result;
+}
+
+macro_rules! response_routes {
+    ($($c: tt => $h: ty),*) => {
+        #[allow(unused_variables)]
+        pub(crate) async fn route_response<C: Context>(
+            context: &mut C,
+            response: &IncomingResponse<String>,
+            corr_data: &CorrelationData,
+        ) -> MessageStream {
+            match corr_data {
+                $(
+                    CorrelationData::$c(cd) => <$h>::handle_envelope::<C>(context, response, cd).await,
+                )*
+            }
+        }
+    }
+}
+
+response_routes!(
+    SubscriptionCreate => subscription::CreateResponseHandler,
+    SubscriptionDelete => subscription::DeleteResponseHandler
+);
+
+///////////////////////////////////////////////////////////////////////////////
+
 #[async_trait]
 pub(crate) trait EventHandler {
     type Payload: Send + DeserializeOwned;
@@ -102,8 +149,7 @@ macro_rules! event_routes {
 // Event routes configuration: label => EventHandler
 event_routes!(
     "metric.pull" => metric::PullHandler,
-    "subscription.delete" => subscription::DeleteHandler,
-    "subscription.create" => subscription::CreateHandler
+    "subscription.delete" => subscription::DeleteEventHandler
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -121,8 +167,9 @@ mod subscription;
 mod system;
 
 pub(self) mod prelude {
-    pub(super) use super::{helpers, EventHandler, RequestHandler, Result};
+    pub(super) use super::{helpers, EventHandler, RequestHandler, ResponseHandler, Result};
     pub(super) use crate::app::endpoint::authz::AuthzObject;
+    pub(super) use crate::app::endpoint::CorrelationData;
     pub(super) use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
     pub(super) use crate::app::metrics::ProfilerKeys;
 

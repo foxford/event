@@ -1,7 +1,7 @@
 version: '3'
 services:
   vernemq:
-    image: netologygroup/mqtt-gateway:v0.13.3
+    image: netologygroup/mqtt-gateway:c47ac10
     ports:
       - "1883:1883"
       - "8080:8080"
@@ -10,5 +10,6 @@ services:
       APP_AUTHZ_ENABLED: 0
       APP_STAT_ENABLED: 0
       APP_DYNSUB_ENABLED: 1
+      APP_RATE_LIMIT_ENABLED: 0
       APP_AGENT_LABEL: alpha
       APP_ACCOUNT_ID: mqtt-gateway.dev.svc.example.org

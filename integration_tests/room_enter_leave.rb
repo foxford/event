@@ -18,15 +18,7 @@ room_id = response.payload['id']
 
 # Enter the room.
 response = conn.make_request 'room.enter', to: event, payload: { id: room_id }
-assert response.properties['status'] == '202'
-
-# Wait to be appear actually in the room to avoid race condition.
-conn.receive do |msg|
-  msg.properties['type'] == "event" &&
-    msg.properties['label'] == 'room.enter' &&
-    msg.payload['agent_id'] == agent.to_s &&
-    msg.payload['id'] == room_id
-end
+assert response.properties['status'] == '200'
 
 # List active agents in the room.
 response = conn.make_request 'agent.list', to: event, payload: { room_id: room_id }
@@ -35,11 +27,7 @@ assert response.payload[0]['agent_id'] == agent.to_s
 
 # Leave the room.
 response = conn.make_request 'room.leave', to: event, payload: { id: room_id }
-assert response.properties['status'] == '202'
-
-# We don't receive any notifications that we have actually left the room.
-# So just sleep a bit to avoid race condition.
-sleep 1
+assert response.properties['status'] == '200'
 
 # List active agents in the room.
 response = conn.make_request 'agent.list', to: event, payload: { room_id: room_id }
