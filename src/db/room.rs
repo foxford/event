@@ -20,6 +20,7 @@ pub(crate) struct Object {
     tags: Option<JsonValue>,
     #[serde(with = "ts_seconds")]
     created_at: DateTime<Utc>,
+    preserve_history: bool,
 }
 
 impl Object {
@@ -43,6 +44,11 @@ impl Object {
         self.tags.as_ref()
     }
 
+    #[cfg(test)]
+    pub(crate) fn preserve_history(&self) -> bool {
+        self.preserve_history
+    }
+
     pub(crate) fn is_closed(&self) -> bool {
         match self.time.0.end_bound() {
             Bound::Included(t) => *t < Utc::now(),
@@ -60,6 +66,7 @@ pub(crate) struct Builder {
     time: Option<Time>,
     tags: Option<JsonValue>,
     created_at: Option<DateTime<Utc>>,
+    preserve_history: Option<bool>,
 }
 
 impl Builder {
@@ -106,6 +113,13 @@ impl Builder {
         }
     }
 
+    pub(crate) fn preserve_history(self, preserve_history: bool) -> Self {
+        Self {
+            preserve_history: Some(preserve_history),
+            ..self
+        }
+    }
+
     pub(crate) fn build(self) -> anyhow::Result<Object> {
         Ok(Object {
             id: self.id.ok_or_else(|| anyhow!("missing id"))?,
@@ -116,6 +130,9 @@ impl Builder {
             created_at: self
                 .created_at
                 .ok_or_else(|| anyhow!("missing created_at"))?,
+            preserve_history: self
+                .preserve_history
+                .ok_or_else(|| anyhow!("missing preserve_history"))?,
         })
     }
 }
@@ -139,7 +156,14 @@ impl FindQuery {
         sqlx::query_as!(
             Object,
             r#"
-            SELECT id, audience, source_room_id, time AS "time!: Time", tags, created_at
+            SELECT
+                id,
+                audience,
+                source_room_id,
+                time AS "time!: Time",
+                tags,
+                created_at,
+                preserve_history
             FROM room
             WHERE id = $1
             AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)
@@ -160,6 +184,7 @@ pub(crate) struct InsertQuery {
     source_room_id: Option<Uuid>,
     time: Time,
     tags: Option<JsonValue>,
+    preserve_history: bool,
 }
 
 impl InsertQuery {
@@ -169,6 +194,7 @@ impl InsertQuery {
             source_room_id: None,
             time,
             tags: None,
+            preserve_history: true,
         }
     }
 
@@ -186,20 +212,35 @@ impl InsertQuery {
         }
     }
 
+    pub(crate) fn preserve_history(self, preserve_history: bool) -> Self {
+        Self {
+            preserve_history,
+            ..self
+        }
+    }
+
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let time: PgRange<DateTime<Utc>> = self.time.into();
 
         sqlx::query_as!(
             Object,
             r#"
-            INSERT INTO room (audience, source_room_id, time, tags)
-            VALUES ($1, $2, $3, $4)
-            RETURNING id, audience, source_room_id, time AS "time!: Time", tags, created_at
+            INSERT INTO room (audience, source_room_id, time, tags, preserve_history)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING
+                id,
+                audience,
+                source_room_id,
+                time AS "time!: Time",
+                tags,
+                created_at,
+                preserve_history
             "#,
             self.audience,
             self.source_room_id,
             Some(time),
             self.tags,
+            self.preserve_history,
         )
         .fetch_one(conn)
         .await
@@ -242,7 +283,14 @@ impl UpdateQuery {
             SET time = COALESCE($2, time),
                 tags = COALESCE($3::JSON, tags)
             WHERE id = $1
-            RETURNING id, audience, source_room_id, time AS "time!: Time", tags, created_at
+            RETURNING
+                id,
+                audience,
+                source_room_id,
+                time AS "time!: Time",
+                tags,
+                created_at,
+                preserve_history
             "#,
             self.id,
             time,

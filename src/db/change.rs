@@ -108,7 +108,8 @@ impl FindWithRoomQuery {
                     r.source_room_id     AS room_source_room_id,
                     r.time               AS "room_time!: RoomTime",
                     r.tags               AS room_tags,
-                    r.created_at         AS room_created_at
+                    r.created_at         AS room_created_at,
+                    r.preserve_history   AS room_preserve_history
                 FROM change AS c
                 INNER JOIN edition AS e
                 ON e.id = c.edition_id
@@ -145,6 +146,7 @@ impl FindWithRoomQuery {
                     .time(row.room_time)
                     .tags(row.room_tags)
                     .created_at(row.room_created_at)
+                    .preserve_history(row.room_preserve_history)
                     .build()
                     .map_err(|err| sqlx::Error::Decode(err.into()))?;
 

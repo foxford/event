@@ -1,0 +1,1 @@
+ALTER TABLE room ADD COLUMN preserve_history BOOLEAN NOT NULL DEFAULT 't';
