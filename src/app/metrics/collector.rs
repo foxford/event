@@ -283,6 +283,11 @@ fn append_profiler_stats(
                 metrics.push(Metric::EventOriginalQueryP99(metric_value_p99));
                 metrics.push(Metric::EventOriginalQueryMax(metric_value_max));
             }
+            ProfilerKeys::EventVacuumQuery => {
+                metrics.push(Metric::EventVacuumQueryP95(metric_value_p95));
+                metrics.push(Metric::EventVacuumQueryP99(metric_value_p99));
+                metrics.push(Metric::EventVacuumQueryMax(metric_value_max));
+            }
             ProfilerKeys::RoomAdjustCloneEventsQuery => {
                 metrics.push(Metric::RoomAdjustCloneEventsQueryP95(metric_value_p95));
                 metrics.push(Metric::RoomAdjustCloneEventsQueryP99(metric_value_p99));

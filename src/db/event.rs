@@ -1,5 +1,5 @@
 use chrono::serde::{ts_milliseconds, ts_milliseconds_option};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::postgres::PgConnection;
@@ -416,8 +416,18 @@ impl InsertQuery {
         sqlx::query_as!(
             Object,
             r#"
-            INSERT INTO event (room_id, set, kind, label, attribute, data, occurred_at, created_by)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO event (
+                room_id,
+                set,
+                kind,
+                label,
+                attribute,
+                data,
+                occurred_at,
+                created_by,
+                created_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING
                 id,
                 room_id,
@@ -440,6 +450,7 @@ impl InsertQuery {
             self.data,
             self.occurred_at,
             self.created_by as AgentId,
+            self.created_at.unwrap_or_else(|| Utc::now()),
         )
         .fetch_one(conn)
         .await
@@ -670,5 +681,53 @@ impl OriginalEventQuery {
         )
         .fetch_optional(conn)
         .await
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+pub(crate) struct VacuumQuery {
+    max_history_size: usize,
+    max_history_lifetime: Duration,
+}
+
+impl VacuumQuery {
+    pub(crate) fn new(max_history_size: usize, max_history_lifetime: Duration) -> Self {
+        Self {
+            max_history_size,
+            max_history_lifetime,
+        }
+    }
+
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<()> {
+        sqlx::query!(
+            r#"
+            DELETE FROM event
+            WHERE id IN (
+                SELECT id
+                FROM (
+                    SELECT
+                        e.id,
+                        e.created_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY e.room_id, e.set, e.label
+                            ORDER BY e.occurred_at DESC
+                        ) AS history_depth
+                    FROM event AS e
+                    INNER JOIN room AS r
+                    ON r.id = e.room_id
+                    WHERE r.preserve_history = 'f'
+                ) AS q
+                WHERE history_depth > $1
+                OR created_at < NOW() - INTERVAL '1 second' * $2
+            )
+            "#,
+            self.max_history_size as i64,
+            self.max_history_lifetime.num_seconds() as i64,
+        )
+        .execute(conn)
+        .await
+        .map(|_| ())
     }
 }

@@ -63,7 +63,8 @@ request_routes!(
     "room.leave" => room::LeaveHandler,
     "room.read" => room::ReadHandler,
     "room.update" => room::UpdateHandler,
-    "state.read" => state::ReadHandler
+    "state.read" => state::ReadHandler,
+    "system.vacuum" => system::VacuumHandler
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -117,6 +118,7 @@ pub(crate) mod metric;
 mod room;
 mod state;
 mod subscription;
+mod system;
 
 pub(self) mod prelude {
     pub(super) use super::{helpers, EventHandler, RequestHandler, Result};

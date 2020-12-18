@@ -254,6 +254,12 @@ pub(crate) enum Metric {
     EventOriginalQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.event_original_query_max_microseconds"))]
     EventOriginalQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_vacuum_query_p95_microseconds"))]
+    EventVacuumQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_vacuum_query_p99_microseconds"))]
+    EventVacuumQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_vacuum_query_max_microseconds"))]
+    EventVacuumQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.room_adjust_clone_events_query_p95_microseconds"))]
     RoomAdjustCloneEventsQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.room_adjust_clone_events_query_p99_microseconds"))]
@@ -464,6 +470,12 @@ pub(crate) enum Metric2 {
     EventOriginalQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "event_original_query_max_microseconds"))]
     EventOriginalQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_vacuum_query_p95_microseconds"))]
+    EventVacuumQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_vacuum_query_p99_microseconds"))]
+    EventVacuumQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_vacuum_query_max_microseconds"))]
+    EventVacuumQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "room_adjust_clone_events_query_p95_microseconds"))]
     RoomAdjustCloneEventsQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "room_adjust_clone_events_query_p99_microseconds"))]
@@ -587,6 +599,9 @@ impl From<Metric> for Metric2 {
             Metric::EventOriginalQueryP95(v) => Metric2::EventOriginalQueryP95(v),
             Metric::EventOriginalQueryP99(v) => Metric2::EventOriginalQueryP99(v),
             Metric::EventOriginalQueryMax(v) => Metric2::EventOriginalQueryMax(v),
+            Metric::EventVacuumQueryP95(v) => Metric2::EventVacuumQueryP95(v),
+            Metric::EventVacuumQueryP99(v) => Metric2::EventVacuumQueryP99(v),
+            Metric::EventVacuumQueryMax(v) => Metric2::EventVacuumQueryMax(v),
             Metric::RoomAdjustCloneEventsQueryP95(v) => Metric2::RoomAdjustCloneEventsQueryP95(v),
             Metric::RoomAdjustCloneEventsQueryP99(v) => Metric2::RoomAdjustCloneEventsQueryP99(v),
             Metric::RoomAdjustCloneEventsQueryMax(v) => Metric2::RoomAdjustCloneEventsQueryMax(v),
@@ -635,6 +650,7 @@ pub enum ProfilerKeys {
     EventInsertQuery,
     EventListQuery,
     EventOriginalEventQuery,
+    EventVacuumQuery,
     RoomAdjustCloneEventsQuery,
     RoomFindQuery,
     RoomInsertQuery,

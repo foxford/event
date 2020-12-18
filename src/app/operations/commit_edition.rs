@@ -377,12 +377,9 @@ mod tests {
     use svc_agent::{AccountId, AgentId};
     use svc_authn::Authenticable;
 
-    use crate::db::event::{
-        InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,
-    };
-
     use crate::app::metrics::ProfilerKeys;
     use crate::db::change::ChangeType;
+    use crate::db::event::{ListQuery as EventListQuery, Object as Event};
     use crate::db::room::Object as Room;
     use crate::profiler::Profiler;
     use crate::test_helpers::db::TestDb;
@@ -519,14 +516,14 @@ mod tests {
             assert_eq!(events[1].occurred_at(), 2_500_000_000);
             assert_eq!(events[1].data()["message"], "passthrough");
 
-            assert_eq!(events[2].occurred_at(), 3_000_000_001);
-            assert_eq!(events[2].data()["message"], "m4");
-
-            assert_eq!(events[3].occurred_at(), 3_000_000_003);
-            assert_eq!(events[3].data()["message"], "newmessage");
-            let aid = events[3].created_by();
+            assert_eq!(events[2].occurred_at(), 3_000_000_000);
+            assert_eq!(events[2].data()["message"], "newmessage");
+            let aid = events[2].created_by();
             assert_eq!(aid.label(), "barbaz");
             assert_eq!(aid.as_account_id().label(), "foo");
+
+            assert_eq!(events[3].occurred_at(), 3_000_000_002);
+            assert_eq!(events[3].data()["message"], "m4");
 
             assert_eq!(events[4].occurred_at(), 4_000_000_000);
             assert_eq!(events[4].data()["message"], "m5");
@@ -556,7 +553,7 @@ mod tests {
                 &room,
                 3_500_000_000,
                 "message",
-                json!({"message": "cutted out"}),
+                json!({"message": "cut out"}),
             )
             .await;
 
@@ -634,8 +631,8 @@ mod tests {
             assert_eq!(events.len(), 3);
             assert_eq!(events[0].data()["message"], "passthrough");
             assert_eq!(events[0].occurred_at(), 2_500_000_000);
-            assert_eq!(events[1].data()["message"], "cutted out");
-            assert_eq!(events[1].occurred_at(), 3_000_000_000);
+            assert_eq!(events[1].data()["message"], "cut out");
+            assert_eq!(events[1].occurred_at(), 3_000_000_001);
             assert_eq!(events[2].data()["message"], "some message");
             assert_eq!(events[2].occurred_at(), 3_200_000_001);
         });
@@ -763,10 +760,14 @@ mod tests {
             _ => panic!("Invalid room time"),
         };
 
-        EventInsertQuery::new(room.id(), kind.to_owned(), data, occurred_at, created_by)
+        factory::Event::new()
+            .room_id(room.id())
+            .kind(kind)
+            .data(&data)
+            .occurred_at(occurred_at)
+            .created_by(&created_by)
             .created_at(opened_at + Duration::nanoseconds(occurred_at))
-            .execute(conn)
+            .insert(conn)
             .await
-            .expect("Failed to insert event")
     }
 }

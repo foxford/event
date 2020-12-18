@@ -6,6 +6,10 @@ broker_id = "mqtt-gateway.dev.svc.example.org"
 algorithm = "ES256"
 key = "data/keys/svc.private_key.p8.der.sample"
 
+[authz."svc.example.org"]
+type = "local"
+trusted = ["cron.svc.example.org"]
+
 [authz."dev.usr.example.org"]
 type = "local"
 trusted = ["test.dev.usr.example.org"]
@@ -22,3 +26,7 @@ id = "telemetry.dev.svc.example.org"
 
 [kruonis]
 id = "kruonis.dev.svc.example.org"
+
+[vacuum]
+max_history_size = 10
+max_history_lifetime = 86400
