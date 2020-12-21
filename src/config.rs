@@ -72,6 +72,8 @@ pub(crate) struct VacuumConfig {
     pub(crate) max_history_size: usize,
     #[serde(with = "crate::serde::duration_seconds")]
     pub(crate) max_history_lifetime: Duration,
+    #[serde(with = "crate::serde::duration_seconds")]
+    pub(crate) max_deleted_lifetime: Duration,
 }
 
 impl Default for VacuumConfig {
@@ -79,6 +81,7 @@ impl Default for VacuumConfig {
         Self {
             max_history_size: 10,
             max_history_lifetime: Duration::days(1),
+            max_deleted_lifetime: Duration::days(1),
         }
     }
 }

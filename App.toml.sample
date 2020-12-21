@@ -30,3 +30,4 @@ id = "kruonis.dev.svc.example.org"
 [vacuum]
 max_history_size = 10
 max_history_lifetime = 86400
+max_deleted_lifetime = 86400
