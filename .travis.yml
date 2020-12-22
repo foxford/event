@@ -34,7 +34,7 @@ jobs:
         - DATABASE_URL=postgres://postgres@localhost:5433/event.test
 
       script:
-        - cargo install sqlx-cli --version 0.1.0-beta.1
+        - cargo install sqlx-cli --version 0.2.0
         - cargo sqlx database create && cargo sqlx migrate run
         - cargo build
 
@@ -64,7 +64,7 @@ jobs:
         - DATABASE_URL=postgres://postgres@localhost:5433/event.test
 
       script:
-        - cargo install sqlx-cli --version 0.1.0-beta.1
+        - cargo install sqlx-cli --version 0.2.0
         - cargo sqlx database create && cargo sqlx migrate run
         - cargo test
 
