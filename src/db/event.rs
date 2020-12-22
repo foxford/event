@@ -515,41 +515,86 @@ impl<'a> SetStateQuery<'a> {
     }
 
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
-        sqlx::query_as!(
-            Object,
-            r#"
-            SELECT DISTINCT ON(original_occurred_at, label)
-                id,
-                room_id,
-                kind,
-                set,
-                label,
+        if let Some(attribute) = self.attribute {
+            sqlx::query_as!(
+                Object,
+                r#"
+                SELECT
+                    id,
+                    room_id,
+                    kind,
+                    set,
+                    label,
+                    attribute,
+                    data,
+                    occurred_at,
+                    created_by as "created_by!: AgentId",
+                    created_at,
+                    deleted_at,
+                    original_occurred_at
+                FROM (
+                    SELECT DISTINCT ON(original_occurred_at, label)
+                        *,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY room_id, set, label
+                            ORDER BY occurred_at DESC
+                        ) AS reverse_ordinal
+                    FROM event
+                    WHERE deleted_at IS NULL
+                    AND   room_id = $1
+                    AND   set = $2
+                    AND   original_occurred_at < $4
+                    AND   occurred_at < COALESCE($5, 9223372036854775807)
+                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC
+                ) AS q
+                WHERE reverse_ordinal = 1
+                AND   attribute = $3
+                LIMIT $6
+                "#,
+                self.room_id,
+                self.set,
                 attribute,
-                data,
-                occurred_at,
-                created_by as "created_by!: AgentId",
-                created_at,
-                deleted_at,
-                original_occurred_at
-            FROM event
-            WHERE deleted_at IS NULL
-            AND   room_id = $1
-            AND   set = $2
-            AND   ($3::TEXT IS NULL OR attribute = $3::TEXT)
-            AND   original_occurred_at < $4
-            AND   occurred_at < COALESCE($5, 9223372036854775807)
-            ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC
-            LIMIT $6
-            "#,
-            self.room_id,
-            self.set,
-            self.attribute,
-            self.original_occurred_at,
-            self.occurred_at,
-            self.limit,
-        )
-        .fetch_all(conn)
-        .await
+                self.original_occurred_at,
+                self.occurred_at,
+                self.limit,
+            )
+            .fetch_all(conn)
+            .await
+        } else {
+            sqlx::query_as!(
+                Object,
+                r#"
+                SELECT DISTINCT ON(original_occurred_at, label)
+                    id,
+                    room_id,
+                    kind,
+                    set,
+                    label,
+                    attribute,
+                    data,
+                    occurred_at,
+                    created_by as "created_by!: AgentId",
+                    created_at,
+                    deleted_at,
+                    original_occurred_at
+                FROM event
+                WHERE deleted_at IS NULL
+                AND   room_id = $1
+                AND   set = $2
+                AND   original_occurred_at < $3
+                AND   occurred_at < COALESCE($4, 9223372036854775807)
+                ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC
+                LIMIT $5
+                "#,
+                self.room_id,
+                self.set,
+                self.original_occurred_at,
+                self.occurred_at,
+                self.limit,
+            )
+            .fetch_all(conn)
+            .await
+        }
     }
 
     pub(crate) async fn total_count(&self, conn: &mut PgConnection) -> sqlx::Result<i64> {

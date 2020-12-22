@@ -504,6 +504,101 @@ mod tests {
     }
 
     #[test]
+    fn read_state_pinned_messages() {
+        async_std::task::block_on(async {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+            let (room, pinned_message) = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+
+                // Create a not pinned message.
+                let base_message_factory = factory::Event::new()
+                    .room_id(room.id())
+                    .kind("message")
+                    .set("messages")
+                    .data(&json!({"text": "hello"}))
+                    .created_by(&agent.agent_id());
+
+                base_message_factory
+                    .clone()
+                    .label("message-1")
+                    .occurred_at(1000)
+                    .insert(&mut conn)
+                    .await;
+
+                // Create a pinned message.
+                let pinned_message_factory = base_message_factory.clone().label("message-2");
+
+                pinned_message_factory
+                    .clone()
+                    .occurred_at(2000)
+                    .insert(&mut conn)
+                    .await;
+
+                let pinned_message = pinned_message_factory
+                    .occurred_at(3000)
+                    .attribute("pinned")
+                    .insert(&mut conn)
+                    .await;
+
+                // Create an unpinned message.
+                let unpinned_message_factory = base_message_factory.label("message-3");
+
+                unpinned_message_factory
+                    .clone()
+                    .occurred_at(4000)
+                    .insert(&mut conn)
+                    .await;
+
+                unpinned_message_factory
+                    .clone()
+                    .occurred_at(5000)
+                    .attribute("pinned")
+                    .insert(&mut conn)
+                    .await;
+
+                unpinned_message_factory
+                    .occurred_at(6000)
+                    .insert(&mut conn)
+                    .await;
+
+                (room, pinned_message)
+            };
+
+            // Allow agent to list events in the room.
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id, "events"];
+            authz.allow(agent.account_id(), object, "list");
+
+            // Make state.read request.
+            let mut context = TestContext::new(db, authz);
+
+            let payload = ReadRequest {
+                room_id: room.id(),
+                sets: vec![String::from("messages")],
+                attribute: Some(String::from("pinned")),
+                occurred_at: None,
+                original_occurred_at: None,
+                limit: None,
+            };
+
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
+                .await
+                .expect("State reading failed");
+
+            // Assert last two events response.
+            let (state, respp) = find_response::<CollectionState>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(state.messages.len(), 1);
+            assert_eq!(state.messages[0].id(), pinned_message.id());
+        });
+    }
+
+    #[test]
     fn read_state_not_authorized() {
         async_std::task::block_on(async {
             let db = TestDb::new().await;

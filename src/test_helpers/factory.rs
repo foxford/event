@@ -114,7 +114,7 @@ impl Agent {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(crate) struct Event {
     room_id: Option<Uuid>,
     kind: Option<String>,
