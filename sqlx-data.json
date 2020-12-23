@@ -122,6 +122,175 @@
       ]
     }
   },
+  "0406e10d4fb553ac346fe4d76e353b60ee998800fc44234895f338baec5e3eea": {
+    "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history\n            FROM room\n            WHERE id = $1\n            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "audience",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "source_room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 3,
+          "name": "time!: Time",
+          "type_info": "TstzRange"
+        },
+        {
+          "ordinal": 4,
+          "name": "tags",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 5,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 6,
+          "name": "preserve_history",
+          "type_info": "Bool"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "TstzRange"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false
+      ]
+    }
+  },
+  "16cfb8137a12fe9a9c8f494ac34c7ecdbbfaa920734d5458e24b330e9d5bb986": {
+    "query": "\n            SELECT\n                e.id               AS edition_id,\n                e.source_room_id   AS edition_source_room_id,\n                e.created_by       AS \"edition_created_by!: AgentId\",\n                e.created_at       AS edition_created_at,\n                r.id               AS room_id,\n                r.audience         AS room_audience,\n                r.source_room_id   AS room_source_room_id,\n                r.time             AS \"room_time!: RoomTime\",\n                r.tags             AS room_tags,\n                r.created_at       AS room_created_at,\n                r.preserve_history AS room_preserve_history\n            FROM edition AS e\n            INNER JOIN room AS r\n            ON r.id = e.source_room_id\n            WHERE e.id = $1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "edition_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "edition_source_room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 2,
+          "name": "edition_created_by!: AgentId",
+          "type_info": {
+            "Custom": {
+              "name": "agent_id",
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "name": "account_id",
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "ordinal": 3,
+          "name": "edition_created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 4,
+          "name": "room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 5,
+          "name": "room_audience",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 6,
+          "name": "room_source_room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 7,
+          "name": "room_time!: RoomTime",
+          "type_info": "TstzRange"
+        },
+        {
+          "ordinal": 8,
+          "name": "room_tags",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 9,
+          "name": "room_created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 10,
+          "name": "room_preserve_history",
+          "type_info": "Bool"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false
+      ]
+    }
+  },
   "17c6509f281a68985995b3ebe82e220313fbaafc7bd87587e2ae0ec82a2410dd": {
     "query": "\n            INSERT INTO agent (agent_id, room_id, status)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (agent_id, room_id) DO UPDATE SET status = $3\n            RETURNING\n                id,\n                agent_id AS \"agent_id!: AgentId\",\n                room_id,\n                status AS \"status!: Status\",\n                created_at\n            ",
     "describe": {
@@ -451,58 +620,6 @@
       "nullable": []
     }
   },
-  "2f99bcdcbf5d948577a0e02e2486b0a4b51dd2aa40b151d99028aa8f625a049d": {
-    "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags)\n            WHERE id = $1\n            RETURNING id, audience, source_room_id, time AS \"time!: Time\", tags, created_at\n            ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "audience",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 2,
-          "name": "source_room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 3,
-          "name": "time!: Time",
-          "type_info": "TstzRange"
-        },
-        {
-          "ordinal": 4,
-          "name": "tags",
-          "type_info": "Json"
-        },
-        {
-          "ordinal": 5,
-          "name": "created_at",
-          "type_info": "Timestamptz"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "TstzRange",
-          "Json"
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        true,
-        false,
-        true,
-        false
-      ]
-    }
-  },
   "30648a371672f6987fc07841a62926a649cd5ad562fb040828ca30be8b362258": {
     "query": "\n            SELECT\n                agent.id,\n                agent_id AS \"agent_id!: AgentId\",\n                agent.room_id,\n                status AS \"status!: Status\",\n                agent.created_at,\n                (rban.created_at IS NOT NULL)::boolean AS banned,\n                rban.reason\n            FROM agent\n            LEFT OUTER JOIN room_ban rban\n            ON rban.room_id = agent.room_id AND rban.account_id = (agent.agent_id).account_id\n            WHERE agent.room_id = $1 AND agent.status = $2\n            ORDER BY created_at DESC\n            LIMIT $3\n            OFFSET $4\n            ",
     "describe": {
@@ -611,6 +728,164 @@
         false,
         null,
         true
+      ]
+    }
+  },
+  "3552027d268d4745ca1d9f5b8b37836326f6b8ed5c17114c4c83b55c36410799": {
+    "query": "\n            INSERT INTO event (\n                room_id,\n                set,\n                kind,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by,\n                created_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            RETURNING\n                id,\n                room_id,\n                kind,\n                set,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by AS \"created_by!: AgentId\",\n                created_at,\n                deleted_at,\n                original_occurred_at\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 2,
+          "name": "kind",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 3,
+          "name": "set",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 4,
+          "name": "label",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 5,
+          "name": "attribute",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 6,
+          "name": "data",
+          "type_info": "Jsonb"
+        },
+        {
+          "ordinal": 7,
+          "name": "occurred_at",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 8,
+          "name": "created_by!: AgentId",
+          "type_info": {
+            "Custom": {
+              "name": "agent_id",
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "name": "account_id",
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "ordinal": 9,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 10,
+          "name": "deleted_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 11,
+          "name": "original_occurred_at",
+          "type_info": "Int8"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Text",
+          "Text",
+          "Text",
+          "Jsonb",
+          "Int8",
+          {
+            "Custom": {
+              "name": "agent_id",
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "name": "account_id",
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              }
+            }
+          },
+          "Timestamptz"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+        false,
+        false,
+        true,
+        false
       ]
     }
   },
@@ -764,8 +1039,8 @@
       ]
     }
   },
-  "464331ca62941a1de25d4afc25fff2e30068c865f8b5b9147999b6d8e606b147": {
-    "query": "\n            SELECT id, audience, source_room_id, time AS \"time!: Time\", tags, created_at\n            FROM room\n            WHERE id = $1\n            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)\n            ",
+  "4623922090cc9a45ec9900bf5c10eec6a66e31904fd2cef66bbba88c95683d76": {
+    "query": "\n            INSERT INTO room (audience, source_room_id, time, tags, preserve_history)\n            VALUES ($1, $2, $3, $4, $5)\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history\n            ",
     "describe": {
       "columns": [
         {
@@ -797,12 +1072,20 @@
           "ordinal": 5,
           "name": "created_at",
           "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 6,
+          "name": "preserve_history",
+          "type_info": "Bool"
         }
       ],
       "parameters": {
         "Left": [
+          "Text",
           "Uuid",
-          "TstzRange"
+          "TstzRange",
+          "Json",
+          "Bool"
         ]
       },
       "nullable": [
@@ -811,6 +1094,7 @@
         true,
         false,
         true,
+        false,
         false
       ]
     }
@@ -934,6 +1218,171 @@
         false,
         false,
         true,
+        false
+      ]
+    }
+  },
+  "4b2b84b22a6f574e60c18f52b834a81bfe262fc551fcb222dce2141646712808": {
+    "query": "\n                SELECT\n                    c.id                 AS change_id,\n                    c.edition_id         AS change_edition_id,\n                    c.kind               AS \"change_kind!: ChangeType\",\n                    c.event_id           AS change_event_id,\n                    c.event_kind         AS change_event_kind,\n                    c.event_set          AS change_event_set,\n                    c.event_label        AS change_event_label,\n                    c.event_data         AS change_event_data,\n                    c.event_occurred_at  AS change_event_occurred_at,\n                    c.event_created_by   AS \"change_event_created_by?: AgentId\",\n                    c.created_at         AS change_created_at,\n                    r.id                 AS room_id,\n                    r.audience           AS room_audience,\n                    r.source_room_id     AS room_source_room_id,\n                    r.time               AS \"room_time!: RoomTime\",\n                    r.tags               AS room_tags,\n                    r.created_at         AS room_created_at,\n                    r.preserve_history   AS room_preserve_history\n                FROM change AS c\n                INNER JOIN edition AS e\n                ON e.id = c.edition_id\n                INNER JOIN room AS r\n                ON r.id = e.source_room_id\n                WHERE c.id = $1\n                ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "change_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "change_edition_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 2,
+          "name": "change_kind!: ChangeType",
+          "type_info": {
+            "Custom": {
+              "name": "change_type",
+              "kind": {
+                "Enum": [
+                  "addition",
+                  "modification",
+                  "removal"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "ordinal": 3,
+          "name": "change_event_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 4,
+          "name": "change_event_kind",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 5,
+          "name": "change_event_set",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 6,
+          "name": "change_event_label",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 7,
+          "name": "change_event_data",
+          "type_info": "Jsonb"
+        },
+        {
+          "ordinal": 8,
+          "name": "change_event_occurred_at",
+          "type_info": "Int8"
+        },
+        {
+          "ordinal": 9,
+          "name": "change_event_created_by?: AgentId",
+          "type_info": {
+            "Custom": {
+              "name": "agent_id",
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "name": "account_id",
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "ordinal": 10,
+          "name": "change_created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 11,
+          "name": "room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 12,
+          "name": "room_audience",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 13,
+          "name": "room_source_room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 14,
+          "name": "room_time!: RoomTime",
+          "type_info": "TstzRange"
+        },
+        {
+          "ordinal": 15,
+          "name": "room_tags",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 16,
+          "name": "room_created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 17,
+          "name": "room_preserve_history",
+          "type_info": "Bool"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
         false
       ]
     }
@@ -1074,269 +1523,6 @@
       "nullable": []
     }
   },
-  "6aa6c84e174b7fec1c0500e357cccb327fbb2703824a8539baa3b012cc23e36e": {
-    "query": "\n            SELECT\n                e.id             AS edition_id,\n                e.source_room_id AS edition_source_room_id,\n                e.created_by     AS \"edition_created_by!: AgentId\",\n                e.created_at     AS edition_created_at,\n                r.id             AS room_id,\n                r.audience       AS room_audience,\n                r.source_room_id AS room_source_room_id,\n                r.time           AS \"room_time!: RoomTime\",\n                r.tags           AS room_tags,\n                r.created_at     AS room_created_at\n            FROM edition AS e\n            INNER JOIN room AS r\n            ON r.id = e.source_room_id\n            WHERE e.id = $1\n            ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "edition_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "edition_source_room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 2,
-          "name": "edition_created_by!: AgentId",
-          "type_info": {
-            "Custom": {
-              "name": "agent_id",
-              "kind": {
-                "Composite": [
-                  [
-                    "account_id",
-                    {
-                      "Custom": {
-                        "name": "account_id",
-                        "kind": {
-                          "Composite": [
-                            [
-                              "label",
-                              "Text"
-                            ],
-                            [
-                              "audience",
-                              "Text"
-                            ]
-                          ]
-                        }
-                      }
-                    }
-                  ],
-                  [
-                    "label",
-                    "Text"
-                  ]
-                ]
-              }
-            }
-          }
-        },
-        {
-          "ordinal": 3,
-          "name": "edition_created_at",
-          "type_info": "Timestamptz"
-        },
-        {
-          "ordinal": 4,
-          "name": "room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 5,
-          "name": "room_audience",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 6,
-          "name": "room_source_room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 7,
-          "name": "room_time!: RoomTime",
-          "type_info": "TstzRange"
-        },
-        {
-          "ordinal": 8,
-          "name": "room_tags",
-          "type_info": "Json"
-        },
-        {
-          "ordinal": 9,
-          "name": "room_created_at",
-          "type_info": "Timestamptz"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid"
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        true,
-        false,
-        true,
-        false
-      ]
-    }
-  },
-  "7312925f7859d1749e609ed200130d60ce9e52c661dc17db1135c255b2640ffb": {
-    "query": "\n            INSERT INTO event (room_id, set, kind, label, attribute, data, occurred_at, created_by)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)\n            RETURNING\n                id,\n                room_id,\n                kind,\n                set,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by AS \"created_by!: AgentId\",\n                created_at,\n                deleted_at,\n                original_occurred_at\n            ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 2,
-          "name": "kind",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 3,
-          "name": "set",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 4,
-          "name": "label",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 5,
-          "name": "attribute",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 6,
-          "name": "data",
-          "type_info": "Jsonb"
-        },
-        {
-          "ordinal": 7,
-          "name": "occurred_at",
-          "type_info": "Int8"
-        },
-        {
-          "ordinal": 8,
-          "name": "created_by!: AgentId",
-          "type_info": {
-            "Custom": {
-              "name": "agent_id",
-              "kind": {
-                "Composite": [
-                  [
-                    "account_id",
-                    {
-                      "Custom": {
-                        "name": "account_id",
-                        "kind": {
-                          "Composite": [
-                            [
-                              "label",
-                              "Text"
-                            ],
-                            [
-                              "audience",
-                              "Text"
-                            ]
-                          ]
-                        }
-                      }
-                    }
-                  ],
-                  [
-                    "label",
-                    "Text"
-                  ]
-                ]
-              }
-            }
-          }
-        },
-        {
-          "ordinal": 9,
-          "name": "created_at",
-          "type_info": "Timestamptz"
-        },
-        {
-          "ordinal": 10,
-          "name": "deleted_at",
-          "type_info": "Timestamptz"
-        },
-        {
-          "ordinal": 11,
-          "name": "original_occurred_at",
-          "type_info": "Int8"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "Text",
-          "Text",
-          "Text",
-          "Text",
-          "Jsonb",
-          "Int8",
-          {
-            "Custom": {
-              "name": "agent_id",
-              "kind": {
-                "Composite": [
-                  [
-                    "account_id",
-                    {
-                      "Custom": {
-                        "name": "account_id",
-                        "kind": {
-                          "Composite": [
-                            [
-                              "label",
-                              "Text"
-                            ],
-                            [
-                              "audience",
-                              "Text"
-                            ]
-                          ]
-                        }
-                      }
-                    }
-                  ],
-                  [
-                    "label",
-                    "Text"
-                  ]
-                ]
-              }
-            }
-          }
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        true,
-        true,
-        false,
-        false,
-        false,
-        false,
-        true,
-        false
-      ]
-    }
-  },
   "82ef68387ec1cfa2230670e75186894dd1ee736485f85c812c827aa568f700ee": {
     "query": "\n            SELECT\n                id, account_id AS \"account_id!: AccountId\",\n                room_id, reason, created_at\n            FROM room_ban\n            WHERE account_id = $1 AND room_id = $2\n            ",
     "describe": {
@@ -1470,8 +1656,21 @@
       ]
     }
   },
-  "92dc2b6959de08626fa507f261e9145860971d83ffe177080df9771bc49d2fe4": {
-    "query": "\n            INSERT INTO room (audience, source_room_id, time, tags)\n            VALUES ($1, $2, $3, $4)\n            RETURNING id, audience, source_room_id, time AS \"time!: Time\", tags, created_at\n            ",
+  "96ca15b6812ff9ec3fc998fe3651d09d83ed927466773ee1da1e84c29d45748c": {
+    "query": "\n            DELETE FROM event\n            WHERE deleted_at IS NULL\n            AND   room_id = $1\n            AND   kind = $2\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "978e5b492186ec4bdf3f883fe29ae614278aae6c19e7a0371b54103be6d2dc67": {
+    "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags)\n            WHERE id = $1\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history\n            ",
     "describe": {
       "columns": [
         {
@@ -1503,11 +1702,15 @@
           "ordinal": 5,
           "name": "created_at",
           "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 6,
+          "name": "preserve_history",
+          "type_info": "Bool"
         }
       ],
       "parameters": {
         "Left": [
-          "Text",
           "Uuid",
           "TstzRange",
           "Json"
@@ -1519,21 +1722,9 @@
         true,
         false,
         true,
+        false,
         false
       ]
-    }
-  },
-  "96ca15b6812ff9ec3fc998fe3651d09d83ed927466773ee1da1e84c29d45748c": {
-    "query": "\n            DELETE FROM event\n            WHERE deleted_at IS NULL\n            AND   room_id = $1\n            AND   kind = $2\n            ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "Text"
-        ]
-      },
-      "nullable": []
     }
   },
   "9906924993483dc3ae45113f9be74f761218f0d6101ac5f3777ce0cd2dca74b3": {
@@ -1699,165 +1890,6 @@
       ]
     }
   },
-  "d88de25e0d3738fc3befa8e6f693302cdf5711e1eeb058f50211aef5146db7d7": {
-    "query": "\n                SELECT\n                    c.id                 AS change_id,\n                    c.edition_id         AS change_edition_id,\n                    c.kind               AS \"change_kind!: ChangeType\",\n                    c.event_id           AS change_event_id,\n                    c.event_kind         AS change_event_kind,\n                    c.event_set          AS change_event_set,\n                    c.event_label        AS change_event_label,\n                    c.event_data         AS change_event_data,\n                    c.event_occurred_at  AS change_event_occurred_at,\n                    c.event_created_by   AS \"change_event_created_by?: AgentId\",\n                    c.created_at         AS change_created_at,\n                    r.id                 AS room_id,\n                    r.audience           AS room_audience,\n                    r.source_room_id     AS room_source_room_id,\n                    r.time               AS \"room_time!: RoomTime\",\n                    r.tags               AS room_tags,\n                    r.created_at         AS room_created_at\n                FROM change AS c\n                INNER JOIN edition AS e\n                ON e.id = c.edition_id\n                INNER JOIN room AS r\n                ON r.id = e.source_room_id\n                WHERE c.id = $1\n                ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "change_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "change_edition_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 2,
-          "name": "change_kind!: ChangeType",
-          "type_info": {
-            "Custom": {
-              "name": "change_type",
-              "kind": {
-                "Enum": [
-                  "addition",
-                  "modification",
-                  "removal"
-                ]
-              }
-            }
-          }
-        },
-        {
-          "ordinal": 3,
-          "name": "change_event_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 4,
-          "name": "change_event_kind",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 5,
-          "name": "change_event_set",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 6,
-          "name": "change_event_label",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 7,
-          "name": "change_event_data",
-          "type_info": "Jsonb"
-        },
-        {
-          "ordinal": 8,
-          "name": "change_event_occurred_at",
-          "type_info": "Int8"
-        },
-        {
-          "ordinal": 9,
-          "name": "change_event_created_by?: AgentId",
-          "type_info": {
-            "Custom": {
-              "name": "agent_id",
-              "kind": {
-                "Composite": [
-                  [
-                    "account_id",
-                    {
-                      "Custom": {
-                        "name": "account_id",
-                        "kind": {
-                          "Composite": [
-                            [
-                              "label",
-                              "Text"
-                            ],
-                            [
-                              "audience",
-                              "Text"
-                            ]
-                          ]
-                        }
-                      }
-                    }
-                  ],
-                  [
-                    "label",
-                    "Text"
-                  ]
-                ]
-              }
-            }
-          }
-        },
-        {
-          "ordinal": 10,
-          "name": "change_created_at",
-          "type_info": "Timestamptz"
-        },
-        {
-          "ordinal": 11,
-          "name": "room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 12,
-          "name": "room_audience",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 13,
-          "name": "room_source_room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 14,
-          "name": "room_time!: RoomTime",
-          "type_info": "TstzRange"
-        },
-        {
-          "ordinal": 15,
-          "name": "room_tags",
-          "type_info": "Json"
-        },
-        {
-          "ordinal": 16,
-          "name": "room_created_at",
-          "type_info": "Timestamptz"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid"
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        true,
-        true,
-        true,
-        true,
-        true,
-        true,
-        true,
-        false,
-        false,
-        false,
-        true,
-        false,
-        true,
-        false
-      ]
-    }
-  },
   "da66580c20d184c7d43c67ec5ccf490283c56ae79795a8df439c3481d2e6b83a": {
     "query": "\n            INSERT INTO room_ban (account_id, room_id, reason)\n            VALUES ($1, $2, $3) ON CONFLICT (account_id, room_id) DO UPDATE\n            SET created_at=room_ban.created_at\n            RETURNING\n                id,\n                account_id AS \"account_id!: AccountId\",\n                room_id,\n                reason,\n                created_at\n            ",
     "describe": {
@@ -1934,6 +1966,20 @@
         true,
         false
       ]
+    }
+  },
+  "e62d2c4fccc796c57f4c740474b3671897a69c0ec1089ebc726322629f9a87bb": {
+    "query": "\n            DELETE FROM event\n            WHERE id IN (\n                -- Exclude preserved rooms and calculate reverse ordinal (history depth).\n                WITH sub AS (\n                    SELECT\n                        e.*,\n                        ROW_NUMBER() OVER (\n                            PARTITION BY e.room_id, e.set, e.label\n                            ORDER BY e.occurred_at DESC\n                        ) AS reverse_ordinal\n                    FROM event AS e\n                    INNER JOIN room AS r\n                    ON r.id = e.room_id\n                    WHERE r.preserve_history = 'f'\n                )\n\n                -- Too deep history.\n                SELECT id\n                FROM sub\n                WHERE reverse_ordinal > $1\n\n                UNION ALL\n\n                -- Too old history.\n                SELECT id\n                FROM sub\n                WHERE reverse_ordinal > 1\n                AND created_at < NOW() - INTERVAL '1 second' * $2\n\n                UNION ALL\n\n                -- Too old deleted labels.\n                SELECT e.id\n                FROM sub\n                INNER JOIN event AS e\n                ON  e.room_id = sub.room_id\n                AND e.set = sub.set\n                AND e.label = sub.label\n                WHERE e.deleted_at IS NULL\n                AND   sub.attribute = 'deleted'\n                AND   sub.reverse_ordinal = 1\n                AND   sub.created_at < NOW() - INTERVAL '1 second' * $3\n            )\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Float8",
+          "Float8"
+        ]
+      },
+      "nullable": []
     }
   }
 }

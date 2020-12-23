@@ -36,5 +36,8 @@ url = "2.1"
 uuid = { version = "0.8", features = ["v4", "serde"] }
 tide = "0.13.0"
 
+[dev-dependencies]
+serial_test = "0.5"
+
 [patch.crates-io]
 sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "master" }

@@ -54,6 +54,7 @@ pub(crate) struct CreateRequest {
     #[serde(with = "crate::serde::ts_seconds_bound_tuple")]
     time: Time,
     tags: Option<JsonValue>,
+    preserve_history: Option<bool>,
 }
 
 pub(crate) struct CreateHandler;
@@ -111,6 +112,10 @@ impl RequestHandler for CreateHandler {
 
             if let Some(tags) = payload.tags {
                 query = query.tags(tags);
+            }
+
+            if let Some(preserve_history) = payload.preserve_history {
+                query = query.preserve_history(preserve_history);
             }
 
             let mut conn = context.get_conn().await?;
@@ -711,6 +716,7 @@ mod tests {
                     time: Time::from(time),
                     audience: USR_AUDIENCE.to_owned(),
                     tags: Some(tags.clone()),
+                    preserve_history: Some(false),
                 };
 
                 let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -731,6 +737,7 @@ mod tests {
                 assert_eq!(room.audience(), USR_AUDIENCE);
                 assert_eq!(room.time(), time);
                 assert_eq!(room.tags(), Some(&tags));
+                assert_eq!(room.preserve_history(), false);
             });
         }
 
@@ -752,6 +759,7 @@ mod tests {
                     time: time.clone(),
                     audience: USR_AUDIENCE.to_owned(),
                     tags: None,
+                    preserve_history: None,
                 };
 
                 let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -777,6 +785,7 @@ mod tests {
                     time: (Bound::Unbounded, Bound::Unbounded),
                     audience: USR_AUDIENCE.to_owned(),
                     tags: None,
+                    preserve_history: None,
                 };
 
                 let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -826,6 +835,7 @@ mod tests {
                 assert_eq!(resp_room.audience(), room.audience());
                 assert_eq!(resp_room.time(), room.time());
                 assert_eq!(resp_room.tags(), room.tags());
+                assert_eq!(resp_room.preserve_history(), room.preserve_history());
             });
         }
 

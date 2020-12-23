@@ -47,16 +47,17 @@ impl FindWithRoomQuery {
         let maybe_row = sqlx::query!(
             r#"
             SELECT
-                e.id             AS edition_id,
-                e.source_room_id AS edition_source_room_id,
-                e.created_by     AS "edition_created_by!: AgentId",
-                e.created_at     AS edition_created_at,
-                r.id             AS room_id,
-                r.audience       AS room_audience,
-                r.source_room_id AS room_source_room_id,
-                r.time           AS "room_time!: RoomTime",
-                r.tags           AS room_tags,
-                r.created_at     AS room_created_at
+                e.id               AS edition_id,
+                e.source_room_id   AS edition_source_room_id,
+                e.created_by       AS "edition_created_by!: AgentId",
+                e.created_at       AS edition_created_at,
+                r.id               AS room_id,
+                r.audience         AS room_audience,
+                r.source_room_id   AS room_source_room_id,
+                r.time             AS "room_time!: RoomTime",
+                r.tags             AS room_tags,
+                r.created_at       AS room_created_at,
+                r.preserve_history AS room_preserve_history
             FROM edition AS e
             INNER JOIN room AS r
             ON r.id = e.source_room_id
@@ -84,6 +85,7 @@ impl FindWithRoomQuery {
                     .time(row.room_time)
                     .tags(row.room_tags)
                     .created_at(row.room_created_at)
+                    .preserve_history(row.room_preserve_history)
                     .build()
                     .map_err(|err| sqlx::Error::Decode(err.into()))?;
 

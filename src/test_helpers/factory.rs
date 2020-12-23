@@ -10,19 +10,17 @@ use crate::db;
 
 ///////////////////////////////////////////////////////////////////////////////
 
+#[derive(Debug, Default)]
 pub(crate) struct Room {
     audience: Option<String>,
     time: Option<db::room::Time>,
     tags: Option<JsonValue>,
+    preserve_history: Option<bool>,
 }
 
 impl Room {
     pub(crate) fn new() -> Self {
-        Self {
-            audience: None,
-            time: None,
-            tags: None,
-        }
+        Default::default()
     }
 
     pub(crate) fn audience(self, audience: &str) -> Self {
@@ -46,6 +44,13 @@ impl Room {
         }
     }
 
+    pub(crate) fn preserve_history(self, preserve_history: bool) -> Self {
+        Self {
+            preserve_history: Some(preserve_history),
+            ..self
+        }
+    }
+
     pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::room::Object {
         let audience = self.audience.expect("Audience not set");
         let time = self.time.expect("Time not set");
@@ -54,6 +59,10 @@ impl Room {
 
         if let Some(tags) = self.tags {
             query = query.tags(tags)
+        }
+
+        if let Some(preserve_history) = self.preserve_history {
+            query = query.preserve_history(preserve_history)
         }
 
         query.execute(conn).await.expect("Failed to insert room")
@@ -124,6 +133,7 @@ pub(crate) struct Event {
     data: Option<JsonValue>,
     occurred_at: Option<i64>,
     created_by: Option<AgentId>,
+    created_at: Option<DateTime<Utc>>,
 }
 
 impl Event {
@@ -187,6 +197,13 @@ impl Event {
         }
     }
 
+    pub(crate) fn created_at(self, created_at: DateTime<Utc>) -> Self {
+        Self {
+            created_at: Some(created_at),
+            ..self
+        }
+    }
+
     pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::event::Object {
         let room_id = self.room_id.expect("Room ID not set");
         let kind = self.kind.expect("Kind not set");
@@ -206,6 +223,10 @@ impl Event {
 
         if let Some(attribute) = self.attribute {
             query = query.attribute(attribute);
+        }
+
+        if let Some(created_at) = self.created_at {
+            query = query.created_at(created_at);
         }
 
         query.execute(conn).await.expect("Failed to insert event")
