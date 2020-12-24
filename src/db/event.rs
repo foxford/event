@@ -31,6 +31,9 @@ pub(crate) struct Object {
     )]
     deleted_at: Option<DateTime<Utc>>,
     original_occurred_at: i64,
+    // TODO: remove Option and make the field NOT NULL once migrated production data.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    original_created_by: Option<AgentId>,
 }
 
 impl Object {
@@ -173,10 +176,11 @@ impl Builder {
             attribute: self.attribute,
             data,
             occurred_at,
-            created_by,
+            created_by: created_by.clone(),
             created_at: Utc::now(),
             deleted_at: None,
             original_occurred_at: occurred_at,
+            original_created_by: Some(created_by),
         })
     }
 }
@@ -440,7 +444,8 @@ impl InsertQuery {
                 created_by AS "created_by!: AgentId",
                 created_at,
                 deleted_at,
-                original_occurred_at
+                original_occurred_at,
+                original_created_by as "original_created_by: AgentId"
             "#,
             self.room_id,
             self.set,
@@ -542,7 +547,8 @@ impl<'a> SetStateQuery<'a> {
                     created_by as "created_by!: AgentId",
                     created_at,
                     deleted_at,
-                    original_occurred_at
+                    original_occurred_at,
+                    original_created_by as "original_created_by: AgentId"
                 FROM (
                     SELECT DISTINCT ON(original_occurred_at, label)
                         *,
@@ -587,7 +593,8 @@ impl<'a> SetStateQuery<'a> {
                     created_by as "created_by!: AgentId",
                     created_at,
                     deleted_at,
-                    original_occurred_at
+                    original_occurred_at,
+                    original_created_by as "original_created_by: AgentId"
                 FROM event
                 WHERE deleted_at IS NULL
                 AND   room_id = $1
@@ -666,7 +673,8 @@ impl OriginalEventQuery {
                 created_by as "created_by!: AgentId",
                 created_at,
                 deleted_at,
-                original_occurred_at
+                original_occurred_at,
+                original_created_by as "original_created_by: AgentId"
             FROM event
             WHERE deleted_at IS NULL
             AND   room_id = $1
