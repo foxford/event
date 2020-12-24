@@ -26,7 +26,7 @@ slog-async = "2.5"
 slog-envlogger = "2.2"
 slog-json = "2.3"
 slog-serde = "1.0.0-alpha9"
-sqlx = { version = "0.4.0-beta.1", features = ["offline", "postgres", "macros", "uuid", "chrono", "json", "bigdecimal"] }
+sqlx = { version = "0.4", features = ["offline", "postgres", "macros", "uuid", "chrono", "json", "bigdecimal", "runtime-async-std-rustls"] }
 svc-agent = { version = "0.14", features = ["sqlx", "queue-counter"] }
 svc-authn = { version = "0.6", features = ["jose", "sqlx"] }
 svc-authz = "0.10"
@@ -38,6 +38,3 @@ tide = "0.13.0"
 
 [dev-dependencies]
 serial_test = "0.5"
-
-[patch.crates-io]
-sqlx = { git = "https://github.com/launchbadge/sqlx", branch = "master" }

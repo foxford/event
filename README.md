@@ -22,7 +22,9 @@ Set up database:
 
 ```bash
 export DATABASE_URL=postgres://postgres@localhost/event.dev
-diesel database setup
+cargo install sqlx-cli --version 0.2.0
+cargo sqlx database create
+cargo sqlx migrate run
 ```
 
 Set up config from the sample:
