@@ -16,7 +16,7 @@ BEGIN
     LIMIT 1;
 
     NEW.original_occurred_at := COALESCE(original.occurred_at, NEW.occurred_at);
-    NEW.original_created_by := COALESCE(original.created_by, NEW.original_created_by);
+    NEW.original_created_by := COALESCE(original.created_by, NEW.created_by);
     RETURN NEW;
 END;
 $$;
