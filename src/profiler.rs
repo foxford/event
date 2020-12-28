@@ -1,10 +1,12 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
+use std::convert::TryFrom;
 use std::future::Future;
 use std::hash::Hash;
 use std::thread;
 use std::time::Instant;
 
 use anyhow::{Context, Result};
+use chrono::Duration;
 
 #[derive(Default)]
 pub(crate) struct EntryReport {
@@ -60,9 +62,19 @@ impl Entry {
 }
 
 enum Message<K> {
-    Register { key: K, value: usize },
+    Register {
+        key: K,
+        value: usize,
+    },
     Flush(u64),
     Stop,
+    HandlerTiming {
+        duration: Duration,
+        method: String,
+    },
+    GetHandlerTimings {
+        tx: crossbeam_channel::Sender<Vec<(String, EntryReport)>>,
+    },
 }
 
 pub(crate) struct Profiler<K> {
@@ -77,6 +89,7 @@ impl<K: 'static + Eq + Hash + Send + Clone> Profiler<K> {
 
         thread::spawn(move || {
             let mut data: HashMap<K, Entry> = HashMap::new();
+            let mut futures_timings: BTreeMap<String, Vec<usize>> = BTreeMap::new();
 
             for message in rx {
                 match message {
@@ -97,6 +110,54 @@ impl<K: 'static + Eq + Hash + Send + Clone> Profiler<K> {
                         if let Err(err) = back_tx.send(report) {
                             warn!(crate::LOG, "Failed to send profiler report: {}", err);
                         }
+                    }
+                    Message::HandlerTiming { duration, method } => {
+                        let vec = futures_timings.entry(method).or_default();
+                        let micros = duration.num_microseconds().map_or(usize::MAX, |micros| {
+                            match usize::try_from(micros) {
+                                Ok(micros) => micros as usize,
+                                Err(_) => usize::MAX,
+                            }
+                        });
+
+                        vec.push(micros);
+                    }
+                    Message::GetHandlerTimings { tx } => {
+                        let vec = futures_timings
+                            .into_iter()
+                            .map(|(method, mut values)| {
+                                values.sort_unstable();
+
+                                let count = values.len();
+                                let p95_idx = (count as f32 * 0.95) as usize;
+                                let p99_idx = (count as f32 * 0.99) as usize;
+                                let max_idx = count - 1;
+                                let max = values[max_idx];
+
+                                let p95 = if p95_idx < max_idx {
+                                    (values[p95_idx] + max) / 2
+                                } else {
+                                    max
+                                };
+
+                                let p99 = if p99_idx < max_idx {
+                                    (values[p99_idx] + max) / 2
+                                } else {
+                                    max
+                                };
+
+                                (method, EntryReport { p95, p99, max })
+                            })
+                            .collect::<Vec<_>>();
+
+                        if let Err(err) = tx.send(vec) {
+                            warn!(
+                                crate::LOG,
+                                "Failed to send dynamic stats collector report: {}", err,
+                            );
+                        }
+
+                        futures_timings = BTreeMap::new();
                     }
                     Message::Stop => break,
                 }
@@ -135,6 +196,23 @@ impl<K: 'static + Eq + Hash + Send + Clone> Profiler<K> {
         self.back_rx
             .recv()
             .context("Failed to receive the profiler report")
+    }
+
+    pub(crate) fn record_future_time(&self, duration: Duration, method: String) {
+        if let Err(err) = self.tx.send(Message::HandlerTiming { duration, method }) {
+            warn!(crate::LOG, "Failed to register profiler value: {}", err);
+        }
+    }
+
+    pub(crate) fn get_handler_timings(&self) -> Result<Vec<(String, EntryReport)>> {
+        let (tx, rx) = crossbeam_channel::bounded(1);
+
+        self.tx
+            .send(Message::GetHandlerTimings { tx })
+            .map_err(|err| anyhow!(err.to_string()))
+            .context("Failed to send GetHandlerTimings message to the profiler")?;
+
+        rx.recv().context("Failed to receive profiler report")
     }
 }
 

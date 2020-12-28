@@ -3,7 +3,7 @@ use std::pin::Pin;
 
 use async_std::prelude::*;
 use async_std::stream::{self, Stream};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 use futures_util::pin_mut;
 use svc_agent::{
     mqtt::{
@@ -25,13 +25,15 @@ pub(crate) type MessageStream =
 pub(crate) struct MessageHandler<C: GlobalContext> {
     agent: Agent,
     global_context: C,
+    tx: TimingChannel,
 }
 
 impl<C: GlobalContext + Sync> MessageHandler<C> {
-    pub(crate) fn new(agent: Agent, global_context: C) -> Self {
+    pub(crate) fn new(agent: Agent, global_context: C, tx: TimingChannel) -> Self {
         Self {
             agent,
             global_context,
+            tx,
         }
     }
 
@@ -82,9 +84,22 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
         msg_context: &mut AppMessageContext<'_, C>,
         message: &IncomingMessage<String>,
     ) -> Result<(), AppError> {
+        let mut timer = MessageHandlerTiming::new(msg_context.start_timestamp(), self.tx.clone());
+
         match message {
-            IncomingMessage::Request(req) => self.handle_request(msg_context, req).await,
-            IncomingMessage::Event(ev) => self.handle_event(msg_context, ev).await,
+            IncomingMessage::Request(req) => {
+                timer.set_method(req.properties().method().into());
+                self.handle_request(msg_context, req).await
+            }
+            IncomingMessage::Event(ev) => {
+                let label = match ev.properties().label() {
+                    Some(label) => format!("event-{}", label),
+                    None => "event-none".into(),
+                };
+
+                timer.set_method(label);
+                self.handle_event(msg_context, ev).await
+            }
             IncomingMessage::Response(_) => {
                 // This service doesn't send any requests to other services so we don't
                 // expect any responses.
@@ -327,5 +342,41 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
         }
 
         Box::pin(handle_envelope::<H, C>(context, event))
+    }
+}
+
+type TimingChannel = crossbeam_channel::Sender<(Duration, String)>;
+
+struct MessageHandlerTiming {
+    start: DateTime<Utc>,
+    sender: TimingChannel,
+    method: String,
+}
+
+impl MessageHandlerTiming {
+    fn new(start: DateTime<Utc>, sender: TimingChannel) -> Self {
+        Self {
+            method: "none".into(),
+            start,
+            sender,
+        }
+    }
+
+    fn set_method(&mut self, method: String) {
+        self.method = method;
+    }
+}
+
+impl Drop for MessageHandlerTiming {
+    fn drop(&mut self) {
+        if let Err(e) = self
+            .sender
+            .try_send((Utc::now() - self.start, self.method.clone()))
+        {
+            warn!(
+                crate::LOG,
+                "Failed to send msg handler future timing, reason = {:?}", e
+            );
+        }
     }
 }

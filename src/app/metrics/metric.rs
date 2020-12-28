@@ -37,6 +37,13 @@ pub enum Tags {
         request_method: Option<String>,
         query_label: ProfilerKeys,
     },
+    RunningFuture {
+        version: String,
+        agent_label: String,
+        account_label: String,
+        account_audience: String,
+        method: String,
+    },
 }
 
 impl Tags {
@@ -72,6 +79,16 @@ impl Tags {
             account_audience: agent_id.as_account_id().audience().to_owned(),
             query_label,
             request_method,
+        }
+    }
+
+    pub fn build_running_futures_tags(version: &str, agent_id: &AgentId, method: String) -> Self {
+        Tags::RunningFuture {
+            version: version.to_owned(),
+            agent_label: agent_id.label().to_owned(),
+            account_label: agent_id.as_account_id().label().to_owned(),
+            account_audience: agent_id.as_account_id().audience().to_owned(),
+            method,
         }
     }
 }
@@ -300,6 +317,12 @@ pub(crate) enum Metric {
     // Misc.
     #[serde(rename(serialize = "apps.event.running_requests_total"))]
     RunningRequests(MetricValue<i64>),
+    #[serde(rename(serialize = "apps.event.running_requests_duration_p95"))]
+    RunningRequestDurationP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.running_requests_duration_p99"))]
+    RunningRequestDurationP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.running_requests_duration_max"))]
+    RunningRequestDurationMax(MetricValue<u64>),
 }
 
 #[derive(Serialize, Clone)]
@@ -516,6 +539,13 @@ pub(crate) enum Metric2 {
     // Misc.
     #[serde(rename(serialize = "running_requests_total"))]
     RunningRequests(MetricValue<i64>),
+
+    #[serde(rename(serialize = "running_requests_duration_p95"))]
+    RunningRequestDurationP95(MetricValue<u64>),
+    #[serde(rename(serialize = "running_requests_duration_p99"))]
+    RunningRequestDurationP99(MetricValue<u64>),
+    #[serde(rename(serialize = "running_requests_duration_max"))]
+    RunningRequestDurationMax(MetricValue<u64>),
 }
 
 impl From<Metric> for Metric2 {
@@ -621,6 +651,9 @@ impl From<Metric> for Metric2 {
             Metric::StateQueryP99(v) => Metric2::StateQueryP99(v),
             Metric::StateQueryMax(v) => Metric2::StateQueryMax(v),
             Metric::RunningRequests(v) => Metric2::RunningRequests(v),
+            Metric::RunningRequestDurationP95(v) => Metric2::RunningRequestDurationP95(v),
+            Metric::RunningRequestDurationP99(v) => Metric2::RunningRequestDurationP99(v),
+            Metric::RunningRequestDurationMax(v) => Metric2::RunningRequestDurationMax(v),
         }
     }
 }
