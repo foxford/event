@@ -320,5 +320,22 @@ fn append_profiler_stats(
             }
         }
     }
+
+    let profiler_report = context
+        .profiler()
+        .get_handler_timings()
+        .context("Failed to flush profiler")?;
+
+    for (method, crate::profiler::EntryReport { p95, p99, max }) in profiler_report {
+        let tags = Tags::build_running_futures_tags(crate::APP_VERSION, context.agent_id(), method);
+
+        let metric_value_p95 = MetricValue::new(p95 as u64, now, tags.clone());
+        let metric_value_p99 = MetricValue::new(p99 as u64, now, tags.clone());
+        let metric_value_max = MetricValue::new(max as u64, now, tags.clone());
+
+        metrics.push(Metric::RunningRequestDurationP95(metric_value_p95));
+        metrics.push(Metric::RunningRequestDurationP99(metric_value_p99));
+        metrics.push(Metric::RunningRequestDurationMax(metric_value_max));
+    }
     Ok(())
 }

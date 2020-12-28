@@ -106,8 +106,19 @@ pub(crate) async fn run(
         .running_requests(running_requests.clone())
         .build();
 
+    let profiler = context.profiler();
+    let (handler_timer_tx, handler_timer_rx) = crossbeam_channel::bounded(500);
+    std::thread::Builder::new()
+        .name("msg-handler-timings".into())
+        .spawn(move || {
+            for (dur, method) in handler_timer_rx {
+                profiler.record_future_time(dur, method);
+            }
+        })
+        .expect("Failed to start msg-handler-timings thread");
+
     // Message handler
-    let message_handler = Arc::new(MessageHandler::new(agent, context));
+    let message_handler = Arc::new(MessageHandler::new(agent, context, handler_timer_tx));
     StatsRoute::start(config, message_handler.clone());
 
     // Message loop
