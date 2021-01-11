@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.28 (January 8, 2021)
+
+### Features
+- Implemented events history vacuum ([5e83982](https://github.com/netology-group/conference/commit/5e839824e92912caff40374ebc972f339857fd71))
+- Added running requests durations metrics ([82a4aa2](https://github.com/netology-group/conference/commit/82a4aa2df99bf4e3fb15e8568eef4122358d2c86))
+
+### Fixes
+- Fixed state for unpinned messages ([c3ba097](https://github.com/netology-group/conference/commit/c3ba09779a8242860cadb76e844204e0b5b415c6))
+
+### Changes
+- Updatedd sqlx ([0923d0c](https://github.com/netology-group/conference/commit/0923d0ce0a15810bf5113346823b0f8ba93471e3))
+
+
 ## v0.2.27 (December 8, 2020)
 ### Features
 - Added unbounded rooms closure on adjustment ([31b7df7](https://github.com/netology-group/conference/commit/31b7df7f8f8a93f1e554bd9c10dcdcb0cd4e428f))
