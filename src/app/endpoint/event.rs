@@ -1,5 +1,3 @@
-use std::ops::Bound;
-
 use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
@@ -137,8 +135,8 @@ impl RequestHandler for CreateHandler {
             .await?;
 
         // Calculate occurrence date.
-        let occurred_at = match room.time() {
-            (Bound::Included(opened_at), _) => (Utc::now() - opened_at.to_owned())
+        let occurred_at = match room.time().map(|t| t.start().to_owned()) {
+            Ok(opened_at) => (Utc::now() - opened_at)
                 .num_nanoseconds()
                 .unwrap_or(std::i64::MAX),
             _ => {

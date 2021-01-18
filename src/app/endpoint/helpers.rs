@@ -1,5 +1,3 @@
-use std::ops::Bound;
-
 use anyhow::Context as AnyhowContext;
 use chrono::{DateTime, Duration, Utc};
 use serde::ser::Serialize;
@@ -85,27 +83,15 @@ pub(crate) async fn find_room<C: Context>(
         RoomTimeRequirement::Any => Ok(room),
         // Current time must be before room closing, including not yet opened rooms.
         RoomTimeRequirement::NotClosed => {
-            let closed_at = match room.time() {
-                (_, Bound::Excluded(c)) => Ok(c),
-                _ => Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime),
-            }?;
-
-            if Utc::now() < closed_at {
-                Ok(room)
-            } else {
+            if room.is_closed() {
                 Err(anyhow!("Room already closed")).error(AppErrorKind::RoomClosed)
+            } else {
+                Ok(room)
             }
         }
         // Current time must be exactly in the room's time range.
         RoomTimeRequirement::Open => {
-            let (opened_at, closed_at) = match room.time() {
-                (Bound::Included(o), Bound::Excluded(c)) => Ok((o, c)),
-                _ => Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime),
-            }?;
-
-            let now = Utc::now();
-
-            if now >= opened_at && now < closed_at {
+            if room.is_open() {
                 Ok(room)
             } else {
                 Err(anyhow!("Room already closed or not yet opened"))

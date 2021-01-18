@@ -24,8 +24,7 @@ use crate::app::operations::adjust_room;
 use crate::db::adjustment::Segments;
 use crate::db::agent;
 use crate::db::room::{InsertQuery, UpdateQuery};
-
-type Time = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
+use crate::db::room_time::{BoundedDateTimeTuple, RoomTime};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -52,7 +51,7 @@ impl SubscriptionRequest {
 pub(crate) struct CreateRequest {
     audience: String,
     #[serde(with = "crate::serde::ts_seconds_bound_tuple")]
-    time: Time,
+    time: BoundedDateTimeTuple,
     tags: Option<JsonValue>,
     preserve_history: Option<bool>,
 }
@@ -69,8 +68,8 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
     ) -> Result {
         // Validate opening time.
-        match payload.time {
-            (Bound::Included(opened_at), Bound::Excluded(closed_at)) if closed_at > opened_at => (),
+        match RoomTime::new(payload.time) {
+            Some(_room_time) => (),
             _ => {
                 return Err(anyhow!("Invalid room time"))
                     .error(AppErrorKind::InvalidRoomTime)
@@ -214,7 +213,7 @@ pub(crate) struct UpdateRequest {
     id: Uuid,
     #[serde(default)]
     #[serde(with = "crate::serde::ts_seconds_option_bound_tuple")]
-    time: Option<Time>,
+    time: Option<BoundedDateTimeTuple>,
     tags: Option<JsonValue>,
 }
 
@@ -253,36 +252,26 @@ impl RequestHandler for UpdateHandler {
             .await?;
 
         // Validate opening time.
-        let mut time = payload.time;
-        if let Some(new_time) = time {
-            match new_time {
-                (Bound::Included(new_opened_at), Bound::Excluded(new_closed_at))
-                    if new_closed_at > new_opened_at =>
-                {
-                    if let (Bound::Included(opened_at), _) = room.time() {
-                        if opened_at <= Utc::now() {
-                            let new_closed_at = if new_closed_at <= Utc::now() {
-                                Utc::now()
-                            } else {
-                                new_closed_at
-                            };
-
-                            time =
-                                Some((Bound::Included(opened_at), Bound::Excluded(new_closed_at)));
-                        }
-                    }
+        let time = if let Some(new_time) = payload.time {
+            let room_time = room
+                .time()
+                .map_err(|e| anyhow!(e))
+                .error(AppErrorKind::InvalidRoomTime)?;
+            match room_time.update(new_time) {
+                Some(nt) => Some(nt.into()),
+                None => {
+                    return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime)
                 }
-                _ => return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime),
             }
-        }
+        } else {
+            None
+        };
 
         let room_was_open = !room.is_closed();
 
         // Update room.
         let room = {
-            let query = UpdateQuery::new(room.id())
-                .time(time.map(|t| t.into()))
-                .tags(payload.tags);
+            let query = UpdateQuery::new(room.id()).time(time).tags(payload.tags);
 
             let mut conn = context.get_conn().await?;
 
@@ -713,7 +702,7 @@ mod tests {
                 let tags = json!({ "webinar_id": "123" });
 
                 let payload = CreateRequest {
-                    time: Time::from(time),
+                    time: BoundedDateTimeTuple::from(time),
                     audience: USR_AUDIENCE.to_owned(),
                     tags: Some(tags.clone()),
                     preserve_history: Some(false),
@@ -727,7 +716,7 @@ mod tests {
                 let (room, respp) = find_response::<Room>(messages.as_slice());
                 assert_eq!(respp.status(), ResponseStatus::CREATED);
                 assert_eq!(room.audience(), USR_AUDIENCE);
-                assert_eq!(room.time(), time);
+                assert_eq!(room.time().map(|t| t.into()), Ok(time));
                 assert_eq!(room.tags(), Some(&tags));
 
                 // Assert notification.
@@ -735,7 +724,52 @@ mod tests {
                 assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
                 assert_eq!(evp.label(), "room.create");
                 assert_eq!(room.audience(), USR_AUDIENCE);
-                assert_eq!(room.time(), time);
+                assert_eq!(room.time().map(|t| t.into()), Ok(time));
+                assert_eq!(room.tags(), Some(&tags));
+                assert_eq!(room.preserve_history(), false);
+            });
+        }
+
+        #[test]
+        fn create_room_unbounded() {
+            async_std::task::block_on(async {
+                // Allow agent to create rooms.
+                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+                let mut authz = TestAuthz::new();
+                authz.allow(agent.account_id(), vec!["rooms"], "create");
+
+                // Make room.create request.
+                let mut context = TestContext::new(TestDb::new().await, authz);
+                let now = Utc::now().trunc_subsecs(0);
+
+                let time = (Bound::Included(now + Duration::hours(1)), Bound::Unbounded);
+
+                let tags = json!({ "webinar_id": "123" });
+
+                let payload = CreateRequest {
+                    time: BoundedDateTimeTuple::from(time),
+                    audience: USR_AUDIENCE.to_owned(),
+                    tags: Some(tags.clone()),
+                    preserve_history: Some(false),
+                };
+
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                    .await
+                    .expect("Room creation failed");
+
+                // Assert response.
+                let (room, respp) = find_response::<Room>(messages.as_slice());
+                assert_eq!(respp.status(), ResponseStatus::CREATED);
+                assert_eq!(room.audience(), USR_AUDIENCE);
+                assert_eq!(room.time().map(|t| t.into()), Ok(time));
+                assert_eq!(room.tags(), Some(&tags));
+
+                // Assert notification.
+                let (room, evp, topic) = find_event::<Room>(messages.as_slice());
+                assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
+                assert_eq!(evp.label(), "room.create");
+                assert_eq!(room.audience(), USR_AUDIENCE);
+                assert_eq!(room.time().map(|t| t.into()), Ok(time));
                 assert_eq!(room.tags(), Some(&tags));
                 assert_eq!(room.preserve_history(), false);
             });
@@ -886,6 +920,7 @@ mod tests {
         use chrono::{Duration, SubsecRound, Utc};
 
         use crate::db::room::Object as Room;
+        use crate::db::room_time::RoomTimeBound;
         use crate::test_helpers::prelude::*;
 
         use super::super::*;
@@ -942,7 +977,7 @@ mod tests {
                 assert_eq!(respp.status(), ResponseStatus::OK);
                 assert_eq!(resp_room.id(), room.id());
                 assert_eq!(resp_room.audience(), room.audience());
-                assert_eq!(resp_room.time(), time);
+                assert_eq!(resp_room.time().map(|t| t.into()), Ok(time));
                 assert_eq!(resp_room.tags(), Some(&tags));
             });
         }
@@ -996,11 +1031,11 @@ mod tests {
                 assert_eq!(resp_room.id(), room.id());
                 assert_eq!(resp_room.audience(), room.audience());
                 assert_eq!(
-                    resp_room.time(),
-                    (
+                    resp_room.time().map(|t| t.into()),
+                    Ok((
                         Bound::Included(now - Duration::hours(1)),
                         Bound::Excluded(now + Duration::hours(3)),
-                    )
+                    ))
                 );
             });
         }
@@ -1054,12 +1089,12 @@ mod tests {
                 assert_eq!(resp_room.id(), room.id());
                 assert_eq!(resp_room.audience(), room.audience());
                 assert_eq!(
-                    resp_room.time().0,
-                    Bound::Included(now - Duration::hours(2))
+                    resp_room.time().map(|t| t.start().to_owned()),
+                    Ok(now - Duration::hours(2))
                 );
 
-                match resp_room.time().1 {
-                    Bound::Excluded(t) => {
+                match resp_room.time().map(|t| t.end().to_owned()) {
+                    Ok(RoomTimeBound::Excluded(t)) => {
                         let x = t - now;
                         // Less than 1 second apart is basically 'now'
                         // avoids intermittent failures

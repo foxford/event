@@ -13,6 +13,7 @@ use crate::db::event::{
     DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event,
 };
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
+use crate::db::room_time::RoomTimeBound;
 use crate::profiler::Profiler;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -38,9 +39,10 @@ pub(crate) async fn call(
         .context("Failed to begin sqlx db transaction")?;
 
     let room_duration = match source.time() {
-        (Bound::Included(start), Bound::Excluded(stop)) if stop > start => {
-            stop.signed_duration_since(start)
-        }
+        Ok(t) => match t.end() {
+            RoomTimeBound::Excluded(stop) => stop.signed_duration_since(*t.start()),
+            _ => bail!("invalid duration for room = '{}'", source.id()),
+        },
         _ => bail!("invalid duration for room = '{}'", source.id()),
     };
 
@@ -137,7 +139,11 @@ async fn clone_room(
     profiler: &Profiler<(ProfilerKeys, Option<String>)>,
     source: &Room,
 ) -> Result<Room> {
-    let mut query = RoomInsertQuery::new(&source.audience(), source.time().to_owned().into());
+    let time = match source.time() {
+        Ok(t) => t.to_owned().into(),
+        Err(_e) => bail!("invalid time for room = '{}'", source.id()),
+    };
+    let mut query = RoomInsertQuery::new(&source.audience(), time);
     query = query.source_room_id(source.id());
 
     if let Some(tags) = source.tags() {
@@ -755,8 +761,8 @@ mod tests {
     ) -> Event {
         let created_by = AgentId::new("test", AccountId::new("test", AUDIENCE));
 
-        let opened_at = match room.time() {
-            (Bound::Included(opened_at), _) => opened_at,
+        let opened_at = match room.time().map(|t| t.into()) {
+            Ok((Bound::Included(opened_at), _)) => opened_at,
             _ => panic!("Invalid room time"),
         };
 
