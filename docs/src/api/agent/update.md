@@ -52,3 +52,5 @@ Name             | Type        | Default    | Description
 room_id          | string      | _required_ | Room where ban happened.
 account_id       | account_id  | _required_ | Altered account.
 reason           | string      | _optional_ | Ban reason if specified
+banned_by        | account_id  | _required_ | Ban issuer
+banned           | bool        | _required_ | Whether the account was banned or unbanned
