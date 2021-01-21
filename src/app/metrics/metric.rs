@@ -217,9 +217,9 @@ pub(crate) enum Metric {
     EditionCloneEventsQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_clone_events_query_max_microseconds"))]
     EditionCloneEventsQueryMax(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.edition_commit_txn_commit_max_p95"))]
+    #[serde(rename(serialize = "apps.event.edition_commit_txn_commit_max_p95_microseconds"))]
     EditionCommitTxnCommitP95(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.edition_commit_txn_commit_max_p99"))]
+    #[serde(rename(serialize = "apps.event.edition_commit_txn_commit_max_p99_microseconds"))]
     EditionCommitTxnCommitP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.edition_commit_txn_commit_max_microseconds"))]
     EditionCommitTxnCommitMax(MetricValue<u64>),
@@ -317,11 +317,11 @@ pub(crate) enum Metric {
     // Misc.
     #[serde(rename(serialize = "apps.event.running_requests_total"))]
     RunningRequests(MetricValue<i64>),
-    #[serde(rename(serialize = "apps.event.running_requests_duration_p95"))]
+    #[serde(rename(serialize = "apps.event.running_request_duration_p95_microseconds"))]
     RunningRequestDurationP95(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.running_requests_duration_p99"))]
+    #[serde(rename(serialize = "apps.event.running_request_duration_p99_microseconds"))]
     RunningRequestDurationP99(MetricValue<u64>),
-    #[serde(rename(serialize = "apps.event.running_requests_duration_max"))]
+    #[serde(rename(serialize = "apps.event.running_request_duration_max_microseconds"))]
     RunningRequestDurationMax(MetricValue<u64>),
 }
 
@@ -439,9 +439,9 @@ pub(crate) enum Metric2 {
     EditionCloneEventsQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "edition_clone_events_query_max_microseconds"))]
     EditionCloneEventsQueryMax(MetricValue<u64>),
-    #[serde(rename(serialize = "edition_commit_txn_commit_max_p95"))]
+    #[serde(rename(serialize = "edition_commit_txn_commit_max_p95_microseconds"))]
     EditionCommitTxnCommitP95(MetricValue<u64>),
-    #[serde(rename(serialize = "edition_commit_txn_commit_max_p99"))]
+    #[serde(rename(serialize = "edition_commit_txn_commit_max_p99_microseconds"))]
     EditionCommitTxnCommitP99(MetricValue<u64>),
     #[serde(rename(serialize = "edition_commit_txn_commit_max_microseconds"))]
     EditionCommitTxnCommitMax(MetricValue<u64>),
@@ -540,11 +540,11 @@ pub(crate) enum Metric2 {
     #[serde(rename(serialize = "running_requests_total"))]
     RunningRequests(MetricValue<i64>),
 
-    #[serde(rename(serialize = "running_requests_duration_p95"))]
+    #[serde(rename(serialize = "running_request_duration_p95_microseconds"))]
     RunningRequestDurationP95(MetricValue<u64>),
-    #[serde(rename(serialize = "running_requests_duration_p99"))]
+    #[serde(rename(serialize = "running_request_duration_p99_microseconds"))]
     RunningRequestDurationP99(MetricValue<u64>),
-    #[serde(rename(serialize = "running_requests_duration_max"))]
+    #[serde(rename(serialize = "running_request_duration_max_microseconds"))]
     RunningRequestDurationMax(MetricValue<u64>),
 }
 
