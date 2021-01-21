@@ -3448,9 +3448,9 @@ dependencies = [
 
 [[package]]
 name = "svc-authz"
-version = "0.10.6"
+version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce75eddb3a3e8ad276d282359c12aacfc67c310d7f8bea58b0a30a3f00dd5740"
+checksum = "c4a266bc73704332f19d84c2bc91452b2f194523b01235c081f5678e3d87e678"
 dependencies = [
  "async-std",
  "async-trait",
