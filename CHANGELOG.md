@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.2.29 (January 21, 2021)
+
+### Features
+- Allow unbounded room closing time ([d0743c0](https://github.com/netology-group/conference/commit/d0743c060477405b195eb750c54db119bbe4b41d))
+- Add banned and banned_by to TenantBanNotification ([52aec19](https://github.com/netology-group/conference/commit/52aec190b4b766856caf647f5074622c153b1907))
+
+### Changes
+- Update svc-authz ([eae4195](https://github.com/netology-group/conference/commit/eae4195d5a9921419c5629f3ba829d27f3b466ea))
+
+### Fixes
+- Fix metrics naming and units ([8c7f77c](https://github.com/netology-group/conference/commit/8c7f77c17632915337781325016ed5c8c5c5147e))
+
+
 ## v0.2.28 (January 8, 2021)
 
 ### Features
@@ -14,17 +27,20 @@
 
 
 ## v0.2.27 (December 8, 2020)
+
 ### Features
 - Added unbounded rooms closure on adjustment ([31b7df7](https://github.com/netology-group/conference/commit/31b7df7f8f8a93f1e554bd9c10dcdcb0cd4e428f))
 - Updated svc-agent to v0.14.12 ([87d748f](https://github.com/netology-group/conference/commit/87d748fdfc53756c6ce92ba1d4fce6c9ae71841a))
 
 
 ## v0.2.26 (November 29, 2020)
+
 ### Features
 - Added reason field to agent.update method ([a994b73](https://github.com/netology-group/conference/commit/a994b73e61e247f0903cfda7244a7a871b190899))
 
 
 ## v0.2.25 (November 18, 2020)
+
 ### Features
 - Added agent.update method ([1d95568](https://github.com/netology-group/conference/commit/1d9556864fe81490c360677b6e263fb445e859be))
 
