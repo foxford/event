@@ -1,3 +1,4 @@
+use std::convert::{TryFrom, TryInto};
 use std::ops::{Bound, RangeBounds};
 
 use chrono::{serde::ts_seconds, DateTime, Utc};
@@ -36,8 +37,8 @@ impl Object {
         self.source_room_id
     }
 
-    pub(crate) fn time(&self) -> (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>) {
-        (self.time.0.start, self.time.0.end)
+    pub(crate) fn time(&self) -> Result<RoomTime, String> {
+        self.time.clone().try_into()
     }
 
     pub(crate) fn tags(&self) -> Option<&JsonValue> {
@@ -54,6 +55,16 @@ impl Object {
             Bound::Included(t) => *t < Utc::now(),
             Bound::Excluded(t) => *t <= Utc::now(),
             Bound::Unbounded => false,
+        }
+    }
+
+    pub(crate) fn is_open(&self) -> bool {
+        let now = Utc::now();
+        let t = (self.time.0.start_bound(), self.time.0.end_bound());
+        match t {
+            (Bound::Included(s), Bound::Excluded(e)) => *s < now && *e > now,
+            (Bound::Included(s), Bound::Unbounded) => *s < now,
+            _ => false,
         }
     }
 }
@@ -303,29 +314,51 @@ impl UpdateQuery {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-type BoundedDateTimeTuple = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
+use crate::db::room_time::BoundedDateTimeTuple;
+use crate::db::room_time::RoomTime;
 
 #[derive(Clone, Debug, Deserialize, Serialize, sqlx::Type)]
 #[sqlx(transparent)]
-#[serde(from = "BoundedDateTimeTuple")]
+#[serde(from = "RoomTime")]
 #[serde(into = "BoundedDateTimeTuple")]
 pub(crate) struct Time(PgRange<DateTime<Utc>>);
 
-impl From<BoundedDateTimeTuple> for Time {
-    fn from(time: BoundedDateTimeTuple) -> Self {
+impl From<RoomTime> for Time {
+    fn from(time: RoomTime) -> Self {
+        let time: BoundedDateTimeTuple = time.into();
         Self(PgRange::from(time))
     }
 }
 
-impl Into<BoundedDateTimeTuple> for Time {
-    fn into(self) -> BoundedDateTimeTuple {
-        (self.0.start, self.0.end)
+impl TryFrom<Time> for RoomTime {
+    type Error = String;
+
+    fn try_from(t: Time) -> Result<Self, Self::Error> {
+        match RoomTime::new((t.0.start, t.0.end)) {
+            Some(rt) => Ok(rt),
+            None => Err(format!(
+                "Invalid room time: ({:?}, {:?})",
+                t.0.start, t.0.end
+            )),
+        }
     }
 }
 
 impl Into<PgRange<DateTime<Utc>>> for Time {
     fn into(self) -> PgRange<DateTime<Utc>> {
         self.0
+    }
+}
+
+impl From<Time> for BoundedDateTimeTuple {
+    fn from(time: Time) -> BoundedDateTimeTuple {
+        (time.0.start, time.0.end)
+    }
+}
+
+impl From<BoundedDateTimeTuple> for Time {
+    fn from(tuple: BoundedDateTimeTuple) -> Time {
+        Self(PgRange::from(tuple))
     }
 }
 

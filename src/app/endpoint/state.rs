@@ -79,10 +79,13 @@ impl RequestHandler for ReadHandler {
             .await?;
 
         // Default `occurred_at`: closing time of the room.
+        let time = room.time().map(|t| t.into());
         let original_occurred_at = if let Some(original_occurred_at) = payload.original_occurred_at
         {
             original_occurred_at
-        } else if let (Bound::Included(open), Bound::Excluded(close)) = room.time() {
+        } else if let Ok((_, Bound::Unbounded)) = time {
+            std::i64::MAX
+        } else if let Ok((Bound::Included(open), Bound::Excluded(close))) = time {
             (close - open)
                 .num_nanoseconds()
                 .map(|n| n + 1)

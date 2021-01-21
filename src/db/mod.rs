@@ -26,3 +26,4 @@ pub(crate) mod edition;
 pub(crate) mod event;
 pub(crate) mod room;
 pub(crate) mod room_ban;
+pub(crate) mod room_time;

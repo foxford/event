@@ -11,6 +11,7 @@ use crate::db::event::{
     DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event,
 };
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
+use crate::db::room_time::RoomTimeBound;
 use crate::profiler::Profiler;
 
 pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
@@ -50,10 +51,26 @@ pub(crate) async fn call(
         .await
         .context("Failed to acquire db connection")?;
 
-    if real_time_room.time().1 == Bound::Unbounded {
-        let query = crate::db::room::UpdateQuery::new(real_time_room.id()).time(Some(
-            (real_time_room.time().0, Bound::Excluded(start_timestamp)).into(),
-        ));
+    let time = real_time_room
+        .time()
+        .map_err(|e| anyhow!(e))
+        .context("Invalid room time")?;
+    let real_time_room_new_time = if *time.end() == RoomTimeBound::Unbounded {
+        let new_time = match time.update((
+            Bound::Included(*time.start()),
+            Bound::Excluded(start_timestamp),
+        )) {
+            Some(new_time) => new_time,
+            None => {
+                bail!(format!(
+                    "Failed to update room time bound, invalid room time, room_id = '{}'",
+                    real_time_room.id(),
+                ))
+            }
+        };
+
+        let query = crate::db::room::UpdateQuery::new(real_time_room.id())
+            .time(Some(new_time.clone().into()));
 
         profiler
             .measure(
@@ -67,7 +84,11 @@ pub(crate) async fn call(
                     real_time_room.id(),
                 )
             })?;
-    }
+
+        new_time
+    } else {
+        time
+    };
 
     let query =
         AdjustmentInsertQuery::new(real_time_room.id(), started_at, segments.to_owned(), offset);
@@ -91,12 +112,21 @@ pub(crate) async fn call(
     ///////////////////////////////////////////////////////////////////////////
 
     // Get room opening time and duration.
-    let (room_opening, room_duration) = match real_time_room.time() {
-        (Bound::Included(start), Bound::Excluded(stop)) if stop > start => {
-            (start, stop.signed_duration_since(start))
+    let (room_opening, room_duration) = match real_time_room_new_time.end() {
+        RoomTimeBound::Excluded(stop) => {
+            let start = real_time_room_new_time.start();
+            (*start, stop.signed_duration_since(*start))
         }
         _ => bail!("invalid duration for room = '{}'", real_time_room.id()),
     };
+
+    /*let (room_opening, room_duration) = match real_time_room.time() {
+        Ok(t) => match t.end() {
+            RoomTimeBound::Excluded(stop) => (*t.start(), stop.signed_duration_since(*t.start())),
+            _ => bail!("invalid duration for room = '{}'", real_time_room.id()),
+        },
+        _ => bail!("invalid duration for room = '{}'", real_time_room.id()),
+    };*/
 
     // Calculate RTC offset as the difference between event room opening and RTC start.
     let rtc_offset = (started_at - room_opening).num_milliseconds();
@@ -212,7 +242,15 @@ async fn create_room(
     source_room: &Room,
     started_at: DateTime<Utc>,
 ) -> Result<Room> {
-    let time = (Bound::Included(started_at), source_room.time().1.to_owned());
+    let time = (
+        Bound::Included(started_at),
+        source_room
+            .time()
+            .map_err(|e| anyhow!(e))?
+            .end()
+            .to_owned()
+            .into(),
+    );
     let mut query = RoomInsertQuery::new(&source_room.audience(), time.into());
     query = query.source_room_id(source_room.id());
 
@@ -437,114 +475,7 @@ mod tests {
                 .await
                 .expect("Failed to insert room");
 
-            // Create events.
-            create_event(
-                &mut conn,
-                &room,
-                1_000_000_000,
-                "message",
-                json!({"message": "m1"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                12_000_000_000,
-                "message",
-                json!({"message": "m2"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                13_000_000_000,
-                "stream",
-                json!({"cut": "start"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                14_000_000_000,
-                "message",
-                json!({"message": "m4"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                15_000_000_000,
-                "stream",
-                json!({"cut": "stop"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                16_000_000_000,
-                "message",
-                json!({"message": "m6"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                17_000_000_000,
-                "message",
-                json!({"message": "m7"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                18_000_000_000,
-                "stream",
-                json!({"cut": "start"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                19_000_000_000,
-                "message",
-                json!({"message": "m9"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                20_000_000_000,
-                "stream",
-                json!({"cut": "stop"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                21_000_000_000,
-                "message",
-                json!({"message": "m11"}),
-            )
-            .await;
-
-            create_event(
-                &mut conn,
-                &room,
-                22_000_000_000,
-                "message",
-                json!({"message": "m12"}),
-            )
-            .await;
+            create_events(&mut conn, &room).await;
 
             drop(conn);
 
@@ -572,117 +503,16 @@ mod tests {
             // Assert original room.
             assert_eq!(original_room.source_room_id(), Some(room.id()));
             assert_eq!(original_room.audience(), room.audience());
-            assert_eq!(original_room.time().0, Bound::Included(started_at));
-            assert_eq!(original_room.time().1, room.time().1);
+            assert_eq!(original_room.time().map(|t| *t.start()), Ok(started_at));
+            assert_eq!(
+                original_room.time().map(|t| t.end().to_owned()),
+                room.time().map(|t| t.end().to_owned())
+            );
             assert_eq!(original_room.tags(), room.tags());
 
             // Assert original room events.
             let mut conn = db.get_conn().await;
-
-            let events = EventListQuery::new()
-                .room_id(original_room.id())
-                .execute(&mut conn)
-                .await
-                .expect("Failed to fetch original room events");
-
-            assert_eq!(events.len(), 12);
-
-            assert_event(
-                &events[0],
-                // Bump to the first segment beginning because it's before the first segment.
-                // 3e9 (offset)
-                3_000_000_000,
-                "message",
-                &json!({"message": "m1"}),
-            );
-
-            assert_event(
-                &events[1],
-                // 12e9 - 10e9 (rtc offset) + 3e9 (offset)
-                5_000_000_000,
-                "message",
-                &json!({"message": "m2"}),
-            );
-
-            assert_event(
-                &events[2],
-                // 13e9 - 10e9 (rtc offset) + 3e9 (offset)
-                6_000_000_000,
-                "stream",
-                &json!({"cut": "start"}),
-            );
-
-            assert_event(
-                &events[3],
-                // 14e9 - 10e9 (rtc offset) + 3e9 (offset)
-                7_000_000_000,
-                "message",
-                &json!({"message": "m4"}),
-            );
-
-            assert_event(
-                &events[4],
-                // 15e9 - 10e9 (rtc offset) + 3e9 (offset)
-                8_000_000_000,
-                "stream",
-                &json!({"cut": "stop"}),
-            );
-
-            assert_event(
-                &events[5],
-                // 16e9 - 10e9 (rtc offset) + 3e9 (offset)
-                9_000_000_000,
-                "message",
-                &json!({"message": "m6"}),
-            );
-
-            assert_event(
-                &events[6],
-                // 17e9 - (17e9 - 16.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset)
-                9_500_000_000,
-                "message",
-                &json!({"message": "m7"}),
-            );
-
-            assert_event(
-                &events[7],
-                // 18e9 - (18e9 - 16.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset) + 1 (monotonize)
-                9_500_000_001,
-                "stream",
-                &json!({"cut": "start"}),
-            );
-
-            assert_event(
-                &events[8],
-                // 19e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
-                10_000_000_000,
-                "message",
-                &json!({"message": "m9"}),
-            );
-
-            assert_event(
-                &events[9],
-                // 20e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
-                11_000_000_000,
-                "stream",
-                &json!({"cut": "stop"}),
-            );
-
-            assert_event(
-                &events[10],
-                // 21e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
-                12_000_000_000,
-                "message",
-                &json!({"message": "m11"}),
-            );
-
-            assert_event(
-                &events[11],
-                // 22e9 - 2e9 (gap) - (22e9 - 21.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset)
-                12_500_000_000,
-                "message",
-                &json!({"message": "m12"}),
-            );
+            assert_events_original_room(&mut conn, &original_room).await;
 
             // Assert modified room.
             assert_eq!(modified_room.source_room_id(), Some(original_room.id()));
@@ -690,78 +520,7 @@ mod tests {
             assert_eq!(modified_room.time(), original_room.time());
             assert_eq!(modified_room.tags(), original_room.tags());
 
-            // Assert modified room events.
-            let events = EventListQuery::new()
-                .room_id(modified_room.id())
-                .execute(&mut conn)
-                .await
-                .expect("Failed to fetch modified room events");
-
-            assert_eq!(events.len(), 8);
-
-            assert_event(
-                &events[0],
-                // No change
-                3_000_000_000,
-                "message",
-                &json!({"message": "m1"}),
-            );
-
-            assert_event(
-                &events[1],
-                // No change
-                5_000_000_000,
-                "message",
-                &json!({"message": "m2"}),
-            );
-
-            assert_event(
-                &events[2],
-                // 7e9 - (17e9 - 16e9) (cut 1 part) + 1 (monotonize)
-                6_000_000_001,
-                "message",
-                &json!({"message": "m4"}),
-            );
-
-            assert_event(
-                &events[3],
-                // 9e9 - 2e9 (cut 1)
-                7_000_000_000,
-                "message",
-                &json!({"message": "m6"}),
-            );
-
-            assert_event(
-                &events[4],
-                // 9.5e9 - 2e9 (cut 1)
-                7_500_000_000,
-                "message",
-                &json!({"message": "m7"}),
-            );
-
-            assert_event(
-                &events[5],
-                // 10e9 - 2e9 (cut 1) - (20e9 - 19.5e9) (cut 2 part) + 2 (monotonize)
-                7_500_000_002,
-                "message",
-                &json!({"message": "m9"}),
-            );
-
-            assert_event(
-                &events[6],
-                // 12e9 - 2e9 (cut 1) - 1.5e9 (cut 2) + 1 (monotonize)
-                8_500_000_001,
-                "message",
-                &json!({"message": "m11"}),
-            );
-
-            assert_event(
-                &events[7],
-                // 12.5e9 - 2e9 (cut 1) - 1.5e9 (cut 2) + 1 (monotonize)
-                9_000_000_001,
-                "message",
-                &json!({"message": "m12"}),
-            );
+            assert_events_modified_room(&mut conn, &modified_room).await;
 
             // Assert modified segments.
             let segments: Vec<(Bound<i64>, Bound<i64>)> = modified_segments.into();
@@ -776,6 +535,375 @@ mod tests {
         });
     }
 
+    #[test]
+    fn adjust_room_unbounbded() {
+        async_std::task::block_on(async {
+            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
+            let db = TestDb::new().await;
+            let mut conn = db.get_conn().await;
+
+            // Create room.
+            let opened_at = DateTime::from_utc(NaiveDateTime::from_timestamp(1582002673, 0), Utc);
+            let time = RoomTime::from((Bound::Included(opened_at), Bound::Unbounded));
+
+            let room = RoomInsertQuery::new(AUDIENCE, time)
+                .execute(&mut conn)
+                .await
+                .expect("Failed to insert room");
+
+            create_events(&mut conn, &room).await;
+
+            drop(conn);
+
+            // Video segments.
+            let segments = Segments::from(vec![
+                (Bound::Included(0), Bound::Excluded(6500)),
+                (Bound::Included(8500), Bound::Excluded(11500)),
+            ]);
+
+            // RTC started 10 seconds after the room opened and preroll is 3 seconds long.
+            let started_at = opened_at + Duration::seconds(10);
+
+            // Call room adjustment.
+            let (original_room, modified_room, modified_segments) = super::call(
+                &db.connection_pool(),
+                &profiler,
+                &room,
+                started_at,
+                &segments,
+                3000 as i64,
+            )
+            .await
+            .expect("Room adjustment failed");
+
+            // Assert original room.
+            assert_eq!(original_room.source_room_id(), Some(room.id()));
+            assert_eq!(original_room.audience(), room.audience());
+            assert_eq!(original_room.time().map(|t| *t.start()), Ok(started_at));
+            assert_eq!(
+                original_room.time().map(|t| t.end().to_owned()),
+                room.time().map(|t| t.end().to_owned())
+            );
+            assert_eq!(original_room.tags(), room.tags());
+
+            // Assert original room events.
+            let mut conn = db.get_conn().await;
+            assert_events_original_room(&mut conn, &original_room).await;
+
+            // Assert modified room.
+            assert_eq!(modified_room.source_room_id(), Some(original_room.id()));
+            assert_eq!(modified_room.audience(), original_room.audience());
+            assert_eq!(modified_room.time(), original_room.time());
+            assert_eq!(modified_room.tags(), original_room.tags());
+
+            assert_events_modified_room(&mut conn, &modified_room).await;
+
+            // Assert modified segments.
+            let segments: Vec<(Bound<i64>, Bound<i64>)> = modified_segments.into();
+
+            assert_eq!(
+                segments,
+                vec![
+                    (Bound::Included(0), Bound::Excluded(6000)),
+                    (Bound::Included(8000), Bound::Excluded(9500)),
+                ]
+            )
+        });
+    }
+
+    async fn assert_events_original_room(mut conn: &mut PgConnection, original_room: &Room) {
+        let events = EventListQuery::new()
+            .room_id(original_room.id())
+            .execute(&mut conn)
+            .await
+            .expect("Failed to fetch original room events");
+
+        assert_eq!(events.len(), 12);
+
+        assert_event(
+            &events[0],
+            // Bump to the first segment beginning because it's before the first segment.
+            // 3e9 (offset)
+            3_000_000_000,
+            "message",
+            &json!({"message": "m1"}),
+        );
+
+        assert_event(
+            &events[1],
+            // 12e9 - 10e9 (rtc offset) + 3e9 (offset)
+            5_000_000_000,
+            "message",
+            &json!({"message": "m2"}),
+        );
+
+        assert_event(
+            &events[2],
+            // 13e9 - 10e9 (rtc offset) + 3e9 (offset)
+            6_000_000_000,
+            "stream",
+            &json!({"cut": "start"}),
+        );
+
+        assert_event(
+            &events[3],
+            // 14e9 - 10e9 (rtc offset) + 3e9 (offset)
+            7_000_000_000,
+            "message",
+            &json!({"message": "m4"}),
+        );
+
+        assert_event(
+            &events[4],
+            // 15e9 - 10e9 (rtc offset) + 3e9 (offset)
+            8_000_000_000,
+            "stream",
+            &json!({"cut": "stop"}),
+        );
+
+        assert_event(
+            &events[5],
+            // 16e9 - 10e9 (rtc offset) + 3e9 (offset)
+            9_000_000_000,
+            "message",
+            &json!({"message": "m6"}),
+        );
+
+        assert_event(
+            &events[6],
+            // 17e9 - (17e9 - 16.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset)
+            9_500_000_000,
+            "message",
+            &json!({"message": "m7"}),
+        );
+
+        assert_event(
+            &events[7],
+            // 18e9 - (18e9 - 16.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset) + 1 (monotonize)
+            9_500_000_001,
+            "stream",
+            &json!({"cut": "start"}),
+        );
+
+        assert_event(
+            &events[8],
+            // 19e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
+            10_000_000_000,
+            "message",
+            &json!({"message": "m9"}),
+        );
+
+        assert_event(
+            &events[9],
+            // 20e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
+            11_000_000_000,
+            "stream",
+            &json!({"cut": "stop"}),
+        );
+
+        assert_event(
+            &events[10],
+            // 21e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
+            12_000_000_000,
+            "message",
+            &json!({"message": "m11"}),
+        );
+
+        assert_event(
+            &events[11],
+            // 22e9 - 2e9 (gap) - (22e9 - 21.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset)
+            12_500_000_000,
+            "message",
+            &json!({"message": "m12"}),
+        );
+    }
+
+    async fn assert_events_modified_room(mut conn: &mut PgConnection, modified_room: &Room) {
+        // Assert modified room events.
+        let events = EventListQuery::new()
+            .room_id(modified_room.id())
+            .execute(&mut conn)
+            .await
+            .expect("Failed to fetch modified room events");
+
+        assert_eq!(events.len(), 8);
+
+        assert_event(
+            &events[0],
+            // No change
+            3_000_000_000,
+            "message",
+            &json!({"message": "m1"}),
+        );
+
+        assert_event(
+            &events[1],
+            // No change
+            5_000_000_000,
+            "message",
+            &json!({"message": "m2"}),
+        );
+
+        assert_event(
+            &events[2],
+            // 7e9 - (17e9 - 16e9) (cut 1 part) + 1 (monotonize)
+            6_000_000_001,
+            "message",
+            &json!({"message": "m4"}),
+        );
+
+        assert_event(
+            &events[3],
+            // 9e9 - 2e9 (cut 1)
+            7_000_000_000,
+            "message",
+            &json!({"message": "m6"}),
+        );
+
+        assert_event(
+            &events[4],
+            // 9.5e9 - 2e9 (cut 1)
+            7_500_000_000,
+            "message",
+            &json!({"message": "m7"}),
+        );
+
+        assert_event(
+            &events[5],
+            // 10e9 - 2e9 (cut 1) - (20e9 - 19.5e9) (cut 2 part) + 2 (monotonize)
+            7_500_000_002,
+            "message",
+            &json!({"message": "m9"}),
+        );
+
+        assert_event(
+            &events[6],
+            // 12e9 - 2e9 (cut 1) - 1.5e9 (cut 2) + 1 (monotonize)
+            8_500_000_001,
+            "message",
+            &json!({"message": "m11"}),
+        );
+
+        assert_event(
+            &events[7],
+            // 12.5e9 - 2e9 (cut 1) - 1.5e9 (cut 2) + 1 (monotonize)
+            9_000_000_001,
+            "message",
+            &json!({"message": "m12"}),
+        );
+    }
+
+    async fn create_events(mut conn: &mut PgConnection, room: &Room) {
+        // Create events.
+        create_event(
+            &mut conn,
+            &room,
+            1_000_000_000,
+            "message",
+            json!({"message": "m1"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            12_000_000_000,
+            "message",
+            json!({"message": "m2"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            13_000_000_000,
+            "stream",
+            json!({"cut": "start"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            14_000_000_000,
+            "message",
+            json!({"message": "m4"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            15_000_000_000,
+            "stream",
+            json!({"cut": "stop"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            16_000_000_000,
+            "message",
+            json!({"message": "m6"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            17_000_000_000,
+            "message",
+            json!({"message": "m7"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            18_000_000_000,
+            "stream",
+            json!({"cut": "start"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            19_000_000_000,
+            "message",
+            json!({"message": "m9"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            20_000_000_000,
+            "stream",
+            json!({"cut": "stop"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            21_000_000_000,
+            "message",
+            json!({"message": "m11"}),
+        )
+        .await;
+
+        create_event(
+            &mut conn,
+            &room,
+            22_000_000_000,
+            "message",
+            json!({"message": "m12"}),
+        )
+        .await;
+    }
+
     async fn create_event(
         conn: &mut PgConnection,
         room: &Room,
@@ -785,8 +913,8 @@ mod tests {
     ) {
         let created_by = AgentId::new("test", AccountId::new("test", AUDIENCE));
 
-        let opened_at = match room.time() {
-            (Bound::Included(opened_at), _) => opened_at,
+        let opened_at = match room.time().map(|t| t.into()) {
+            Ok((Bound::Included(opened_at), _)) => opened_at,
             _ => panic!("Invalid room time"),
         };
 
