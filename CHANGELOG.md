@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.2.30 (March 12, 2021)
+
+### Changes
+- Moved to new dynsub scheme ([b5201c8](https://github.com/netology-group/conference/commit/b5201c8fb042893d109bde3fa1538bd225f4bf08))
+
 ## v0.2.29 (January 21, 2021)
 
 ### Features
