@@ -75,7 +75,7 @@ pub(crate) async fn run(
 
     // Authz
     let authz =
-        svc_authz::ClientMap::new(&config.id, authz_cache, config.authz.clone(), is_banned_f)
+        svc_authz::ClientMap::new(&config.id, authz_cache, config.authz.clone(), Some(is_banned_f))
             .context("Error converting authz config to clients")?;
 
     // Sentry
