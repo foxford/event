@@ -43,14 +43,8 @@ impl Into<ClientMap> for TestAuthz {
         config_map.insert(self.audience.to_owned(), Config::LocalWhitelist(config));
 
         let account_id = AccountId::new("conference", &self.audience);
-        let is_banned_f = std::sync::Arc::new(
-            move |_account_id: AccountId, _intent: Box<dyn IntentObject>| {
-                Box::pin(async move { false })
-                    as std::pin::Pin<Box<dyn futures::Future<Output = bool> + Send>>
-            },
-        ) as BanCallback;
 
-        ClientMap::new(&account_id, None, config_map, is_banned_f).expect("Failed to build authz")
+        ClientMap::new(&account_id, None, config_map, None).expect("Failed to build authz")
     }
 }
 
@@ -84,6 +78,6 @@ impl Into<ClientMap> for DbBanTestAuthz {
 
         let account_id = AccountId::new("conference", USR_AUDIENCE);
 
-        ClientMap::new(&account_id, None, config_map, self.f).expect("Failed to build authz")
+        ClientMap::new(&account_id, None, config_map, Some(self.f)).expect("Failed to build authz")
     }
 }
