@@ -22,6 +22,8 @@ pub(crate) struct Object {
     #[serde(with = "ts_seconds")]
     created_at: DateTime<Utc>,
     preserve_history: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    classroom_id: Option<Uuid>,
 }
 
 impl Object {
@@ -48,6 +50,18 @@ impl Object {
     #[cfg(test)]
     pub(crate) fn preserve_history(&self) -> bool {
         self.preserve_history
+    }
+
+    #[cfg(test)]
+    pub(crate) fn classroom_id(&self) -> Option<Uuid> {
+        self.classroom_id
+    }
+
+    pub fn authz_object(&self) -> Vec<String> {
+        match self.classroom_id {
+            Some(cid) => vec!["classrooms".into(), cid.to_string()],
+            None => vec!["rooms".into(), self.id.to_string()],
+        }
     }
 
     pub(crate) fn is_closed(&self) -> bool {
@@ -78,6 +92,7 @@ pub(crate) struct Builder {
     tags: Option<JsonValue>,
     created_at: Option<DateTime<Utc>>,
     preserve_history: Option<bool>,
+    classroom_id: Option<Uuid>,
 }
 
 impl Builder {
@@ -131,6 +146,13 @@ impl Builder {
         }
     }
 
+    pub(crate) fn classroom_id(self, classroom_id: Option<Uuid>) -> Self {
+        Self {
+            classroom_id,
+            ..self
+        }
+    }
+
     pub(crate) fn build(self) -> anyhow::Result<Object> {
         Ok(Object {
             id: self.id.ok_or_else(|| anyhow!("missing id"))?,
@@ -144,6 +166,7 @@ impl Builder {
             preserve_history: self
                 .preserve_history
                 .ok_or_else(|| anyhow!("missing preserve_history"))?,
+            classroom_id: self.classroom_id,
         })
     }
 }
@@ -174,7 +197,8 @@ impl FindQuery {
                 time AS "time!: Time",
                 tags,
                 created_at,
-                preserve_history
+                preserve_history,
+                classroom_id
             FROM room
             WHERE id = $1
             AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)
@@ -196,6 +220,7 @@ pub(crate) struct InsertQuery {
     time: Time,
     tags: Option<JsonValue>,
     preserve_history: bool,
+    classroom_id: Option<Uuid>,
 }
 
 impl InsertQuery {
@@ -206,6 +231,7 @@ impl InsertQuery {
             time,
             tags: None,
             preserve_history: true,
+            classroom_id: None,
         }
     }
 
@@ -230,14 +256,21 @@ impl InsertQuery {
         }
     }
 
+    pub(crate) fn classroom_id(self, classroom_id: Uuid) -> Self {
+        Self {
+            classroom_id: Some(classroom_id),
+            ..self
+        }
+    }
+
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let time: PgRange<DateTime<Utc>> = self.time.into();
 
         sqlx::query_as!(
             Object,
             r#"
-            INSERT INTO room (audience, source_room_id, time, tags, preserve_history)
-            VALUES ($1, $2, $3, $4, $5)
+            INSERT INTO room (audience, source_room_id, time, tags, preserve_history, classroom_id)
+            VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING
                 id,
                 audience,
@@ -245,13 +278,15 @@ impl InsertQuery {
                 time AS "time!: Time",
                 tags,
                 created_at,
-                preserve_history
+                preserve_history,
+                classroom_id
             "#,
             self.audience,
             self.source_room_id,
             Some(time),
             self.tags,
             self.preserve_history,
+            self.classroom_id,
         )
         .fetch_one(conn)
         .await
@@ -301,7 +336,8 @@ impl UpdateQuery {
                 time AS "time!: Time",
                 tags,
                 created_at,
-                preserve_history
+                preserve_history,
+                classroom_id
             "#,
             self.id,
             time,

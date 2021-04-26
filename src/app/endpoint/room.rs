@@ -51,6 +51,7 @@ pub(crate) struct CreateRequest {
     time: BoundedDateTimeTuple,
     tags: Option<JsonValue>,
     preserve_history: Option<bool>,
+    classroom_id: Option<Uuid>,
 }
 
 pub(crate) struct CreateHandler;
@@ -112,6 +113,10 @@ impl RequestHandler for CreateHandler {
 
             if let Some(preserve_history) = payload.preserve_history {
                 query = query.preserve_history(preserve_history);
+            }
+
+            if let Some(cid) = payload.classroom_id {
+                query = query.classroom_id(cid);
             }
 
             let mut conn = context.get_conn().await?;
@@ -180,8 +185,7 @@ impl RequestHandler for ReadHandler {
         .await?;
 
         // Authorize room reading on the tenant.
-        let room_id = room.id().to_string();
-        let object = AuthzObject::new(&["rooms", &room_id]).into();
+        let object = AuthzObject::room(&room).into();
 
         let authz_time = context
             .authz()
@@ -235,8 +239,7 @@ impl RequestHandler for UpdateHandler {
         let room = helpers::find_room(context, payload.id, time_requirement, reqp.method()).await?;
 
         // Authorize room reading on the tenant.
-        let room_id = room.id().to_string();
-        let object = AuthzObject::new(&["rooms", &room_id]).into();
+        let object = AuthzObject::room(&room).into();
 
         let authz_time = context
             .authz()
@@ -542,8 +545,7 @@ impl RequestHandler for AdjustHandler {
         .await?;
 
         // Authorize trusted account for the room's audience.
-        let room_id = room.id().to_string();
-        let object = AuthzObject::new(&["rooms", &room_id]).into();
+        let object = AuthzObject::room(&room).into();
 
         let authz_time = context
             .authz()
@@ -701,6 +703,7 @@ mod tests {
                     audience: USR_AUDIENCE.to_owned(),
                     tags: Some(tags.clone()),
                     preserve_history: Some(false),
+                    classroom_id: None,
                 };
 
                 let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -746,6 +749,7 @@ mod tests {
                     audience: USR_AUDIENCE.to_owned(),
                     tags: Some(tags.clone()),
                     preserve_history: Some(false),
+                    classroom_id: None,
                 };
 
                 let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -771,6 +775,55 @@ mod tests {
         }
 
         #[test]
+        fn create_room_unbounded_with_classroom_id() {
+            async_std::task::block_on(async {
+                // Allow agent to create rooms.
+                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+                let mut authz = TestAuthz::new();
+                authz.allow(agent.account_id(), vec!["rooms"], "create");
+
+                // Make room.create request.
+                let mut context = TestContext::new(TestDb::new().await, authz);
+                let now = Utc::now().trunc_subsecs(0);
+
+                let time = (Bound::Included(now + Duration::hours(1)), Bound::Unbounded);
+
+                let tags = json!({ "webinar_id": "123" });
+                let cid = Uuid::new_v4();
+
+                let payload = CreateRequest {
+                    time: BoundedDateTimeTuple::from(time),
+                    audience: USR_AUDIENCE.to_owned(),
+                    tags: Some(tags.clone()),
+                    preserve_history: Some(false),
+                    classroom_id: Some(cid),
+                };
+
+                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                    .await
+                    .expect("Room creation failed");
+
+                // Assert response.
+                let (room, respp, _) = find_response::<Room>(messages.as_slice());
+                assert_eq!(respp.status(), ResponseStatus::CREATED);
+                assert_eq!(room.audience(), USR_AUDIENCE);
+                assert_eq!(room.time().map(|t| t.into()), Ok(time));
+                assert_eq!(room.tags(), Some(&tags));
+                assert_eq!(room.classroom_id(), Some(cid));
+
+                // Assert notification.
+                let (room, evp, topic) = find_event::<Room>(messages.as_slice());
+                assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
+                assert_eq!(evp.label(), "room.create");
+                assert_eq!(room.audience(), USR_AUDIENCE);
+                assert_eq!(room.time().map(|t| t.into()), Ok(time));
+                assert_eq!(room.tags(), Some(&tags));
+                assert_eq!(room.preserve_history(), false);
+                assert_eq!(room.classroom_id(), Some(cid));
+            });
+        }
+
+        #[test]
         fn create_room_not_authorized() {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
@@ -789,6 +842,7 @@ mod tests {
                     audience: USR_AUDIENCE.to_owned(),
                     tags: None,
                     preserve_history: None,
+                    classroom_id: None,
                 };
 
                 let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -815,6 +869,7 @@ mod tests {
                     audience: USR_AUDIENCE.to_owned(),
                     tags: None,
                     preserve_history: None,
+                    classroom_id: None,
                 };
 
                 let err = handle_request::<CreateHandler>(&mut context, &agent, payload)

@@ -44,8 +44,12 @@ impl RequestHandler for ListHandler {
         .await?;
 
         // Authorize agents listing in the room.
-        let room_id = room.id().to_string();
-        let object = AuthzObject::new(&["rooms", &room_id, "agents"]).into();
+        let object = {
+            let object = room.authz_object();
+            let mut object = object.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
+            object.push("agents");
+            AuthzObject::new(&object).into()
+        };
 
         let authz_time = context
             .authz()
@@ -139,10 +143,14 @@ impl RequestHandler for UpdateHandler {
 
         helpers::add_room_logger_tags(context, &room);
 
-        let room_id = room.id().to_string();
         let author = reqp.as_account_id().to_string();
 
-        let object = AuthzObject::new(&["rooms", &room_id, "claims", "role", "authors", &author]);
+        let object = {
+            let object = room.authz_object();
+            let mut object = object.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
+            object.extend(["claims", "role", "authors", &author].iter());
+            AuthzObject::new(&object)
+        };
 
         let authz_time = context
             .authz()
@@ -154,7 +162,12 @@ impl RequestHandler for UpdateHandler {
             )
             .await?;
 
-        let object = AuthzObject::new(&["rooms", &room_id, "events"]);
+        let object = {
+            let object = room.authz_object();
+            let mut object = object.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
+            object.push("events");
+            AuthzObject::new(&object)
+        };
 
         if payload.value {
             let mut query = BanInsertQuery::new(payload.account_id.clone(), payload.room_id);
