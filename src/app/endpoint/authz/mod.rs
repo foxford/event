@@ -6,6 +6,8 @@ use svc_agent::AccountId;
 use svc_authz::IntentObject;
 use uuid::Uuid;
 
+use crate::db::room::Object as Room;
+
 #[derive(Clone)]
 pub struct AuthzObject {
     object: Vec<String>,
@@ -15,15 +17,27 @@ pub struct AuthzObject {
 impl AuthzObject {
     pub fn new(obj: &[&str]) -> Self {
         let ban_key = match &obj {
-            [rooms, room_id, events, _, ..] if *rooms == "rooms" && *events == "events" => {
+            ["rooms", room_id, events, _, ..] if *events == "events" => {
                 Some(vec!["rooms".into(), room_id.to_string(), "events".into()])
             }
+            ["classrooms", classroom_id, events, _, ..] if *events == "events" => Some(vec![
+                "classrooms".into(),
+                classroom_id.to_string(),
+                "events".into(),
+            ]),
             _ => None,
         };
 
         Self {
             object: obj.iter().map(|s| s.to_string()).collect(),
             ban_key,
+        }
+    }
+
+    pub(crate) fn room(room: &Room) -> Self {
+        Self {
+            object: room.authz_object(),
+            ban_key: None,
         }
     }
 }

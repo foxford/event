@@ -49,7 +49,11 @@ impl RequestHandler for CreateHandler {
         )
         .await?;
 
-        let object = AuthzObject::new(&["rooms", &room.id().to_string()]).into();
+        let object = {
+            let object = room.authz_object();
+            let object = object.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
+            AuthzObject::new(&object).into()
+        };
 
         let authz_time = context
             .authz()
@@ -129,8 +133,7 @@ impl RequestHandler for ListHandler {
         )
         .await?;
 
-        let room_id = room.id();
-        let object = AuthzObject::new(&["rooms", &room_id.to_string()]).into();
+        let object = AuthzObject::room(&room).into();
 
         let authz_time = context
             .authz()
@@ -142,7 +145,7 @@ impl RequestHandler for ListHandler {
             )
             .await?;
 
-        let mut query = db::edition::ListQuery::new(room_id);
+        let mut query = db::edition::ListQuery::new(room.id());
 
         if let Some(last_created_at) = payload.last_created_at {
             query = query.last_created_at(last_created_at);
@@ -226,7 +229,7 @@ impl RequestHandler for DeleteHandler {
         helpers::add_room_logger_tags(context, &room);
         context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
-        let object = AuthzObject::new(&["rooms", &room.id().to_string()]).into();
+        let object = AuthzObject::room(&room).into();
 
         let authz_time = context
             .authz()
@@ -316,8 +319,7 @@ impl RequestHandler for CommitHandler {
         context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
 
         // Authorize room update.
-        let room_id = room.id().to_string();
-        let object = AuthzObject::new(&["rooms", &room_id]).into();
+        let object = AuthzObject::room(&room).into();
 
         let authz_time = context
             .authz()

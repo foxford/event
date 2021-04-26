@@ -14,6 +14,7 @@ audience         | string     | _required_ | The room audience.
 time             | [int, int] | _required_ | A [lt, rt) range of unix time (seconds).
 tags             | json       | _optional_ | Tenant-specific JSON object associated with the room.
 preserve_history | bool       | true       | Disables automatic cleanup of non-state events for each label.
+classroom_id     | uuid       | _optional_ | Id of the classroom this room belongs to
 
 ## Unicast response
 
