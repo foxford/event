@@ -29,8 +29,6 @@ Possible values for `OBJECT` and `ACTION`:
 | ---------------------------------------------------------- | ------ | ---- | ---- | --------- | ----
 | ["rooms"]                                                  | +      |      |      |           |
 | ["rooms", ROOM_ID]                                         |        | +    |      |           | +
-| ["rooms", ROOM_ID, "agents"]                               |        |      | +    |           |
-| ["rooms", ROOM_ID, "events"]                               |        |      | +    | +         |
 | ["rooms", ROOM_ID, "events", TYPE, "authors", ACCOUNT_ID]  | +      |      |      |           |
 | ["rooms", ROOM_ID, "claims", TYPE, "authors", ACCOUNT_ID]  | +      |      |      |           |
 | ["rooms", ROOM_ID, ATTRIBUTE, TYPE, "authors", ACCOUNT_ID] | +      |      |      |           |

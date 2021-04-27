@@ -66,7 +66,7 @@ impl RequestHandler for ReadHandler {
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
-        let object = AuthzObject::new(&["rooms", &room_id, "events"]).into();
+        let object = AuthzObject::new(&["rooms", &room_id]).into();
 
         let authz_time = context
             .authz()
@@ -74,7 +74,7 @@ impl RequestHandler for ReadHandler {
                 room.audience().into(),
                 reqp.as_account_id().to_owned(),
                 object,
-                "list".into(),
+                "read".into(),
             )
             .await?;
 
@@ -231,8 +231,8 @@ mod tests {
             // Allow agent to list events in the room.
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id, "events"];
-            authz.allow(agent.account_id(), object, "list");
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "read");
 
             // Make state.read request.
             let mut context = TestContext::new(db, authz);
@@ -302,8 +302,8 @@ mod tests {
             // Allow agent to list events in the room.
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id, "events"];
-            authz.allow(agent.account_id(), object, "list");
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "read");
 
             // Make state.read request.
             let mut context = TestContext::new(db, authz);
@@ -392,8 +392,8 @@ mod tests {
             // Allow agent to list events in the room.
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id, "events"];
-            authz.allow(agent.account_id(), object, "list");
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "read");
 
             // Make state.read request.
             let mut context = TestContext::new(db, authz);
@@ -456,8 +456,8 @@ mod tests {
             // Allow agent to list events in the room.
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id, "events"];
-            authz.allow(agent.account_id(), object, "list");
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "read");
 
             // Make state.read request.
             let mut context = TestContext::new(db, authz);
@@ -574,8 +574,8 @@ mod tests {
             // Allow agent to list events in the room.
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id, "events"];
-            authz.allow(agent.account_id(), object, "list");
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "read");
 
             // Make state.read request.
             let mut context = TestContext::new(db, authz);
