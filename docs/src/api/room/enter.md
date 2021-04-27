@@ -13,8 +13,8 @@ For implementation details see the [room entrance](../../impl/room_entrance.md).
 
 ## Authorization
 
-The tenant authorizes the current _agent_ for `subscribe` action on
-`["rooms", room_id, "events"]` object.
+The tenant authorizes the current _agent_ for `read` action on
+`["rooms", room_id]` object.
 
 ## Multicast request
 

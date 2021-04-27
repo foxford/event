@@ -369,15 +369,15 @@ impl RequestHandler for EnterHandler {
         let room_id = room.id().to_string();
 
         let object: Box<dyn svc_authz::IntentObject> =
-            AuthzObject::new(&["rooms", &room_id, "events"]).into();
+            AuthzObject::new(&["rooms", &room_id]).into();
 
         let authz_time = context
             .authz()
             .authorize(
                 room.audience().into(),
                 reqp.as_account_id().to_owned(),
-                object.clone(),
-                "subscribe".into(),
+                object,
+                "read".into(),
             )
             .await?;
 
@@ -402,7 +402,7 @@ impl RequestHandler for EnterHandler {
 
         // Send dynamic subscription creation request to the broker.
         let subject = reqp.as_agent_id().to_owned();
-        let object = object.to_vec().into_iter().collect::<Vec<String>>();
+        let object = vec!["rooms".to_string(), room_id.to_owned(), "events".to_string()];
         let payload = SubscriptionRequest::new(subject.clone(), object.clone());
 
         let broker_id = AgentId::new("nevermind", context.config().broker_id.to_owned());
@@ -1330,8 +1330,8 @@ mod tests {
 
                 authz.allow(
                     agent.account_id(),
-                    vec!["rooms", &room_id, "events"],
-                    "subscribe",
+                    vec!["rooms", &room_id],
+                    "read",
                 );
 
                 // Make room.enter request.
@@ -1418,8 +1418,8 @@ mod tests {
 
                 authz.allow(
                     agent.account_id(),
-                    vec!["rooms", &room_id, "events"],
-                    "subscribe",
+                    vec!["rooms", &room_id],
+                    "read",
                 );
 
                 // Make room.enter request.

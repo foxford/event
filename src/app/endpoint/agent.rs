@@ -46,8 +46,7 @@ impl RequestHandler for ListHandler {
         // Authorize agents listing in the room.
         let object = {
             let object = room.authz_object();
-            let mut object = object.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
-            object.push("agents");
+            let object = object.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
             AuthzObject::new(&object).into()
         };
 
@@ -57,7 +56,7 @@ impl RequestHandler for ListHandler {
                 room.audience().into(),
                 reqp.as_account_id().to_owned(),
                 object,
-                "list".into(),
+                "read".into(),
             )
             .await?;
 
@@ -316,8 +315,8 @@ mod tests {
 
             authz.allow(
                 agent.account_id(),
-                vec!["rooms", &room_id, "agents"],
-                "list",
+                vec!["rooms", &room_id],
+                "read",
             );
 
             // Make agent.list request.
@@ -392,8 +391,8 @@ mod tests {
 
             authz.allow(
                 agent.account_id(),
-                vec!["rooms", &room_id, "agents"],
-                "list",
+                vec!["rooms", &room_id],
+                "read",
             );
 
             // Make agent.list request.
