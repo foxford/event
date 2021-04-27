@@ -300,6 +300,7 @@ pub(crate) struct UpdateQuery {
     id: Uuid,
     time: Option<Time>,
     tags: Option<JsonValue>,
+    classroom_id: Option<Uuid>,
 }
 
 impl UpdateQuery {
@@ -308,6 +309,7 @@ impl UpdateQuery {
             id,
             time: None,
             tags: None,
+            classroom_id: None,
         }
     }
 
@@ -319,6 +321,13 @@ impl UpdateQuery {
         Self { tags, ..self }
     }
 
+    pub(crate) fn classroom_id(self, classroom_id: Option<Uuid>) -> Self {
+        Self {
+            classroom_id,
+            ..self
+        }
+    }
+
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let time: Option<PgRange<DateTime<Utc>>> = self.time.map(|t| t.into());
 
@@ -327,7 +336,8 @@ impl UpdateQuery {
             r#"
             UPDATE room
             SET time = COALESCE($2, time),
-                tags = COALESCE($3::JSON, tags)
+                tags = COALESCE($3::JSON, tags),
+                classroom_id = COALESCE($4, classroom_id)
             WHERE id = $1
             RETURNING
                 id,
@@ -342,6 +352,7 @@ impl UpdateQuery {
             self.id,
             time,
             self.tags,
+            self.classroom_id
         )
         .fetch_one(conn)
         .await

@@ -1985,6 +1985,71 @@
       "nullable": []
     }
   },
+  "af8f0a7d8069ab074dbd2836b3dbcc8bc9d57fa94912a66844298a82bb85c6b5": {
+    "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags),\n                classroom_id = COALESCE($4, classroom_id)\n            WHERE id = $1\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "audience",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "source_room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 3,
+          "name": "time!: Time",
+          "type_info": "TstzRange"
+        },
+        {
+          "ordinal": 4,
+          "name": "tags",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 5,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 6,
+          "name": "preserve_history",
+          "type_info": "Bool"
+        },
+        {
+          "ordinal": 7,
+          "name": "classroom_id",
+          "type_info": "Uuid"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "TstzRange",
+          "Json",
+          "Uuid"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        true
+      ]
+    }
+  },
   "ceadd35774e0b511735f53df0ecf10e0a19108b1db3d6bb21ff57b80df60af6a": {
     "query": "\n            SELECT COUNT(DISTINCT label) AS total\n            FROM event\n            WHERE deleted_at IS NULL\n            AND   room_id = $1\n            AND   set = $2\n            AND   ($3::TEXT IS NULL OR attribute = $3::TEXT)\n            AND   original_occurred_at < $4\n            AND   occurred_at < COALESCE($5, 9223372036854775807)\n            ",
     "describe": {
