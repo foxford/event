@@ -216,6 +216,7 @@ pub(crate) struct UpdateRequest {
     #[serde(with = "crate::serde::ts_seconds_option_bound_tuple")]
     time: Option<BoundedDateTimeTuple>,
     tags: Option<JsonValue>,
+    classroom_id: Option<Uuid>,
 }
 
 pub(crate) struct UpdateHandler;
@@ -271,7 +272,7 @@ impl RequestHandler for UpdateHandler {
 
         // Update room.
         let room = {
-            let query = UpdateQuery::new(room.id()).time(time).tags(payload.tags);
+            let query = UpdateQuery::new(room.id()).time(time).tags(payload.tags).classroom_id(payload.classroom_id);
 
             let mut conn = context.get_conn().await?;
 
@@ -1016,6 +1017,7 @@ mod tests {
                     id: room.id(),
                     time: Some(time),
                     tags: Some(tags.clone()),
+                    classroom_id: None,
                 };
 
                 let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
@@ -1070,6 +1072,7 @@ mod tests {
                     id: room.id(),
                     time: Some(time),
                     tags: None,
+                    classroom_id: None,
                 };
 
                 let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
@@ -1128,6 +1131,7 @@ mod tests {
                     id: room.id(),
                     time: Some(time),
                     tags: None,
+                    classroom_id: None,
                 };
 
                 let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
@@ -1201,6 +1205,7 @@ mod tests {
                     id: room.id(),
                     time: Some(time),
                     tags: None,
+                    classroom_id: None,
                 };
 
                 let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
@@ -1230,6 +1235,7 @@ mod tests {
                     id: room.id(),
                     time: None,
                     tags: None,
+                    classroom_id: None,
                 };
 
                 let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
@@ -1250,6 +1256,7 @@ mod tests {
                     id: Uuid::new_v4(),
                     time: None,
                     tags: None,
+                    classroom_id: None,
                 };
 
                 let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
@@ -1285,6 +1292,7 @@ mod tests {
                     id: room.id(),
                     time: Some(time.into()),
                     tags: None,
+                    classroom_id: None,
                 };
 
                 let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
