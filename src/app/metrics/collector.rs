@@ -268,6 +268,11 @@ fn append_profiler_stats(
                 metrics.push(Metric::EventDeleteQueryP99(metric_value_p99));
                 metrics.push(Metric::EventDeleteQueryMax(metric_value_max));
             }
+            ProfilerKeys::EventDumpQuery => {
+                metrics.push(Metric::EventDumpQueryP95(metric_value_p95));
+                metrics.push(Metric::EventDumpQueryP99(metric_value_p99));
+                metrics.push(Metric::EventDumpQueryMax(metric_value_max));
+            }
             ProfilerKeys::EventInsertQuery => {
                 metrics.push(Metric::EventInsertQueryP95(metric_value_p95));
                 metrics.push(Metric::EventInsertQueryP99(metric_value_p99));

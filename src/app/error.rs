@@ -30,6 +30,7 @@ pub(crate) enum ErrorKind {
     InvalidStateSets,
     InvalidSubscriptionObject,
     MessageHandlingFailed,
+    NoS3Client,
     StatsCollectionFailed,
     PublishFailed,
     RoomAdjustTaskFailed,
@@ -149,6 +150,12 @@ impl Into<ErrorKindProperties> for ErrorKind {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "message_handling_failed",
                 title: "Message handling failed",
+                is_notify_sentry: true,
+            },
+            Self::NoS3Client => ErrorKindProperties {
+                status: ResponseStatus::NOT_IMPLEMENTED,
+                kind: "no_s3_client",
+                title: "No s3 configuration, nowhere to dump events to",
                 is_notify_sentry: true,
             },
             Self::SerializationFailed => ErrorKindProperties {

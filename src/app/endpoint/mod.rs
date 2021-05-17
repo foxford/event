@@ -63,6 +63,7 @@ request_routes!(
     "event.list" => event::ListHandler,
     "room.adjust" => room::AdjustHandler,
     "room.create" => room::CreateHandler,
+    "room.dump_events" => room::EventsDumpHandler,
     "room.enter" => room::EnterHandler,
     "room.leave" => room::LeaveHandler,
     "room.read" => room::ReadHandler,
