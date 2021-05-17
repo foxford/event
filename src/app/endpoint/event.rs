@@ -111,8 +111,6 @@ impl RequestHandler for CreateHandler {
         let is_claim = payload.is_claim;
 
         // Authorize event creation on tenant with cache.
-        let room_id = room.id().to_string();
-
         let key = if let Some(ref attribute) = payload.attribute {
             attribute
         } else if payload.is_claim {
