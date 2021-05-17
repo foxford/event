@@ -13,6 +13,7 @@ use svc_authz::ClientMap as Authz;
 
 use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
 use crate::app::metrics::ProfilerKeys;
+use crate::app::s3_client::S3Client;
 use crate::config::Config;
 use crate::profiler::Profiler;
 
@@ -32,6 +33,7 @@ pub(crate) trait GlobalContext: Sync {
     fn profiler(&self) -> Arc<Profiler<(ProfilerKeys, Option<String>)>>;
     fn get_metrics(&self, duration: u64) -> anyhow::Result<Vec<crate::app::metrics::Metric>>;
     fn running_requests(&self) -> Option<Arc<AtomicI64>>;
+    fn s3_client(&self) -> Option<S3Client>;
 
     async fn get_conn(&self) -> Result<PoolConnection<Postgres>, AppError> {
         self.db()
@@ -72,6 +74,7 @@ pub(crate) struct AppContext {
     redis_pool: Option<RedisConnectionPool>,
     profiler: Arc<Profiler<(ProfilerKeys, Option<String>)>>,
     running_requests: Option<Arc<AtomicI64>>,
+    s3_client: Option<S3Client>,
 }
 
 impl GlobalContext for AppContext {
@@ -113,6 +116,10 @@ impl GlobalContext for AppContext {
 
     fn running_requests(&self) -> Option<Arc<AtomicI64>> {
         self.running_requests.clone()
+    }
+
+    fn s3_client(&self) -> Option<S3Client> {
+        self.s3_client.clone()
     }
 }
 
@@ -173,6 +180,10 @@ impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
 
     fn running_requests(&self) -> Option<Arc<AtomicI64>> {
         self.global_context.running_requests()
+    }
+
+    fn s3_client(&self) -> Option<S3Client> {
+        self.global_context.s3_client()
     }
 }
 
@@ -263,6 +274,7 @@ impl AppContextBuilder {
             redis_pool: self.redis_pool,
             profiler: Arc::new(Profiler::<(ProfilerKeys, Option<String>)>::start()),
             running_requests: self.running_requests,
+            s3_client: S3Client::new(),
         }
     }
 }

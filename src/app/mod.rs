@@ -74,9 +74,13 @@ pub(crate) async fn run(
     let is_banned_f = crate::app::endpoint::authz::db_ban_callback(db.clone());
 
     // Authz
-    let authz =
-        svc_authz::ClientMap::new(&config.id, authz_cache, config.authz.clone(), Some(is_banned_f))
-            .context("Error converting authz config to clients")?;
+    let authz = svc_authz::ClientMap::new(
+        &config.id,
+        authz_cache,
+        config.authz.clone(),
+        Some(is_banned_f),
+    )
+    .context("Error converting authz config to clients")?;
 
     // Sentry
     if let Some(sentry_config) = config.sentry.as_ref() {
@@ -232,3 +236,4 @@ pub(crate) mod error;
 pub(crate) mod message_handler;
 pub(crate) mod metrics;
 pub(crate) mod operations;
+pub(crate) mod s3_client;

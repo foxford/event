@@ -12,6 +12,7 @@ use svc_authz::ClientMap as Authz;
 use crate::app::context::{Context, GlobalContext, MessageContext};
 use crate::app::metrics::Metric;
 use crate::app::metrics::ProfilerKeys;
+use crate::app::s3_client::S3Client;
 use crate::config::Config;
 use crate::profiler::Profiler;
 
@@ -53,6 +54,7 @@ pub(crate) struct TestContext {
     profiler: Arc<Profiler<(ProfilerKeys, Option<String>)>>,
     logger: Logger,
     start_timestamp: DateTime<Utc>,
+    s3_client: Option<S3Client>,
 }
 
 impl TestContext {
@@ -68,6 +70,7 @@ impl TestContext {
             profiler: Arc::new(Profiler::<(ProfilerKeys, Option<String>)>::start()),
             logger: crate::LOG.new(o!()),
             start_timestamp: Utc::now(),
+            s3_client: None,
         }
     }
 
@@ -83,7 +86,12 @@ impl TestContext {
             profiler: Arc::new(Profiler::<(ProfilerKeys, Option<String>)>::start()),
             logger: crate::LOG.new(o!()),
             start_timestamp: Utc::now(),
+            s3_client: None,
         }
+    }
+
+    pub fn set_s3(&mut self, s3_client: S3Client) {
+        self.s3_client = Some(s3_client)
     }
 }
 
@@ -126,6 +134,10 @@ impl GlobalContext for TestContext {
 
     fn running_requests(&self) -> Option<Arc<AtomicI64>> {
         None
+    }
+
+    fn s3_client(&self) -> Option<S3Client> {
+        self.s3_client.clone()
     }
 }
 

@@ -35,6 +35,11 @@ quaint = { version = "0.1", features = ["uuid-0_8", "chrono-0_4"] }
 url = "2.2"
 uuid = { version = "0.8", features = ["v4", "serde"] }
 tide = "0.13.0"
+rusoto_core = "0.46"
+rusoto_credential = "0.46.0"
+rusoto_s3 = "0.46"
+tokio = { version = "1.5", features = [ "rt", "rt-multi-thread" ] }
 
 [dev-dependencies]
 serial_test = "0.5"
+rusoto_mock = "0.46"

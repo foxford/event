@@ -6,6 +6,7 @@ use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
 use uuid::Uuid;
 
+use crate::app::s3_client::S3Client;
 use crate::db::agent::{Object as Agent, Status as AgentStatus};
 use crate::db::edition::Object as Edition;
 use crate::db::room::Object as Room;
@@ -63,4 +64,16 @@ pub(crate) async fn insert_edition(
     factory::Edition::new(room.id(), &agent_id)
         .insert(conn)
         .await
+}
+
+pub fn mock_s3() -> S3Client {
+    use rusoto_mock::{MockCredentialsProvider, MockRequestDispatcher};
+
+    let s3 = rusoto_s3::S3Client::new_with(
+        MockRequestDispatcher::default(),
+        MockCredentialsProvider,
+        Default::default(),
+    );
+
+    S3Client::new_with_client(s3).expect("Failed to init S3 client")
 }

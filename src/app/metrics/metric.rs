@@ -253,6 +253,12 @@ pub(crate) enum Metric {
     EventDeleteQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.event_delete_query_max_microseconds"))]
     EventDeleteQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_dump_query_p95_microseconds"))]
+    EventDumpQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_dump_query_p99_microseconds"))]
+    EventDumpQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.event_dump_query_max_microseconds"))]
+    EventDumpQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.event_insert_query_p95_microseconds"))]
     EventInsertQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.event_insert_query_p99_microseconds"))]
@@ -475,6 +481,12 @@ pub(crate) enum Metric2 {
     EventDeleteQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "event_delete_query_max_microseconds"))]
     EventDeleteQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "event_dump_query_p95_microseconds"))]
+    EventDumpQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "event_dump_query_p99_microseconds"))]
+    EventDumpQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "event_dump_query_max_microseconds"))]
+    EventDumpQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "event_insert_query_p95_microseconds"))]
     EventInsertQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "event_insert_query_p99_microseconds"))]
@@ -620,6 +632,9 @@ impl From<Metric> for Metric2 {
             Metric::EventDeleteQueryP95(v) => Metric2::EventDeleteQueryP95(v),
             Metric::EventDeleteQueryP99(v) => Metric2::EventDeleteQueryP99(v),
             Metric::EventDeleteQueryMax(v) => Metric2::EventDeleteQueryMax(v),
+            Metric::EventDumpQueryP95(v) => Metric2::EventDumpQueryP95(v),
+            Metric::EventDumpQueryP99(v) => Metric2::EventDumpQueryP99(v),
+            Metric::EventDumpQueryMax(v) => Metric2::EventDumpQueryMax(v),
             Metric::EventInsertQueryP95(v) => Metric2::EventInsertQueryP95(v),
             Metric::EventInsertQueryP99(v) => Metric2::EventInsertQueryP99(v),
             Metric::EventInsertQueryMax(v) => Metric2::EventInsertQueryMax(v),
@@ -680,6 +695,7 @@ pub enum ProfilerKeys {
     EditionInsertQuery,
     EditionListQuery,
     EventDeleteQuery,
+    EventDumpQuery,
     EventInsertQuery,
     EventListQuery,
     EventOriginalEventQuery,
