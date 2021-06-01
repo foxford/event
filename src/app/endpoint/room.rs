@@ -347,6 +347,8 @@ impl RequestHandler for UpdateHandler {
 #[derive(Debug, Deserialize)]
 pub(crate) struct EnterRequest {
     id: Uuid,
+    #[serde(default)]
+    broadcast_subscription: bool,
 }
 
 pub(crate) struct EnterHandler;
@@ -403,38 +405,64 @@ impl RequestHandler for EnterHandler {
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
+        let mut requests = Vec::with_capacity(2);
         // Send dynamic subscription creation request to the broker.
-        let subject = reqp.as_agent_id().to_owned();
-        let object = vec![
-            "rooms".to_string(),
-            room_id.to_owned(),
-            "events".to_string(),
-        ];
-        let payload = SubscriptionRequest::new(subject.clone(), object.clone());
+        let subscribe_req =
+            subscription_request(context, &reqp, &room_id, "subscription.create", authz_time)?;
 
-        let broker_id = AgentId::new("nevermind", context.config().broker_id.to_owned());
+        requests.push(subscribe_req);
 
-        let response_topic = Subscription::unicast_responses_from(&broker_id)
-            .subscription_topic(context.agent_id(), API_VERSION)
-            .context("Failed to build response topic")
-            .error(AppErrorKind::BrokerRequestFailed)?;
+        let broadcast_subscribe_req = subscription_request(
+            context,
+            &reqp,
+            &room_id,
+            "broadcast_subscription.create",
+            authz_time,
+        )?;
 
-        let corr_data_payload = CorrelationDataPayload::new(reqp.to_owned(), subject, object);
+        requests.push(broadcast_subscribe_req);
 
-        let corr_data = CorrelationData::SubscriptionCreate(corr_data_payload)
-            .dump()
-            .context("Failed to dump correlation data")
-            .error(AppErrorKind::BrokerRequestFailed)?;
-
-        let mut timing = ShortTermTimingProperties::until_now(context.start_timestamp());
-        timing.set_authorization_time(authz_time);
-
-        let props = reqp.to_request("subscription.create", &response_topic, &corr_data, timing);
-        let to = &context.config().broker_id;
-        let outgoing_request = OutgoingRequest::multicast(payload, props, to, API_VERSION);
-        let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableMessage + Send>;
-        Ok(Box::new(stream::once(boxed_request)))
+        Ok(Box::new(stream::from_iter(requests)))
     }
+}
+
+fn subscription_request<C: Context>(
+    context: &mut C,
+    reqp: &IncomingRequestProperties,
+    room_id: &str,
+    method: &str,
+    authz_time: chrono::Duration,
+) -> std::result::Result<Box<dyn IntoPublishableMessage + Send>, AppError> {
+    let subject = reqp.as_agent_id().to_owned();
+    let object = vec![
+        "rooms".to_string(),
+        room_id.to_owned(),
+        "events".to_string(),
+    ];
+    let payload = SubscriptionRequest::new(subject.clone(), object.clone());
+
+    let broker_id = AgentId::new("nevermind", context.config().broker_id.to_owned());
+
+    let response_topic = Subscription::unicast_responses_from(&broker_id)
+        .subscription_topic(context.agent_id(), API_VERSION)
+        .context("Failed to build response topic")
+        .error(AppErrorKind::BrokerRequestFailed)?;
+
+    let corr_data_payload = CorrelationDataPayload::new(reqp.to_owned(), subject, object);
+
+    let corr_data = CorrelationData::SubscriptionCreate(corr_data_payload)
+        .dump()
+        .context("Failed to dump correlation data")
+        .error(AppErrorKind::BrokerRequestFailed)?;
+
+    let mut timing = ShortTermTimingProperties::until_now(context.start_timestamp());
+    timing.set_authorization_time(authz_time);
+
+    let props = reqp.to_request(method, &response_topic, &corr_data, timing);
+    let to = &context.config().broker_id;
+    let outgoing_request = OutgoingRequest::multicast(payload, props, to, API_VERSION);
+    let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableMessage + Send>;
+    Ok(boxed_request)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1326,6 +1354,30 @@ mod tests {
         use super::DynSubRequest;
 
         #[test]
+        fn test_parsing() {
+            serde_json::from_str::<EnterRequest>(
+                r#"
+                {"id": "82f62913-c2ba-4b21-b24f-5ed499107c0a"}
+            "#,
+            )
+            .expect("Failed to parse EnterRequest");
+
+            serde_json::from_str::<EnterRequest>(
+                r#"
+                {"id": "82f62913-c2ba-4b21-b24f-5ed499107c0a", "broadcast_subscription": true}
+            "#,
+            )
+            .expect("Failed to parse EnterRequest");
+
+            serde_json::from_str::<EnterRequest>(
+                r#"
+                {"id": "82f62913-c2ba-4b21-b24f-5ed499107c0a", "broadcast_subscription": false}
+            "#,
+            )
+            .expect("Failed to parse EnterRequest");
+        }
+
+        #[test]
         fn enter_room() {
             async_std::task::block_on(async {
                 let db = TestDb::new().await;
@@ -1345,7 +1397,10 @@ mod tests {
 
                 // Make room.enter request.
                 let mut context = TestContext::new(db, authz);
-                let payload = EnterRequest { id: room.id() };
+                let payload = EnterRequest {
+                    id: room.id(),
+                    broadcast_subscription: false,
+                };
 
                 let messages = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
@@ -1383,7 +1438,10 @@ mod tests {
 
                 // Make room.enter request.
                 let mut context = TestContext::new(db, TestAuthz::new());
-                let payload = EnterRequest { id: room.id() };
+                let payload = EnterRequest {
+                    id: room.id(),
+                    broadcast_subscription: false,
+                };
 
                 let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
@@ -1398,7 +1456,10 @@ mod tests {
             async_std::task::block_on(async {
                 let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
                 let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-                let payload = EnterRequest { id: Uuid::new_v4() };
+                let payload = EnterRequest {
+                    id: Uuid::new_v4(),
+                    broadcast_subscription: false,
+                };
 
                 let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await
@@ -1429,7 +1490,10 @@ mod tests {
 
                 // Make room.enter request.
                 let mut context = TestContext::new(db, TestAuthz::new());
-                let payload = EnterRequest { id: room.id() };
+                let payload = EnterRequest {
+                    id: room.id(),
+                    broadcast_subscription: false,
+                };
 
                 let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                     .await

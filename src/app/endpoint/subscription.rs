@@ -161,6 +161,42 @@ impl ResponseHandler for CreateResponseHandler {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+pub(crate) struct BroadcastCreateResponseHandler;
+
+#[async_trait]
+impl ResponseHandler for BroadcastCreateResponseHandler {
+    type Payload = CreateDeleteResponsePayload;
+    type CorrelationData = CorrelationDataPayload;
+
+    async fn handle<C: Context>(
+        context: &mut C,
+        _payload: Self::Payload,
+        respp: &IncomingResponseProperties,
+        _corr_data: &Self::CorrelationData,
+    ) -> Result {
+        // Check if the event is sent by the broker.
+        if respp.as_account_id() != &context.config().broker_id {
+            return Err(anyhow!(
+                "Expected broadcast_subscription.create event to be sent from the broker account '{}', got '{}'",
+                context.config().broker_id,
+                respp.as_account_id()
+            )).error(AppErrorKind::AccessDenied);
+        }
+
+        context.add_logger_tags(o!(
+            "agent_label" => respp.as_agent_id().label().to_owned(),
+            "account_label" => respp.as_account_id().label().to_owned(),
+            "audience" => respp.as_account_id().audience().to_owned(),
+        ));
+
+        warn!(context.logger(), "Broadcast subscription created");
+
+        Ok(Box::new(stream::empty()))
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
 pub(crate) struct DeleteResponseHandler;
 
 #[async_trait]
@@ -236,6 +272,38 @@ impl ResponseHandler for DeleteResponseHandler {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+pub(crate) struct BroadcastDeleteResponseHandler;
+
+#[async_trait]
+impl ResponseHandler for BroadcastDeleteResponseHandler {
+    type Payload = CreateDeleteResponsePayload;
+    type CorrelationData = CorrelationDataPayload;
+
+    async fn handle<C: Context>(
+        context: &mut C,
+        _payload: Self::Payload,
+        respp: &IncomingResponseProperties,
+        corr_data: &Self::CorrelationData,
+    ) -> Result {
+        // Check if the event is sent by the broker.
+        if respp.as_account_id() != &context.config().broker_id {
+            return Err(anyhow!(
+                "Expected subscription.delete event to be sent from the broker account '{}', got '{}'",
+                context.config().broker_id,
+                respp.as_account_id()
+            )).error(AppErrorKind::AccessDenied);
+        }
+
+        // Parse room id.
+        let room_id = try_room_id(&corr_data.object)?;
+        context.add_logger_tags(o!("room_id" => room_id.to_string()));
+
+        Ok(Box::new(stream::empty()))
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct DeleteEventPayload {
     subject: AgentId,
@@ -301,6 +369,37 @@ impl EventHandler for DeleteEventHandler {
         let outgoing_event = OutgoingEvent::broadcast(outgoing_event_payload, props, &to_uri);
         let boxed_event = Box::new(outgoing_event) as Box<dyn IntoPublishableMessage + Send>;
         Ok(Box::new(stream::once(boxed_event)))
+    }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+
+pub(crate) struct BroadcastDeleteEventHandler;
+
+#[async_trait]
+impl EventHandler for BroadcastDeleteEventHandler {
+    type Payload = DeleteEventPayload;
+
+    async fn handle<C: Context>(
+        context: &mut C,
+        payload: Self::Payload,
+        evp: &IncomingEventProperties,
+    ) -> Result {
+        // Check if the event is sent by the broker.
+        if evp.as_account_id() != &context.config().broker_id {
+            return Err(anyhow!(
+                "Expected broadcast_subscription.delete event to be sent from the broker account '{}', got '{}'",
+                context.config().broker_id,
+                evp.as_account_id()
+            )).error(AppErrorKind::AccessDenied);
+        }
+
+        let room_id = try_room_id(&payload.object)?;
+        context.add_logger_tags(o!("room_id" => room_id.to_string()));
+
+        warn!(context.logger(), "Broadcast subscription deleted by event");
+
+        Ok(Box::new(stream::empty()))
     }
 }
 
