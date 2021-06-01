@@ -18,9 +18,10 @@ The tenant authorizes the current _agent_ for `read` action on
 
 ## Multicast request
 
-Name | Type | Default    | Description
----- | ---- | ---------- | --------------------
-id   | uuid | _required_ | The room identifier.
+Name                   | Type | Default    | Description
+---------------------- | ---- | ---------- | --------------------
+id                     | uuid | _required_ | The room identifier.
+broadcast_subscription | bool | false      | Whether also to subscribe to broadcast topic `broadcasts/{EVENT_APP_ID}/api/v1/rooms/:id/events`
 
 ## Unicast response
 

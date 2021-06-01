@@ -78,6 +78,8 @@ request_routes!(
 pub(crate) enum CorrelationData {
     SubscriptionCreate(subscription::CorrelationDataPayload),
     SubscriptionDelete(subscription::CorrelationDataPayload),
+    BroadcastSubscriptionCreate(subscription::CorrelationDataPayload),
+    BroadcastSubscriptionDelete(subscription::CorrelationDataPayload),
 }
 
 #[async_trait]
@@ -112,7 +114,9 @@ macro_rules! response_routes {
 
 response_routes!(
     SubscriptionCreate => subscription::CreateResponseHandler,
-    SubscriptionDelete => subscription::DeleteResponseHandler
+    SubscriptionDelete => subscription::DeleteResponseHandler,
+    BroadcastSubscriptionCreate => subscription::BroadcastCreateResponseHandler,
+    BroadcastSubscriptionDelete => subscription::BroadcastDeleteResponseHandler
 );
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -150,7 +154,8 @@ macro_rules! event_routes {
 // Event routes configuration: label => EventHandler
 event_routes!(
     "metric.pull" => metric::PullHandler,
-    "subscription.delete" => subscription::DeleteEventHandler
+    "subscription.delete" => subscription::DeleteEventHandler,
+    "broadcast_subscription.delete" => subscription::BroadcastDeleteEventHandler
 );
 
 ///////////////////////////////////////////////////////////////////////////////
