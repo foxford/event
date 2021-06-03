@@ -11,6 +11,11 @@ addons:
       - postgresql-client-11
 
 cache: cargo
+before_cache:
+    - find ./target/debug -type f -maxdepth 1 -delete
+    - rm -fr ./target/debug/{deps,.fingerprint}/{event-*,*serde_test*}
+    - rm -f  ./target/.rustc_info.json
+    - rm -f ./target/sqlx/query-*.json
 
 services:
   - docker
@@ -32,9 +37,10 @@ jobs:
         - RUST_BACKTRACE=1
         - PGPORT=5433
         - DATABASE_URL=postgres://postgres@localhost:5433/event.test
+        - CARGO_INCREMENTAL=0
 
       script:
-        - cargo install sqlx-cli --version 0.2.0
+        - cargo install sqlx-cli --version 0.5.2
         - cargo sqlx database create && cargo sqlx migrate run
         - cargo build
 
@@ -48,6 +54,8 @@ jobs:
 
     - stage: check
       name: Lint
+      env:
+        - CARGO_INCREMENTAL=0
 
       before_install:
         - rustup component add clippy
@@ -62,9 +70,10 @@ jobs:
         - RUST_BACKTRACE=1
         - PGPORT=5433
         - DATABASE_URL=postgres://postgres@localhost:5433/event.test
+        - CARGO_INCREMENTAL=0
 
       script:
-        - cargo install sqlx-cli --version 0.2.0
+        - cargo install sqlx-cli --version 0.5.2
         - cargo sqlx database create && cargo sqlx migrate run
         - cargo test
 
