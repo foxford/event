@@ -1,83 +1,95 @@
 # Changelog
 
+## v0.2.32 (June 3, 2021)
+
+### Changes
+- Added room.dump_events action ([aaa9570](https://github.com/netology-group/event/commit/aaa9570c6981cc9033317176520c004c1c8b7c9d))
+
+## v0.2.31 (May 19, 2021)
+
+### Changes
+- Added classroom_id to rooms ([f1493a9](https://github.com/netology-group/event/commit/f1493a90b5470ca08ee34923368940448c6e771c))
+- Updated svc-authz, updated rust in docker build ([ed9cd25](https://github.com/netology-group/event/commit/ed9cd25ebe35b0ebca0e96ff33e80f0404b731cc))
+- Added update classroom_id in update endpoint ([d923e51](https://github.com/netology-group/event/commit/d923e5189148e22c880249a1f3db83d88858a1fa))
+
 ## v0.2.30 (March 12, 2021)
 
 ### Changes
-- Moved to new dynsub scheme ([b5201c8](https://github.com/netology-group/conference/commit/b5201c8fb042893d109bde3fa1538bd225f4bf08))
+- Moved to new dynsub scheme ([b5201c8](https://github.com/netology-group/event/commit/b5201c8fb042893d109bde3fa1538bd225f4bf08))
 
 ## v0.2.29 (January 21, 2021)
 
 ### Features
-- Allow unbounded room closing time ([d0743c0](https://github.com/netology-group/conference/commit/d0743c060477405b195eb750c54db119bbe4b41d))
-- Add banned and banned_by to TenantBanNotification ([52aec19](https://github.com/netology-group/conference/commit/52aec190b4b766856caf647f5074622c153b1907))
+- Allow unbounded room closing time ([d0743c0](https://github.com/netology-group/event/commit/d0743c060477405b195eb750c54db119bbe4b41d))
+- Add banned and banned_by to TenantBanNotification ([52aec19](https://github.com/netology-group/event/commit/52aec190b4b766856caf647f5074622c153b1907))
 
 ### Changes
-- Update svc-authz ([eae4195](https://github.com/netology-group/conference/commit/eae4195d5a9921419c5629f3ba829d27f3b466ea))
+- Update svc-authz ([eae4195](https://github.com/netology-group/event/commit/eae4195d5a9921419c5629f3ba829d27f3b466ea))
 
 ### Fixes
-- Fix metrics naming and units ([8c7f77c](https://github.com/netology-group/conference/commit/8c7f77c17632915337781325016ed5c8c5c5147e))
+- Fix metrics naming and units ([8c7f77c](https://github.com/netology-group/event/commit/8c7f77c17632915337781325016ed5c8c5c5147e))
 
 
 ## v0.2.28 (January 8, 2021)
 
 ### Features
-- Implemented events history vacuum ([5e83982](https://github.com/netology-group/conference/commit/5e839824e92912caff40374ebc972f339857fd71))
-- Added running requests durations metrics ([82a4aa2](https://github.com/netology-group/conference/commit/82a4aa2df99bf4e3fb15e8568eef4122358d2c86))
+- Implemented events history vacuum ([5e83982](https://github.com/netology-group/event/commit/5e839824e92912caff40374ebc972f339857fd71))
+- Added running requests durations metrics ([82a4aa2](https://github.com/netology-group/event/commit/82a4aa2df99bf4e3fb15e8568eef4122358d2c86))
 
 ### Fixes
-- Fixed state for unpinned messages ([c3ba097](https://github.com/netology-group/conference/commit/c3ba09779a8242860cadb76e844204e0b5b415c6))
+- Fixed state for unpinned messages ([c3ba097](https://github.com/netology-group/event/commit/c3ba09779a8242860cadb76e844204e0b5b415c6))
 
 ### Changes
-- Updatedd sqlx ([0923d0c](https://github.com/netology-group/conference/commit/0923d0ce0a15810bf5113346823b0f8ba93471e3))
+- Updatedd sqlx ([0923d0c](https://github.com/netology-group/event/commit/0923d0ce0a15810bf5113346823b0f8ba93471e3))
 
 
 ## v0.2.27 (December 8, 2020)
 
 ### Features
-- Added unbounded rooms closure on adjustment ([31b7df7](https://github.com/netology-group/conference/commit/31b7df7f8f8a93f1e554bd9c10dcdcb0cd4e428f))
-- Updated svc-agent to v0.14.12 ([87d748f](https://github.com/netology-group/conference/commit/87d748fdfc53756c6ce92ba1d4fce6c9ae71841a))
+- Added unbounded rooms closure on adjustment ([31b7df7](https://github.com/netology-group/event/commit/31b7df7f8f8a93f1e554bd9c10dcdcb0cd4e428f))
+- Updated svc-agent to v0.14.12 ([87d748f](https://github.com/netology-group/event/commit/87d748fdfc53756c6ce92ba1d4fce6c9ae71841a))
 
 
 ## v0.2.26 (November 29, 2020)
 
 ### Features
-- Added reason field to agent.update method ([a994b73](https://github.com/netology-group/conference/commit/a994b73e61e247f0903cfda7244a7a871b190899))
+- Added reason field to agent.update method ([a994b73](https://github.com/netology-group/event/commit/a994b73e61e247f0903cfda7244a7a871b190899))
 
 
 ## v0.2.25 (November 18, 2020)
 
 ### Features
-- Added agent.update method ([1d95568](https://github.com/netology-group/conference/commit/1d9556864fe81490c360677b6e263fb445e859be))
+- Added agent.update method ([1d95568](https://github.com/netology-group/event/commit/1d9556864fe81490c360677b6e263fb445e859be))
 
 ### Changes
-- Added attribute to events ([4e5c63b](https://github.com/netology-group/conference/commit/4e5c63b91a4cfd4d06c925e6de9657add54a635e))
-- Added sentry extras to invalid room time errors ([b810ce9](https://github.com/netology-group/conference/commit/b810ce9dc05c873d3f4718eedcadf97184239e8d))
+- Added attribute to events ([4e5c63b](https://github.com/netology-group/event/commit/4e5c63b91a4cfd4d06c925e6de9657add54a635e))
+- Added sentry extras to invalid room time errors ([b810ce9](https://github.com/netology-group/event/commit/b810ce9dc05c873d3f4718eedcadf97184239e8d))
 
 ### Fixes
-- Reverted svc-agent update ([ebf18bc](https://github.com/netology-group/conference/commit/ebf18bc0c3e303e222c5747727bfd7cd834d4ef7))
-- Fixed errors format ([71eb7d2](https://github.com/netology-group/conference/commit/71eb7d283cfc41db5bb11be0c5f365510a180ca9))
+- Reverted svc-agent update ([ebf18bc](https://github.com/netology-group/event/commit/ebf18bc0c3e303e222c5747727bfd7cd834d4ef7))
+- Fixed errors format ([71eb7d2](https://github.com/netology-group/event/commit/71eb7d283cfc41db5bb11be0c5f365510a180ca9))
 
 
 ## v0.2.24 (October 23, 2020)
 
 ### Changes
-- Added selective sentry notifications ([f0e51de](https://github.com/netology-group/conference/commit/f0e51de3400316ef13803218c3ae91f9f76e268b))
+- Added selective sentry notifications ([f0e51de](https://github.com/netology-group/event/commit/f0e51de3400316ef13803218c3ae91f9f76e268b))
 
 ### Fixes
-- Fixed mqtt metrics ([35256f7](https://github.com/netology-group/conference/commit/35256f750371882700061ca868fec1f511787a03))
+- Fixed mqtt metrics ([35256f7](https://github.com/netology-group/event/commit/35256f750371882700061ca868fec1f511787a03))
 
 
 ## v0.2.23 (October 9, 2020)
 
 ### Changes
-- Separated missing and closed room error types ([f308070](https://github.com/netology-group/conference/commit/f308070a5823a77f11e69a631b05e4e0682131c5))
-- Contextual JSON logging ([d1f2af0](https://github.com/netology-group/conference/commit/d1f2af09b813e5b864b02c6c37a5c1fb5ee014bc))
+- Separated missing and closed room error types ([f308070](https://github.com/netology-group/event/commit/f308070a5823a77f11e69a631b05e4e0682131c5))
+- Contextual JSON logging ([d1f2af0](https://github.com/netology-group/event/commit/d1f2af09b813e5b864b02c6c37a5c1fb5ee014bc))
 
 ## v0.2.22 (October 9, 2020)
 
 ### Changes
-- Added room.close notification ([dbb353f](https://github.com/netology-group/conference/commit/dbb353f63e783771dd94358f001c74ed9237e1ec))
-- Added bytesize constraint on event.data column ([eb1dab6](https://github.com/netology-group/conference/commit/eb1dab64d1157807f1a03b5c749a56910775a795))
+- Added room.close notification ([dbb353f](https://github.com/netology-group/event/commit/dbb353f63e783771dd94358f001c74ed9237e1ec))
+- Added bytesize constraint on event.data column ([eb1dab6](https://github.com/netology-group/event/commit/eb1dab64d1157807f1a03b5c749a56910775a795))
 
 ## v0.2.21 (October 5, 2020)
 
