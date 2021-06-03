@@ -313,11 +313,7 @@ mod tests {
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
 
-            authz.allow(
-                agent.account_id(),
-                vec!["rooms", &room_id],
-                "read",
-            );
+            authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
 
             // Make agent.list request.
             let mut context = TestContext::new(db, authz);
@@ -389,11 +385,7 @@ mod tests {
             let mut authz = TestAuthz::new();
             let room_id = room.id().to_string();
 
-            authz.allow(
-                agent.account_id(),
-                vec!["rooms", &room_id],
-                "read",
-            );
+            authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
 
             // Make agent.list request.
             let mut context = TestContext::new(db, authz);
