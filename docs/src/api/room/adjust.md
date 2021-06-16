@@ -40,11 +40,12 @@ The actual result comes with a notification.
 
 **Payload:**
 
-Name   | Type   | Default    | Description
------- | ------ | ---------- | -----------------------------------
-status | string | _required_ | Task result status: success | error.
-tags   | json   | _optional_ | The room's tags.
-result | json   | _required_ | Result object (see below).
+Name    | Type   | Default    | Description
+------- | ------ | ---------- | -----------------------------------
+room_id | uuid   | _required_ | Id of the room being adjusted.
+status  | string | _required_ | Task result status: success | error.
+tags    | json   | _optional_ | The room's tags.
+result  | json   | _required_ | Result object (see below).
 
 `result` object in case of `success` status:
 
