@@ -602,6 +602,7 @@ impl RequestHandler for AdjustHandler {
 
             // Publish success/failure notification.
             let notification = RoomAdjustNotification {
+                room_id: payload.id,
                 status: result.status(),
                 tags: room.tags().map(|t| t.to_owned()),
                 result,
@@ -632,6 +633,7 @@ impl RequestHandler for AdjustHandler {
 
 #[derive(Serialize)]
 struct RoomAdjustNotification {
+    room_id: Uuid,
     status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
     tags: Option<JsonValue>,
