@@ -31,17 +31,20 @@ impl S3Client {
 
         tokio::task::spawn(async move {
             while let Some((request, response_sender)) = receiver.next().await {
-                let response = s3_client
-                    .put_object(request)
-                    .await
-                    .map_err(|e| anyhow!("Failed to upload events to s3, reason = {:?}", e));
+                let s3_client = s3_client.clone();
+                tokio::spawn(async move {
+                    let response = s3_client
+                        .put_object(request)
+                        .await
+                        .map_err(|e| anyhow!("Failed to upload events to s3, reason = {:?}", e));
 
-                if let Err(e) = response_sender.send(response) {
-                    error!(
-                        crate::LOG,
-                        "Failed to send S3 response to requesting thread, reason = {:?}", e
-                    );
-                }
+                    if let Err(e) = response_sender.send(response) {
+                        error!(
+                            crate::LOG,
+                            "Failed to send S3 response to requesting thread, reason = {:?}", e
+                        );
+                    }
+                });
             }
         });
 
