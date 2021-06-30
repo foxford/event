@@ -50,7 +50,10 @@ impl S3Client {
 
     pub async fn put_object(&self, request: PutObjectRequest) -> AnyResult<PutObjectOutput> {
         let (tx, rx) = once_channel();
-        self.sender.clone().try_send((request, tx))?;
+        self.sender
+            .clone()
+            .try_send((request, tx))
+            .map_err(|_| anyhow!("Put object send error"))?;
         rx.await?
     }
 }

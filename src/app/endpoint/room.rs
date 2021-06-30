@@ -431,7 +431,7 @@ impl RequestHandler for EnterHandler {
 
         let props = reqp.to_request("subscription.create", &response_topic, &corr_data, timing);
         let to = &context.config().broker_id;
-        let outgoing_request = OutgoingRequest::multicast(payload, props, to);
+        let outgoing_request = OutgoingRequest::multicast(payload, props, to, API_VERSION);
         let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableMessage + Send>;
         Ok(Box::new(stream::once(boxed_request)))
     }
@@ -514,7 +514,7 @@ impl RequestHandler for LeaveHandler {
 
         let props = reqp.to_request("subscription.delete", &response_topic, &corr_data, timing);
         let to = &context.config().broker_id;
-        let outgoing_request = OutgoingRequest::multicast(payload, props, to);
+        let outgoing_request = OutgoingRequest::multicast(payload, props, to, API_VERSION);
         let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableMessage + Send>;
         Ok(Box::new(stream::once(boxed_request)))
     }

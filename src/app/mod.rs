@@ -128,8 +128,8 @@ pub(crate) async fn run(
     // Message loop
     let term_check_period = Duration::from_secs(1);
     let term = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::SIGTERM, Arc::clone(&term))?;
-    signal_hook::flag::register(signal_hook::SIGINT, Arc::clone(&term))?;
+    signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
+    signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term))?;
 
     while !term.load(Ordering::Relaxed) {
         let fut = async_std::future::timeout(term_check_period, mq_rx.next());
@@ -145,7 +145,7 @@ pub(crate) async fn run(
                         message_handler.handle(message).await;
                         running_requests_.fetch_add(-1, Ordering::SeqCst);
                     }
-                    AgentNotification::Disconnection => {
+                    AgentNotification::Disconnect => {
                         error!(crate::LOG, "Disconnected from broker")
                     }
                     AgentNotification::Reconnection => {
@@ -162,9 +162,14 @@ pub(crate) async fn run(
                     AgentNotification::Pubcomp(_) => (),
                     AgentNotification::Suback(_) => (),
                     AgentNotification::Unsuback(_) => (),
-                    AgentNotification::Abort(err) => {
-                        error!(crate::LOG, "MQTT client aborted: {:?}", err);
-                    }
+                    AgentNotification::ConnectionError => (),
+                    AgentNotification::Connect(_) => (),
+                    AgentNotification::Connack(_) => (),
+                    AgentNotification::Pubrel(_) => (),
+                    AgentNotification::Subscribe(_) => (),
+                    AgentNotification::Unsubscribe(_) => (),
+                    AgentNotification::PingReq => (),
+                    AgentNotification::PingResp => (),
                 }
             });
         }
@@ -209,7 +214,7 @@ fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<()>
         .context("Failed to build subscription topic")?;
 
     let props = OutgoingRequestProperties::new("kruonis.subscribe", &topic, "", timing);
-    let event = OutgoingRequest::multicast(json!({}), props, kruonis_id);
+    let event = OutgoingRequest::multicast(json!({}), props, kruonis_id, API_VERSION);
 
     agent.publish(event).context("Failed to publish message")?;
     Ok(())
