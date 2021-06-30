@@ -2,7 +2,7 @@ use anyhow::Context as AnyhowContext;
 use async_std::stream;
 use async_trait::async_trait;
 use chrono::Utc;
-use serde_derive::Deserialize;
+use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use svc_agent::Authenticable;
 use svc_agent::{
@@ -14,6 +14,7 @@ use uuid::Uuid;
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::db;
+use crate::db::event::Object as Event;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -43,6 +44,15 @@ impl CreateRequest {
 }
 
 pub(crate) struct CreateHandler;
+
+#[derive(Serialize)]
+pub(crate) struct TenantClaimNotification {
+    #[serde(flatten)]
+    event: Event,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    classroom_id: Option<Uuid>,
+
+}
 
 #[async_trait]
 impl RequestHandler for CreateHandler {
@@ -245,10 +255,15 @@ impl RequestHandler for CreateHandler {
 
         // If the event is claim notify the tenant.
         if is_claim {
+            let claim_notification = TenantClaimNotification {
+                event: event.clone(),
+                classroom_id: room.classroom_id(),
+            };
+
             messages.push(helpers::build_notification(
                 "event.create",
                 &format!("audiences/{}/events", room.audience()),
-                event.clone(),
+                claim_notification,
                 reqp,
                 context.start_timestamp(),
             ));

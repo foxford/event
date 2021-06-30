@@ -52,7 +52,6 @@ impl Object {
         self.preserve_history
     }
 
-    #[cfg(test)]
     pub(crate) fn classroom_id(&self) -> Option<Uuid> {
         self.classroom_id
     }

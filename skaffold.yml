@@ -2,10 +2,10 @@ apiVersion: skaffold/v2beta11
 kind: Config
 build:
   artifacts:
-    - image: netologygroup/event-migration
+    - image: foxford/event-migration
       docker:
         dockerfile: docker/migration.dockerfile
-    - image: netologygroup/event
+    - image: foxford/event
       docker:
         dockerfile: docker/Dockerfile
   tagPolicy:

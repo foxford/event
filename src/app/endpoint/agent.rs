@@ -119,6 +119,8 @@ pub(crate) struct TenantBanNotification {
     banned: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    classroom_id: Option<Uuid>,
 }
 
 pub(crate) struct UpdateHandler;
@@ -237,6 +239,7 @@ impl RequestHandler for UpdateHandler {
             reason: payload.reason.clone(),
             banned_by: reqp.to_owned().as_account_id().to_owned(),
             banned: payload.value,
+            classroom_id: room.classroom_id(),
         };
 
         messages.push(helpers::build_notification(

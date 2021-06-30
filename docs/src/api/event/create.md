@@ -47,3 +47,27 @@ A notification is being sent to all [agents](../agent.md#agent) that
 **Label:** `event.create`.
 
 **Payload:** [event](../event.md#event) object.
+
+
+If `is_claim` is true a notification will be sent to the tenant
+
+**URI:** `audiences/:room_audience/events`
+
+**Label:** `event.create`.
+
+**Payload:** [event](../event.md#event) object + optional `classroom_id`:
+
+Name                 | Type     | Default    | Description
+-------------------- | -------- | ---------- | -------------------------------------------------
+id                   | uuid     | _required_ | The event's identifier.
+room_id              | uuid     | _required_ | The room's identifier to which the event belongs.
+type                 | string   | _required_ | The event type.
+set                  | string   |       type | The set to which the event is related.
+label                | string   | _optional_ | A label to identify an element within the set.
+attribute            | string   | _optional_ | An attribute for authorization and filtering.
+data                 | json     | _required_ | Schemaless payload of the event.
+occurred_at          | int      | _required_ | Number of nanoseconds since the room's opening when the event took place.
+original_occurred_at | int      | _required_ | `occurred_at` of the first event with the same `label`.
+created_by           | agent_id | _required_ | An agent who created the event.
+created_at           | int      | _required_ | The event's absolute creation timestamp in milliseconds.
+classroom_id         | uuid     | _optional_ | If room belongs to a dispatcher's classroom - id of the classroom.

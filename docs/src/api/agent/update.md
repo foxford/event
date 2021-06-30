@@ -49,8 +49,9 @@ If banned is true a notification will be sent to audience topic.
 
 Name             | Type        | Default    | Description
 ---------------- | ----------- | ---------- | -----------------------------------
-room_id          | string      | _required_ | Room where ban happened.
+room_id          | uuid        | _required_ | Room where ban happened.
 account_id       | account_id  | _required_ | Altered account.
 reason           | string      | _optional_ | Ban reason if specified
 banned_by        | account_id  | _required_ | Ban issuer
 banned           | bool        | _required_ | Whether the account was banned or unbanned
+classroom_id     | uuid        | _optional_ | If room belongs to a dispatcher's classroom - id of the classroom.

@@ -27,10 +27,9 @@ function ADD_PROJECT() {
     local _PATH="${1}"; if [[ ! "${_PATH}" ]]; then echo "${FUNCNAME[0]}:_PATH is required" 1>&2; exit 1; fi
     local _PROJECT="${2}"; if [[ ! "${_PROJECT}" ]]; then echo "${FUNCNAME[0]}:PROJECT is required" 1>&2; exit 1; fi
 
-    tee "${_PATH}" <<END
-PROJECT=${_PROJECT}
-$(cat "${_PATH}")
-END
+    # insert PROJECT=${_PROJECT} as second line
+    cat ${_PATH} | awk "NR==1{print; print \"PROJECT=${_PROJECT}\"} NR!=1" > ${_PATH}.tmp
+    mv ${_PATH}.tmp ${_PATH}
 }
 
 set -ex
