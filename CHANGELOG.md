@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.2.33 (June 30, 2021)
+
+### Changes
+- Added classroom_id to event.create claim and agent.ban notification ([e9c942d](https://github.com/foxford/event/commit/e9c942dd784a968ea7767ca41e1d8c5d8de27f24))
+- Added room_id to adjust notification ([d6be82a](https://github.com/foxford/event/commit/d6be82a4c21bd9cd48ecccdea7e56b6ca0a45679))
+
 ## v0.2.32 (June 3, 2021)
 
 ### Changes
