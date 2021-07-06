@@ -151,6 +151,12 @@ pub(crate) enum Metric {
     AgentDeleteQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_delete_query_max_microseconds"))]
     AgentDeleteQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_find_with_ban_query_p95_microseconds"))]
+    AgentFindWithBanQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_find_with_ban_query_p99_microseconds"))]
+    AgentFindWithBanQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "apps.event.agent_find_with_ban_query_max_microseconds"))]
+    AgentFindWithBanQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_insert_query_p95_microseconds"))]
     AgentInsertQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "apps.event.agent_insert_query_p99_microseconds"))]
@@ -379,6 +385,12 @@ pub(crate) enum Metric2 {
     AgentDeleteQueryP99(MetricValue<u64>),
     #[serde(rename(serialize = "agent_delete_query_max_microseconds"))]
     AgentDeleteQueryMax(MetricValue<u64>),
+    #[serde(rename(serialize = "agent_find_with_ban_query_p95_microseconds"))]
+    AgentFindWithBanQueryP95(MetricValue<u64>),
+    #[serde(rename(serialize = "agent_find_with_ban_query_p99_microseconds"))]
+    AgentFindWithBanQueryP99(MetricValue<u64>),
+    #[serde(rename(serialize = "agent_find_with_ban_query_max_microseconds"))]
+    AgentFindWithBanQueryMax(MetricValue<u64>),
     #[serde(rename(serialize = "agent_insert_query_p95_microseconds"))]
     AgentInsertQueryP95(MetricValue<u64>),
     #[serde(rename(serialize = "agent_insert_query_p99_microseconds"))]
@@ -581,6 +593,9 @@ impl From<Metric> for Metric2 {
             Metric::AgentDeleteQueryP95(v) => Metric2::AgentDeleteQueryP95(v),
             Metric::AgentDeleteQueryP99(v) => Metric2::AgentDeleteQueryP99(v),
             Metric::AgentDeleteQueryMax(v) => Metric2::AgentDeleteQueryMax(v),
+            Metric::AgentFindWithBanQueryP95(v) => Metric2::AgentFindWithBanQueryP95(v),
+            Metric::AgentFindWithBanQueryP99(v) => Metric2::AgentFindWithBanQueryP99(v),
+            Metric::AgentFindWithBanQueryMax(v) => Metric2::AgentFindWithBanQueryMax(v),
             Metric::AgentInsertQueryP95(v) => Metric2::AgentInsertQueryP95(v),
             Metric::AgentInsertQueryP99(v) => Metric2::AgentInsertQueryP99(v),
             Metric::AgentInsertQueryMax(v) => Metric2::AgentInsertQueryMax(v),
@@ -678,6 +693,7 @@ impl From<Metric> for Metric2 {
 pub enum ProfilerKeys {
     AdjustmentInsertQuery,
     AgentDeleteQuery,
+    AgentFindWithBanQuery,
     AgentInsertQuery,
     AgentListQuery,
     AgentUpdateQuery,

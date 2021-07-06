@@ -16,7 +16,7 @@ use uuid::Uuid;
 
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
-use crate::db::{agent, room_ban};
+use crate::db::agent;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -46,6 +46,7 @@ pub(crate) struct RoomEnterLeaveEvent {
     id: Uuid,
     agent_id: AgentId,
     banned: bool,
+    agent: crate::db::agent::AgentWithBan,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -86,7 +87,7 @@ impl ResponseHandler for CreateResponseHandler {
         context.add_logger_tags(o!("room_id" => room_id.to_string()));
 
         // Determine whether the agent is banned.
-        let banned = {
+        let agent_with_ban = {
             // Find room.
             helpers::find_room(
                 context,
@@ -109,17 +110,22 @@ impl ResponseHandler for CreateResponseHandler {
                 .context("Failed to put agent into 'ready' status")
                 .error(AppErrorKind::DbQueryFailed)?;
 
-            let query =
-                room_ban::FindQuery::new(corr_data.subject.as_account_id().to_owned(), room_id);
+            let query = agent::FindWithBanQuery::new(corr_data.subject.clone(), room_id);
 
             context
                 .profiler()
-                .measure((ProfilerKeys::BanFindQuery, None), query.execute(&mut conn))
+                .measure(
+                    (ProfilerKeys::AgentFindWithBanQuery, None),
+                    query.execute(&mut conn),
+                )
                 .await
-                .context("Failed to find room ban")
+                .context("Failed to find agent with ban")
                 .error(AppErrorKind::DbQueryFailed)?
-                .is_some()
+                .ok_or_else(|| anyhow!("No agent {} in room {}", corr_data.subject, room_id))
+                .error(AppErrorKind::AgentNotEnteredTheRoom)?
         };
+
+        let banned = agent_with_ban.banned().unwrap_or(false);
 
         // Send a response to the original `room.enter` request and a room-wide notification.
         let response = helpers::build_response(
@@ -136,6 +142,7 @@ impl ResponseHandler for CreateResponseHandler {
             RoomEnterLeaveEvent {
                 id: room_id,
                 agent_id: corr_data.subject.to_owned(),
+                agent: agent_with_ban,
                 banned,
             },
             &corr_data.reqp,
@@ -175,7 +182,7 @@ impl ResponseHandler for DeleteResponseHandler {
         context.add_logger_tags(o!("room_id" => room_id.to_string()));
 
         // Determine whether agent is active and banned and delete it from the db.
-        let (row_count, banned) = {
+        let (row_count, agent_with_ban) = {
             let query = agent::DeleteQuery::new(corr_data.subject.clone(), room_id);
             let mut conn = context.get_conn().await?;
 
@@ -189,18 +196,18 @@ impl ResponseHandler for DeleteResponseHandler {
                 .context("Failed to delete agent")
                 .error(AppErrorKind::DbQueryFailed)?;
 
-            let query =
-                room_ban::FindQuery::new(corr_data.subject.as_account_id().to_owned(), room_id);
+            let query = agent::FindWithBanQuery::new(corr_data.subject.clone(), room_id);
 
-            let banned = context
+            let agent_with_ban = context
                 .profiler()
                 .measure((ProfilerKeys::BanFindQuery, None), query.execute(&mut conn))
                 .await
                 .context("Failed to find room ban")
                 .error(AppErrorKind::DbQueryFailed)?
-                .is_some();
+                .ok_or_else(|| anyhow!("No agent {} in room {}", corr_data.subject, room_id))
+                .error(AppErrorKind::AgentNotEnteredTheRoom)?;
 
-            (row_count, banned)
+            (row_count, agent_with_ban)
         };
 
         if row_count != 1 {
@@ -217,12 +224,15 @@ impl ResponseHandler for DeleteResponseHandler {
             None,
         );
 
+        let banned = agent_with_ban.banned().unwrap_or(false);
+
         let notification = helpers::build_notification(
             "room.leave",
             &format!("rooms/{}/events", room_id),
             RoomEnterLeaveEvent {
                 id: room_id,
                 agent_id: corr_data.subject.to_owned(),
+                agent: agent_with_ban,
                 banned,
             },
             &corr_data.reqp,
@@ -265,7 +275,7 @@ impl EventHandler for DeleteEventHandler {
         let room_id = try_room_id(&payload.object)?;
         context.add_logger_tags(o!("room_id" => room_id.to_string()));
 
-        let (row_count, banned) = {
+        let (row_count, agent_with_ban) = {
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
             let mut conn = context.get_conn().await?;
 
@@ -279,18 +289,18 @@ impl EventHandler for DeleteEventHandler {
                 .context("Failed to delete agent")
                 .error(AppErrorKind::DbQueryFailed)?;
 
-            let query =
-                room_ban::FindQuery::new(payload.subject.as_account_id().to_owned(), room_id);
+            let query = agent::FindWithBanQuery::new(payload.subject.clone(), room_id);
 
-            let banned = context
+            let agent_with_ban = context
                 .profiler()
                 .measure((ProfilerKeys::BanFindQuery, None), query.execute(&mut conn))
                 .await
                 .context("Failed to find room ban")
                 .error(AppErrorKind::DbQueryFailed)?
-                .is_some();
+                .ok_or_else(|| anyhow!("No agent {} in room {}", payload.subject, room_id))
+                .error(AppErrorKind::AgentNotEnteredTheRoom)?;
 
-            (row_count, banned)
+            (row_count, agent_with_ban)
         };
 
         // Ignore missing agent.
@@ -298,10 +308,13 @@ impl EventHandler for DeleteEventHandler {
             return Ok(Box::new(stream::empty()));
         }
 
+        let banned = agent_with_ban.banned().unwrap_or(false);
+
         // Send broadcast notification that the agent has left the room.
         let outgoing_event_payload = RoomEnterLeaveEvent {
             id: room_id,
             agent_id: payload.subject,
+            agent: agent_with_ban,
             banned,
         };
 

@@ -52,6 +52,12 @@ pub(crate) struct AgentWithBan {
     reason: Option<String>,
 }
 
+impl AgentWithBan {
+    pub fn banned(&self) -> Option<bool> {
+        self.banned
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
@@ -196,6 +202,46 @@ impl ListWithBansQuery {
             self.offset as u32
         )
         .fetch_all(conn)
+        .await
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct FindWithBanQuery {
+    agent_id: AgentId,
+    room_id: Uuid,
+}
+
+impl FindWithBanQuery {
+    pub(crate) fn new(agent_id: AgentId, room_id: Uuid) -> Self {
+        Self { agent_id, room_id }
+    }
+
+    pub(crate) async fn execute(
+        self,
+        conn: &mut PgConnection,
+    ) -> sqlx::Result<Option<AgentWithBan>> {
+        sqlx::query_as!(
+            AgentWithBan,
+            r#"
+            SELECT
+                agent.id,
+                agent_id AS "agent_id!: AgentId",
+                agent.room_id,
+                status AS "status!: Status",
+                agent.created_at,
+                (rban.created_at IS NOT NULL)::boolean AS banned,
+                rban.reason
+            FROM agent
+            LEFT OUTER JOIN room_ban rban
+            ON rban.room_id = agent.room_id AND rban.account_id = (agent.agent_id).account_id
+            WHERE agent_id = $1 AND agent.room_id = $2
+            LIMIT 1
+            "#,
+            self.agent_id as AgentId,
+            self.room_id
+        )
+        .fetch_optional(conn)
         .await
     }
 }
