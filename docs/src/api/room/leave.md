@@ -35,7 +35,14 @@ The current agent stays uninformed.
 
 **Payload:**
 
-Name     | Type     | Default    | Description
--------- | -------- | ---------- | --------------------
-id       | uuid     | _required_ | The room identifier.
-agent_id | agent_id | _required_ | The agent identifier.
+Name             | Type     | Default    | Description
+---------------- | -------- | ---------- | --------------------
+id               | uuid     | _required_ | The room identifier.
+agent_id         | agent_id | _required_ | The agent identifier.
+banned           | bool     | _required_ | Whether the agent is banned in room or not.
+agent.agent_id   | agent_id | _required_ | The agent's identifier who has entered the room.
+agent.room_id    | uuid     | _required_ | The room's identifier where the agent has entered.
+agent.status     | string   | _required_ | `in_progress` or `ready`.
+agent.created_at | int      | _required_ | Entrance's timestamp in seconds.
+agent.banned     | bool     | _required_ | Whether the agent is banned in room or not.
+agent.reason     | string   | _optional_ | Ban reason in case of the agent is banned.

@@ -235,11 +235,15 @@ mod tests {
             assert_eq!(respp.status(), ResponseStatus::ACCEPTED);
             assert_eq!(evp.label(), "room.dump_events");
             assert_eq!(
-                ev.get("result").and_then(|v| v.get("room_id")).and_then(|v| v.as_str()),
+                ev.get("result")
+                    .and_then(|v| v.get("room_id"))
+                    .and_then(|v| v.as_str()),
                 Some(room.id().to_string()).as_deref()
             );
             assert_eq!(
-                ev.get("result").and_then(|v| v.get("s3_uri")).and_then(|v| v.as_str()),
+                ev.get("result")
+                    .and_then(|v| v.get("s3_uri"))
+                    .and_then(|v| v.as_str()),
                 Some(format!(
                     "s3://eventsdump.{}/{}.json",
                     room.audience(),
