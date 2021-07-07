@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+
+    runs-on: ubuntu-latest
+    container: rust
+
+    services:
+      postgres:
+        image: postgres
+        env:
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Install latest stable
+      uses: actions-rs/toolchain@v1
+      with:
+          toolchain: stable
+          override: true
+          components: rustfmt, clippy
+    - uses: Swatinem/rust-cache@v1
+      with: 
+        cache-on-failure: true
+    - name: clippy
+      run: cargo clippy # -- -D warnings
+    - name: fmt
+      run: cargo fmt -- --check
+    - name: Install sqlx-cli
+      run: cargo install sqlx-cli --version 0.5.2
+    - name: Run tests
+      run: cargo sqlx database create && cargo sqlx migrate run && cargo test --verbose
+      env:
+        PGPORT: 5432
+        DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
