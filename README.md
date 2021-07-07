@@ -1,7 +1,5 @@
 # Event
 
-[![Build Status][travis-img]][travis]
-
 [Documentation][documentation]
 
 [documentation]:https://docs.netology-group.services/event/index.html
