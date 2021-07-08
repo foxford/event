@@ -42,11 +42,17 @@ impl CorrelationDataPayload {
 }
 
 #[derive(Deserialize, Serialize)]
-pub(crate) struct RoomEnterLeaveEvent {
+pub(crate) struct RoomEnterEvent {
     id: Uuid,
     agent_id: AgentId,
     banned: bool,
     agent: crate::db::agent::AgentWithBan,
+}
+
+#[derive(Deserialize, Serialize)]
+pub(crate) struct RoomLeaveEvent {
+    id: Uuid,
+    agent_id: AgentId,
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -139,7 +145,7 @@ impl ResponseHandler for CreateResponseHandler {
         let notification = helpers::build_notification(
             "room.enter",
             &format!("rooms/{}/events", room_id),
-            RoomEnterLeaveEvent {
+            RoomEnterEvent {
                 id: room_id,
                 agent_id: corr_data.subject.to_owned(),
                 agent: agent_with_ban,
@@ -182,7 +188,7 @@ impl ResponseHandler for DeleteResponseHandler {
         context.add_logger_tags(o!("room_id" => room_id.to_string()));
 
         // Determine whether agent is active and banned and delete it from the db.
-        let (row_count, agent_with_ban) = {
+        let row_count = {
             let query = agent::DeleteQuery::new(corr_data.subject.clone(), room_id);
             let mut conn = context.get_conn().await?;
 
@@ -196,18 +202,7 @@ impl ResponseHandler for DeleteResponseHandler {
                 .context("Failed to delete agent")
                 .error(AppErrorKind::DbQueryFailed)?;
 
-            let query = agent::FindWithBanQuery::new(corr_data.subject.clone(), room_id);
-
-            let agent_with_ban = context
-                .profiler()
-                .measure((ProfilerKeys::BanFindQuery, None), query.execute(&mut conn))
-                .await
-                .context("Failed to find room ban")
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("No agent {} in room {}", corr_data.subject, room_id))
-                .error(AppErrorKind::AgentNotEnteredTheRoom)?;
-
-            (row_count, agent_with_ban)
+            row_count
         };
 
         if row_count != 1 {
@@ -224,16 +219,12 @@ impl ResponseHandler for DeleteResponseHandler {
             None,
         );
 
-        let banned = agent_with_ban.banned().unwrap_or(false);
-
         let notification = helpers::build_notification(
             "room.leave",
             &format!("rooms/{}/events", room_id),
-            RoomEnterLeaveEvent {
+            RoomLeaveEvent {
                 id: room_id,
                 agent_id: corr_data.subject.to_owned(),
-                agent: agent_with_ban,
-                banned,
             },
             &corr_data.reqp,
             context.start_timestamp(),
@@ -275,7 +266,7 @@ impl EventHandler for DeleteEventHandler {
         let room_id = try_room_id(&payload.object)?;
         context.add_logger_tags(o!("room_id" => room_id.to_string()));
 
-        let (row_count, agent_with_ban) = {
+        let row_count = {
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
             let mut conn = context.get_conn().await?;
 
@@ -289,18 +280,7 @@ impl EventHandler for DeleteEventHandler {
                 .context("Failed to delete agent")
                 .error(AppErrorKind::DbQueryFailed)?;
 
-            let query = agent::FindWithBanQuery::new(payload.subject.clone(), room_id);
-
-            let agent_with_ban = context
-                .profiler()
-                .measure((ProfilerKeys::BanFindQuery, None), query.execute(&mut conn))
-                .await
-                .context("Failed to find room ban")
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("No agent {} in room {}", payload.subject, room_id))
-                .error(AppErrorKind::AgentNotEnteredTheRoom)?;
-
-            (row_count, agent_with_ban)
+            row_count
         };
 
         // Ignore missing agent.
@@ -308,14 +288,10 @@ impl EventHandler for DeleteEventHandler {
             return Ok(Box::new(stream::empty()));
         }
 
-        let banned = agent_with_ban.banned().unwrap_or(false);
-
         // Send broadcast notification that the agent has left the room.
-        let outgoing_event_payload = RoomEnterLeaveEvent {
+        let outgoing_event_payload = RoomLeaveEvent {
             id: room_id,
             agent_id: payload.subject,
-            agent: agent_with_ban,
-            banned,
         };
 
         let start_timestamp = context.start_timestamp();
@@ -357,6 +333,13 @@ mod tests {
         use crate::test_helpers::prelude::*;
 
         use super::super::*;
+
+        #[derive(Deserialize)]
+        struct TestRoomEnterEvent {
+            id: Uuid,
+            agent_id: AgentId,
+            banned: bool,
+        }
 
         #[test]
         fn create_subscription() {
@@ -418,11 +401,13 @@ mod tests {
                 assert_eq!(respp.correlation_data(), reqp.correlation_data());
 
                 // Assert notification.
-                let (payload, evp, topic) = find_event::<RoomEnterLeaveEvent>(messages.as_slice());
+
+                let (payload, evp, topic) = find_event::<TestRoomEnterEvent>(messages.as_slice());
                 assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
                 assert_eq!(evp.label(), "room.enter");
                 assert_eq!(payload.id, room.id());
                 assert_eq!(&payload.agent_id, agent.agent_id());
+                assert_eq!(payload.banned, false);
 
                 // Assert agent turned to `ready` status.
                 let mut conn = context
@@ -572,7 +557,7 @@ mod tests {
                 assert_eq!(respp.correlation_data(), reqp.correlation_data());
 
                 // Assert notification.
-                let (payload, evp, topic) = find_event::<RoomEnterLeaveEvent>(messages.as_slice());
+                let (payload, evp, topic) = find_event::<RoomLeaveEvent>(messages.as_slice());
                 assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
                 assert_eq!(evp.label(), "room.leave");
                 assert_eq!(payload.id, room.id());
@@ -700,7 +685,7 @@ mod tests {
                     .expect("Subscription deletion failed");
 
                 // Assert notification.
-                let (payload, evp, topic) = find_event::<RoomEnterLeaveEvent>(messages.as_slice());
+                let (payload, evp, topic) = find_event::<RoomLeaveEvent>(messages.as_slice());
                 assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
                 assert_eq!(evp.label(), "room.leave");
                 assert_eq!(payload.id, room.id());
