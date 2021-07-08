@@ -171,11 +171,7 @@ mod tests {
             .expect("No failure");
             assert_eq!(
                 s3_uri,
-                format!(
-                    "s3://eventsdump.{}/{}.json",
-                    room.audience(),
-                    room.id()
-                )
+                format!("s3://eventsdump.{}/{}.json", room.audience(), room.id())
             );
         });
     }
