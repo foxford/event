@@ -2,6 +2,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result};
 use rusoto_s3::PutObjectRequest;
+use serde_derive::Serialize;
 use sqlx::postgres::PgPool as Db;
 
 use crate::app::metrics::ProfilerKeys;
@@ -15,6 +16,12 @@ use crate::profiler::Profiler;
 struct S3Destination {
     bucket: String,
     key: String,
+}
+
+#[derive(Serialize)]
+struct S3Content {
+    room: Room,
+    events: Vec<Event>,
 }
 
 pub(crate) async fn call(
@@ -35,7 +42,7 @@ pub(crate) async fn call(
 
     let events = load_room_events(db, profiler, room).await?;
 
-    let s3_uri = upload_events(s3_client, events, destination).await?;
+    let s3_uri = upload_events(s3_client, room, events, destination).await?;
 
     info!(
         crate::LOG,
@@ -71,14 +78,20 @@ async fn load_room_events(
 
 async fn upload_events(
     s3_client: S3Client,
+    room: &Room,
     events: Vec<Event>,
     destination: S3Destination,
 ) -> Result<String> {
     let S3Destination { bucket, key } = destination;
     let s3_uri = format!("s3://{}/{}", bucket, key);
 
-    let events = async_std::task::spawn_blocking(move || {
-        serde_json::to_vec(&events)
+    let body = S3Content {
+        room: room.to_owned(),
+        events,
+    };
+
+    let body = async_std::task::spawn_blocking(move || {
+        serde_json::to_vec(&body)
             .map_err(|e| anyhow!("Failed to serialize events, reason = {:?}", e))
     })
     .await?;
@@ -86,7 +99,7 @@ async fn upload_events(
     let request = PutObjectRequest {
         bucket,
         key,
-        body: Some(events.into()),
+        body: Some(body.into()),
         ..Default::default()
     };
 
@@ -171,11 +184,7 @@ mod tests {
             .expect("No failure");
             assert_eq!(
                 s3_uri,
-                format!(
-                    "s3://eventsdump.{}/{}.json",
-                    room.audience(),
-                    room.id()
-                )
+                format!("s3://eventsdump.{}/{}.json", room.audience(), room.id())
             );
         });
     }

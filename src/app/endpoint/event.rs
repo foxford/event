@@ -51,7 +51,6 @@ pub(crate) struct TenantClaimNotification {
     event: Event,
     #[serde(skip_serializing_if = "Option::is_none")]
     classroom_id: Option<Uuid>,
-
 }
 
 #[async_trait]
