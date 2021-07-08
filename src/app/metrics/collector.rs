@@ -183,6 +183,11 @@ fn append_profiler_stats(
                 metrics.push(Metric::AgentDeleteQueryP99(metric_value_p99));
                 metrics.push(Metric::AgentDeleteQueryMax(metric_value_max));
             }
+            ProfilerKeys::AgentFindWithBanQuery => {
+                metrics.push(Metric::AgentFindWithBanQueryP95(metric_value_p95));
+                metrics.push(Metric::AgentFindWithBanQueryP99(metric_value_p99));
+                metrics.push(Metric::AgentFindWithBanQueryMax(metric_value_max));
+            }
             ProfilerKeys::AgentInsertQuery => {
                 metrics.push(Metric::AgentInsertQueryP95(metric_value_p95));
                 metrics.push(Metric::AgentInsertQueryP99(metric_value_p99));

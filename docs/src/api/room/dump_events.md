@@ -1,6 +1,7 @@
 # room.dump_events
 
-Upload room events to S3 storage to object `s3://eventsdump.{room.audience}/{room.id}.json`
+Upload room events to S3 storage to object `s3://eventsdump.{room.audience}/{room.id}.json`.
+Uploaded json format would be `{room: Room, events: [Event]}`.
 
 ## Authorization
 

@@ -994,6 +994,105 @@
       ]
     }
   },
+  "7ceae51be9df68b6cc8b84ab1a3ad496654cc378148aed37349ffe7ab4e4a982": {
+    "query": "\n            SELECT\n                agent.id,\n                agent_id AS \"agent_id!: AgentId\",\n                agent.room_id,\n                status AS \"status!: Status\",\n                agent.created_at,\n                (rban.created_at IS NOT NULL)::boolean AS banned,\n                rban.reason\n            FROM agent\n            LEFT OUTER JOIN room_ban rban\n            ON rban.room_id = agent.room_id AND rban.account_id = (agent.agent_id).account_id\n            WHERE agent_id = $1 AND agent.room_id = $2\n            LIMIT 1\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "agent_id!: AgentId",
+          "type_info": {
+            "Custom": {
+              "name": "agent_id",
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "name": "account_id",
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "ordinal": 2,
+          "name": "room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 3,
+          "name": "status!: Status",
+          "type_info": {
+            "Custom": {
+              "name": "agent_status",
+              "kind": {
+                "Enum": [
+                  "in_progress",
+                  "ready"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "ordinal": 4,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 5,
+          "name": "banned",
+          "type_info": "Bool"
+        },
+        {
+          "ordinal": 6,
+          "name": "reason",
+          "type_info": "Text"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Record",
+          "Uuid"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false,
+        null,
+        true
+      ]
+    }
+  },
   "81dcdef3e131f1035a77c710dae8122fe8bbb5382a4c9b17b23b408b9d64a545": {
     "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id\n            FROM room\n            WHERE id = $1\n            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)\n            ",
     "describe": {
@@ -2164,70 +2263,6 @@
         ]
       },
       "nullable": []
-    }
-  },
-  "eab8cb598ac0fcb53a9d438852982a93f3ed8136aabf0bba9edb234fbc436921": {
-    "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags)\n            WHERE id = $1\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id\n            ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "audience",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 2,
-          "name": "source_room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 3,
-          "name": "time!: Time",
-          "type_info": "TstzRange"
-        },
-        {
-          "ordinal": 4,
-          "name": "tags",
-          "type_info": "Json"
-        },
-        {
-          "ordinal": 5,
-          "name": "created_at",
-          "type_info": "Timestamptz"
-        },
-        {
-          "ordinal": 6,
-          "name": "preserve_history",
-          "type_info": "Bool"
-        },
-        {
-          "ordinal": 7,
-          "name": "classroom_id",
-          "type_info": "Uuid"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "TstzRange",
-          "Json"
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        true,
-        false,
-        true,
-        false,
-        false,
-        true
-      ]
     }
   }
 }
