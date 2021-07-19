@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.2.35 (Jul , 2021)
+
+### Changes
+- Added broadcast_subscription flag to `room.enter` ([8a16b87](https://github.com/foxford/event/commit/8a16b8716aa4be5385d7aa45e59e30127d622aae))
+
+## v0.2.34 (Jul 8, 2021)
+
+### Changes
+- Added room to s3 events dump payload ([2ece84a](https://github.com/foxford/event/commit/2ece84a05b13471c5a0dd94c842174823046d174))
+- Added `agent_with_ban` to RoomEnterLeaveEvent ([fa10c86](https://github.com/foxford/event/commit/fa10c860d3e00ceed1d05889b35d9da5a98930e0))
+
+
 ## v0.2.33 (June 30, 2021)
 
 ### Changes
