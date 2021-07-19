@@ -31,7 +31,7 @@ pub(crate) async fn call(
         "Room adjustment task started for room_id = '{}'",
         real_time_room.id()
     );
-
+    let mut real_time_room = real_time_room.clone();
     let start_timestamp = Utc::now();
 
     // Parse segments.
@@ -72,7 +72,7 @@ pub(crate) async fn call(
         let query = crate::db::room::UpdateQuery::new(real_time_room.id())
             .time(Some(new_time.clone().into()));
 
-        profiler
+        real_time_room = profiler
             .measure(
                 (ProfilerKeys::RoomUpdateQuery, Some("room.adjust".into())),
                 query.execute(&mut conn),
@@ -84,7 +84,6 @@ pub(crate) async fn call(
                     real_time_room.id(),
                 )
             })?;
-
         new_time
     } else {
         time
