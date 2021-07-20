@@ -130,7 +130,7 @@ pub(crate) async fn call(
         (Utc::now() - start_timestamp).num_milliseconds()
     );
 
-    Ok((destination, dbg!(Segments::from(modified_segments)))) as Result<(Room, Segments)>
+    Ok((dbg!(destination), dbg!(Segments::from(modified_segments)))) as Result<(Room, Segments)>
 }
 
 async fn clone_room(
