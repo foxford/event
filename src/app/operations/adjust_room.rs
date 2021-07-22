@@ -455,7 +455,6 @@ mod tests {
     use sqlx::postgres::PgConnection;
     use svc_agent::{AccountId, AgentId};
 
-    use crate::app::metrics::ProfilerKeys;
     use crate::db::adjustment::Segments;
     use crate::db::event::{
         InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,
@@ -463,6 +462,7 @@ mod tests {
     use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room, Time as RoomTime};
     use crate::profiler::Profiler;
     use crate::test_helpers::db::TestDb;
+    use crate::{app::metrics::ProfilerKeys, db::room_time::RoomTimeBound};
 
     const AUDIENCE: &str = "dev.svc.example.org";
 
@@ -492,7 +492,7 @@ mod tests {
                 (Bound::Included(0), Bound::Excluded(6500)),
                 (Bound::Included(8500), Bound::Excluded(11500)),
             ]);
-
+            let duration = Duration::milliseconds(6500 + 11500 - 8500);
             // RTC started 10 seconds after the room opened and preroll is 3 seconds long.
             let started_at = opened_at + Duration::seconds(10);
 
@@ -512,9 +512,9 @@ mod tests {
             assert_eq!(original_room.source_room_id(), Some(room.id()));
             assert_eq!(original_room.audience(), room.audience());
             assert_eq!(original_room.time().map(|t| *t.start()), Ok(started_at));
-            assert_ne!(
+            assert_eq!(
                 original_room.time().map(|t| t.end().to_owned()),
-                room.time().map(|t| t.end().to_owned())
+                Ok(RoomTimeBound::Excluded(started_at + duration))
             );
             assert_eq!(original_room.tags(), room.tags());
 
@@ -568,6 +568,7 @@ mod tests {
                 (Bound::Included(0), Bound::Excluded(6500)),
                 (Bound::Included(8500), Bound::Excluded(11500)),
             ]);
+            let duration = Duration::milliseconds(6500 + 11500 - 8500);
 
             // RTC started 10 seconds after the room opened and preroll is 3 seconds long.
             let started_at = opened_at + Duration::seconds(10);
@@ -588,9 +589,9 @@ mod tests {
             assert_eq!(original_room.source_room_id(), Some(room.id()));
             assert_eq!(original_room.audience(), room.audience());
             assert_eq!(original_room.time().map(|t| *t.start()), Ok(started_at));
-            assert_ne!(
+            assert_eq!(
                 original_room.time().map(|t| t.end().to_owned()),
-                room.time().map(|t| t.end().to_owned())
+                Ok(RoomTimeBound::Excluded(started_at + duration))
             );
             assert_eq!(original_room.tags(), room.tags());
 
