@@ -241,9 +241,9 @@ pub(crate) async fn call(
     );
 
     Ok((
-        dbg!(original_room),
-        dbg!(modified_room),
-        dbg!(Segments::from(modified_segments)),
+        original_room,
+        modified_room,
+        Segments::from(modified_segments),
     ))
 }
 
