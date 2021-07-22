@@ -512,7 +512,7 @@ mod tests {
             assert_eq!(original_room.source_room_id(), Some(room.id()));
             assert_eq!(original_room.audience(), room.audience());
             assert_eq!(original_room.time().map(|t| *t.start()), Ok(started_at));
-            assert_eq!(
+            assert_ne!(
                 original_room.time().map(|t| t.end().to_owned()),
                 room.time().map(|t| t.end().to_owned())
             );
