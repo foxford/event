@@ -188,7 +188,7 @@ pub(crate) async fn call(
             )
         })?;
 
-    let cut_gaps = cut_events_to_gaps(&cut_events)?;
+    let cut_gaps = cut_events_to_gaps(started_at, room_duration, &cut_events)?;
 
     // Create modified room with events shifted again according to cut events this time.
     let modified_room = create_room(
@@ -417,14 +417,21 @@ enum CutEventsToGapsState {
 }
 
 /// Transforms cut-start/stop events ordered list to gaps list with a simple FSM.
-pub(crate) fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>> {
+pub(crate) fn cut_events_to_gaps(
+    started_at: DateTime<Utc>,
+    room_duration: Duration,
+    cut_events: &[Event],
+) -> Result<Vec<(i64, i64)>> {
     let mut gaps = Vec::with_capacity(cut_events.len());
-    let mut state: CutEventsToGapsState = CutEventsToGapsState::Stopped;
+    let mut state: CutEventsToGapsState = CutEventsToGapsState::Started(started_at.timestamp());
 
     for event in cut_events {
         let command = event.data().get("cut").and_then(|v| v.as_str());
 
         match (command, state) {
+            (Some("start"), CutEventsToGapsState::Started(_)) => {
+                state = CutEventsToGapsState::Started(event.occurred_at());
+            }
             (Some("start"), CutEventsToGapsState::Stopped) => {
                 state = CutEventsToGapsState::Started(event.occurred_at());
             }
@@ -439,6 +446,9 @@ pub(crate) fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>
                 state
             ),
         }
+    }
+    if let CutEventsToGapsState::Started(start) = state {
+        gaps.push((start, (started_at + room_duration).timestamp()));
     }
 
     Ok(gaps)
