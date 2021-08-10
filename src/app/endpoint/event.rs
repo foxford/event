@@ -237,7 +237,7 @@ impl RequestHandler for CreateHandler {
 
             builder
                 .build()
-                .map_err(|err| anyhow!("Error building transient event: {}", err,))
+                .map_err(|err| anyhow!("Error building transient event: {:?}", err,))
                 .error(AppErrorKind::TransientEventCreationFailed)?
         };
 

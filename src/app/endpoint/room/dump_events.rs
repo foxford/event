@@ -99,7 +99,7 @@ impl RequestHandler for EventsDumpHandler {
                     s3_uri,
                 },
                 Err(err) => {
-                    error!(logger, "Events dump job failed: {}", err);
+                    error!(logger, "Events dump job failed: {:?}", err);
                     let app_error = AppError::new(AppErrorKind::EditionCommitTaskFailed, err);
                     app_error.notify_sentry(&logger);
                     EventsDumpResult::Error {

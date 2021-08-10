@@ -410,7 +410,7 @@ fn try_room_id(object: &[String]) -> StdResult<Uuid, AppError> {
 
     match object.as_slice() {
         ["rooms", room_id, "events"] => {
-            Uuid::parse_str(room_id).map_err(|err| anyhow!("UUID parse error: {}", err))
+            Uuid::parse_str(room_id).map_err(|err| anyhow!("UUID parse error: {:?}", err))
         }
         _ => Err(anyhow!(
             "Bad 'object' format; expected [\"room\", <ROOM_ID>, \"events\"], got: {:?}",

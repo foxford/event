@@ -42,7 +42,7 @@ impl RequestHandler for VacuumHandler {
 
         async_std::task::spawn(async move {
             if let Err(err) = vacuum(&db, &profiler, &config).await {
-                error!(logger, "Vacuum failed: {}", err);
+                error!(logger, "Vacuum failed: {:?}", err);
 
                 let svc_error = SvcError::builder()
                     .status(ResponseStatus::INTERNAL_SERVER_ERROR)
@@ -51,7 +51,7 @@ impl RequestHandler for VacuumHandler {
                     .build();
 
                 sentry::send(svc_error).unwrap_or_else(|err| {
-                    warn!(logger, "Error sending error to Sentry: {}", err);
+                    warn!(logger, "Error sending error to Sentry: {:?}", err);
                 });
             }
         });

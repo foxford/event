@@ -37,7 +37,7 @@ impl<C: GlobalContext + Send + 'static> StatsRoute<C> {
                         match x {
                             StatsRouteCommand::GetStats(chan) => {
                                 if let Err(err) = chan.send(route.get_stats()).await {
-                                    error!(crate::LOG, "Failed to send stats: {}", err);
+                                    error!(crate::LOG, "Failed to send stats: {:?}", err);
                                 }
                             }
                         }

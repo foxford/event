@@ -619,7 +619,7 @@ impl RequestHandler for AdjustHandler {
                     }
                 }
                 Err(err) => {
-                    error!(logger, "Room adjustment job failed: {}", err);
+                    error!(logger, "Room adjustment job failed: {:?}", err);
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
                     app_error.notify_sentry(&logger);
                     RoomAdjustResult::Error {

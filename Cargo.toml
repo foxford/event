@@ -39,6 +39,7 @@ tide = "0.16"
 tokio = {version = "1", features = ["rt", "rt-multi-thread"]}
 url = "2"
 uuid = {version = "0.8", features = ["v4", "serde"]}
+sentry = "0.23"
 
 [dev-dependencies]
 rusoto_mock = "0.47"
