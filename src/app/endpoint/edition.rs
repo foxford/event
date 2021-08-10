@@ -347,7 +347,7 @@ impl RequestHandler for CommitHandler {
                     modified_segments,
                 },
                 Err(err) => {
-                    error!(logger, "Room adjustment job failed: {}", err);
+                    error!(logger, "Room adjustment job failed: {:?}", err);
                     let app_error = AppError::new(AppErrorKind::EditionCommitTaskFailed, err);
                     app_error.notify_sentry(&logger);
                     EditionCommitResult::Error {

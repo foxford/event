@@ -69,7 +69,7 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
     ) {
         error!(
             msg_context.logger(),
-            "Error processing a message: {:?}: {}", message, err
+            "Error processing a message: {:?}: {:?}", message, err
         );
 
         let app_error = AppError::new(
@@ -159,7 +159,7 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
             Err(err) => {
                 warn!(
                     msg_context.logger(),
-                    "Failed to parse response correlation data '{}': {}", raw_corr_data, err
+                    "Failed to parse response correlation data '{}': {:?}", raw_corr_data, err
                 );
 
                 return Ok(());
@@ -248,7 +248,7 @@ pub(crate) fn publish_message(
 ) -> Result<(), AppError> {
     agent
         .publish_publishable(message)
-        .map_err(|err| anyhow!("Failed to publish message: {}", err))
+        .map_err(|err| anyhow!("Failed to publish message: {:?}", err))
         .error(AppErrorKind::PublishFailed)
 }
 
@@ -312,7 +312,8 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                 }
                 // Bad envelope or payload format => 400.
                 Err(err) => {
-                    let app_error = AppError::new(AppErrorKind::InvalidPayload, anyhow!("{}", err));
+                    let app_error =
+                        AppError::new(AppErrorKind::InvalidPayload, anyhow::Error::from(err));
                     error_response(app_error, reqp, context.start_timestamp())
                 }
             }
@@ -373,7 +374,7 @@ impl<'async_trait, H: 'async_trait + endpoint::ResponseHandler>
                 }
                 Err(err) => {
                     // Bad envelope or payload format.
-                    error!(context.logger(), "Failed to parse response: {}", err);
+                    error!(context.logger(), "Failed to parse response: {:?}", err);
                     Box::new(stream::empty())
                 }
             }
@@ -429,7 +430,7 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                     }),
                 Err(err) => {
                     // Bad envelope or payload format.
-                    error!(context.logger(), "Failed to parse event: {}", err);
+                    error!(context.logger(), "Failed to parse event: {:?}", err);
                     Box::new(stream::empty())
                 }
             }
