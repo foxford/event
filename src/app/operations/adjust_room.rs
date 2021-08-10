@@ -28,8 +28,11 @@ pub(crate) async fn call(
 ) -> Result<(Room, Room, Segments)> {
     info!(
         crate::LOG,
-        "Room adjustment task started for room_id = '{}'",
-        real_time_room.id()
+        "Room adjustment task started for room_id = '{}', started_at = {:?}, segments = {:?}, offset = {:?}",
+        real_time_room.id(),
+        started_at,
+        segments,
+        offset
     );
     let start_timestamp = Utc::now();
 
