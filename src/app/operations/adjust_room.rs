@@ -449,15 +449,6 @@ pub(crate) fn cut_events_to_gaps(
             ),
         }
     }
-    if let CutEventsToGapsState::Started(start) = state {
-        gaps.push((
-            start,
-            room_duration
-                .num_nanoseconds()
-                .ok_or_else(|| anyhow!("Too long room"))?,
-        ));
-    }
-
     Ok(gaps)
 }
 
