@@ -46,7 +46,7 @@ pub(crate) async fn call(
 
     info!(
         crate::LOG,
-        "Dump events to S3 task started, room id = {}, duration = {} ms",
+        "Dump events to S3 task successfully finished, room id = {}, duration = {} ms",
         room.id(),
         start_timestamp.elapsed().as_millis()
     );
