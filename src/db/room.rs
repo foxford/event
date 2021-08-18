@@ -390,9 +390,9 @@ impl TryFrom<Time> for RoomTime {
     }
 }
 
-impl Into<PgRange<DateTime<Utc>>> for Time {
-    fn into(self) -> PgRange<DateTime<Utc>> {
-        self.0
+impl From<Time> for PgRange<DateTime<Utc>> {
+    fn from(val: Time) -> Self {
+        val.0
     }
 }
 

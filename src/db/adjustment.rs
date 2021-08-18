@@ -84,15 +84,15 @@ impl From<BoundedOffsetTuples> for Segments {
     }
 }
 
-impl Into<BoundedOffsetTuples> for Segments {
-    fn into(self) -> BoundedOffsetTuples {
-        self.0.into_iter().map(|s| (s.start, s.end)).collect()
+impl From<Segments> for BoundedOffsetTuples {
+    fn from(val: Segments) -> Self {
+        val.0.into_iter().map(|s| (s.start, s.end)).collect()
     }
 }
 
-impl Into<Vec<PgRange<i64>>> for Segments {
-    fn into(self) -> Vec<PgRange<i64>> {
-        self.0
+impl From<Segments> for Vec<PgRange<i64>> {
+    fn from(val: Segments) -> Self {
+        val.0
     }
 }
 
