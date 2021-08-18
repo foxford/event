@@ -121,14 +121,6 @@ pub(crate) async fn call(
         _ => bail!("invalid duration for room = '{}'", real_time_room.id()),
     };
 
-    /*let (room_opening, room_duration) = match real_time_room.time() {
-        Ok(t) => match t.end() {
-            RoomTimeBound::Excluded(stop) => (*t.start(), stop.signed_duration_since(*t.start())),
-            _ => bail!("invalid duration for room = '{}'", real_time_room.id()),
-        },
-        _ => bail!("invalid duration for room = '{}'", real_time_room.id()),
-    };*/
-
     // Calculate RTC offset as the difference between event room opening and RTC start.
     let rtc_offset = (started_at - room_opening).num_milliseconds();
 
@@ -167,7 +159,7 @@ pub(crate) async fn call(
         profiler,
         &original_room,
         &segment_gaps,
-        (offset - rtc_offset) * NANOSECONDS_IN_MILLISECOND,
+        -rtc_offset * NANOSECONDS_IN_MILLISECOND,
     )
     .await?;
 
@@ -176,7 +168,8 @@ pub(crate) async fn call(
     // Fetch shifted cut events and transform them to gaps.
     let query = EventListQuery::new()
         .room_id(original_room.id())
-        .kind("stream".to_string());
+        .kind("stream".to_string())
+        .last_occurred_at(offset * NANOSECONDS_IN_MILLISECOND); // Cut events only after the actual stream has started, not considering preroll
 
     let cut_events = profiler
         .measure(
@@ -202,7 +195,14 @@ pub(crate) async fn call(
         total_segments_duration,
     )
     .await?;
-    clone_events(&mut conn, profiler, &modified_room, &cut_gaps, 0).await?;
+    clone_events(
+        &mut conn,
+        profiler,
+        &modified_room,
+        &cut_gaps,
+        offset * NANOSECONDS_IN_MILLISECOND,
+    )
+    .await?;
 
     // Delete cut events from the modified room.
     let query = EventDeleteQuery::new(modified_room.id(), "stream");
@@ -299,7 +299,11 @@ async fn clone_events(
         starts.push(*start);
         stops.push(*stop);
     }
-
+    info!(crate::LOG, "clone_events query attrs: starts = {:?}, stops = {:?}, room_id = {:?}, offset = {:?}, source_room_id = {:?}", starts.as_slice(),
+    stops.as_slice(),
+    room.id(),
+    sqlx::types::BigDecimal::from(offset),
+    source_room_id);
     let query = sqlx::query!(
         "
         WITH
@@ -350,6 +354,18 @@ async fn clone_events(
             FROM event
             WHERE room_id = $5
             AND   deleted_at IS NULL
+            -- Skip stream events if they land into the gaps
+            AND (
+                CASE kind = 'stream'
+                WHEN TRUE THEN (
+                    CASE (SELECT COUNT(*) FROM gaps WHERE start > occurred_at AND stop < occurred_at)
+                    WHEN 0 THEN FALSE
+                    ELSE TRUE
+                    END
+                )
+                ELSE TRUE
+                END
+            )
         ) AS sub
         ",
         starts.as_slice(),
