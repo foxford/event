@@ -8,6 +8,7 @@ use chrono::{DateTime, Utc};
 use futures::FutureExt;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
+use sqlx::PgConnection;
 use svc_agent::{
     mqtt::{
         IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
@@ -18,15 +19,15 @@ use svc_agent::{
 use svc_error::Error as SvcError;
 use uuid::Uuid;
 
-use crate::app::context::Context;
-use crate::app::endpoint::prelude::*;
-use crate::app::endpoint::subscription::CorrelationDataPayload;
 use crate::app::operations::adjust_room;
 use crate::app::API_VERSION;
 use crate::db::adjustment::Segments;
 use crate::db::agent;
 use crate::db::room::{InsertQuery, UpdateQuery};
 use crate::db::room_time::{BoundedDateTimeTuple, RoomTime};
+use crate::{app::context::Context, db::event};
+use crate::{app::endpoint::prelude::*, db};
+use crate::{app::endpoint::subscription::CorrelationDataPayload, profiler::Profiler};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -403,6 +404,15 @@ impl RequestHandler for EnterHandler {
                 .await
                 .context("Failed to insert agent into room")
                 .error(AppErrorKind::DbQueryFailed)?;
+
+            insert_agent_action(
+                &room,
+                AgentAction::Enter,
+                reqp.as_agent_id(),
+                &mut conn,
+                &context.profiler(),
+            )
+            .await?;
         }
 
         let mut requests = Vec::with_capacity(2);
@@ -517,7 +527,15 @@ impl RequestHandler for LeaveHandler {
             return Err(anyhow!("Agent is not online in the room"))
                 .error(AppErrorKind::AgentNotEnteredTheRoom);
         }
-
+        let mut pool_connection = context.get_ro_conn().await?;
+        insert_agent_action(
+            &room,
+            AgentAction::Left,
+            reqp.as_agent_id(),
+            &mut pool_connection,
+            &context.profiler(),
+        )
+        .await?;
         // Send dynamic subscription deletion request to the broker.
         let subject = reqp.as_agent_id().to_owned();
         let room_id = room.id().to_string();
@@ -690,6 +708,55 @@ impl RoomAdjustResult {
             Self::Error { .. } => "error",
         }
     }
+}
+
+enum AgentAction {
+    Left,
+    Enter,
+}
+
+impl AgentAction {
+    fn as_str(self) -> &'static str {
+        match self {
+            AgentAction::Left => "agent_left",
+            AgentAction::Enter => "agent_enter",
+        }
+    }
+}
+
+async fn insert_agent_action(
+    room: &db::room::Object,
+    action: AgentAction,
+    agent_id: &AgentId,
+    conn: &mut PgConnection,
+    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
+) -> std::result::Result<(), AppError> {
+    let occurred_at = match room.time().as_ref().map(|t| t.start()) {
+        Ok(&opened_at) => (Utc::now() - opened_at)
+            .num_nanoseconds()
+            .unwrap_or(std::i64::MAX),
+        _ => {
+            return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime);
+        }
+    };
+
+    let action = action.as_str();
+    let query = event::InsertQuery::new(
+        room.id(),
+        action.to_owned(),
+        JsonValue::Null,
+        occurred_at,
+        agent_id.to_owned(),
+    );
+    profiler
+        .measure(
+            (ProfilerKeys::EventInsertQuery, Some(action.to_owned())),
+            query.execute(conn),
+        )
+        .await
+        .context("Failed to insert agent action")
+        .error(AppErrorKind::DbQueryFailed)?;
+    Ok(())
 }
 
 ///////////////////////////////////////////////////////////////////////////////
