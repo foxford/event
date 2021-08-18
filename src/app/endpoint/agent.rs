@@ -426,7 +426,7 @@ mod tests {
 
             assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
             assert_eq!(err.kind(), "room_not_found");
-        }); 
+        });
     }
 
     #[test]
