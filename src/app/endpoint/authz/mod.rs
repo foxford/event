@@ -69,7 +69,7 @@ pub fn db_ban_callback(db: Db) -> svc_authz::BanCallback {
             Box::pin(async move {
                 if intent.to_ban_key().is_some() {
                     if let Some(room_id) = intent.to_vec().get(1) {
-                        if let Ok(room_id) = Uuid::parse_str(&room_id) {
+                        if let Ok(room_id) = Uuid::parse_str(room_id) {
                             if let Ok(mut conn) = db_.acquire().await {
                                 let ban = crate::db::room_ban::FindQuery::new(
                                     account_id.to_owned(),

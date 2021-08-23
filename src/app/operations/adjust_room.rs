@@ -156,7 +156,7 @@ pub(crate) async fn call(
     let original_room = create_room(
         &mut conn,
         profiler,
-        &real_time_room,
+        real_time_room,
         started_at,
         total_segments_duration,
     )
@@ -262,7 +262,7 @@ async fn create_room(
         Bound::Included(started_at),
         Bound::Excluded(started_at + room_duration),
     );
-    let mut query = RoomInsertQuery::new(&source_room.audience(), time.into());
+    let mut query = RoomInsertQuery::new(source_room.audience(), time.into());
     query = query.source_room_id(source_room.id());
 
     if let Some(tags) = source_room.tags() {

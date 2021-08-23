@@ -65,142 +65,142 @@ impl fmt::Display for ErrorKind {
     }
 }
 
-impl Into<ErrorKindProperties> for ErrorKind {
-    fn into(self) -> ErrorKindProperties {
-        match self {
-            Self::AccessDenied => ErrorKindProperties {
+impl From<ErrorKind> for ErrorKindProperties {
+    fn from(val: ErrorKind) -> Self {
+        match val {
+            ErrorKind::AccessDenied => ErrorKindProperties {
                 status: ResponseStatus::FORBIDDEN,
                 kind: "access_denied",
                 title: "Access denied",
                 is_notify_sentry: false,
             },
-            Self::AgentNotEnteredTheRoom => ErrorKindProperties {
+            ErrorKind::AgentNotEnteredTheRoom => ErrorKindProperties {
                 status: ResponseStatus::NOT_FOUND,
                 kind: "agent_not_entered_the_room",
                 title: "Agent not entered the room",
                 is_notify_sentry: false,
             },
-            Self::AuthorizationFailed => ErrorKindProperties {
+            ErrorKind::AuthorizationFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "authorization_failed",
                 title: "Authorization failed",
                 is_notify_sentry: false,
             },
-            Self::BrokerRequestFailed => ErrorKindProperties {
+            ErrorKind::BrokerRequestFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "broker_request_failed",
                 title: "Broker request failed",
                 is_notify_sentry: true,
             },
-            Self::ChangeNotFound => ErrorKindProperties {
+            ErrorKind::ChangeNotFound => ErrorKindProperties {
                 status: ResponseStatus::NOT_FOUND,
                 kind: "change_not_found",
                 title: "Change not found",
                 is_notify_sentry: false,
             },
-            Self::DbConnAcquisitionFailed => ErrorKindProperties {
+            ErrorKind::DbConnAcquisitionFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "database_connection_acquisition_failed",
                 title: "Database connection acquisition failed",
                 is_notify_sentry: true,
             },
-            Self::DbQueryFailed => ErrorKindProperties {
+            ErrorKind::DbQueryFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "database_query_failed",
                 title: "Database query failed",
                 is_notify_sentry: true,
             },
-            Self::EditionCommitTaskFailed => ErrorKindProperties {
+            ErrorKind::EditionCommitTaskFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "edition_commit_task_failed",
                 title: "Edition commit task failed",
                 is_notify_sentry: true,
             },
-            Self::EditionNotFound => ErrorKindProperties {
+            ErrorKind::EditionNotFound => ErrorKindProperties {
                 status: ResponseStatus::NOT_FOUND,
                 kind: "edition_not_found",
                 title: "Edition not found",
                 is_notify_sentry: false,
             },
-            Self::InvalidPayload => ErrorKindProperties {
+            ErrorKind::InvalidPayload => ErrorKindProperties {
                 status: ResponseStatus::BAD_REQUEST,
                 kind: "invalid_payload",
                 title: "Invalid payload",
                 is_notify_sentry: false,
             },
-            Self::InvalidRoomTime => ErrorKindProperties {
+            ErrorKind::InvalidRoomTime => ErrorKindProperties {
                 status: ResponseStatus::BAD_REQUEST,
                 kind: "invalid_room_time",
                 title: "Invalid room time",
                 is_notify_sentry: false,
             },
-            Self::InvalidStateSets => ErrorKindProperties {
+            ErrorKind::InvalidStateSets => ErrorKindProperties {
                 status: ResponseStatus::BAD_REQUEST,
                 kind: "invalid_state_sets",
                 title: "Invalid state sets",
                 is_notify_sentry: false,
             },
-            Self::InvalidSubscriptionObject => ErrorKindProperties {
+            ErrorKind::InvalidSubscriptionObject => ErrorKindProperties {
                 status: ResponseStatus::BAD_REQUEST,
                 kind: "invalid_subscription_object",
                 title: "Invalid subscription object",
                 is_notify_sentry: true,
             },
-            Self::MessageHandlingFailed => ErrorKindProperties {
+            ErrorKind::MessageHandlingFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "message_handling_failed",
                 title: "Message handling failed",
                 is_notify_sentry: true,
             },
-            Self::NoS3Client => ErrorKindProperties {
+            ErrorKind::NoS3Client => ErrorKindProperties {
                 status: ResponseStatus::NOT_IMPLEMENTED,
                 kind: "no_s3_client",
                 title: "No s3 configuration, nowhere to dump events to",
                 is_notify_sentry: true,
             },
-            Self::SerializationFailed => ErrorKindProperties {
+            ErrorKind::SerializationFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "serialization_failed",
                 title: "Serialization failed",
                 is_notify_sentry: true,
             },
-            Self::StatsCollectionFailed => ErrorKindProperties {
+            ErrorKind::StatsCollectionFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "stats_collection_failed",
                 title: "Stats collection failed",
                 is_notify_sentry: true,
             },
-            Self::PublishFailed => ErrorKindProperties {
+            ErrorKind::PublishFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "publish_failed",
                 title: "Publish failed",
                 is_notify_sentry: true,
             },
-            Self::RoomAdjustTaskFailed => ErrorKindProperties {
+            ErrorKind::RoomAdjustTaskFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "room_adjust_task_failed",
                 title: "Room adjust task failed",
                 is_notify_sentry: true,
             },
-            Self::RoomClosed => ErrorKindProperties {
+            ErrorKind::RoomClosed => ErrorKindProperties {
                 status: ResponseStatus::NOT_FOUND,
                 kind: "room_closed",
                 title: "Room closed",
                 is_notify_sentry: false,
             },
-            Self::RoomNotFound => ErrorKindProperties {
+            ErrorKind::RoomNotFound => ErrorKindProperties {
                 status: ResponseStatus::NOT_FOUND,
                 kind: "room_not_found",
                 title: "Room not found",
                 is_notify_sentry: false,
             },
-            Self::TransientEventCreationFailed => ErrorKindProperties {
+            ErrorKind::TransientEventCreationFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "transient_event_creation_failed",
                 title: "Transient event creation failed",
                 is_notify_sentry: true,
             },
-            Self::UnknownMethod => ErrorKindProperties {
+            ErrorKind::UnknownMethod => ErrorKindProperties {
                 status: ResponseStatus::METHOD_NOT_ALLOWED,
                 kind: "unknown_method",
                 title: "Unknown method",

@@ -408,13 +408,13 @@ impl RequestHandler for EnterHandler {
         let mut requests = Vec::with_capacity(2);
         // Send dynamic subscription creation request to the broker.
         let subscribe_req =
-            subscription_request(context, &reqp, &room_id, "subscription.create", authz_time)?;
+            subscription_request(context, reqp, &room_id, "subscription.create", authz_time)?;
 
         requests.push(subscribe_req);
 
         let broadcast_subscribe_req = subscription_request(
             context,
-            &reqp,
+            reqp,
             &room_id,
             "broadcast_subscription.create",
             authz_time,
