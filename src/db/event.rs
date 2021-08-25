@@ -777,7 +777,7 @@ pub enum AgentAction {
 }
 
 impl AgentAction {
-    fn as_str(self) -> &'static str {
+    fn as_str(&self) -> &'static str {
         match self {
             AgentAction::Left => "agent_left",
             AgentAction::Enter => "agent_enter",
