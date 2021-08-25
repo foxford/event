@@ -369,7 +369,7 @@ impl EventHandler for DeleteEventHandler {
                 .profiler()
                 .measure(
                     (ProfilerKeys::EventInsertQuery, None),
-                    insert_agent_action(&room, AgentAction::Left, evp.as_agent_id(), &mut conn),
+                    insert_agent_action(&room, AgentAction::Left, &payload.subject, &mut conn),
                 )
                 .await
                 .context("Failed to insert agent action")
