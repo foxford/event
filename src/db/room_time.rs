@@ -46,44 +46,29 @@ impl RoomTime {
 
     pub fn update(&self, tuple: BoundedDateTimeTuple) -> Option<Self> {
         let now = Utc::now();
-        let new_room_time = Self::new(tuple);
-        if new_room_time.is_none() {
-            return None;
-        }
-
         let Self {
             start: new_start,
             end: new_end,
-        } = new_room_time.unwrap();
+        } = Self::new(tuple)?;
         match (self.start, &self.end) {
-            (s, _) if s > now => {
-                return Some(Self {
-                    start: new_start,
-                    end: new_end,
-                });
-            }
-            (_, RoomTimeBound::Excluded(e)) if *e < now => {
-                return None;
-            }
+            (s, _) if s > now => Some(Self {
+                start: new_start,
+                end: new_end,
+            }),
+            (_, RoomTimeBound::Excluded(e)) if *e < now => None,
             _ => match new_end {
-                RoomTimeBound::Excluded(e) if e > now => {
-                    return Some(Self {
-                        start: self.start,
-                        end: new_end,
-                    });
-                }
-                RoomTimeBound::Unbounded => {
-                    return Some(Self {
-                        start: self.start,
-                        end: new_end,
-                    });
-                }
-                RoomTimeBound::Excluded(_) => {
-                    return Some(Self {
-                        start: self.start,
-                        end: RoomTimeBound::Excluded(now),
-                    });
-                }
+                RoomTimeBound::Excluded(e) if e > now => Some(Self {
+                    start: self.start,
+                    end: new_end,
+                }),
+                RoomTimeBound::Unbounded => Some(Self {
+                    start: self.start,
+                    end: new_end,
+                }),
+                RoomTimeBound::Excluded(_) => Some(Self {
+                    start: self.start,
+                    end: RoomTimeBound::Excluded(now),
+                }),
             },
         }
     }

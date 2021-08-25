@@ -156,7 +156,7 @@ pub(crate) async fn call(
     let original_room = create_room(
         &mut conn,
         profiler,
-        &real_time_room,
+        real_time_room,
         started_at,
         total_segments_duration,
     )
@@ -191,7 +191,7 @@ pub(crate) async fn call(
             )
         })?;
 
-    let cut_gaps = cut_events_to_gaps(room_duration, &cut_events)?;
+    let cut_gaps = cut_events_to_gaps(&cut_events)?;
 
     // Create modified room with events shifted again according to cut events this time.
     let modified_room = create_room(
@@ -262,7 +262,7 @@ async fn create_room(
         Bound::Included(started_at),
         Bound::Excluded(started_at + room_duration),
     );
-    let mut query = RoomInsertQuery::new(&source_room.audience(), time.into());
+    let mut query = RoomInsertQuery::new(source_room.audience(), time.into());
     query = query.source_room_id(source_room.id());
 
     if let Some(tags) = source_room.tags() {
@@ -420,10 +420,7 @@ enum CutEventsToGapsState {
 }
 
 /// Transforms cut-start/stop events ordered list to gaps list with a simple FSM.
-pub(crate) fn cut_events_to_gaps(
-    room_duration: Duration,
-    cut_events: &[Event],
-) -> Result<Vec<(i64, i64)>> {
+pub(crate) fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>> {
     let mut gaps = Vec::with_capacity(cut_events.len());
     let mut state: CutEventsToGapsState = CutEventsToGapsState::Started(0);
 
@@ -449,15 +446,6 @@ pub(crate) fn cut_events_to_gaps(
             ),
         }
     }
-    if let CutEventsToGapsState::Started(start) = state {
-        gaps.push((
-            start,
-            room_duration
-                .num_nanoseconds()
-                .ok_or_else(|| anyhow!("Too long room"))?,
-        ));
-    }
-
     Ok(gaps)
 }
 

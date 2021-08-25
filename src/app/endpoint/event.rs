@@ -154,18 +154,16 @@ impl RequestHandler for CreateHandler {
                 return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime);
             }
         };
-
+        let CreateRequest {
+            kind,
+            data,
+            set,
+            label,
+            attribute,
+            ..
+        } = payload;
         let event = if payload.is_persistent {
             // Insert event into the DB.
-            let CreateRequest {
-                kind,
-                data,
-                set,
-                label,
-                attribute,
-                ..
-            } = payload;
-
             let mut query = db::event::InsertQuery::new(
                 room.id(),
                 kind,
@@ -206,15 +204,6 @@ impl RequestHandler for CreateHandler {
                 event
             }
         } else {
-            let CreateRequest {
-                kind,
-                data,
-                set,
-                label,
-                attribute,
-                ..
-            } = payload;
-
             // Build transient event.
             let mut builder = db::event::Builder::new()
                 .room_id(payload.room_id)

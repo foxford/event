@@ -27,7 +27,7 @@ impl<'a, C: GlobalContext> Collector<'a, C> {
         append_profiler_stats(&mut metrics, self.context, now, self.duration)?;
 
         if let Some(counter) = self.context.running_requests() {
-            let tags = Tags::build_internal_tags(crate::APP_VERSION, &self.context.agent_id());
+            let tags = Tags::build_internal_tags(crate::APP_VERSION, self.context.agent_id());
             metrics.push(Metric::RunningRequests(MetricValue::new(
                 counter.load(Ordering::SeqCst),
                 now,
@@ -207,11 +207,6 @@ fn append_profiler_stats(
                 metrics.push(Metric::BanDeleteQueryP95(metric_value_p95));
                 metrics.push(Metric::BanDeleteQueryP99(metric_value_p99));
                 metrics.push(Metric::BanDeleteQueryMax(metric_value_max));
-            }
-            ProfilerKeys::BanFindQuery => {
-                metrics.push(Metric::BanFindQueryP95(metric_value_p95));
-                metrics.push(Metric::BanFindQueryP99(metric_value_p99));
-                metrics.push(Metric::BanFindQueryMax(metric_value_max));
             }
             ProfilerKeys::BanInsertQuery => {
                 metrics.push(Metric::BanInsertQueryP95(metric_value_p95));

@@ -74,17 +74,9 @@ pub(crate) async fn call(
         })?;
 
     let cut_gaps = collect_gaps(&cut_events, &cut_changes)?;
-    let destination = clone_room(&mut txn, profiler, &source).await?;
+    let destination = clone_room(&mut txn, profiler, source).await?;
 
-    clone_events(
-        &mut txn,
-        profiler,
-        &source,
-        &destination,
-        &edition,
-        &cut_gaps,
-    )
-    .await?;
+    clone_events(&mut txn, profiler, source, &destination, edition, &cut_gaps).await?;
 
     let query = EventDeleteQuery::new(destination.id(), "stream");
 
@@ -140,10 +132,10 @@ async fn clone_room(
     source: &Room,
 ) -> Result<Room> {
     let time = match source.time() {
-        Ok(t) => t.to_owned().into(),
+        Ok(t) => t.into(),
         Err(_e) => bail!("invalid time for room = '{}'", source.id()),
     };
-    let mut query = RoomInsertQuery::new(&source.audience(), time);
+    let mut query = RoomInsertQuery::new(source.audience(), time);
     query = query.source_room_id(source.id());
 
     if let Some(tags) = source.tags() {
@@ -303,11 +295,11 @@ fn collect_gaps(cut_events: &[Event], cut_changes: &[Change]) -> Result<Vec<(i64
     let mut cut_vec = vec![];
     cut_events
         .iter()
-        .for_each(|ev| cut_vec.push(EventOrChangeAtDur::Event(&ev, ev.occurred_at())));
+        .for_each(|ev| cut_vec.push(EventOrChangeAtDur::Event(ev, ev.occurred_at())));
 
     cut_changes.iter().for_each(|ch| {
         cut_vec.push(EventOrChangeAtDur::Change(
-            &ch,
+            ch,
             ch.event_occurred_at().expect("must have occurred_at"),
         ))
     });
@@ -322,11 +314,11 @@ fn collect_gaps(cut_events: &[Event], cut_changes: &[Change]) -> Result<Vec<(i64
 
     for cut in cut_vec {
         let (command, occurred_at) = match cut {
-            EventOrChangeAtDur::Event(ref event, _) => (
+            EventOrChangeAtDur::Event(event, _) => (
                 event.data().get("cut").and_then(|v| v.as_str()),
                 event.occurred_at(),
             ),
-            EventOrChangeAtDur::Change(ref change, _) => (
+            EventOrChangeAtDur::Change(change, _) => (
                 change
                     .event_data()
                     .as_ref()
@@ -352,13 +344,13 @@ fn collect_gaps(cut_events: &[Event], cut_changes: &[Change]) -> Result<Vec<(i64
                 *nest_lvl -= 1;
             }
             _ => match cut {
-                EventOrChangeAtDur::Event(ref event, _) => bail!(
+                EventOrChangeAtDur::Event(event, _) => bail!(
                     "invalid cut event, id = '{}', command = {:?}, state = {:?}",
                     event.id(),
                     command,
                     state
                 ),
-                EventOrChangeAtDur::Change(ref change, _) => bail!(
+                EventOrChangeAtDur::Change(change, _) => bail!(
                     "invalid cut change, id = '{}', command = {:?}, state = {:?}",
                     change.id(),
                     command,
