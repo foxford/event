@@ -770,3 +770,45 @@ impl VacuumQuery {
         .map(|_| ())
     }
 }
+
+pub enum AgentAction {
+    Left,
+    Enter,
+}
+
+impl AgentAction {
+    fn as_str(self) -> &'static str {
+        match self {
+            AgentAction::Left => "agent_left",
+            AgentAction::Enter => "agent_enter",
+        }
+    }
+}
+
+pub(crate) async fn insert_agent_action(
+    room: &super::room::Object,
+    action: AgentAction,
+    agent_id: &AgentId,
+    conn: &mut PgConnection,
+) -> std::result::Result<(), anyhow::Error> {
+    let occurred_at = match room.time().as_ref().map(|t| t.start()) {
+        Ok(&opened_at) => (Utc::now() - opened_at)
+            .num_nanoseconds()
+            .unwrap_or(std::i64::MAX),
+        _ => {
+            return Err(anyhow!("Invalid room time"));
+        }
+    };
+
+    let action = action.as_str();
+    InsertQuery::new(
+        room.id(),
+        action.to_owned(),
+        JsonValue::Null,
+        occurred_at,
+        agent_id.to_owned(),
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
