@@ -21,12 +21,15 @@ use uuid::Uuid;
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::app::endpoint::subscription::CorrelationDataPayload;
-use crate::app::operations::adjust_room;
 use crate::app::API_VERSION;
 use crate::db::adjustment::Segments;
 use crate::db::agent;
 use crate::db::room::{InsertQuery, UpdateQuery};
 use crate::db::room_time::{BoundedDateTimeTuple, RoomTime};
+use crate::{
+    app::operations::adjust_room,
+    db::event::{insert_agent_action, AgentAction},
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -403,6 +406,15 @@ impl RequestHandler for EnterHandler {
                 .await
                 .context("Failed to insert agent into room")
                 .error(AppErrorKind::DbQueryFailed)?;
+            context
+                .profiler()
+                .measure(
+                    (ProfilerKeys::EventInsertQuery, None),
+                    insert_agent_action(&room, AgentAction::Enter, reqp.as_agent_id(), &mut conn),
+                )
+                .await
+                .context("Failed to insert agent action")
+                .error(AppErrorKind::DbQueryFailed)?;
         }
 
         let mut requests = Vec::with_capacity(2);
@@ -517,7 +529,6 @@ impl RequestHandler for LeaveHandler {
             return Err(anyhow!("Agent is not online in the room"))
                 .error(AppErrorKind::AgentNotEnteredTheRoom);
         }
-
         // Send dynamic subscription deletion request to the broker.
         let subject = reqp.as_agent_id().to_owned();
         let room_id = room.id().to_string();

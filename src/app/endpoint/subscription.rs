@@ -14,9 +14,12 @@ use svc_agent::{
 };
 use uuid::Uuid;
 
-use crate::app::context::Context;
-use crate::app::endpoint::prelude::*;
 use crate::db::agent;
+use crate::{
+    app::context::Context,
+    db::event::{insert_agent_action, AgentAction},
+};
+use crate::{app::endpoint::prelude::*, db::room};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -354,6 +357,23 @@ impl EventHandler for DeleteEventHandler {
         // Ignore missing agent.
         if row_count != 1 {
             return Ok(Box::new(stream::empty()));
+        }
+        let mut conn = context.get_conn().await?;
+        let room = room::FindQuery::new(room_id)
+            .execute(&mut conn)
+            .await
+            .context("Failed to find room")
+            .error(AppErrorKind::DbQueryFailed)?;
+        if let Some(room) = room {
+            context
+                .profiler()
+                .measure(
+                    (ProfilerKeys::EventInsertQuery, None),
+                    insert_agent_action(&room, AgentAction::Left, &payload.subject, &mut conn),
+                )
+                .await
+                .context("Failed to insert agent action")
+                .error(AppErrorKind::DbQueryFailed)?;
         }
 
         // Send broadcast notification that the agent has left the room.
