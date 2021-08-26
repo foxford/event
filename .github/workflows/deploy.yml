@@ -24,7 +24,7 @@ jobs:
       continue-on-error: true
     - name: Deploy
       run: |
-        for NAMESPACE in $NAMESPACES do
+        for NAMESPACE in $NAMESPACES; do
           ./deploy.init.sh && ./deploy/github-actions-run.sh
         done
       env:
