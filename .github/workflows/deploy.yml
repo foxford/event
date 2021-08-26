@@ -25,7 +25,7 @@ jobs:
     - name: Deploy
       run: |
         for NAMESPACE in $NAMESPACES; do
-          ./deploy.init.sh && ./deploy/github-actions-run.sh
+          NAMESPACE=$NAMESPACE ./deploy.init.sh && NAMESPACE=$NAMESPACE ./deploy/github-actions-run.sh
         done
       env:
         NAMESPACES: ${{ github.event.inputs.namespace }}
