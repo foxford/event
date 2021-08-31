@@ -2,7 +2,7 @@
 authors = ["Timofey Martynov <t.martinov@netology-group.ru>"]
 edition = "2018"
 name = "event"
-version = "0.2.37"
+version = "0.2.38"
 
 [dependencies]
 anyhow = "1"
