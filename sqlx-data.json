@@ -2157,6 +2157,67 @@
       ]
     }
   },
+  "d5de74f8fa086384ab3b01661d61f00230373e369b61f0ffd53b5fa5f5e15582": {
+    "query": "\n            SELECT\n                id, account_id AS \"account_id!: AccountId\",\n                room_id, reason, created_at\n            FROM room_ban\n            WHERE account_id = $1 AND room_id = (SELECT id FROM room WHERE classroom_id = $2)\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "account_id!: AccountId",
+          "type_info": {
+            "Custom": {
+              "name": "account_id",
+              "kind": {
+                "Composite": [
+                  [
+                    "label",
+                    "Text"
+                  ],
+                  [
+                    "audience",
+                    "Text"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "ordinal": 2,
+          "name": "room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 3,
+          "name": "reason",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 4,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Record",
+          "Uuid"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        false
+      ]
+    }
+  },
   "da66580c20d184c7d43c67ec5ccf490283c56ae79795a8df439c3481d2e6b83a": {
     "query": "\n            INSERT INTO room_ban (account_id, room_id, reason)\n            VALUES ($1, $2, $3) ON CONFLICT (account_id, room_id) DO UPDATE\n            SET created_at=room_ban.created_at\n            RETURNING\n                id,\n                account_id AS \"account_id!: AccountId\",\n                room_id,\n                reason,\n                created_at\n            ",
     "describe": {

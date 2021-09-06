@@ -68,32 +68,73 @@ pub fn db_ban_callback(db: Db) -> svc_authz::BanCallback {
             let db_ = db.clone();
             Box::pin(async move {
                 if intent.to_ban_key().is_some() {
-                    if let Some(room_id) = intent.to_vec().get(1) {
-                        if let Ok(room_id) = Uuid::parse_str(room_id) {
-                            if let Ok(mut conn) = db_.acquire().await {
-                                let ban = crate::db::room_ban::FindQuery::new(
-                                    account_id.to_owned(),
-                                    room_id,
-                                )
-                                .execute(&mut conn)
-                                .await;
+                    let intent = intent.to_vec();
 
-                                match ban {
-                                    Ok(maybe_ban) => return maybe_ban.is_some(),
-                                    Err(e) => {
-                                        let logger = crate::LOG.new(o!());
-                                        error!(
+                    match intent.as_slice() {
+                        [obj, room_id, ..] if obj == "rooms" => {
+                            if let Ok(room_id) = Uuid::parse_str(room_id) {
+                                if let Ok(mut conn) = db_.acquire().await {
+                                    let ban = crate::db::room_ban::FindQuery::new(
+                                        account_id.to_owned(),
+                                        room_id,
+                                    )
+                                    .execute(&mut conn)
+                                    .await;
+
+                                    match ban {
+                                        Ok(maybe_ban) => return maybe_ban.is_some(),
+                                        Err(e) => {
+                                            let logger = crate::LOG.new(o!());
+                                            error!(
                                             logger,
                                             "Failed to fetch ban from db, account = {}, room_id = {}, reason = {}",
                                             account_id,
                                             room_id,
                                             e
                                         );
+                                        }
                                     }
+                                } else {
+                                    return false;
                                 }
+                            } else {
+                                return false;
                             }
                         }
-                    }
+                        [obj, classroom_id, ..] if obj == "classrooms" => {
+                            if let Ok(classroom_id) = Uuid::parse_str(classroom_id) {
+                                if let Ok(mut conn) = db_.acquire().await {
+                                    let ban = crate::db::room_ban::ClassroomFindQuery::new(
+                                        account_id.to_owned(),
+                                        classroom_id,
+                                    )
+                                    .execute(&mut conn)
+                                    .await;
+
+                                    match ban {
+                                        Ok(maybe_ban) => return maybe_ban.is_some(),
+                                        Err(e) => {
+                                            let logger = crate::LOG.new(o!());
+                                            error!(
+                                            logger,
+                                            "Failed to fetch ban from db, account = {}, classroom_id = {}, reason = {}",
+                                            account_id,
+                                            classroom_id,
+                                            e
+                                        );
+                                        }
+                                    }
+                                } else {
+                                    return false;
+                                }
+                            } else {
+                                return false;
+                            }
+                        }
+                        _ => {
+                            return false;
+                        }
+                    };
                 }
 
                 false
@@ -105,6 +146,8 @@ pub fn db_ban_callback(db: Db) -> svc_authz::BanCallback {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_helpers::prelude::*;
+    use std::ops::Bound;
 
     #[test]
     fn create_authz_obj() {
@@ -127,5 +170,110 @@ mod tests {
 
         let obj: Box<dyn IntentObject> = AuthzObject::new(&["rooms", "123", "events"]).into();
         assert_eq!(obj.to_ban_key(), None);
+    }
+
+    #[async_std::test]
+    async fn ban_by_room_obj() {
+        let db = TestDb::new().await;
+
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let room = {
+            // Create room and ban agent in the room
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
+
+            factory::RoomBan::new(agent.agent_id(), room.id())
+                .insert(&mut conn)
+                .await;
+
+            room
+        };
+
+        let banned_obj = Box::new(AuthzObject::new(&[
+            "rooms",
+            &room.id().to_string(),
+            "events",
+            "message",
+            "authors",
+            "account-id.audience",
+        ])) as Box<dyn IntentObject>;
+
+        let id = Uuid::new_v4();
+
+        let nonbanned_obj = Box::new(AuthzObject::new(&[
+            "rooms",
+            &id.to_string(),
+            "events",
+            "message",
+            "authors",
+            "account-id.audience",
+        ])) as Box<dyn IntentObject>;
+        let cb = db_ban_callback(db.connection_pool().clone());
+        let x = cb(agent.account_id().to_owned(), banned_obj.clone()).await;
+        let y = cb(agent.account_id().to_owned(), nonbanned_obj).await;
+        // Agent must be banned
+        assert_eq!(x, true);
+        assert_eq!(y, false);
+
+        let agent2 = TestAgent::new("web", "barbaz", USR_AUDIENCE);
+        // This agent must not be banned
+        let x = cb(agent2.account_id().to_owned(), banned_obj).await;
+        assert_eq!(x, false);
+    }
+
+    #[async_std::test]
+    async fn ban_by_classroom_obj() {
+        let db = TestDb::new().await;
+
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        let classroom_id = Uuid::new_v4();
+
+        {
+            // Create room with classroom id and ban agent in the room
+            let mut conn = db.get_conn().await;
+
+            let room = factory::Room::new()
+                .classroom_id(classroom_id)
+                .audience("foo.bar")
+                .time((Bound::Unbounded, Bound::Unbounded))
+                .insert(&mut conn)
+                .await;
+
+            factory::RoomBan::new(agent.agent_id(), room.id())
+                .insert(&mut conn)
+                .await;
+        };
+
+        let banned_obj = Box::new(AuthzObject::new(&[
+            "classrooms",
+            &classroom_id.to_string(),
+            "events",
+            "message",
+            "authors",
+            "account-id.audience",
+        ])) as Box<dyn IntentObject>;
+
+        let random_classroom_id = Uuid::new_v4();
+
+        let nonbanned_obj = Box::new(AuthzObject::new(&[
+            "classrooms",
+            &random_classroom_id.to_string(),
+            "events",
+            "message",
+            "authors",
+            "account-id.audience",
+        ])) as Box<dyn IntentObject>;
+        let cb = db_ban_callback(db.connection_pool().clone());
+        let x = cb(agent.account_id().to_owned(), banned_obj.clone()).await;
+        let y = cb(agent.account_id().to_owned(), nonbanned_obj).await;
+        // Agent must be banned
+        assert_eq!(x, true);
+        assert_eq!(y, false);
+
+        let agent2 = TestAgent::new("web", "barbaz", USR_AUDIENCE);
+        // This agent must not be banned
+        let x = cb(agent2.account_id().to_owned(), banned_obj).await;
+        assert_eq!(x, false);
     }
 }

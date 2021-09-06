@@ -107,6 +107,38 @@ impl FindQuery {
 }
 
 #[derive(Debug)]
+pub(crate) struct ClassroomFindQuery {
+    account_id: AccountId,
+    classroom_id: Uuid,
+}
+
+impl ClassroomFindQuery {
+    pub(crate) fn new(account_id: AccountId, classroom_id: Uuid) -> Self {
+        Self {
+            account_id,
+            classroom_id,
+        }
+    }
+
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            SELECT
+                id, account_id AS "account_id!: AccountId",
+                room_id, reason, created_at
+            FROM room_ban
+            WHERE account_id = $1 AND room_id = (SELECT id FROM room WHERE classroom_id = $2)
+            "#,
+            self.account_id as AccountId,
+            self.classroom_id,
+        )
+        .fetch_optional(conn)
+        .await
+    }
+}
+
+#[derive(Debug)]
 pub(crate) struct DeleteQuery {
     account_id: AccountId,
     room_id: Uuid,
