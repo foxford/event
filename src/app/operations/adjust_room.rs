@@ -269,6 +269,10 @@ async fn create_room(
         query = query.tags(tags.to_owned());
     }
 
+    if let Some(classroom_id) = source_room.classroom_id() {
+        query = query.classroom_id(classroom_id);
+    }
+
     profiler
         .measure(
             (ProfilerKeys::RoomInsertQuery, Some("room.adjust".into())),
