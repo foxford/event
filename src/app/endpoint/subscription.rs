@@ -91,74 +91,87 @@ impl ResponseHandler for CreateResponseHandler {
             "audience" => respp.as_account_id().audience().to_owned(),
         ));
 
-        // Parse room id.
-        let room_id = try_room_id(&corr_data.object)?;
-        context.add_logger_tags(o!("room_id" => room_id.to_string()));
+        if respp.status() == ResponseStatus::OK {
+            // Parse room id.
+            let room_id = try_room_id(&corr_data.object)?;
+            context.add_logger_tags(o!("room_id" => room_id.to_string()));
 
-        // Determine whether the agent is banned.
-        let agent_with_ban = {
-            // Find room.
-            helpers::find_room(
-                context,
-                room_id,
-                helpers::RoomTimeRequirement::Open,
-                corr_data.reqp.method(),
-            )
-            .await?;
-
-            // Update agent state to `ready`.
-            let q = agent::UpdateQuery::new(corr_data.subject.clone(), room_id)
-                .status(agent::Status::Ready);
-
-            let mut conn = context.get_conn().await?;
-
-            context
-                .profiler()
-                .measure((ProfilerKeys::AgentUpdateQuery, None), q.execute(&mut conn))
-                .await
-                .context("Failed to put agent into 'ready' status")
-                .error(AppErrorKind::DbQueryFailed)?;
-
-            let query = agent::FindWithBanQuery::new(corr_data.subject.clone(), room_id);
-
-            context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::AgentFindWithBanQuery, None),
-                    query.execute(&mut conn),
+            // Determine whether the agent is banned.
+            let agent_with_ban = {
+                // Find room.
+                helpers::find_room(
+                    context,
+                    room_id,
+                    helpers::RoomTimeRequirement::Open,
+                    corr_data.reqp.method(),
                 )
-                .await
-                .context("Failed to find agent with ban")
-                .error(AppErrorKind::DbQueryFailed)?
-                .ok_or_else(|| anyhow!("No agent {} in room {}", corr_data.subject, room_id))
-                .error(AppErrorKind::AgentNotEnteredTheRoom)?
-        };
+                .await?;
 
-        let banned = agent_with_ban.banned().unwrap_or(false);
+                // Update agent state to `ready`.
+                let q = agent::UpdateQuery::new(corr_data.subject.clone(), room_id)
+                    .status(agent::Status::Ready);
 
-        // Send a response to the original `room.enter` request and a room-wide notification.
-        let response = helpers::build_response(
-            ResponseStatus::OK,
-            json!({}),
-            &corr_data.reqp,
-            context.start_timestamp(),
-            None,
-        );
+                let mut conn = context.get_conn().await?;
 
-        let notification = helpers::build_notification(
-            "room.enter",
-            &format!("rooms/{}/events", room_id),
-            RoomEnterEvent {
-                id: room_id,
-                agent_id: corr_data.subject.to_owned(),
-                agent: agent_with_ban,
-                banned,
-            },
-            &corr_data.reqp,
-            context.start_timestamp(),
-        );
+                context
+                    .profiler()
+                    .measure((ProfilerKeys::AgentUpdateQuery, None), q.execute(&mut conn))
+                    .await
+                    .context("Failed to put agent into 'ready' status")
+                    .error(AppErrorKind::DbQueryFailed)?;
 
-        Ok(Box::new(stream::from_iter(vec![response, notification])))
+                let query = agent::FindWithBanQuery::new(corr_data.subject.clone(), room_id);
+
+                context
+                    .profiler()
+                    .measure(
+                        (ProfilerKeys::AgentFindWithBanQuery, None),
+                        query.execute(&mut conn),
+                    )
+                    .await
+                    .context("Failed to find agent with ban")
+                    .error(AppErrorKind::DbQueryFailed)?
+                    .ok_or_else(|| anyhow!("No agent {} in room {}", corr_data.subject, room_id))
+                    .error(AppErrorKind::AgentNotEnteredTheRoom)?
+            };
+
+            let banned = agent_with_ban.banned().unwrap_or(false);
+
+            // Send a response to the original `room.enter` request and a room-wide notification.
+            let response = helpers::build_response(
+                ResponseStatus::OK,
+                json!({}),
+                &corr_data.reqp,
+                context.start_timestamp(),
+                None,
+            );
+
+            let notification = helpers::build_notification(
+                "room.enter",
+                &format!("rooms/{}/events", room_id),
+                RoomEnterEvent {
+                    id: room_id,
+                    agent_id: corr_data.subject.to_owned(),
+                    agent: agent_with_ban,
+                    banned,
+                },
+                &corr_data.reqp,
+                context.start_timestamp(),
+            );
+
+            Ok(Box::new(stream::from_iter(vec![response, notification])))
+        } else {
+            match respp.status() {
+                ResponseStatus::NOT_FOUND => Err(anyhow!("Subscriber was absent in db"))
+                    .error(AppErrorKind::BrokerRequestFailed),
+                ResponseStatus::UNPROCESSABLE_ENTITY => {
+                    Err(anyhow!("Subscriber was present on multiple nodes"))
+                        .error(AppErrorKind::BrokerRequestFailed)
+                }
+                code => Err(anyhow!(format!("Something went wrong, code = {:?}", code)))
+                    .error(AppErrorKind::BrokerRequestFailed),
+            }
+        }
     }
 }
 
