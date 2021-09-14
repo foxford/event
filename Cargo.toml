@@ -48,3 +48,4 @@ parking_lot = "0.11"
 [dev-dependencies]
 rusoto_mock = "0.47"
 serial_test = "0.5"
+humantime = "2.1.0"
