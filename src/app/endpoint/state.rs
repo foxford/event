@@ -56,13 +56,8 @@ impl RequestHandler for ReadHandler {
         );
 
         // Check whether the room exists.
-        let room = helpers::find_room(
-            context,
-            payload.room_id,
-            helpers::RoomTimeRequirement::Any,
-            reqp.method(),
-        )
-        .await?;
+        let room =
+            helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Any).await?;
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
@@ -117,14 +112,8 @@ impl RequestHandler for ReadHandler {
             // add `has_next` pagination flag to the state.
             if payload.sets.len() == 1 {
                 let total_count = context
-                    .profiler()
-                    .measure(
-                        (
-                            ProfilerKeys::StateTotalCountQuery,
-                            Some(reqp.method().to_owned()),
-                        ),
-                        query.total_count(&mut conn),
-                    )
+                    .metrics()
+                    .measure_query(QueryKey::StateTotalCountQuery, query.total_count(&mut conn))
                     .await
                     .context("Failed to get state total count")
                     .error(AppErrorKind::DbQueryFailed)?;
@@ -135,11 +124,8 @@ impl RequestHandler for ReadHandler {
 
             // Limit the query and retrieve the state.
             let set_state = context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::StateQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::StateQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to get state")
                 .error(AppErrorKind::DbQueryFailed)?;

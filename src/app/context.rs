@@ -11,11 +11,12 @@ use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
-use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
-use crate::app::metrics::ProfilerKeys;
 use crate::app::s3_client::S3Client;
 use crate::config::Config;
-use crate::profiler::Profiler;
+use crate::{
+    app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind},
+    metrics::Metrics,
+};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -30,8 +31,7 @@ pub(crate) trait GlobalContext: Sync {
     fn agent_id(&self) -> &AgentId;
     fn queue_counter(&self) -> &Option<QueueCounterHandle>;
     fn redis_pool(&self) -> &Option<RedisConnectionPool>;
-    fn profiler(&self) -> Arc<Profiler<(ProfilerKeys, Option<String>)>>;
-    fn get_metrics(&self, duration: u64) -> anyhow::Result<Vec<crate::app::metrics::Metric>>;
+    fn metrics(&self) -> Arc<Metrics>;
     fn running_requests(&self) -> Option<Arc<AtomicI64>>;
     fn s3_client(&self) -> Option<S3Client>;
 
@@ -72,7 +72,7 @@ pub(crate) struct AppContext {
     agent_id: AgentId,
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
-    profiler: Arc<Profiler<(ProfilerKeys, Option<String>)>>,
+    metrics: Arc<Metrics>,
     running_requests: Option<Arc<AtomicI64>>,
     s3_client: Option<S3Client>,
 }
@@ -106,12 +106,8 @@ impl GlobalContext for AppContext {
         &self.redis_pool
     }
 
-    fn profiler(&self) -> Arc<Profiler<(ProfilerKeys, Option<String>)>> {
-        self.profiler.clone()
-    }
-
-    fn get_metrics(&self, duration: u64) -> anyhow::Result<Vec<crate::app::metrics::Metric>> {
-        crate::app::metrics::Collector::new(self, duration).get()
+    fn metrics(&self) -> Arc<Metrics> {
+        self.metrics.clone()
     }
 
     fn running_requests(&self) -> Option<Arc<AtomicI64>> {
@@ -170,12 +166,8 @@ impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
         self.global_context.redis_pool()
     }
 
-    fn profiler(&self) -> Arc<Profiler<(ProfilerKeys, Option<String>)>> {
-        self.global_context.profiler()
-    }
-
-    fn get_metrics(&self, duration: u64) -> anyhow::Result<Vec<crate::app::metrics::Metric>> {
-        self.global_context.get_metrics(duration)
+    fn metrics(&self) -> Arc<Metrics> {
+        self.global_context.metrics()
     }
 
     fn running_requests(&self) -> Option<Arc<AtomicI64>> {
@@ -263,7 +255,7 @@ impl AppContextBuilder {
         }
     }
 
-    pub(crate) fn build(self) -> AppContext {
+    pub(crate) fn build(self, metrics: Metrics) -> AppContext {
         AppContext {
             config: Arc::new(self.config),
             authz: self.authz,
@@ -272,7 +264,7 @@ impl AppContextBuilder {
             agent_id: self.agent_id,
             queue_counter: self.queue_counter,
             redis_pool: self.redis_pool,
-            profiler: Arc::new(Profiler::<(ProfilerKeys, Option<String>)>::start()),
+            metrics: Arc::new(metrics),
             running_requests: self.running_requests,
             s3_client: S3Client::new(),
         }

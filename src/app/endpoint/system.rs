@@ -36,12 +36,12 @@ impl RequestHandler for VacuumHandler {
 
         // Run vacuum operation asynchronously.
         let db = context.db().to_owned();
-        let profiler = context.profiler();
+        let metrics = context.metrics();
         let logger = context.logger().new(o!());
         let config = context.config().vacuum.to_owned();
 
         async_std::task::spawn(async move {
-            if let Err(err) = vacuum(&db, &profiler, &config).await {
+            if let Err(err) = vacuum(&db, &metrics, &config).await {
                 error!(logger, "Vacuum failed: {:?}", err);
 
                 let svc_error = SvcError::builder()

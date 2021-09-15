@@ -1,15 +1,12 @@
 use anyhow::{Context, Result};
 use sqlx::postgres::PgPool as Db;
 
-use crate::app::metrics::ProfilerKeys;
-use crate::config::VacuumConfig;
-use crate::profiler::Profiler;
+use crate::{
+    config::VacuumConfig,
+    metrics::{Metrics, QueryKey},
+};
 
-pub(crate) async fn call(
-    db: &Db,
-    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
-    config: &VacuumConfig,
-) -> Result<()> {
+pub(crate) async fn call(db: &Db, metrics: &Metrics, config: &VacuumConfig) -> Result<()> {
     let mut conn = db
         .acquire()
         .await
@@ -21,11 +18,8 @@ pub(crate) async fn call(
         config.max_deleted_lifetime,
     );
 
-    profiler
-        .measure(
-            (ProfilerKeys::EventVacuumQuery, Some("system.vacuum".into())),
-            query.execute(&mut conn),
-        )
+    metrics
+        .measure_query(QueryKey::EventVacuumQuery, query.execute(&mut conn))
         .await?;
 
     Ok(())
@@ -38,16 +32,16 @@ mod tests {
     use std::ops::Bound;
 
     use chrono::{Duration, SubsecRound, Utc};
+    use prometheus::Registry;
     use serde_json::json;
     use serial_test::serial;
     use sqlx::postgres::PgConnection;
     use uuid::Uuid;
 
-    use crate::app::metrics::ProfilerKeys;
     use crate::config::VacuumConfig;
     use crate::db::event::{ListQuery as EventListQuery, Object as Event};
     use crate::db::room::Object as Room;
-    use crate::profiler::Profiler;
+    use crate::metrics::Metrics;
     use crate::test_helpers::prelude::*;
 
     #[test]
@@ -61,7 +55,7 @@ mod tests {
             }))
             .expect("Failed to parse vacuum config");
 
-            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
+            let metrics = Metrics::new(&Registry::new()).unwrap();
             let db = TestDb::new().await;
 
             // Prepare 3 rooms.
@@ -88,7 +82,7 @@ mod tests {
             drop(conn);
 
             // Run vacuum.
-            super::call(&db.connection_pool(), &profiler, &config)
+            super::call(&db.connection_pool(), &metrics, &config)
                 .await
                 .expect("Vacuum failed");
 
@@ -123,7 +117,7 @@ mod tests {
             }))
             .expect("Failed to parse vacuum config");
 
-            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
+            let metrics = Metrics::new(&Registry::new()).unwrap();
             let db = TestDb::new().await;
 
             // Prepare rooms.
@@ -153,7 +147,7 @@ mod tests {
             drop(conn);
 
             // Run vacuum.
-            super::call(&db.connection_pool(), &profiler, &config)
+            super::call(&db.connection_pool(), &metrics, &config)
                 .await
                 .expect("Vacuum failed");
 

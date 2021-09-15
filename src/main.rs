@@ -132,7 +132,7 @@ async fn main() -> Result<()> {
 mod app;
 mod config;
 mod db;
-mod profiler;
+mod metrics;
 #[allow(unused_imports)]
 mod serde;
 #[cfg(test)]

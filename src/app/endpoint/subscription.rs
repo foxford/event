@@ -98,13 +98,7 @@ impl ResponseHandler for CreateResponseHandler {
         // Determine whether the agent is banned.
         let agent_with_ban = {
             // Find room.
-            helpers::find_room(
-                context,
-                room_id,
-                helpers::RoomTimeRequirement::Open,
-                corr_data.reqp.method(),
-            )
-            .await?;
+            helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Open).await?;
 
             // Update agent state to `ready`.
             let q = agent::UpdateQuery::new(corr_data.subject.clone(), room_id)
@@ -113,8 +107,8 @@ impl ResponseHandler for CreateResponseHandler {
             let mut conn = context.get_conn().await?;
 
             context
-                .profiler()
-                .measure((ProfilerKeys::AgentUpdateQuery, None), q.execute(&mut conn))
+                .metrics()
+                .measure_query(QueryKey::AgentUpdateQuery, q.execute(&mut conn))
                 .await
                 .context("Failed to put agent into 'ready' status")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -122,11 +116,8 @@ impl ResponseHandler for CreateResponseHandler {
             let query = agent::FindWithBanQuery::new(corr_data.subject.clone(), room_id);
 
             context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::AgentFindWithBanQuery, None),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::AgentFindWithBanQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to find agent with ban")
                 .error(AppErrorKind::DbQueryFailed)?
@@ -232,11 +223,8 @@ impl ResponseHandler for DeleteResponseHandler {
             let mut conn = context.get_conn().await?;
 
             let row_count = context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::AgentDeleteQuery, None),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::AgentDeleteQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to delete agent")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -342,11 +330,8 @@ impl EventHandler for DeleteEventHandler {
             let mut conn = context.get_conn().await?;
 
             let row_count = context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::AgentDeleteQuery, None),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::AgentDeleteQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to delete agent")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -366,9 +351,9 @@ impl EventHandler for DeleteEventHandler {
             .error(AppErrorKind::DbQueryFailed)?;
         if let Some(room) = room {
             context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::EventInsertQuery, None),
+                .metrics()
+                .measure_query(
+                    QueryKey::EventInsertQuery,
                     insert_agent_action(&room, AgentAction::Left, &payload.subject, &mut conn),
                 )
                 .await

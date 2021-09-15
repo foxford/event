@@ -56,13 +56,8 @@ impl RequestHandler for EventsDumpHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
     ) -> Result {
-        let room = helpers::find_room(
-            context,
-            payload.id,
-            helpers::RoomTimeRequirement::Any,
-            reqp.method(),
-        )
-        .await?;
+        let room =
+            helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Any).await?;
 
         let object = AuthzObject::new(&["rooms"]).into();
 
@@ -78,7 +73,7 @@ impl RequestHandler for EventsDumpHandler {
             .await?;
 
         let db = context.db().to_owned();
-        let profiler = context.profiler();
+        let metrics = context.metrics();
         let logger = context.logger().new(o!());
 
         let s3_client = context
@@ -90,7 +85,7 @@ impl RequestHandler for EventsDumpHandler {
             .error(AppErrorKind::NoS3Client)?;
 
         let notification_future = async_std::task::spawn(async move {
-            let result = dump_events_to_s3(&db, &profiler, s3_client, &room).await;
+            let result = dump_events_to_s3(&db, &metrics, s3_client, &room).await;
 
             // Handle result.
             let result = match result {

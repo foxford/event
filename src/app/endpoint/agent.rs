@@ -35,13 +35,8 @@ impl RequestHandler for ListHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
     ) -> Result {
-        let room = helpers::find_room(
-            context,
-            payload.room_id,
-            helpers::RoomTimeRequirement::Open,
-            reqp.method(),
-        )
-        .await?;
+        let room = helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Open)
+            .await?;
 
         // Authorize agents listing in the room.
         let object = {
@@ -72,11 +67,8 @@ impl RequestHandler for ListHandler {
             );
 
             context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::AgentListQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::AgentListQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to list agents")
                 .error(AppErrorKind::DbQueryFailed)?
@@ -134,13 +126,8 @@ impl RequestHandler for UpdateHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
     ) -> Result {
-        let room = helpers::find_room(
-            context,
-            payload.room_id,
-            helpers::RoomTimeRequirement::Open,
-            reqp.method(),
-        )
-        .await?;
+        let room = helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Open)
+            .await?;
 
         helpers::add_room_logger_tags(context, &room);
 
@@ -179,11 +166,8 @@ impl RequestHandler for UpdateHandler {
 
             let mut conn = context.get_conn().await?;
             context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::BanInsertQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::BanInsertQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to insert room ban")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -192,11 +176,8 @@ impl RequestHandler for UpdateHandler {
 
             let mut conn = context.get_conn().await?;
             context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::BanDeleteQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::BanDeleteQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to delete room ban")
                 .error(AppErrorKind::DbQueryFailed)?;

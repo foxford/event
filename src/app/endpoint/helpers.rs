@@ -7,11 +7,10 @@ use svc_agent::mqtt::{
 };
 use uuid::Uuid;
 
-use crate::app::context::Context;
 use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
-use crate::app::metrics::ProfilerKeys;
 use crate::app::API_VERSION;
 use crate::db;
+use crate::{app::context::Context, metrics::QueryKey};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -57,7 +56,6 @@ pub(crate) async fn find_room<C: Context>(
     context: &mut C,
     id: Uuid,
     opening_requirement: RoomTimeRequirement,
-    key: &str,
 ) -> Result<db::room::Object, AppError> {
     context.add_logger_tags(o!("room_id" => id.to_string()));
 
@@ -65,11 +63,8 @@ pub(crate) async fn find_room<C: Context>(
     let mut conn = context.get_ro_conn().await?;
 
     let room = context
-        .profiler()
-        .measure(
-            (ProfilerKeys::RoomFindQuery, Some(key.to_owned())),
-            query.execute(&mut conn),
-        )
+        .metrics()
+        .measure_query(QueryKey::RoomFindQuery, query.execute(&mut conn))
         .await
         .context("Failed to find room")
         .error(AppErrorKind::DbQueryFailed)?

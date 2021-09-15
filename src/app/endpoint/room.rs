@@ -125,14 +125,8 @@ impl RequestHandler for CreateHandler {
             let mut conn = context.get_conn().await?;
 
             context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::RoomInsertQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::RoomInsertQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to insert room")
                 .error(AppErrorKind::DbQueryFailed)?
@@ -179,13 +173,8 @@ impl RequestHandler for ReadHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
     ) -> Result {
-        let room = helpers::find_room(
-            context,
-            payload.id,
-            helpers::RoomTimeRequirement::Any,
-            reqp.method(),
-        )
-        .await?;
+        let room =
+            helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Any).await?;
 
         // Authorize room reading on the tenant.
         let object = AuthzObject::room(&room).into();
@@ -240,7 +229,7 @@ impl RequestHandler for UpdateHandler {
             helpers::RoomTimeRequirement::Any
         };
 
-        let room = helpers::find_room(context, payload.id, time_requirement, reqp.method()).await?;
+        let room = helpers::find_room(context, payload.id, time_requirement).await?;
 
         // Authorize room reading on the tenant.
         let object = AuthzObject::room(&room).into();
@@ -283,14 +272,8 @@ impl RequestHandler for UpdateHandler {
             let mut conn = context.get_conn().await?;
 
             context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::RoomUpdateQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::RoomUpdateQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to update room")
                 .error(AppErrorKind::DbQueryFailed)?
@@ -365,13 +348,8 @@ impl RequestHandler for EnterHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
     ) -> Result {
-        let room = helpers::find_room(
-            context,
-            payload.id,
-            helpers::RoomTimeRequirement::Open,
-            reqp.method(),
-        )
-        .await?;
+        let room =
+            helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Open).await?;
 
         // Authorize subscribing to the room's events.
         let room_id = room.id().to_string();
@@ -395,21 +373,15 @@ impl RequestHandler for EnterHandler {
             let query = agent::InsertQuery::new(reqp.as_agent_id().to_owned(), room.id());
 
             context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::AgentInsertQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::AgentInsertQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to insert agent into room")
                 .error(AppErrorKind::DbQueryFailed)?;
             context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::EventInsertQuery, None),
+                .metrics()
+                .measure_query(
+                    QueryKey::EventInsertQuery,
                     insert_agent_action(&room, AgentAction::Enter, reqp.as_agent_id(), &mut conn),
                 )
                 .await
@@ -496,13 +468,8 @@ impl RequestHandler for LeaveHandler {
         reqp: &IncomingRequestProperties,
     ) -> Result {
         let (room, presence) = {
-            let room = helpers::find_room(
-                context,
-                payload.id,
-                helpers::RoomTimeRequirement::Any,
-                reqp.method(),
-            )
-            .await?;
+            let room =
+                helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Any).await?;
 
             // Check room presence.
             let query = agent::ListQuery::new()
@@ -513,11 +480,8 @@ impl RequestHandler for LeaveHandler {
             let mut conn = context.get_ro_conn().await?;
 
             let presence = context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::AgentListQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::AgentListQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to list agents")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -583,13 +547,8 @@ impl RequestHandler for AdjustHandler {
         reqp: &IncomingRequestProperties,
     ) -> Result {
         // Find realtime room.
-        let room = helpers::find_room(
-            context,
-            payload.id,
-            helpers::RoomTimeRequirement::Any,
-            reqp.method(),
-        )
-        .await?;
+        let room =
+            helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Any).await?;
 
         // Authorize trusted account for the room's audience.
         let object = AuthzObject::room(&room).into();
@@ -606,13 +565,13 @@ impl RequestHandler for AdjustHandler {
 
         // Run asynchronous task for adjustment.
         let db = context.db().to_owned();
-        let profiler = context.profiler();
+        let metrics = context.metrics();
         let logger = context.logger().new(o!());
 
         let notification_future = async_std::task::spawn(async move {
             let operation_result = adjust_room(
                 &db,
-                &profiler,
+                &metrics,
                 &room,
                 payload.started_at,
                 &payload.segments,

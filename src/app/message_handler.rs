@@ -4,7 +4,7 @@ use std::pin::Pin;
 use anyhow::Context as AnyhowContext;
 use async_std::prelude::*;
 use async_std::stream::{self, Stream};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use futures_util::pin_mut;
 use svc_agent::{
     mqtt::{
@@ -26,15 +26,13 @@ pub(crate) type MessageStream =
 pub(crate) struct MessageHandler<C: GlobalContext> {
     agent: Agent,
     global_context: C,
-    tx: TimingChannel,
 }
 
 impl<C: GlobalContext + Sync> MessageHandler<C> {
-    pub(crate) fn new(agent: Agent, global_context: C, tx: TimingChannel) -> Self {
+    pub(crate) fn new(agent: Agent, global_context: C) -> Self {
         Self {
             agent,
             global_context,
-            tx,
         }
     }
 
@@ -85,24 +83,10 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
         msg_context: &mut AppMessageContext<'_, C>,
         message: &IncomingMessage<String>,
     ) -> Result<(), AppError> {
-        let mut timer = MessageHandlerTiming::new(msg_context.start_timestamp(), self.tx.clone());
-
         match message {
-            IncomingMessage::Request(req) => {
-                timer.set_method(req.properties().method().into());
-                self.handle_request(msg_context, req).await
-            }
-            IncomingMessage::Event(ev) => {
-                let label = match ev.properties().label() {
-                    Some(label) => format!("event-{}", label),
-                    None => "event-none".into(),
-                };
-
-                timer.set_method(label);
-                self.handle_event(msg_context, ev).await
-            }
+            IncomingMessage::Request(req) => self.handle_request(msg_context, req).await,
+            IncomingMessage::Event(ev) => self.handle_event(msg_context, ev).await,
             IncomingMessage::Response(resp) => {
-                // TODO TIMER
                 self.handle_response(msg_context, resp).await
             }
         }
@@ -290,25 +274,25 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
             match payload {
                 // Call handler.
                 Ok(payload) => {
-                    H::handle(context, payload, reqp)
-                        .await
-                        .unwrap_or_else(|app_error| {
-                            context.add_logger_tags(o!(
-                                "status" => app_error.status().as_u16(),
-                                "kind" => app_error.kind().to_owned(),
-                            ));
+                    let app_result = H::handle(context, payload, reqp).await;
+                    context.metrics().observe_app_result(&app_result);
+                    app_result.unwrap_or_else(|app_error| {
+                        context.add_logger_tags(o!(
+                            "status" => app_error.status().as_u16(),
+                            "kind" => app_error.kind().to_owned(),
+                        ));
 
-                            error!(
-                                context.logger(),
-                                "Failed to handle request: {}",
-                                app_error.source(),
-                            );
+                        error!(
+                            context.logger(),
+                            "Failed to handle request: {}",
+                            app_error.source(),
+                        );
 
-                            app_error.notify_sentry(context.logger());
+                        app_error.notify_sentry(context.logger());
 
-                            // Handler returned an error.
-                            error_response(app_error, reqp, context.start_timestamp())
-                        })
+                        // Handler returned an error.
+                        error_response(app_error, reqp, context.start_timestamp())
+                    })
                 }
                 // Bad envelope or payload format => 400.
                 Err(err) => {
@@ -353,24 +337,24 @@ impl<'async_trait, H: 'async_trait + endpoint::ResponseHandler>
             match payload {
                 // Call handler.
                 Ok(payload) => {
-                    H::handle(context, payload, respp, corr_data)
-                        .await
-                        .unwrap_or_else(|app_error| {
-                            // Handler returned an error.
-                            context.add_logger_tags(o!(
-                                "status" => app_error.status().as_u16(),
-                                "kind" => app_error.kind().to_owned(),
-                            ));
+                    let app_result = H::handle(context, payload, respp, corr_data).await;
+                    context.metrics().observe_app_result(&app_result);
+                    app_result.unwrap_or_else(|app_error| {
+                        // Handler returned an error.
+                        context.add_logger_tags(o!(
+                            "status" => app_error.status().as_u16(),
+                            "kind" => app_error.kind().to_owned(),
+                        ));
 
-                            error!(
-                                context.logger(),
-                                "Failed to handle response: {}",
-                                app_error.source(),
-                            );
+                        error!(
+                            context.logger(),
+                            "Failed to handle response: {}",
+                            app_error.source(),
+                        );
 
-                            app_error.notify_sentry(context.logger());
-                            Box::new(stream::empty())
-                        })
+                        app_error.notify_sentry(context.logger());
+                        Box::new(stream::empty())
+                    })
                 }
                 Err(err) => {
                     // Bad envelope or payload format.
@@ -410,9 +394,10 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
 
             match payload {
                 // Call handler.
-                Ok(payload) => H::handle(context, payload, evp)
-                    .await
-                    .unwrap_or_else(|app_error| {
+                Ok(payload) => {
+                    let app_result = H::handle(context, payload, evp).await;
+                    context.metrics().observe_app_result(&app_result);
+                    app_result.unwrap_or_else(|app_error| {
                         // Handler returned an error.
                         context.add_logger_tags(o!(
                             "status" => app_error.status().as_u16(),
@@ -427,7 +412,8 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
 
                         app_error.notify_sentry(context.logger());
                         Box::new(stream::empty())
-                    }),
+                    })
+                }
                 Err(err) => {
                     // Bad envelope or payload format.
                     error!(context.logger(), "Failed to parse event: {:?}", err);
@@ -449,41 +435,5 @@ impl endpoint::CorrelationData {
 
     fn parse(raw_corr_data: &str) -> anyhow::Result<Self> {
         serde_json::from_str::<Self>(raw_corr_data).context("Failed to parse correlation data")
-    }
-}
-
-type TimingChannel = crossbeam_channel::Sender<(Duration, String)>;
-
-struct MessageHandlerTiming {
-    start: DateTime<Utc>,
-    sender: TimingChannel,
-    method: String,
-}
-
-impl MessageHandlerTiming {
-    fn new(start: DateTime<Utc>, sender: TimingChannel) -> Self {
-        Self {
-            method: "none".into(),
-            start,
-            sender,
-        }
-    }
-
-    fn set_method(&mut self, method: String) {
-        self.method = method;
-    }
-}
-
-impl Drop for MessageHandlerTiming {
-    fn drop(&mut self) {
-        if let Err(e) = self
-            .sender
-            .try_send((Utc::now() - self.start, self.method.clone()))
-        {
-            warn!(
-                crate::LOG,
-                "Failed to send msg handler future timing, reason = {:?}", e
-            );
-        }
     }
 }

@@ -4,9 +4,6 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 use sqlx::postgres::{PgConnection, PgPool as Db};
 
-use crate::app::metrics::ProfilerKeys;
-use crate::app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND};
-use crate::db::adjustment::Segments;
 use crate::db::change::{ListQuery as ChangeListQuery, Object as Change};
 use crate::db::edition::Object as Edition;
 use crate::db::event::{
@@ -14,13 +11,17 @@ use crate::db::event::{
 };
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::room_time::RoomTimeBound;
-use crate::profiler::Profiler;
+use crate::{
+    app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND},
+    metrics::Metrics,
+};
+use crate::{db::adjustment::Segments, metrics::QueryKey};
 
 ////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) async fn call(
     db: &Db,
-    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
+    metrics: &Metrics,
     edition: &Edition,
     source: &Room,
 ) -> Result<(Room, Segments)> {
@@ -50,21 +51,15 @@ pub(crate) async fn call(
         .room_id(source.id())
         .kind("stream".to_string());
 
-    let cut_events = profiler
-        .measure(
-            (ProfilerKeys::EventListQuery, Some("edition.commit".into())),
-            query.execute(&mut txn),
-        )
+    let cut_events = metrics
+        .measure_query(QueryKey::EventListQuery, query.execute(&mut txn))
         .await
         .with_context(|| format!("failed to fetch cut events for room_id = '{}'", source.id()))?;
 
     let query = ChangeListQuery::new(edition.id()).kind("stream");
 
-    let cut_changes = profiler
-        .measure(
-            (ProfilerKeys::ChangeListQuery, Some("edition.commit".into())),
-            query.execute(&mut txn),
-        )
+    let cut_changes = metrics
+        .measure_query(QueryKey::ChangeListQuery, query.execute(&mut txn))
         .await
         .with_context(|| {
             format!(
@@ -74,20 +69,14 @@ pub(crate) async fn call(
         })?;
 
     let cut_gaps = collect_gaps(&cut_events, &cut_changes)?;
-    let destination = clone_room(&mut txn, profiler, source).await?;
+    let destination = clone_room(&mut txn, metrics, source).await?;
 
-    clone_events(&mut txn, profiler, source, &destination, edition, &cut_gaps).await?;
+    clone_events(&mut txn, metrics, source, &destination, edition, &cut_gaps).await?;
 
     let query = EventDeleteQuery::new(destination.id(), "stream");
 
-    profiler
-        .measure(
-            (
-                ProfilerKeys::EventDeleteQuery,
-                Some("edition.commit".into()),
-            ),
-            query.execute(&mut txn),
-        )
+    metrics
+        .measure_query(QueryKey::EventDeleteQuery, query.execute(&mut txn))
         .await
         .with_context(|| {
             format!(
@@ -106,14 +95,8 @@ pub(crate) async fn call(
         })
         .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
 
-    profiler
-        .measure(
-            (
-                ProfilerKeys::EditionCommitTxnCommit,
-                Some("edition.commit".into()),
-            ),
-            txn.commit(),
-        )
+    metrics
+        .measure_query(QueryKey::EditionCommitTxnCommit, txn.commit())
         .await?;
 
     info!(
@@ -126,11 +109,7 @@ pub(crate) async fn call(
     Ok((destination, Segments::from(modified_segments))) as Result<(Room, Segments)>
 }
 
-async fn clone_room(
-    conn: &mut PgConnection,
-    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
-    source: &Room,
-) -> Result<Room> {
+async fn clone_room(conn: &mut PgConnection, metrics: &Metrics, source: &Room) -> Result<Room> {
     let time = match source.time() {
         Ok(t) => t.into(),
         Err(_e) => bail!("invalid time for room = '{}'", source.id()),
@@ -142,18 +121,15 @@ async fn clone_room(
         query = query.tags(tags.to_owned());
     }
 
-    profiler
-        .measure(
-            (ProfilerKeys::RoomInsertQuery, Some("edition.commit".into())),
-            query.execute(conn),
-        )
+    metrics
+        .measure_query(QueryKey::RoomInsertQuery, query.execute(conn))
         .await
         .context("Failed to insert room")
 }
 
 async fn clone_events(
     conn: &mut PgConnection,
-    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
+    metrics: &Metrics,
     source: &Room,
     destination: &Room,
     edition: &Edition,
@@ -260,14 +236,8 @@ async fn clone_events(
         stops.as_slice(),
     );
 
-    profiler
-        .measure(
-            (
-                ProfilerKeys::EditionCloneEventsQuery,
-                Some("edition.commit".into()),
-            ),
-            query.execute(conn),
-        )
+    metrics
+        .measure_query(QueryKey::EditionCloneEventsQuery, query.execute(conn))
         .await
         .map(|_| ())
         .with_context(|| {
@@ -370,25 +340,24 @@ mod tests {
     use std::ops::Bound;
 
     use chrono::Duration;
+    use prometheus::Registry;
     use serde_json::{json, Value as JsonValue};
     use sqlx::postgres::PgConnection;
     use svc_agent::{AccountId, AgentId};
     use svc_authn::Authenticable;
 
-    use crate::app::metrics::ProfilerKeys;
-    use crate::db::change::ChangeType;
     use crate::db::event::{ListQuery as EventListQuery, Object as Event};
     use crate::db::room::Object as Room;
-    use crate::profiler::Profiler;
     use crate::test_helpers::db::TestDb;
     use crate::test_helpers::prelude::*;
+    use crate::{db::change::ChangeType, metrics::Metrics};
 
     const AUDIENCE: &str = "dev.svc.example.org";
 
     #[test]
     fn commit_edition() {
         async_std::task::block_on(async {
-            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
+            let metrics = Metrics::new(&Registry::new()).unwrap();
             let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut conn = db.get_conn().await;
@@ -487,7 +456,7 @@ mod tests {
             drop(conn);
 
             let (destination, segments) =
-                super::call(&db.connection_pool(), &profiler, &edition, &room)
+                super::call(&db.connection_pool(), &metrics, &edition, &room)
                     .await
                     .expect("edition commit failed");
 
@@ -531,7 +500,7 @@ mod tests {
     #[test]
     fn commit_edition_with_cut_changes() {
         async_std::task::block_on(async {
-            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
+            let metrics = Metrics::new(&Registry::new()).unwrap();
             let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut conn = db.get_conn().await;
@@ -607,7 +576,7 @@ mod tests {
             drop(conn);
 
             let (destination, segments) =
-                super::call(&db.connection_pool(), &profiler, &edition, &room)
+                super::call(&db.connection_pool(), &metrics, &edition, &room)
                     .await
                     .expect("edition commit failed");
 
@@ -639,7 +608,7 @@ mod tests {
     #[test]
     fn commit_edition_with_intersecting_gaps() {
         async_std::task::block_on(async {
-            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
+            let metrics = Metrics::new(&Registry::new()).unwrap();
             let db = TestDb::new().await;
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut conn = db.get_conn().await;
@@ -715,7 +684,7 @@ mod tests {
             drop(conn);
 
             let (destination, segments) =
-                super::call(&db.connection_pool(), &profiler, &edition, &room)
+                super::call(&db.connection_pool(), &metrics, &edition, &room)
                     .await
                     .expect("edition commit failed");
 

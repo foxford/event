@@ -2,6 +2,7 @@ use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use prometheus::Registry;
 use serde_json::json;
 use slog::{Logger, OwnedKV, SendSyncRefUnwindSafeKV};
 use sqlx::postgres::PgPool as Db;
@@ -9,12 +10,12 @@ use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_authz::ClientMap as Authz;
 
-use crate::app::context::{Context, GlobalContext, MessageContext};
-use crate::app::metrics::Metric;
-use crate::app::metrics::ProfilerKeys;
 use crate::app::s3_client::S3Client;
 use crate::config::Config;
-use crate::profiler::Profiler;
+use crate::{
+    app::context::{Context, GlobalContext, MessageContext},
+    metrics::Metrics,
+};
 
 use super::authz::{DbBanTestAuthz, TestAuthz};
 use super::db::TestDb;
@@ -51,7 +52,7 @@ pub(crate) struct TestContext {
     authz: Authz,
     db: TestDb,
     agent_id: AgentId,
-    profiler: Arc<Profiler<(ProfilerKeys, Option<String>)>>,
+    metrics: Arc<Metrics>,
     logger: Logger,
     start_timestamp: DateTime<Utc>,
     s3_client: Option<S3Client>,
@@ -67,7 +68,7 @@ impl TestContext {
             authz: authz.into(),
             db,
             agent_id,
-            profiler: Arc::new(Profiler::<(ProfilerKeys, Option<String>)>::start()),
+            metrics: Arc::new(Metrics::new(&Registry::new()).unwrap()),
             logger: crate::LOG.new(o!()),
             start_timestamp: Utc::now(),
             s3_client: None,
@@ -83,7 +84,7 @@ impl TestContext {
             authz: authz.into(),
             db,
             agent_id,
-            profiler: Arc::new(Profiler::<(ProfilerKeys, Option<String>)>::start()),
+            metrics: Arc::new(Metrics::new(&Registry::new()).unwrap()),
             logger: crate::LOG.new(o!()),
             start_timestamp: Utc::now(),
             s3_client: None,
@@ -124,12 +125,8 @@ impl GlobalContext for TestContext {
         &None
     }
 
-    fn profiler(&self) -> Arc<Profiler<(ProfilerKeys, Option<String>)>> {
-        self.profiler.clone()
-    }
-
-    fn get_metrics(&self, _duration: u64) -> anyhow::Result<Vec<Metric>> {
-        Ok(vec![])
+    fn metrics(&self) -> Arc<Metrics> {
+        self.metrics.clone()
     }
 
     fn running_requests(&self) -> Option<Arc<AtomicI64>> {
