@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use rusoto_s3::PutObjectRequest;
@@ -12,6 +12,9 @@ use crate::db::room::Object as Room;
 use crate::profiler::Profiler;
 
 ////////////////////////////////////////////////////////////////////////////////
+
+const RETRIES: u8 = 3;
+const RETRY_DELAY: Duration = Duration::from_millis(200);
 
 struct S3Destination {
     bucket: String,
@@ -96,17 +99,32 @@ async fn upload_events(
     })
     .await?;
 
-    let request = PutObjectRequest {
-        bucket,
-        key,
-        body: Some(body.into()),
-        ..Default::default()
-    };
+    let mut result;
+    for _ in 0..RETRIES {
+        let request = PutObjectRequest {
+            bucket: bucket.clone(),
+            key: key.clone(),
+            body: Some(body.clone().into()),
+            ..Default::default()
+        };
 
-    s3_client
-        .put_object(request)
-        .await
-        .map_err(|e| anyhow!("Failed to upload events to s3, reason = {:?}", e))?;
+        result = s3_client
+            .put_object(request)
+            .await
+            .map_err(|e| anyhow!("Failed to upload events to s3, reason = {:?}", e));
+
+        if result.is_ok() {
+            break;
+        } else {
+            info!(
+                crate::LOG,
+                "Dump events to S3 task errored, room id = {}, error = {:?}",
+                room.id(),
+                result
+            );
+            async_std::task::sleep(RETRY_DELAY).await;
+        }
+    }
 
     Ok(s3_uri)
 }
