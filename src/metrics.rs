@@ -107,7 +107,9 @@ impl Metrics {
                     Ok((
                         kind,
                         db_duration
-                            .get_metric_with_label_values(&[&serde_json::to_string(&kind)?])?,
+                            .get_metric_with_label_values(&[
+                                serde_json::to_string(&kind)?.trim_matches('"')
+                            ])?,
                     ))
                 })
                 .collect::<anyhow::Result<_>>()?,
@@ -122,7 +124,7 @@ impl Metrics {
         func.await
     }
 
-    pub async fn start_request(&self, request: &str) -> Option<HistogramTimer> {
+    pub fn start_request(&self, request: &str) -> Option<HistogramTimer> {
         {
             let request_duration = self.request_duration.read();
             if let Some(metric) = request_duration.get(request) {
