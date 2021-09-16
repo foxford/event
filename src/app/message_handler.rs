@@ -86,9 +86,7 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
         match message {
             IncomingMessage::Request(req) => self.handle_request(msg_context, req).await,
             IncomingMessage::Event(ev) => self.handle_event(msg_context, ev).await,
-            IncomingMessage::Response(resp) => {
-                self.handle_response(msg_context, resp).await
-            }
+            IncomingMessage::Response(resp) => self.handle_response(msg_context, resp).await,
         }
     }
 
