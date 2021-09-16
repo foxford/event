@@ -255,6 +255,9 @@ async fn create_room(
     if let Some(tags) = source_room.tags() {
         query = query.tags(tags.to_owned());
     }
+    if let Some(classroom_id) = source_room.classroom_id() {
+        query = query.classroom_id(classroom_id);
+    }
 
     metrics
         .measure_query(QueryKey::RoomInsertQuery, query.execute(conn))

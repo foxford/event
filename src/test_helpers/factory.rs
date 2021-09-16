@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
+use svc_authn::Authenticable;
 use uuid::Uuid;
 
 use crate::db;
@@ -16,6 +17,7 @@ pub(crate) struct Room {
     time: Option<db::room::Time>,
     tags: Option<JsonValue>,
     preserve_history: Option<bool>,
+    classroom_id: Option<Uuid>,
 }
 
 impl Room {
@@ -51,6 +53,13 @@ impl Room {
         }
     }
 
+    pub(crate) fn classroom_id(self, classroom_id: Uuid) -> Self {
+        Self {
+            classroom_id: Some(classroom_id),
+            ..self
+        }
+    }
+
     pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::room::Object {
         let audience = self.audience.expect("Audience not set");
         let time = self.time.expect("Time not set");
@@ -63,6 +72,10 @@ impl Room {
 
         if let Some(preserve_history) = self.preserve_history {
             query = query.preserve_history(preserve_history)
+        }
+
+        if let Some(classroom_id) = self.classroom_id {
+            query = query.classroom_id(classroom_id)
         }
 
         query.execute(conn).await.expect("Failed to insert room")
@@ -365,5 +378,48 @@ impl Change {
         };
 
         query.execute(conn).await.expect("Failed to insert edition")
+    }
+}
+
+////////////////////////////////////////////////////////////////////////////////////
+
+#[derive(Debug)]
+pub(crate) struct RoomBan<'a, T: Authenticable> {
+    as_account_id: &'a T,
+    room_id: Uuid,
+    reason: Option<String>,
+}
+
+impl<'a, T: Authenticable> RoomBan<'a, T> {
+    pub(crate) fn new(as_account_id: &'a T, room_id: Uuid) -> Self {
+        Self {
+            as_account_id,
+            room_id,
+            reason: None,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn reason(self, reason: &str) -> Self {
+        Self {
+            reason: Some(reason.to_owned()),
+            ..self
+        }
+    }
+
+    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::room_ban::Object {
+        let mut query = db::room_ban::InsertQuery::new(
+            self.as_account_id.as_account_id().to_owned(),
+            self.room_id,
+        );
+
+        if let Some(reason) = self.reason {
+            query.reason(&reason);
+        }
+
+        query
+            .execute(conn)
+            .await
+            .expect("Failed to insert room_ban")
     }
 }
