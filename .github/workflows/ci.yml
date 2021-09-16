@@ -41,7 +41,7 @@ jobs:
     - name: fmt
       run: cargo fmt -- --check
     - name: Install sqlx-cli
-      run: cargo install sqlx-cli --version 0.5.2
+      run: cargo install sqlx-cli --version 0.5.7
     - name: Run tests
       run: cargo sqlx database create && cargo sqlx migrate run && cargo test --verbose
       env:
