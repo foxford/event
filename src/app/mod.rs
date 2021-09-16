@@ -3,7 +3,7 @@ use std::thread;
 use std::time::Duration;
 use std::{
     net::SocketAddr,
-    sync::atomic::{AtomicBool, AtomicI64, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use anyhow::{Context as AnyhowContext, Result};
@@ -22,8 +22,11 @@ use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::{extension::sentry, Error as SvcError};
 
-use crate::config::{self, Config, KruonisConfig};
 use crate::{app::context::GlobalContext, metrics::Metrics};
+use crate::{
+    authz::Authz,
+    config::{self, Config, KruonisConfig},
+};
 use context::AppContextBuilder;
 use message_handler::MessageHandler;
 
@@ -93,7 +96,11 @@ pub(crate) async fn run(
     // Subscribe to topics
     subscribe(&mut agent, &agent_id, &config)?;
 
+    let registry = Registry::new();
+    let metrics = Arc::new(Metrics::new(&registry)?);
+
     // Context
+    let authz = Authz::new(authz, metrics.clone());
     let context_builder = AppContextBuilder::new(config.clone(), authz, db);
 
     let context_builder = match ro_db {
@@ -106,12 +113,8 @@ pub(crate) async fn run(
         None => context_builder,
     };
 
-    let running_requests = Arc::new(AtomicI64::new(0));
-    let registry = Registry::new();
-    let metrics = Metrics::new(&registry)?;
     let context = context_builder
         .queue_counter(agent.get_queue_counter())
-        .running_requests(running_requests.clone())
         .build(metrics);
     if let Some(metrics) = config.metrics.as_ref() {
         task::spawn(start_metrics_collector(registry, metrics.http.bind_address));

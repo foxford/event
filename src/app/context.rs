@@ -1,4 +1,3 @@
-use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use anyhow::Context as AnyhowContext;
@@ -9,14 +8,13 @@ use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgPool as Db, Postgres};
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
-use svc_authz::ClientMap as Authz;
 
-use crate::app::s3_client::S3Client;
 use crate::config::Config;
 use crate::{
     app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind},
     metrics::Metrics,
 };
+use crate::{app::s3_client::S3Client, authz::Authz};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -32,7 +30,6 @@ pub(crate) trait GlobalContext: Sync {
     fn queue_counter(&self) -> &Option<QueueCounterHandle>;
     fn redis_pool(&self) -> &Option<RedisConnectionPool>;
     fn metrics(&self) -> Arc<Metrics>;
-    fn running_requests(&self) -> Option<Arc<AtomicI64>>;
     fn s3_client(&self) -> Option<S3Client>;
 
     async fn get_conn(&self) -> Result<PoolConnection<Postgres>, AppError> {
@@ -73,7 +70,6 @@ pub(crate) struct AppContext {
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
     metrics: Arc<Metrics>,
-    running_requests: Option<Arc<AtomicI64>>,
     s3_client: Option<S3Client>,
 }
 
@@ -108,10 +104,6 @@ impl GlobalContext for AppContext {
 
     fn metrics(&self) -> Arc<Metrics> {
         self.metrics.clone()
-    }
-
-    fn running_requests(&self) -> Option<Arc<AtomicI64>> {
-        self.running_requests.clone()
     }
 
     fn s3_client(&self) -> Option<S3Client> {
@@ -170,10 +162,6 @@ impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
         self.global_context.metrics()
     }
 
-    fn running_requests(&self) -> Option<Arc<AtomicI64>> {
-        self.global_context.running_requests()
-    }
-
     fn s3_client(&self) -> Option<S3Client> {
         self.global_context.s3_client()
     }
@@ -208,7 +196,6 @@ pub(crate) struct AppContextBuilder {
     agent_id: AgentId,
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
-    running_requests: Option<Arc<AtomicI64>>,
 }
 
 impl AppContextBuilder {
@@ -223,7 +210,6 @@ impl AppContextBuilder {
             agent_id,
             queue_counter: None,
             redis_pool: None,
-            running_requests: None,
         }
     }
 
@@ -241,13 +227,6 @@ impl AppContextBuilder {
         }
     }
 
-    pub(crate) fn running_requests(self, counter: Arc<AtomicI64>) -> Self {
-        Self {
-            running_requests: Some(counter),
-            ..self
-        }
-    }
-
     pub(crate) fn redis_pool(self, pool: RedisConnectionPool) -> Self {
         Self {
             redis_pool: Some(pool),
@@ -255,7 +234,7 @@ impl AppContextBuilder {
         }
     }
 
-    pub(crate) fn build(self, metrics: Metrics) -> AppContext {
+    pub(crate) fn build(self, metrics: Arc<Metrics>) -> AppContext {
         AppContext {
             config: Arc::new(self.config),
             authz: self.authz,
@@ -264,8 +243,7 @@ impl AppContextBuilder {
             agent_id: self.agent_id,
             queue_counter: self.queue_counter,
             redis_pool: self.redis_pool,
-            metrics: Arc::new(metrics),
-            running_requests: self.running_requests,
+            metrics,
             s3_client: S3Client::new(),
         }
     }

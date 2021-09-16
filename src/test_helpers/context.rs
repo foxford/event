@@ -1,4 +1,3 @@
-use std::sync::atomic::AtomicI64;
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
@@ -8,14 +7,13 @@ use slog::{Logger, OwnedKV, SendSyncRefUnwindSafeKV};
 use sqlx::postgres::PgPool as Db;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
-use svc_authz::ClientMap as Authz;
 
-use crate::app::s3_client::S3Client;
 use crate::config::Config;
 use crate::{
     app::context::{Context, GlobalContext, MessageContext},
     metrics::Metrics,
 };
+use crate::{app::s3_client::S3Client, authz::Authz};
 
 use super::authz::{DbBanTestAuthz, TestAuthz};
 use super::db::TestDb;
@@ -63,12 +61,13 @@ impl TestContext {
         let config = build_config();
         let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 
+        let metrics = Arc::new(Metrics::new(&Registry::new()).unwrap());
         Self {
             config,
-            authz: authz.into(),
+            authz: Authz::new(authz.into(), metrics.clone()),
             db,
             agent_id,
-            metrics: Arc::new(Metrics::new(&Registry::new()).unwrap()),
+            metrics,
             logger: crate::LOG.new(o!()),
             start_timestamp: Utc::now(),
             s3_client: None,
@@ -79,12 +78,13 @@ impl TestContext {
         let config = build_config();
         let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 
+        let metrics = Arc::new(Metrics::new(&Registry::new()).unwrap());
         Self {
             config,
-            authz: authz.into(),
+            authz: Authz::new(authz.into(), metrics.clone()),
             db,
             agent_id,
-            metrics: Arc::new(Metrics::new(&Registry::new()).unwrap()),
+            metrics,
             logger: crate::LOG.new(o!()),
             start_timestamp: Utc::now(),
             s3_client: None,
@@ -127,10 +127,6 @@ impl GlobalContext for TestContext {
 
     fn metrics(&self) -> Arc<Metrics> {
         self.metrics.clone()
-    }
-
-    fn running_requests(&self) -> Option<Arc<AtomicI64>> {
-        None
     }
 
     fn s3_client(&self) -> Option<S3Client> {

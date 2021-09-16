@@ -130,6 +130,7 @@ async fn main() -> Result<()> {
 }
 
 mod app;
+mod authz;
 mod config;
 mod db;
 mod metrics;

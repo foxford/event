@@ -49,6 +49,7 @@ pub(crate) enum QueryKey {
 pub(crate) struct Metrics {
     pub request_duration: RwLock<HashMap<String, Option<Histogram>>>,
     pub request_duration_vec: HistogramVec,
+    pub authorization_time: Histogram,
     pub db_duration: HashMap<QueryKey, Histogram>,
     pub app_result_ok: IntCounter,
     pub app_results_errors: HashMap<ErrorKind, IntCounter>,
@@ -78,13 +79,17 @@ impl Metrics {
             Opts::new("mqtt_messages", "Mqtt message types"),
             &["status"],
         )?;
+        let authorization_time =
+            Histogram::with_opts(HistogramOpts::new("auth_time", "Authorization time"))?;
         registry.register(Box::new(mqtt_errors.clone()))?;
         registry.register(Box::new(request_duration.clone()))?;
         registry.register(Box::new(db_duration.clone()))?;
         registry.register(Box::new(request_stats.clone()))?;
         registry.register(Box::new(total_requests.clone()))?;
         registry.register(Box::new(running_requests_total.clone()))?;
+        registry.register(Box::new(authorization_time.clone()))?;
         Ok(Self {
+            authorization_time,
             request_duration: RwLock::new(HashMap::new()),
             request_duration_vec: request_duration,
             total_requests,
