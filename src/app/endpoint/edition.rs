@@ -41,13 +41,8 @@ impl RequestHandler for CreateHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
     ) -> Result {
-        let room = helpers::find_room(
-            context,
-            payload.room_id,
-            helpers::RoomTimeRequirement::Any,
-            reqp.method(),
-        )
-        .await?;
+        let room =
+            helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Any).await?;
 
         let object = {
             let object = room.authz_object();
@@ -70,14 +65,8 @@ impl RequestHandler for CreateHandler {
             let mut conn = context.get_conn().await?;
 
             context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::EditionInsertQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::EditionInsertQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to insert edition")
                 .error(AppErrorKind::DbQueryFailed)?
@@ -125,13 +114,8 @@ impl RequestHandler for ListHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
     ) -> Result {
-        let room = helpers::find_room(
-            context,
-            payload.room_id,
-            helpers::RoomTimeRequirement::Any,
-            reqp.method(),
-        )
-        .await?;
+        let room =
+            helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Any).await?;
 
         let object = AuthzObject::room(&room).into();
 
@@ -159,14 +143,8 @@ impl RequestHandler for ListHandler {
             let mut conn = context.get_ro_conn().await?;
 
             context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::EditionListQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::EditionListQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to list editions")
                 .error(AppErrorKind::DbQueryFailed)?
@@ -206,14 +184,8 @@ impl RequestHandler for DeleteHandler {
             let mut conn = context.get_ro_conn().await?;
 
             let maybe_edition = context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::EditionFindWithRoomQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::EditionFindWithRoomQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to find edition with room")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -246,14 +218,8 @@ impl RequestHandler for DeleteHandler {
             let mut conn = context.get_conn().await?;
 
             context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::EditionDeleteQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::EditionDeleteQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to delete edition")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -295,14 +261,8 @@ impl RequestHandler for CommitHandler {
             let mut conn = context.get_ro_conn().await?;
 
             let maybe_edition = context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::EditionFindWithRoomQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::EditionFindWithRoomQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to find edition with room")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -333,11 +293,11 @@ impl RequestHandler for CommitHandler {
 
         // Run commit task asynchronously.
         let db = context.db().to_owned();
-        let profiler = context.profiler();
+        let metrics = context.metrics();
         let logger = context.logger().new(o!());
 
         let notification_future = async_std::task::spawn(async move {
-            let result = commit_edition(&db, &profiler, &edition, &room).await;
+            let result = commit_edition(&db, &metrics, &edition, &room).await;
 
             // Handle result.
             let result = match result {

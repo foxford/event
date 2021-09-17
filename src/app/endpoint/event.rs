@@ -63,13 +63,9 @@ impl RequestHandler for CreateHandler {
         reqp: &IncomingRequestProperties,
     ) -> Result {
         let (room, author) = {
-            let room = helpers::find_room(
-                context,
-                payload.room_id,
-                helpers::RoomTimeRequirement::Open,
-                reqp.method(),
-            )
-            .await?;
+            let room =
+                helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Open)
+                    .await?;
 
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
@@ -92,14 +88,8 @@ impl RequestHandler for CreateHandler {
                     let mut conn = context.get_ro_conn().await?;
 
                     context
-                        .profiler()
-                        .measure(
-                            (
-                                ProfilerKeys::EventOriginalEventQuery,
-                                Some(reqp.method().to_owned()),
-                            ),
-                            query.execute(&mut conn),
-                        )
+                        .metrics()
+                        .measure_query(QueryKey::EventOriginalEventQuery, query.execute(&mut conn))
                         .await
                         .context("Failed to find original event")
                         .error(AppErrorKind::DbQueryFailed)?
@@ -188,14 +178,8 @@ impl RequestHandler for CreateHandler {
                 let mut conn = context.get_conn().await?;
 
                 let event = context
-                    .profiler()
-                    .measure(
-                        (
-                            ProfilerKeys::EventInsertQuery,
-                            Some(reqp.method().to_owned()),
-                        ),
-                        query.execute(&mut conn),
-                    )
+                    .metrics()
+                    .measure_query(QueryKey::EventInsertQuery, query.execute(&mut conn))
                     .await
                     .context("Failed to insert event")
                     .error(AppErrorKind::DbQueryFailed)?;
@@ -306,13 +290,8 @@ impl RequestHandler for ListHandler {
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
     ) -> Result {
-        let room = helpers::find_room(
-            context,
-            payload.room_id,
-            helpers::RoomTimeRequirement::Any,
-            reqp.method(),
-        )
-        .await?;
+        let room =
+            helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Any).await?;
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
@@ -370,11 +349,8 @@ impl RequestHandler for ListHandler {
                 .limit(std::cmp::min(payload.limit.unwrap_or(MAX_LIMIT), MAX_LIMIT));
 
             context
-                .profiler()
-                .measure(
-                    (ProfilerKeys::EventListQuery, Some(reqp.method().to_owned())),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::EventListQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to list events")
                 .error(AppErrorKind::DbQueryFailed)?

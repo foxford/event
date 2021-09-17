@@ -38,9 +38,11 @@ macro_rules! request_routes {
         ) -> Option<MessageStream> {
             match request.properties().method() {
                 $(
-                    $m => Some(
-                        <$h>::handle_envelope::<C>(context, request).await
-                    ),
+                    p@$m => {
+                        let metrics = context.metrics();
+                        let _timer = metrics.start_request(p);
+                        Some(<$h>::handle_envelope::<C>(context, request).await)
+                }
                 )*
                 _ => None,
             }
@@ -141,9 +143,10 @@ macro_rules! event_routes {
         ) -> Option<MessageStream> {
             match event.properties().label() {
                 $(
-                    Some($l) => Some(
-                        <$h>::handle_envelope::<C>(context, event).await
-                    ),
+                    Some(p@$l) => {
+                        let metrics = context.metrics();
+                        let _timer = metrics.start_request(p);
+                        Some(<$h>::handle_envelope::<C>(context, event).await)}
                 )*
                 _ => None,
             }
@@ -177,7 +180,7 @@ pub(self) mod prelude {
     pub(super) use crate::app::endpoint::authz::AuthzObject;
     pub(super) use crate::app::endpoint::CorrelationData;
     pub(super) use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
-    pub(super) use crate::app::metrics::ProfilerKeys;
+    pub(super) use crate::metrics::QueryKey;
 
     pub(super) use svc_authn::Authenticable;
 }

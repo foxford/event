@@ -30,14 +30,8 @@ impl RequestHandler for CreateHandler {
             let mut conn = context.get_ro_conn().await?;
 
             let maybe_edition_with_room = context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::EditionFindWithRoomQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::EditionFindWithRoomQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to find edition with room")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -110,14 +104,8 @@ impl RequestHandler for CreateHandler {
             let mut conn = context.get_conn().await?;
 
             context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::ChangeInsertQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::ChangeInsertQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to insert change")
                 .error(AppErrorKind::DbQueryFailed)?
@@ -162,14 +150,8 @@ impl RequestHandler for ListHandler {
             let mut conn = context.get_ro_conn().await?;
 
             let maybe_edition_with_room = context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::EditionFindWithRoomQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::EditionFindWithRoomQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to find edition")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -212,14 +194,8 @@ impl RequestHandler for ListHandler {
             let mut conn = context.get_ro_conn().await?;
 
             context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::ChangeListQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::ChangeListQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to list changes")
                 .error(AppErrorKind::DbQueryFailed)?
@@ -258,14 +234,8 @@ impl RequestHandler for DeleteHandler {
             let mut conn = context.get_ro_conn().await?;
 
             let maybe_change_with_room = context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::ChangeFindWithRoomQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::ChangeFindWithRoomQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to find change with room")
                 .error(AppErrorKind::DbQueryFailed)?;
@@ -299,14 +269,8 @@ impl RequestHandler for DeleteHandler {
             let mut conn = context.get_conn().await?;
 
             context
-                .profiler()
-                .measure(
-                    (
-                        ProfilerKeys::ChangeDeleteQuery,
-                        Some(reqp.method().to_owned()),
-                    ),
-                    query.execute(&mut conn),
-                )
+                .metrics()
+                .measure_query(QueryKey::ChangeDeleteQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to delete change")
                 .error(AppErrorKind::DbQueryFailed)?;

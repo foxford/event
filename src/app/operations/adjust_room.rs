@@ -5,14 +5,16 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use sqlx::postgres::{PgConnection, PgPool as Db};
 
-use crate::app::metrics::ProfilerKeys;
-use crate::db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segments};
-use crate::db::event::{
-    DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event,
-};
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::room_time::RoomTimeBound;
-use crate::profiler::Profiler;
+use crate::{
+    db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segments},
+    metrics::Metrics,
+};
+use crate::{
+    db::event::{DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event},
+    metrics::QueryKey,
+};
 
 pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 
@@ -20,7 +22,7 @@ pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 
 pub(crate) async fn call(
     db: &Db,
-    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
+    metrics: &Metrics,
     real_time_room: &Room,
     started_at: DateTime<Utc>,
     segments: &Segments,
@@ -74,11 +76,8 @@ pub(crate) async fn call(
         let query = crate::db::room::UpdateQuery::new(real_time_room.id())
             .time(Some(new_time.clone().into()));
 
-        profiler
-            .measure(
-                (ProfilerKeys::RoomUpdateQuery, Some("room.adjust".into())),
-                query.execute(&mut conn),
-            )
+        metrics
+            .measure_query(QueryKey::RoomUpdateQuery, query.execute(&mut conn))
             .await
             .with_context(|| {
                 format!(
@@ -94,14 +93,8 @@ pub(crate) async fn call(
     let query =
         AdjustmentInsertQuery::new(real_time_room.id(), started_at, segments.to_owned(), offset);
 
-    profiler
-        .measure(
-            (
-                ProfilerKeys::AdjustmentInsertQuery,
-                Some("room.adjust".into()),
-            ),
-            query.execute(&mut conn),
-        )
+    metrics
+        .measure_query(QueryKey::AdjustmentInsertQuery, query.execute(&mut conn))
         .await
         .with_context(|| {
             format!(
@@ -147,7 +140,7 @@ pub(crate) async fn call(
     // Create original room with events shifted according to segments.
     let original_room = create_room(
         &mut conn,
-        profiler,
+        metrics,
         real_time_room,
         started_at,
         total_segments_duration,
@@ -156,7 +149,7 @@ pub(crate) async fn call(
 
     clone_events(
         &mut conn,
-        profiler,
+        metrics,
         &original_room,
         &segment_gaps,
         -rtc_offset * NANOSECONDS_IN_MILLISECOND,
@@ -171,11 +164,8 @@ pub(crate) async fn call(
         .kind("stream".to_string())
         .last_occurred_at(offset * NANOSECONDS_IN_MILLISECOND); // Cut events only after the actual stream has started, not considering preroll
 
-    let cut_events = profiler
-        .measure(
-            (ProfilerKeys::EventListQuery, Some("room.adjust".into())),
-            query.execute(&mut conn),
-        )
+    let cut_events = metrics
+        .measure_query(QueryKey::EventListQuery, query.execute(&mut conn))
         .await
         .with_context(|| {
             format!(
@@ -189,7 +179,7 @@ pub(crate) async fn call(
     // Create modified room with events shifted again according to cut events this time.
     let modified_room = create_room(
         &mut conn,
-        profiler,
+        metrics,
         &original_room,
         started_at,
         total_segments_duration,
@@ -197,7 +187,7 @@ pub(crate) async fn call(
     .await?;
     clone_events(
         &mut conn,
-        profiler,
+        metrics,
         &modified_room,
         &cut_gaps,
         offset * NANOSECONDS_IN_MILLISECOND,
@@ -207,11 +197,8 @@ pub(crate) async fn call(
     // Delete cut events from the modified room.
     let query = EventDeleteQuery::new(modified_room.id(), "stream");
 
-    profiler
-        .measure(
-            (ProfilerKeys::EventDeleteQuery, Some("room.adjust".into())),
-            query.execute(&mut conn),
-        )
+    metrics
+        .measure_query(QueryKey::EventDeleteQuery, query.execute(&mut conn))
         .await
         .with_context(|| {
             format!(
@@ -253,7 +240,7 @@ pub(crate) async fn call(
 /// Creates a derived room from the source room.
 async fn create_room(
     conn: &mut PgConnection,
-    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
+    metrics: &Metrics,
     source_room: &Room,
     started_at: DateTime<Utc>,
     room_duration: Duration,
@@ -268,16 +255,12 @@ async fn create_room(
     if let Some(tags) = source_room.tags() {
         query = query.tags(tags.to_owned());
     }
-
     if let Some(classroom_id) = source_room.classroom_id() {
         query = query.classroom_id(classroom_id);
     }
 
-    profiler
-        .measure(
-            (ProfilerKeys::RoomInsertQuery, Some("room.adjust".into())),
-            query.execute(conn),
-        )
+    metrics
+        .measure_query(QueryKey::RoomInsertQuery, query.execute(conn))
         .await
         .context("failed to insert room")
 }
@@ -286,7 +269,7 @@ async fn create_room(
 /// adding `offset` (both in nanoseconds).
 async fn clone_events(
     conn: &mut PgConnection,
-    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
+    metrics: &Metrics,
     room: &Room,
     gaps: &[(i64, i64)],
     offset: i64,
@@ -379,14 +362,8 @@ async fn clone_events(
         source_room_id,
     );
 
-    profiler
-        .measure(
-            (
-                ProfilerKeys::RoomAdjustCloneEventsQuery,
-                Some("room.adjust".into()),
-            ),
-            query.execute(conn),
-        )
+    metrics
+        .measure_query(QueryKey::RoomAdjustCloneEventsQuery, query.execute(conn))
         .await
         .map(|_| ())
         .with_context(|| {
@@ -476,25 +453,25 @@ mod tests {
     use std::ops::Bound;
 
     use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+    use prometheus::Registry;
     use serde_json::{json, Value as JsonValue};
     use sqlx::postgres::PgConnection;
     use svc_agent::{AccountId, AgentId};
 
-    use crate::db::adjustment::Segments;
     use crate::db::event::{
         InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,
     };
     use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room, Time as RoomTime};
-    use crate::profiler::Profiler;
+    use crate::db::room_time::RoomTimeBound;
     use crate::test_helpers::db::TestDb;
-    use crate::{app::metrics::ProfilerKeys, db::room_time::RoomTimeBound};
+    use crate::{db::adjustment::Segments, metrics::Metrics};
 
     const AUDIENCE: &str = "dev.svc.example.org";
 
     #[test]
     fn adjust_room() {
         async_std::task::block_on(async {
-            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
+            let metrics = Metrics::new(&Registry::new()).unwrap();
             let db = TestDb::new().await;
             let mut conn = db.get_conn().await;
 
@@ -524,7 +501,7 @@ mod tests {
             // Call room adjustment.
             let (original_room, modified_room, modified_segments) = super::call(
                 &db.connection_pool(),
-                &profiler,
+                &metrics,
                 &room,
                 started_at,
                 &segments,
@@ -571,7 +548,7 @@ mod tests {
     #[test]
     fn adjust_room_unbounbded() {
         async_std::task::block_on(async {
-            let profiler = Profiler::<(ProfilerKeys, Option<String>)>::start();
+            let metrics = Metrics::new(&Registry::new()).unwrap();
             let db = TestDb::new().await;
             let mut conn = db.get_conn().await;
 
@@ -601,7 +578,7 @@ mod tests {
             // Call room adjustment.
             let (original_room, modified_room, modified_segments) = super::call(
                 &db.connection_pool(),
-                &profiler,
+                &metrics,
                 &room,
                 started_at,
                 &segments,

@@ -130,9 +130,10 @@ async fn main() -> Result<()> {
 }
 
 mod app;
+mod authz;
 mod config;
 mod db;
-mod profiler;
+mod metrics;
 #[allow(unused_imports)]
 mod serde;
 #[cfg(test)]

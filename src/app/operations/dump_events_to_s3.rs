@@ -5,11 +5,12 @@ use rusoto_s3::PutObjectRequest;
 use serde_derive::Serialize;
 use sqlx::postgres::PgPool as Db;
 
-use crate::app::metrics::ProfilerKeys;
-use crate::app::s3_client::S3Client;
-use crate::db::event::{ListQuery as EventListQuery, Object as Event};
 use crate::db::room::Object as Room;
-use crate::profiler::Profiler;
+use crate::{app::s3_client::S3Client, metrics::Metrics};
+use crate::{
+    db::event::{ListQuery as EventListQuery, Object as Event},
+    metrics::QueryKey,
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -29,7 +30,7 @@ struct S3Content {
 
 pub(crate) async fn call(
     db: &Db,
-    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
+    metrics: &Metrics,
     s3_client: S3Client,
     room: &Room,
 ) -> Result<String> {
@@ -43,7 +44,7 @@ pub(crate) async fn call(
 
     let destination = s3_destination(room);
 
-    let events = load_room_events(db, profiler, room).await?;
+    let events = load_room_events(db, metrics, room).await?;
 
     let s3_uri = upload_events(s3_client, room, events, destination).await?;
 
@@ -57,22 +58,12 @@ pub(crate) async fn call(
     Ok(s3_uri)
 }
 
-async fn load_room_events(
-    db: &Db,
-    profiler: &Profiler<(ProfilerKeys, Option<String>)>,
-    room: &Room,
-) -> Result<Vec<Event>> {
+async fn load_room_events(db: &Db, metrics: &Metrics, room: &Room) -> Result<Vec<Event>> {
     let mut conn = db.acquire().await.context("Failed to get db connection")?;
 
     let query = EventListQuery::new().room_id(room.id());
-    let events = profiler
-        .measure(
-            (
-                ProfilerKeys::EventDumpQuery,
-                Some("room.dump_events".into()),
-            ),
-            query.execute(&mut conn),
-        )
+    let events = metrics
+        .measure_query(QueryKey::EventDumpQuery, query.execute(&mut conn))
         .await
         .with_context(|| format!("failed to fetch events for room_id = '{}'", room.id()))?;
 
@@ -194,7 +185,7 @@ mod tests {
 
             let s3_uri = super::call(
                 context.db(),
-                &context.profiler(),
+                &context.metrics(),
                 context.s3_client().unwrap(),
                 &room,
             )

@@ -1,3 +1,4 @@
+use enum_iterator::IntoEnumIterator;
 use std::error::Error as StdError;
 use std::fmt;
 
@@ -14,7 +15,7 @@ struct ErrorKindProperties {
     is_notify_sentry: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, IntoEnumIterator, Hash, PartialEq, Eq)]
 pub(crate) enum ErrorKind {
     AccessDenied,
     AgentNotEnteredTheRoom,
@@ -238,6 +239,10 @@ impl Error {
 
     pub(crate) fn kind(&self) -> &str {
         self.kind.kind()
+    }
+
+    pub(crate) fn error_kind(&self) -> ErrorKind {
+        self.kind
     }
 
     pub(crate) fn source(&self) -> &(dyn StdError + Send + Sync + 'static) {

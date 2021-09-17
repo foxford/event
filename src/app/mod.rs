@@ -1,12 +1,16 @@
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
+use std::{
+    net::SocketAddr,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use anyhow::{Context as AnyhowContext, Result};
 use async_std::task;
 use chrono::Utc;
 use futures::StreamExt;
+use prometheus::{Encoder, Registry, TextEncoder};
 use serde_json::json;
 use sqlx::postgres::PgPool as Db;
 use svc_agent::mqtt::{
@@ -18,9 +22,11 @@ use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::{extension::sentry, Error as SvcError};
 
-use crate::app::context::GlobalContext;
-use crate::app::metrics::StatsRoute;
-use crate::config::{self, Config, KruonisConfig};
+use crate::{app::context::GlobalContext, metrics::Metrics};
+use crate::{
+    authz::Authz,
+    config::{self, Config, KruonisConfig},
+};
 use context::AppContextBuilder;
 use message_handler::MessageHandler;
 
@@ -90,7 +96,11 @@ pub(crate) async fn run(
     // Subscribe to topics
     subscribe(&mut agent, &agent_id, &config)?;
 
+    let registry = Registry::new();
+    let metrics = Arc::new(Metrics::new(&registry)?);
+
     // Context
+    let authz = Authz::new(authz, metrics.clone());
     let context_builder = AppContextBuilder::new(config.clone(), authz, db);
 
     let context_builder = match ro_db {
@@ -103,27 +113,17 @@ pub(crate) async fn run(
         None => context_builder,
     };
 
-    let running_requests = Arc::new(AtomicI64::new(0));
-
     let context = context_builder
         .queue_counter(agent.get_queue_counter())
-        .running_requests(running_requests.clone())
-        .build();
+        .build(metrics);
+    if let Some(metrics) = config.metrics.as_ref() {
+        task::spawn(start_metrics_collector(registry, metrics.http.bind_address));
+    }
 
-    let profiler = context.profiler();
-    let (handler_timer_tx, handler_timer_rx) = crossbeam_channel::bounded(500);
-    std::thread::Builder::new()
-        .name("msg-handler-timings".into())
-        .spawn(move || {
-            for (dur, method) in handler_timer_rx {
-                profiler.record_future_time(dur, method);
-            }
-        })
-        .expect("Failed to start msg-handler-timings thread");
+    let metrics = context.metrics();
 
     // Message handler
-    let message_handler = Arc::new(MessageHandler::new(agent, context, handler_timer_tx));
-    StatsRoute::start(config, message_handler.clone());
+    let message_handler = Arc::new(MessageHandler::new(agent, context));
 
     // Message loop
     let term_check_period = Duration::from_secs(1);
@@ -136,19 +136,20 @@ pub(crate) async fn run(
 
         if let Ok(Some(message)) = fut.await {
             let message_handler = message_handler.clone();
-            let running_requests_ = running_requests.clone();
-
+            let request_started = metrics.clone().request_started();
+            let metrics = metrics.clone();
             task::spawn(async move {
                 match message {
                     AgentNotification::Message(ref message, _) => {
-                        running_requests_.fetch_add(1, Ordering::SeqCst);
+                        metrics.total_requests.inc();
                         message_handler.handle(message).await;
-                        running_requests_.fetch_add(-1, Ordering::SeqCst);
                     }
                     AgentNotification::Disconnect => {
+                        metrics.mqtt_disconnect.inc();
                         error!(crate::LOG, "Disconnected from broker")
                     }
                     AgentNotification::Reconnection => {
+                        metrics.mqtt_reconnection.inc();
                         error!(crate::LOG, "Reconnected to broker");
 
                         resubscribe(
@@ -162,7 +163,7 @@ pub(crate) async fn run(
                     AgentNotification::Pubcomp(_) => (),
                     AgentNotification::Suback(_) => (),
                     AgentNotification::Unsuback(_) => (),
-                    AgentNotification::ConnectionError => (),
+                    AgentNotification::ConnectionError => metrics.mqtt_connection_error.inc(),
                     AgentNotification::Connect(_) => (),
                     AgentNotification::Connack(_) => (),
                     AgentNotification::Pubrel(_) => (),
@@ -171,6 +172,7 @@ pub(crate) async fn run(
                     AgentNotification::PingReq => (),
                     AgentNotification::PingResp => (),
                 }
+                drop(request_started);
             });
         }
     }
@@ -235,10 +237,35 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
     }
 }
 
+async fn start_metrics_collector(
+    registry: Registry,
+    bind_addr: SocketAddr,
+) -> async_std::io::Result<()> {
+    let mut app = tide::with_state(registry);
+    app.at("/metrics")
+        .get(|req: tide::Request<Registry>| async move {
+            let registry = req.state();
+            let mut buffer = vec![];
+            let encoder = TextEncoder::new();
+            let metric_families = registry.gather();
+            match encoder.encode(&metric_families, &mut buffer) {
+                Ok(_) => {
+                    let mut response = tide::Response::new(200);
+                    response.set_body(buffer);
+                    Ok(response)
+                }
+                Err(err) => {
+                    warn!(crate::LOG, "Metrics not gathered: {:?}", err);
+                    Ok(tide::Response::new(500))
+                }
+            }
+        });
+    app.listen(bind_addr).await
+}
+
 pub(crate) mod context;
 pub(crate) mod endpoint;
 pub(crate) mod error;
 pub(crate) mod message_handler;
-pub(crate) mod metrics;
 pub(crate) mod operations;
 pub(crate) mod s3_client;
