@@ -13,18 +13,24 @@ pub(crate) struct TestDb {
     pool: PgPool,
 }
 
-impl TestDb {
-    pub(crate) async fn new() -> Self {
+lazy_static! {
+    static ref POOL: PgPool = {
         let url = var("DATABASE_URL").expect("DATABASE_URL must be specified");
 
-        let pool = PgPoolOptions::new()
-            .min_connections(1)
-            .max_connections(1)
-            .connect(&url)
-            .await
-            .expect("Failed to connect to the DB");
+        async_std::task::block_on(async {
+            PgPoolOptions::new()
+                .min_connections(1)
+                .max_connections(50)
+                .connect(&url)
+                .await
+                .expect("Failed to connect to the DB")
+        })
+    };
+}
 
-        Self { pool }
+impl TestDb {
+    pub(crate) async fn new() -> Self {
+        Self { pool: POOL.clone() }
     }
 
     pub(crate) fn connection_pool(&self) -> &PgPool {
