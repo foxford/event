@@ -1,3 +1,4 @@
+use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::thread;
@@ -5,6 +6,11 @@ use std::time::Duration;
 
 use anyhow::{Context as AnyhowContext, Result};
 use async_std::task;
+use axum::{
+    extract, handler,
+    routing::{EmptyRouter, Router},
+    AddExtensionLayer, Server,
+};
 use chrono::Utc;
 use futures::StreamExt;
 use prometheus::{Encoder, Registry, TextEncoder};
@@ -114,9 +120,21 @@ pub(crate) async fn run(
     let context = context_builder
         .queue_counter(agent.get_queue_counter())
         .build(metrics);
-    if let Some(metrics) = config.metrics.as_ref() {
-        task::spawn(start_metrics_collector(registry, metrics.http.bind_address));
-    }
+
+    let metrics_task = if let Some(metrics) = config.metrics.as_ref() {
+        let (closer, metrics_close_receirver) = tokio::sync::oneshot::channel::<()>();
+        let join_handle = task::spawn(start_metrics_collector(
+            registry,
+            metrics.http.bind_address,
+            metrics_close_receirver,
+        ));
+        Some(MetricsTask {
+            join_handle,
+            closer,
+        })
+    } else {
+        None
+    };
 
     let metrics = context.metrics();
 
@@ -130,6 +148,11 @@ pub(crate) async fn run(
     let main_loop_task = task::spawn(main_loop(mq_rx, message_handler.clone(), metrics.clone()));
     let _ = futures::future::select(signals, main_loop_task).await;
     unsubscribe(&mut agent, &agent_id)?;
+
+    if let Some(metrics_task) = metrics_task {
+        metrics_task.shutdown().await;
+    }
+
     task::sleep(Duration::from_secs(3)).await;
     info!(
         crate::LOG,
@@ -268,27 +291,77 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
 async fn start_metrics_collector(
     registry: Registry,
     bind_addr: SocketAddr,
-) -> async_std::io::Result<()> {
-    let mut app = tide::with_state(registry);
-    app.at("/metrics")
-        .get(|req: tide::Request<Registry>| async move {
-            let registry = req.state();
-            let mut buffer = vec![];
-            let encoder = TextEncoder::new();
-            let metric_families = registry.gather();
-            match encoder.encode(&metric_families, &mut buffer) {
-                Ok(_) => {
-                    let mut response = tide::Response::new(200);
-                    response.set_body(buffer);
-                    Ok(response)
-                }
-                Err(err) => {
-                    warn!(crate::LOG, "Metrics not gathered: {:?}", err);
-                    Ok(tide::Response::new(500))
-                }
+    rx: tokio::sync::oneshot::Receiver<()>,
+) -> Result<(), hyper::Error> {
+    let app: Router<EmptyRouter<Infallible>> = Router::new();
+
+    let app = app
+        .route("/metrics", handler::get(metrics_handler))
+        .layer(AddExtensionLayer::new(registry));
+    Server::bind(&bind_addr)
+        .serve(app.into_make_service())
+        .with_graceful_shutdown(async {
+            rx.await.ok();
+        })
+        .await
+}
+
+async fn metrics_handler(
+    state: extract::Extension<Registry>,
+) -> hyper::Response<hyper::body::Body> {
+    let registry = state.0;
+    let mut buffer = vec![];
+    let encoder = TextEncoder::new();
+    let metric_families = registry.gather();
+    let response = match encoder.encode(&metric_families, &mut buffer) {
+        Ok(_) => hyper::Response::builder()
+            .status(200)
+            .body(buffer.into())
+            .unwrap(),
+        Err(err) => {
+            warn!(crate::LOG, "Metrics not gathered: {:?}", err);
+            hyper::Response::builder()
+                .status(500)
+                .body(vec![].into())
+                .unwrap()
+        }
+    };
+    response
+}
+
+struct MetricsTask {
+    join_handle: async_std::task::JoinHandle<Result<(), hyper::Error>>,
+    closer: tokio::sync::oneshot::Sender<()>,
+}
+
+impl MetricsTask {
+    pub async fn shutdown(self) {
+        info!(
+            crate::LOG,
+            "Received signal, triggering metrics server shutdown"
+        );
+
+        let _ = self.closer.send(());
+        let fut = async_std::future::timeout(Duration::from_secs(3), self.join_handle);
+
+        match fut.await {
+            Err(e) => {
+                error!(
+                    crate::LOG,
+                    "Metrics server timed out during shutdown, error = {:?}", e
+                );
             }
-        });
-    app.listen(bind_addr).await
+            Ok(Err(e)) => {
+                error!(
+                    crate::LOG,
+                    "Metrics server failed during shutdown, error = {:?}", e
+                );
+            }
+            Ok(Ok(_)) => {
+                info!(crate::LOG, "Metrics server successfully exited");
+            }
+        }
+    }
 }
 
 pub(crate) mod context;
