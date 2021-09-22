@@ -32,7 +32,7 @@ slog-envlogger = "2"
 slog-json = "2"
 slog-serde = "1.0.0-alpha9"
 sqlx = {version = "0.4", features = ["offline", "postgres", "macros", "uuid", "chrono", "json", "bigdecimal", "runtime-async-std-rustls"]}
-svc-agent = {version = "0.17", features = ["sqlx", "queue-counter"]}
+svc-agent = {version = "0.17.2", features = ["sqlx", "queue-counter"]}
 svc-authn = {version = "0.6", features = ["jose", "sqlx"]}
 svc-authz = "=0.10"
 svc-error = {version = "0.1", features = ["sqlx", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"]}
