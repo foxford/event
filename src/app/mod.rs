@@ -129,7 +129,7 @@ pub(crate) async fn run(
 
     let main_loop_task = task::spawn(main_loop(mq_rx, message_handler.clone(), metrics.clone()));
     let _ = futures::future::select(signals, main_loop_task).await;
-    unsubscribe(&mut agent, &agent_id, &config)?;
+    unsubscribe(&mut agent, &agent_id)?;
     task::sleep(Duration::from_secs(3)).await;
     info!(
         crate::LOG,
@@ -217,7 +217,7 @@ fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<(
     Ok(())
 }
 
-fn unsubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<()> {
+fn unsubscribe(agent: &mut Agent, agent_id: &AgentId) -> Result<()> {
     let group = SharedGroup::new("loadbalancer", agent_id.as_account_id().clone());
 
     // Multicast requests
@@ -230,7 +230,7 @@ fn unsubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result
 
     // Unicast requests
     agent
-        .unsubscribe(&Subscription::unicast_requests(), QoS::AtMostOnce, None)
+        .unsubscribe(&Subscription::unicast_requests(), None)
         .context("Error subscribing to unicast requests")?;
 
     Ok(())
