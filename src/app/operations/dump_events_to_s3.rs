@@ -84,11 +84,12 @@ async fn upload_events(
         events,
     };
 
-    let body = async_std::task::spawn_blocking(move || {
+    let body = tokio::task::spawn_blocking(move || {
         serde_json::to_vec(&body)
             .map_err(|e| anyhow!("Failed to serialize events, reason = {:?}", e))
     })
-    .await?;
+    .await
+    .map_err(|e| anyhow!("Failed to join events serialization task, reason = {:?}", e))??;
 
     let mut result;
     for _ in 0..RETRIES {
@@ -113,7 +114,7 @@ async fn upload_events(
                 room.id(),
                 result
             );
-            async_std::task::sleep(RETRY_DELAY).await;
+            tokio::time::sleep(RETRY_DELAY).await;
         }
     }
 
@@ -141,61 +142,59 @@ mod tests {
 
     use crate::test_helpers::USR_AUDIENCE;
 
-    #[test]
-    fn test_upload() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
+    #[tokio::test]
+    async fn test_upload() {
+        let db = TestDb::new().await;
 
-            let room = {
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_room(&mut conn).await;
+        let room = {
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
 
-                create_event(
-                    &mut conn,
-                    &room,
-                    19_000_000_000,
-                    "message",
-                    json!({"message": "m9"}),
-                )
-                .await;
-
-                create_event(
-                    &mut conn,
-                    &room,
-                    20_000_000_000,
-                    "stream",
-                    json!({"cut": "stop"}),
-                )
-                .await;
-
-                create_event(
-                    &mut conn,
-                    &room,
-                    21_000_000_000,
-                    "message",
-                    json!({"message": "m11"}),
-                )
-                .await;
-
-                room
-            };
-
-            let mut context = TestContext::new(db, TestAuthz::new());
-            context.set_s3(shared_helpers::mock_s3());
-
-            let s3_uri = super::call(
-                context.db(),
-                &context.metrics(),
-                context.s3_client().unwrap(),
+            create_event(
+                &mut conn,
                 &room,
+                19_000_000_000,
+                "message",
+                json!({"message": "m9"}),
             )
-            .await
-            .expect("No failure");
-            assert_eq!(
-                s3_uri,
-                format!("s3://eventsdump.{}/{}.json", room.audience(), room.id())
-            );
-        });
+            .await;
+
+            create_event(
+                &mut conn,
+                &room,
+                20_000_000_000,
+                "stream",
+                json!({"cut": "stop"}),
+            )
+            .await;
+
+            create_event(
+                &mut conn,
+                &room,
+                21_000_000_000,
+                "message",
+                json!({"message": "m11"}),
+            )
+            .await;
+
+            room
+        };
+
+        let mut context = TestContext::new(db, TestAuthz::new());
+        context.set_s3(shared_helpers::mock_s3());
+
+        let s3_uri = super::call(
+            context.db(),
+            &context.metrics(),
+            context.s3_client().unwrap(),
+            &room,
+        )
+        .await
+        .expect("No failure");
+        assert_eq!(
+            s3_uri,
+            format!("s3://eventsdump.{}/{}.json", room.audience(), room.id())
+        );
     }
 
     async fn create_event(

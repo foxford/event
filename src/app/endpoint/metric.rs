@@ -1,5 +1,5 @@
-use async_std::stream;
 use async_trait::async_trait;
+use futures::stream;
 use serde_derive::Deserialize;
 use svc_agent::mqtt::IncomingEventProperties;
 

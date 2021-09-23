@@ -5,7 +5,6 @@ use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context as AnyhowContext, Result};
-use async_std::task;
 use axum::{
     extract, handler,
     routing::{EmptyRouter, Router},
@@ -25,6 +24,7 @@ use svc_agent::{AccountId, AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::{extension::sentry, Error as SvcError};
+use tokio::task;
 
 use crate::{app::context::GlobalContext, metrics::Metrics};
 use crate::{
@@ -142,7 +142,7 @@ pub(crate) async fn run(
     let message_handler = Arc::new(MessageHandler::new(agent.clone(), context));
 
     // Message loop
-    let mut signals_stream = signal_hook_async_std::Signals::new(TERM_SIGNALS)?.fuse();
+    let mut signals_stream = signal_hook_tokio::Signals::new(TERM_SIGNALS)?.fuse();
     let signals = signals_stream.next();
 
     let main_loop_task = task::spawn(main_loop(mq_rx, message_handler.clone(), metrics.clone()));
@@ -153,7 +153,7 @@ pub(crate) async fn run(
         metrics_task.shutdown().await;
     }
 
-    task::sleep(Duration::from_secs(3)).await;
+    tokio::time::sleep(Duration::from_secs(3)).await;
     info!(
         crate::LOG,
         "Running requests left: {}",
@@ -330,7 +330,7 @@ async fn metrics_handler(
 }
 
 struct MetricsTask {
-    join_handle: async_std::task::JoinHandle<Result<(), hyper::Error>>,
+    join_handle: tokio::task::JoinHandle<Result<(), hyper::Error>>,
     closer: tokio::sync::oneshot::Sender<()>,
 }
 
@@ -342,7 +342,7 @@ impl MetricsTask {
         );
 
         let _ = self.closer.send(());
-        let fut = async_std::future::timeout(Duration::from_secs(3), self.join_handle);
+        let fut = tokio::time::timeout(Duration::from_secs(3), self.join_handle);
 
         match fut.await {
             Err(e) => {
