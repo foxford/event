@@ -1,7 +1,7 @@
 use anyhow::Context as AnyhowContext;
-use async_std::stream;
 use async_trait::async_trait;
 use chrono::Utc;
+use futures::{future, stream};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use svc_agent::Authenticable;
@@ -250,7 +250,7 @@ impl RequestHandler for CreateHandler {
             context.start_timestamp(),
         ));
 
-        Ok(Box::new(stream::from_iter(messages)))
+        Ok(Box::new(stream::iter(messages)))
     }
 }
 
@@ -357,12 +357,14 @@ impl RequestHandler for ListHandler {
         };
 
         // Respond with events list.
-        Ok(Box::new(stream::once(helpers::build_response(
-            ResponseStatus::OK,
-            events,
-            reqp,
-            context.start_timestamp(),
-            Some(authz_time),
+        Ok(Box::new(stream::once(future::ready(
+            helpers::build_response(
+                ResponseStatus::OK,
+                events,
+                reqp,
+                context.start_timestamp(),
+                Some(authz_time),
+            ),
         ))))
     }
 }
@@ -381,760 +383,734 @@ mod tests {
 
     ///////////////////////////////////////////////////////////////////////////
 
-    #[test]
-    fn create_event() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+    #[tokio::test]
+    async fn create_event() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            let room = {
-                // Create room and put the agent online.
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_room(&mut conn).await;
-                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
-                room
-            };
+        let room = {
+            // Create room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
 
-            // Allow agent to create events of type `message` in the room.
-            let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let account_id = agent.account_id().to_string();
+        // Allow agent to create events of type `message` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let account_id = agent.account_id().to_string();
 
-            let object = vec![
-                "rooms",
-                &room_id,
-                "pinned",
-                "message",
-                "authors",
-                &account_id,
-            ];
+        let object = vec![
+            "rooms",
+            &room_id,
+            "pinned",
+            "message",
+            "authors",
+            &account_id,
+        ];
 
-            authz.allow(agent.account_id(), object, "create");
+        authz.allow(agent.account_id(), object, "create");
 
-            // Make event.create request.
-            let mut context = TestContext::new(db, authz);
+        // Make event.create request.
+        let mut context = TestContext::new(db, authz);
 
-            let payload = CreateRequest {
-                room_id: room.id(),
-                kind: String::from("message"),
-                set: Some(String::from("messages")),
-                label: Some(String::from("message-1")),
-                attribute: Some(String::from("pinned")),
-                data: json!({ "text": "hello" }),
-                is_claim: false,
-                is_persistent: true,
-            };
+        let payload = CreateRequest {
+            room_id: room.id(),
+            kind: String::from("message"),
+            set: Some(String::from("messages")),
+            label: Some(String::from("message-1")),
+            attribute: Some(String::from("pinned")),
+            data: json!({ "text": "hello" }),
+            is_claim: false,
+            is_persistent: true,
+        };
 
-            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Event creation failed");
+        let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Event creation failed");
 
-            assert_eq!(messages.len(), 2);
+        assert_eq!(messages.len(), 2);
 
-            // Assert response.
-            let (event, respp, _) = find_response::<Event>(messages.as_slice());
-            assert_eq!(respp.status(), ResponseStatus::CREATED);
-            assert_eq!(event.room_id(), room.id());
-            assert_eq!(event.kind(), "message");
-            assert_eq!(event.set(), "messages");
-            assert_eq!(event.label(), Some("message-1"));
-            assert_eq!(event.attribute(), Some("pinned"));
-            assert_eq!(event.data(), &json!({ "text": "hello" }));
+        // Assert response.
+        let (event, respp, _) = find_response::<Event>(messages.as_slice());
+        assert_eq!(respp.status(), ResponseStatus::CREATED);
+        assert_eq!(event.room_id(), room.id());
+        assert_eq!(event.kind(), "message");
+        assert_eq!(event.set(), "messages");
+        assert_eq!(event.label(), Some("message-1"));
+        assert_eq!(event.attribute(), Some("pinned"));
+        assert_eq!(event.data(), &json!({ "text": "hello" }));
 
-            // Assert notification.
-            let (event, evp, topic) = find_event::<Event>(messages.as_slice());
-            assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
-            assert_eq!(evp.label(), "event.create");
-            assert_eq!(event.room_id(), room.id());
-            assert_eq!(event.kind(), "message");
-            assert_eq!(event.set(), "messages");
-            assert_eq!(event.label(), Some("message-1"));
-            assert_eq!(event.attribute(), Some("pinned"));
-            assert_eq!(event.data(), &json!({ "text": "hello" }));
-        });
+        // Assert notification.
+        let (event, evp, topic) = find_event::<Event>(messages.as_slice());
+        assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
+        assert_eq!(evp.label(), "event.create");
+        assert_eq!(event.room_id(), room.id());
+        assert_eq!(event.kind(), "message");
+        assert_eq!(event.set(), "messages");
+        assert_eq!(event.label(), Some("message-1"));
+        assert_eq!(event.attribute(), Some("pinned"));
+        assert_eq!(event.data(), &json!({ "text": "hello" }));
     }
 
-    #[test]
-    fn create_next_event() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let original_author = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let agent = TestAgent::new("web", "moderator", USR_AUDIENCE);
+    #[tokio::test]
+    async fn create_next_event() {
+        let db = TestDb::new().await;
+        let original_author = TestAgent::new("web", "user123", USR_AUDIENCE);
+        let agent = TestAgent::new("web", "moderator", USR_AUDIENCE);
 
-            let room = {
-                // Create room.
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_room(&mut conn).await;
+        let room = {
+            // Create room.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
 
-                // Add an event to the room.
-                factory::Event::new()
-                    .room_id(room.id())
-                    .kind("message")
-                    .set("messages")
-                    .label("message-1")
-                    .data(&json!({ "text": "original text" }))
-                    .occurred_at(1_000_000_000)
-                    .created_by(&original_author.agent_id())
-                    .insert(&mut conn)
-                    .await;
+            // Add an event to the room.
+            factory::Event::new()
+                .room_id(room.id())
+                .kind("message")
+                .set("messages")
+                .label("message-1")
+                .data(&json!({ "text": "original text" }))
+                .occurred_at(1_000_000_000)
+                .created_by(&original_author.agent_id())
+                .insert(&mut conn)
+                .await;
 
-                // Put the agent online.
-                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
-                room
-            };
+            // Put the agent online.
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
 
-            // Allow agent to create events of type `message` in the room.
-            let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
+        // Allow agent to create events of type `message` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
 
-            // Should authorize with the author of the original event.
-            let account_id = original_author.agent_id().as_account_id().to_string();
+        // Should authorize with the author of the original event.
+        let account_id = original_author.agent_id().as_account_id().to_string();
 
-            let object = vec![
-                "rooms",
-                &room_id,
-                "events",
-                "message",
-                "authors",
-                &account_id,
-            ];
+        let object = vec![
+            "rooms",
+            &room_id,
+            "events",
+            "message",
+            "authors",
+            &account_id,
+        ];
 
-            authz.allow(agent.account_id(), object, "create");
+        authz.allow(agent.account_id(), object, "create");
 
-            // Make event.create request with the same set/label as existing event.
-            let mut context = TestContext::new(db, authz);
+        // Make event.create request with the same set/label as existing event.
+        let mut context = TestContext::new(db, authz);
 
-            let payload = CreateRequest {
-                room_id: room.id(),
-                kind: String::from("message"),
-                set: Some(String::from("messages")),
-                label: Some(String::from("message-1")),
-                attribute: None,
-                data: json!({ "text": "modified text" }),
-                is_claim: false,
-                is_persistent: true,
-            };
+        let payload = CreateRequest {
+            room_id: room.id(),
+            kind: String::from("message"),
+            set: Some(String::from("messages")),
+            label: Some(String::from("message-1")),
+            attribute: None,
+            data: json!({ "text": "modified text" }),
+            is_claim: false,
+            is_persistent: true,
+        };
 
-            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Event creation failed");
+        let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Event creation failed");
 
-            // Assert response.
-            let (event, respp, _) = find_response::<Event>(messages.as_slice());
-            assert_eq!(respp.status(), ResponseStatus::CREATED);
-            assert_eq!(event.created_by(), agent.agent_id());
-        });
+        // Assert response.
+        let (event, respp, _) = find_response::<Event>(messages.as_slice());
+        assert_eq!(respp.status(), ResponseStatus::CREATED);
+        assert_eq!(event.created_by(), agent.agent_id());
     }
 
-    #[test]
-    fn create_claim() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+    #[tokio::test]
+    async fn create_claim() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            let room = {
-                // Create room and put the agent online.
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_room(&mut conn).await;
-                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
-                room
-            };
+        let room = {
+            // Create room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
 
-            // Allow agent to create claims of type `block` in the room.
-            let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let account_id = agent.account_id().to_string();
-            let object = vec!["rooms", &room_id, "claims", "block", "authors", &account_id];
-            authz.allow(agent.account_id(), object, "create");
+        // Allow agent to create claims of type `block` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let account_id = agent.account_id().to_string();
+        let object = vec!["rooms", &room_id, "claims", "block", "authors", &account_id];
+        authz.allow(agent.account_id(), object, "create");
 
-            // Make event.create request.
-            let mut context = TestContext::new(db, authz);
+        // Make event.create request.
+        let mut context = TestContext::new(db, authz);
 
-            let payload = CreateRequest {
-                room_id: room.id(),
-                kind: String::from("block"),
-                set: Some(String::from("blocks")),
-                label: Some(String::from("user-1")),
-                attribute: None,
-                data: json!({ "blocked": true }),
-                is_claim: true,
-                is_persistent: true,
-            };
+        let payload = CreateRequest {
+            room_id: room.id(),
+            kind: String::from("block"),
+            set: Some(String::from("blocks")),
+            label: Some(String::from("user-1")),
+            attribute: None,
+            data: json!({ "blocked": true }),
+            is_claim: true,
+            is_persistent: true,
+        };
 
-            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Event creation failed");
+        let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Event creation failed");
 
-            assert_eq!(messages.len(), 3);
+        assert_eq!(messages.len(), 3);
 
-            // Assert response.
-            let (event, respp, _) = find_response::<Event>(messages.as_slice());
-            assert_eq!(respp.status(), ResponseStatus::CREATED);
-            assert_eq!(event.room_id(), room.id());
-            assert_eq!(event.kind(), "block");
-            assert_eq!(event.set(), "blocks");
-            assert_eq!(event.label(), Some("user-1"));
-            assert_eq!(event.data(), &json!({ "blocked": true }));
+        // Assert response.
+        let (event, respp, _) = find_response::<Event>(messages.as_slice());
+        assert_eq!(respp.status(), ResponseStatus::CREATED);
+        assert_eq!(event.room_id(), room.id());
+        assert_eq!(event.kind(), "block");
+        assert_eq!(event.set(), "blocks");
+        assert_eq!(event.label(), Some("user-1"));
+        assert_eq!(event.data(), &json!({ "blocked": true }));
 
-            // Assert tenant & room notifications.
-            let mut has_tenant_notification = false;
-            let mut has_room_notification = false;
+        // Assert tenant & room notifications.
+        let mut has_tenant_notification = false;
+        let mut has_room_notification = false;
 
-            for message in messages {
-                if let OutgoingEnvelopeProperties::Event(evp) = message.properties() {
-                    let topic = message.topic();
+        for message in messages {
+            if let OutgoingEnvelopeProperties::Event(evp) = message.properties() {
+                let topic = message.topic();
 
-                    if topic.ends_with(&format!("/audiences/{}/events", room.audience())) {
-                        has_tenant_notification = true;
-                    }
-
-                    if topic.ends_with(&format!("/rooms/{}/events", room.id())) {
-                        has_room_notification = true;
-                    }
-
-                    assert_eq!(evp.label(), "event.create");
-
-                    let event = message.payload::<Event>();
-                    assert_eq!(event.room_id(), room.id());
-                    assert_eq!(event.kind(), "block");
-                    assert_eq!(event.set(), "blocks");
-                    assert_eq!(event.label(), Some("user-1"));
-                    assert_eq!(event.data(), &json!({ "blocked": true }));
+                if topic.ends_with(&format!("/audiences/{}/events", room.audience())) {
+                    has_tenant_notification = true;
                 }
+
+                if topic.ends_with(&format!("/rooms/{}/events", room.id())) {
+                    has_room_notification = true;
+                }
+
+                assert_eq!(evp.label(), "event.create");
+
+                let event = message.payload::<Event>();
+                assert_eq!(event.room_id(), room.id());
+                assert_eq!(event.kind(), "block");
+                assert_eq!(event.set(), "blocks");
+                assert_eq!(event.label(), Some("user-1"));
+                assert_eq!(event.data(), &json!({ "blocked": true }));
             }
+        }
 
-            assert_eq!(has_tenant_notification, true);
-            assert_eq!(has_room_notification, true);
-        });
+        assert_eq!(has_tenant_notification, true);
+        assert_eq!(has_room_notification, true);
     }
 
-    #[test]
-    fn create_transient_event() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+    #[tokio::test]
+    async fn create_transient_event() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            let room = {
-                // Create room and put the agent online.
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_room(&mut conn).await;
-                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
-                room
-            };
+        let room = {
+            // Create room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
 
-            // Allow agent to create events of type `message` in the room.
-            let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let account_id = agent.account_id().to_string();
+        // Allow agent to create events of type `message` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let account_id = agent.account_id().to_string();
 
-            let object = vec![
-                "rooms",
-                &room_id,
-                "events",
-                "cursor",
-                "authors",
-                &account_id,
-            ];
+        let object = vec![
+            "rooms",
+            &room_id,
+            "events",
+            "cursor",
+            "authors",
+            &account_id,
+        ];
 
-            authz.allow(agent.account_id(), object, "create");
+        authz.allow(agent.account_id(), object, "create");
 
-            // Make event.create request.
-            let mut context = TestContext::new(db, authz);
+        // Make event.create request.
+        let mut context = TestContext::new(db, authz);
 
-            let data = json!({
-                "agent_id": agent.agent_id().to_string(),
-                "x": 123,
-                "y": 456,
-            });
-
-            let payload = CreateRequest {
-                room_id: room.id(),
-                kind: String::from("cursor"),
-                set: None,
-                label: None,
-                attribute: None,
-                data: data.clone(),
-                is_claim: false,
-                is_persistent: false,
-            };
-
-            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Event creation failed");
-
-            assert_eq!(messages.len(), 2);
-
-            // Assert response.
-            let (event, respp, _) = find_response::<Event>(messages.as_slice());
-            assert_eq!(respp.status(), ResponseStatus::CREATED);
-            assert_eq!(event.room_id(), room.id());
-            assert_eq!(event.kind(), "cursor");
-            assert_eq!(event.set(), "cursor");
-            assert_eq!(event.label(), None);
-            assert_eq!(event.data(), &data);
-
-            // Assert notification.
-            let (event, evp, topic) = find_event::<Event>(messages.as_slice());
-            assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
-            assert_eq!(evp.label(), "event.create");
-            assert_eq!(event.room_id(), room.id());
-            assert_eq!(event.kind(), "cursor");
-            assert_eq!(event.set(), "cursor");
-            assert_eq!(event.label(), None);
-            assert_eq!(event.data(), &data);
+        let data = json!({
+            "agent_id": agent.agent_id().to_string(),
+            "x": 123,
+            "y": 456,
         });
+
+        let payload = CreateRequest {
+            room_id: room.id(),
+            kind: String::from("cursor"),
+            set: None,
+            label: None,
+            attribute: None,
+            data: data.clone(),
+            is_claim: false,
+            is_persistent: false,
+        };
+
+        let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Event creation failed");
+
+        assert_eq!(messages.len(), 2);
+
+        // Assert response.
+        let (event, respp, _) = find_response::<Event>(messages.as_slice());
+        assert_eq!(respp.status(), ResponseStatus::CREATED);
+        assert_eq!(event.room_id(), room.id());
+        assert_eq!(event.kind(), "cursor");
+        assert_eq!(event.set(), "cursor");
+        assert_eq!(event.label(), None);
+        assert_eq!(event.data(), &data);
+
+        // Assert notification.
+        let (event, evp, topic) = find_event::<Event>(messages.as_slice());
+        assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
+        assert_eq!(evp.label(), "event.create");
+        assert_eq!(event.room_id(), room.id());
+        assert_eq!(event.kind(), "cursor");
+        assert_eq!(event.set(), "cursor");
+        assert_eq!(event.label(), None);
+        assert_eq!(event.data(), &data);
     }
 
-    #[test]
-    fn create_event_not_authorized() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+    #[tokio::test]
+    async fn create_event_not_authorized() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            let room = {
-                // Create room and put the agent online.
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_room(&mut conn).await;
-                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
-                room
-            };
+        let room = {
+            // Create room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
 
-            // Make event.create request.
-            let mut context = TestContext::new(db, TestAuthz::new());
+        // Make event.create request.
+        let mut context = TestContext::new(db, TestAuthz::new());
 
-            let payload = CreateRequest {
-                room_id: room.id(),
-                kind: String::from("message"),
-                set: Some(String::from("messages")),
-                label: Some(String::from("message-1")),
-                attribute: None,
-                data: json!({ "text": "hello" }),
-                is_claim: false,
-                is_persistent: true,
-            };
+        let payload = CreateRequest {
+            room_id: room.id(),
+            kind: String::from("message"),
+            set: Some(String::from("messages")),
+            label: Some(String::from("message-1")),
+            attribute: None,
+            data: json!({ "text": "hello" }),
+            is_claim: false,
+            is_persistent: true,
+        };
 
-            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                .await
-                .expect_err("Unexpected success on event creation");
+        let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Unexpected success on event creation");
 
-            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
-        });
+        assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
     }
 
-    #[test]
-    fn create_event_not_entered() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+    #[tokio::test]
+    async fn create_event_not_entered() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            let room = {
-                // Create room.
-                let mut conn = db.get_conn().await;
-                shared_helpers::insert_room(&mut conn).await
-            };
+        let room = {
+            // Create room.
+            let mut conn = db.get_conn().await;
+            shared_helpers::insert_room(&mut conn).await
+        };
 
-            // Allow agent to create events of type `message` in the room.
-            let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let account_id = agent.account_id().to_string();
+        // Allow agent to create events of type `message` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let account_id = agent.account_id().to_string();
 
-            let object = vec![
-                "rooms",
-                &room_id,
-                "events",
-                "message",
-                "authors",
-                &account_id,
-            ];
+        let object = vec![
+            "rooms",
+            &room_id,
+            "events",
+            "message",
+            "authors",
+            &account_id,
+        ];
 
-            authz.allow(agent.account_id(), object, "create");
+        authz.allow(agent.account_id(), object, "create");
 
-            // Make event.create request.
-            let mut context = TestContext::new(db, authz);
+        // Make event.create request.
+        let mut context = TestContext::new(db, authz);
 
-            let payload = CreateRequest {
-                room_id: room.id(),
-                kind: String::from("message"),
-                set: Some(String::from("messages")),
-                label: Some(String::from("message-1")),
-                attribute: None,
-                data: json!({ "text": "hello" }),
-                is_claim: false,
-                is_persistent: true,
-            };
+        let payload = CreateRequest {
+            room_id: room.id(),
+            kind: String::from("message"),
+            set: Some(String::from("messages")),
+            label: Some(String::from("message-1")),
+            attribute: None,
+            data: json!({ "text": "hello" }),
+            is_claim: false,
+            is_persistent: true,
+        };
 
-            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Event creation failed");
+        let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Event creation failed");
 
-            assert_eq!(messages.len(), 2);
-        });
+        assert_eq!(messages.len(), 2);
     }
 
-    #[test]
-    fn create_event_closed_room() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+    #[tokio::test]
+    async fn create_event_closed_room() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            let room = {
-                // Create closed room and put the agent online.
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_closed_room(&mut conn).await;
-                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
-                room
-            };
+        let room = {
+            // Create closed room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_closed_room(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
 
-            // Allow agent to create events of type `message` in the room.
-            let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let account_id = agent.account_id().to_string();
+        // Allow agent to create events of type `message` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let account_id = agent.account_id().to_string();
 
-            let object = vec![
-                "rooms",
-                &room_id,
-                "events",
-                "message",
-                "authors",
-                &account_id,
-            ];
+        let object = vec![
+            "rooms",
+            &room_id,
+            "events",
+            "message",
+            "authors",
+            &account_id,
+        ];
 
-            authz.allow(agent.account_id(), object, "create");
+        authz.allow(agent.account_id(), object, "create");
 
-            // Make event.create request.
-            let mut context = TestContext::new(db, authz);
+        // Make event.create request.
+        let mut context = TestContext::new(db, authz);
 
-            let payload = CreateRequest {
-                room_id: room.id(),
-                kind: String::from("message"),
-                set: Some(String::from("messages")),
-                label: Some(String::from("message-1")),
-                attribute: None,
-                data: json!({ "text": "hello" }),
-                is_claim: false,
-                is_persistent: true,
-            };
+        let payload = CreateRequest {
+            room_id: room.id(),
+            kind: String::from("message"),
+            set: Some(String::from("messages")),
+            label: Some(String::from("message-1")),
+            attribute: None,
+            data: json!({ "text": "hello" }),
+            is_claim: false,
+            is_persistent: true,
+        };
 
-            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                .await
-                .expect_err("Unexpected success on event creation");
+        let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Unexpected success on event creation");
 
-            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-            assert_eq!(err.kind(), "room_closed");
-        });
+        assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+        assert_eq!(err.kind(), "room_closed");
     }
 
-    #[test]
-    fn create_event_missing_room() {
-        async_std::task::block_on(async {
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+    #[tokio::test]
+    async fn create_event_missing_room() {
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
-            let payload = CreateRequest {
-                room_id: Uuid::new_v4(),
-                kind: String::from("message"),
-                set: Some(String::from("messages")),
-                label: Some(String::from("message-1")),
-                attribute: None,
-                data: json!({ "text": "hello" }),
-                is_claim: false,
-                is_persistent: true,
-            };
+        let payload = CreateRequest {
+            room_id: Uuid::new_v4(),
+            kind: String::from("message"),
+            set: Some(String::from("messages")),
+            label: Some(String::from("message-1")),
+            attribute: None,
+            data: json!({ "text": "hello" }),
+            is_claim: false,
+            is_persistent: true,
+        };
 
-            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                .await
-                .expect_err("Unexpected success on event creation");
+        let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Unexpected success on event creation");
 
-            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-            assert_eq!(err.kind(), "room_not_found");
-        });
+        assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+        assert_eq!(err.kind(), "room_not_found");
     }
 
     ///////////////////////////////////////////////////////////////////////////
 
-    #[test]
-    fn list_events() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+    #[tokio::test]
+    async fn list_events() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            let (room, db_events) = {
-                // Create room.
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_room(&mut conn).await;
+        let (room, db_events) = {
+            // Create room.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
 
-                // Create events in the room.
-                let mut events = vec![];
+            // Create events in the room.
+            let mut events = vec![];
 
-                for i in 1..4 {
-                    let event = factory::Event::new()
-                        .room_id(room.id())
-                        .kind("message")
-                        .data(&json!({ "text": format!("message {}", i) }))
-                        .occurred_at(i * 1000)
-                        .created_by(&agent.agent_id())
-                        .insert(&mut conn)
-                        .await;
+            for i in 1..4 {
+                let event = factory::Event::new()
+                    .room_id(room.id())
+                    .kind("message")
+                    .data(&json!({ "text": format!("message {}", i) }))
+                    .occurred_at(i * 1000)
+                    .created_by(&agent.agent_id())
+                    .insert(&mut conn)
+                    .await;
 
-                    events.push(event);
+                events.push(event);
+            }
+
+            (room, events)
+        };
+
+        // Allow agent to list events in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let object = vec!["rooms", &room_id];
+        authz.allow(agent.account_id(), object, "read");
+
+        // Make event.list request.
+        let mut context = TestContext::new(db, authz);
+
+        let payload = ListRequest {
+            room_id: room.id(),
+            kind: None,
+            set: None,
+            label: None,
+            attribute: None,
+            last_occurred_at: None,
+            direction: Direction::Backward,
+            limit: Some(2),
+        };
+
+        let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Events listing failed (page 1)");
+
+        // Assert last two events response.
+        let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
+        assert_eq!(respp.status(), ResponseStatus::OK);
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[0].id(), db_events[2].id());
+        assert_eq!(events[1].id(), db_events[1].id());
+
+        // Request the next page.
+        let payload = ListRequest {
+            room_id: room.id(),
+            kind: None,
+            set: None,
+            label: None,
+            attribute: None,
+            last_occurred_at: Some(events[1].occurred_at()),
+            direction: Direction::Backward,
+            limit: Some(2),
+        };
+
+        let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Events listing failed (page 2)");
+
+        // Assert the first event.
+        let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
+        assert_eq!(respp.status(), ResponseStatus::OK);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].id(), db_events[0].id());
+    }
+
+    #[tokio::test]
+    async fn list_events_filtered_by_kinds() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let room = {
+            // Create room.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
+
+            // Create events in the room.
+            for (i, s) in ["A", "B", "A", "C"].iter().enumerate() {
+                factory::Event::new()
+                    .room_id(room.id())
+                    .kind(s)
+                    .data(&json!({ "text": format!("message {}", i) }))
+                    .occurred_at(i as i64 * 1000)
+                    .created_by(&agent.agent_id())
+                    .insert(&mut conn)
+                    .await;
+            }
+
+            room
+        };
+
+        // Allow agent to list events in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let object = vec!["rooms", &room_id];
+        authz.allow(agent.account_id(), object, "read");
+
+        // Make event.list request.
+        let mut context = TestContext::new(db, authz);
+
+        let payload = ListRequest {
+            room_id: room.id(),
+            kind: Some(ListTypesFilter::Single("B".to_string())),
+            set: None,
+            label: None,
+            attribute: None,
+            last_occurred_at: None,
+            direction: Direction::Backward,
+            limit: None,
+        };
+
+        let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Events listing failed");
+
+        // we have only two kind=B events
+        let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
+        assert_eq!(respp.status(), ResponseStatus::OK);
+        assert_eq!(events.len(), 1);
+
+        let payload = ListRequest {
+            room_id: room.id(),
+            kind: Some(ListTypesFilter::Multiple(vec![
+                "B".to_string(),
+                "A".to_string(),
+            ])),
+            set: None,
+            label: None,
+            attribute: None,
+            last_occurred_at: None,
+            direction: Direction::Backward,
+            limit: None,
+        };
+
+        let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Events listing failed");
+
+        // we have two kind=B events and one kind=A event
+        let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
+        assert_eq!(respp.status(), ResponseStatus::OK);
+        assert_eq!(events.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn list_events_filter_by_attribute() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let room = {
+            // Create room.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
+
+            // Create events in the room.
+            for (i, attr) in [None, Some("pinned"), Some("other")].iter().enumerate() {
+                let mut factory = factory::Event::new()
+                    .room_id(room.id())
+                    .kind("message")
+                    .data(&json!({ "text": format!("message {}", i) }))
+                    .occurred_at(i as i64 * 1000)
+                    .created_by(&agent.agent_id());
+
+                if let Some(attribute) = attr {
+                    factory = factory.attribute(attribute);
                 }
 
-                (room, events)
-            };
+                factory.insert(&mut conn).await;
+            }
 
-            // Allow agent to list events in the room.
-            let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id];
-            authz.allow(agent.account_id(), object, "read");
+            room
+        };
 
-            // Make event.list request.
-            let mut context = TestContext::new(db, authz);
+        // Allow agent to list events in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let object = vec!["rooms", &room_id];
+        authz.allow(agent.account_id(), object, "read");
 
-            let payload = ListRequest {
-                room_id: room.id(),
-                kind: None,
-                set: None,
-                label: None,
-                attribute: None,
-                last_occurred_at: None,
-                direction: Direction::Backward,
-                limit: Some(2),
-            };
+        // Make event.list request.
+        let mut context = TestContext::new(db, authz);
 
-            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Events listing failed (page 1)");
+        let payload = ListRequest {
+            room_id: room.id(),
+            kind: None,
+            set: None,
+            label: None,
+            attribute: Some(String::from("pinned")),
+            last_occurred_at: None,
+            direction: Direction::Backward,
+            limit: None,
+        };
 
-            // Assert last two events response.
-            let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
-            assert_eq!(respp.status(), ResponseStatus::OK);
-            assert_eq!(events.len(), 2);
-            assert_eq!(events[0].id(), db_events[2].id());
-            assert_eq!(events[1].id(), db_events[1].id());
+        let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Events listing failed");
 
-            // Request the next page.
-            let payload = ListRequest {
-                room_id: room.id(),
-                kind: None,
-                set: None,
-                label: None,
-                attribute: None,
-                last_occurred_at: Some(events[1].occurred_at()),
-                direction: Direction::Backward,
-                limit: Some(2),
-            };
-
-            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Events listing failed (page 2)");
-
-            // Assert the first event.
-            let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
-            assert_eq!(respp.status(), ResponseStatus::OK);
-            assert_eq!(events.len(), 1);
-            assert_eq!(events[0].id(), db_events[0].id());
-        });
+        // Expect only the event with the `pinned` attribute value.
+        let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
+        assert_eq!(respp.status(), ResponseStatus::OK);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].attribute(), Some("pinned"));
     }
 
-    #[test]
-    fn list_events_filtered_by_kinds() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+    #[tokio::test]
+    async fn list_events_not_authorized() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-            let room = {
-                // Create room.
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_room(&mut conn).await;
+        let room = {
+            let mut conn = db.get_conn().await;
+            shared_helpers::insert_room(&mut conn).await
+        };
 
-                // Create events in the room.
-                for (i, s) in ["A", "B", "A", "C"].iter().enumerate() {
-                    factory::Event::new()
-                        .room_id(room.id())
-                        .kind(s)
-                        .data(&json!({ "text": format!("message {}", i) }))
-                        .occurred_at(i as i64 * 1000)
-                        .created_by(&agent.agent_id())
-                        .insert(&mut conn)
-                        .await;
-                }
+        let mut context = TestContext::new(db, TestAuthz::new());
 
-                room
-            };
+        let payload = ListRequest {
+            room_id: room.id(),
+            kind: None,
+            set: None,
+            label: None,
+            attribute: None,
+            last_occurred_at: None,
+            direction: Direction::Backward,
+            limit: Some(2),
+        };
 
-            // Allow agent to list events in the room.
-            let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id];
-            authz.allow(agent.account_id(), object, "read");
+        let err = handle_request::<ListHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Unexpected success on events listing");
 
-            // Make event.list request.
-            let mut context = TestContext::new(db, authz);
-
-            let payload = ListRequest {
-                room_id: room.id(),
-                kind: Some(ListTypesFilter::Single("B".to_string())),
-                set: None,
-                label: None,
-                attribute: None,
-                last_occurred_at: None,
-                direction: Direction::Backward,
-                limit: None,
-            };
-
-            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Events listing failed");
-
-            // we have only two kind=B events
-            let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
-            assert_eq!(respp.status(), ResponseStatus::OK);
-            assert_eq!(events.len(), 1);
-
-            let payload = ListRequest {
-                room_id: room.id(),
-                kind: Some(ListTypesFilter::Multiple(vec![
-                    "B".to_string(),
-                    "A".to_string(),
-                ])),
-                set: None,
-                label: None,
-                attribute: None,
-                last_occurred_at: None,
-                direction: Direction::Backward,
-                limit: None,
-            };
-
-            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Events listing failed");
-
-            // we have two kind=B events and one kind=A event
-            let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
-            assert_eq!(respp.status(), ResponseStatus::OK);
-            assert_eq!(events.len(), 3);
-        });
+        assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
     }
 
-    #[test]
-    fn list_events_filter_by_attribute() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+    #[tokio::test]
+    async fn list_events_missing_room() {
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
-            let room = {
-                // Create room.
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_room(&mut conn).await;
+        let payload = ListRequest {
+            room_id: Uuid::new_v4(),
+            kind: None,
+            set: None,
+            label: None,
+            attribute: None,
+            last_occurred_at: None,
+            direction: Direction::Backward,
+            limit: Some(2),
+        };
 
-                // Create events in the room.
-                for (i, attr) in [None, Some("pinned"), Some("other")].iter().enumerate() {
-                    let mut factory = factory::Event::new()
-                        .room_id(room.id())
-                        .kind("message")
-                        .data(&json!({ "text": format!("message {}", i) }))
-                        .occurred_at(i as i64 * 1000)
-                        .created_by(&agent.agent_id());
+        let err = handle_request::<ListHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Unexpected success on events listing");
 
-                    if let Some(attribute) = attr {
-                        factory = factory.attribute(attribute);
-                    }
-
-                    factory.insert(&mut conn).await;
-                }
-
-                room
-            };
-
-            // Allow agent to list events in the room.
-            let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id];
-            authz.allow(agent.account_id(), object, "read");
-
-            // Make event.list request.
-            let mut context = TestContext::new(db, authz);
-
-            let payload = ListRequest {
-                room_id: room.id(),
-                kind: None,
-                set: None,
-                label: None,
-                attribute: Some(String::from("pinned")),
-                last_occurred_at: None,
-                direction: Direction::Backward,
-                limit: None,
-            };
-
-            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Events listing failed");
-
-            // Expect only the event with the `pinned` attribute value.
-            let (events, respp, _) = find_response::<Vec<Event>>(messages.as_slice());
-            assert_eq!(respp.status(), ResponseStatus::OK);
-            assert_eq!(events.len(), 1);
-            assert_eq!(events[0].attribute(), Some("pinned"));
-        });
-    }
-
-    #[test]
-    fn list_events_not_authorized() {
-        async_std::task::block_on(async {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-
-            let room = {
-                let mut conn = db.get_conn().await;
-                shared_helpers::insert_room(&mut conn).await
-            };
-
-            let mut context = TestContext::new(db, TestAuthz::new());
-
-            let payload = ListRequest {
-                room_id: room.id(),
-                kind: None,
-                set: None,
-                label: None,
-                attribute: None,
-                last_occurred_at: None,
-                direction: Direction::Backward,
-                limit: Some(2),
-            };
-
-            let err = handle_request::<ListHandler>(&mut context, &agent, payload)
-                .await
-                .expect_err("Unexpected success on events listing");
-
-            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
-        });
-    }
-
-    #[test]
-    fn list_events_missing_room() {
-        async_std::task::block_on(async {
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-
-            let payload = ListRequest {
-                room_id: Uuid::new_v4(),
-                kind: None,
-                set: None,
-                label: None,
-                attribute: None,
-                last_occurred_at: None,
-                direction: Direction::Backward,
-                limit: Some(2),
-            };
-
-            let err = handle_request::<ListHandler>(&mut context, &agent, payload)
-                .await
-                .expect_err("Unexpected success on events listing");
-
-            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-            assert_eq!(err.kind(), "room_not_found");
-        });
+        assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+        assert_eq!(err.kind(), "room_not_found");
     }
 
     #[test]

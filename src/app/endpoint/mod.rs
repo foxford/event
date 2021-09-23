@@ -183,4 +183,33 @@ pub(self) mod prelude {
     pub(super) use crate::metrics::QueryKey;
 
     pub(super) use svc_authn::Authenticable;
+
+    use futures::{FutureExt, Stream, StreamExt};
+    use std::pin::Pin;
+    use svc_agent::mqtt::IntoPublishableMessage;
+    use tokio::task::JoinHandle;
+
+    pub trait NotificationStream {
+        fn into_chainable_stream(
+            self,
+        ) -> Pin<Box<dyn Stream<Item = Box<dyn IntoPublishableMessage + Send>> + Send>>;
+    }
+
+    impl NotificationStream for JoinHandle<Box<dyn IntoPublishableMessage + Send>> {
+        fn into_chainable_stream(
+            self,
+        ) -> Pin<Box<dyn Stream<Item = Box<dyn IntoPublishableMessage + Send>> + Send>> {
+            self.into_stream()
+                .filter_map(|jh_res| async move {
+                    match jh_res {
+                        Ok(r) => Some(r),
+                        Err(e) => {
+                            error!(crate::LOG, "Notification future erred, reason = {:?}", e);
+                            None
+                        }
+                    }
+                })
+                .boxed()
+        }
+    }
 }

@@ -679,322 +679,302 @@ mod tests {
 
     // single stream started as soon as room opened, no preroll offset
     // all events must be left as is
-    #[test]
-    fn adjust_room_test_1() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
+    #[tokio::test]
+    async fn adjust_room_test_1() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m1"})),
+            (12_000_000_000, "message", json!({"message": "m2"})),
+        ])
+        .await;
+
+        // RTC started when the room opened and preroll is 0 seconds long.
+        ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
                 (1_000_000_000, "message", json!({"message": "m1"})),
                 (12_000_000_000, "message", json!({"message": "m2"})),
-            ])
-            .await;
-
-            // RTC started when the room opened and preroll is 0 seconds long.
-            ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
-
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (1_000_000_000, "message", json!({"message": "m1"})),
-                    (12_000_000_000, "message", json!({"message": "m2"})),
-                ],
-                &[(0, 20000)],
-            )
-            .await;
-        });
+            ],
+            &[(0, 20000)],
+        )
+        .await;
     }
 
     // single stream started as soon as room opened, 3s preroll offset
     // all events must be moved 3s to the right
-    #[test]
-    fn adjust_room_test_2() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
-                (1_000_000_000, "message", json!({"message": "m1"})),
-                (12_000_000_000, "message", json!({"message": "m2"})),
-            ])
-            .await;
+    #[tokio::test]
+    async fn adjust_room_test_2() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m1"})),
+            (12_000_000_000, "message", json!({"message": "m2"})),
+        ])
+        .await;
 
-            // Video segments.
-            ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "3 seconds");
+        // Video segments.
+        ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "3 seconds");
 
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (4_000_000_000, "message", json!({"message": "m1"})),
-                    (15_000_000_000, "message", json!({"message": "m2"})),
-                ],
-                &[(0, 20000)],
-            )
-            .await;
-        });
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
+                (4_000_000_000, "message", json!({"message": "m1"})),
+                (15_000_000_000, "message", json!({"message": "m2"})),
+            ],
+            &[(0, 20000)],
+        )
+        .await;
     }
 
     // single stream started as soon as room opened, one message is after the stream end, no preroll offset
     // event after the stream end must be moved to stream end
-    #[test]
-    fn adjust_room_test_3() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
+    #[tokio::test]
+    async fn adjust_room_test_3() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m1"})),
+            (21_000_000_000, "message", json!({"message": "m2"})),
+        ])
+        .await;
+
+        // Video segments.
+        ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
                 (1_000_000_000, "message", json!({"message": "m1"})),
-                (21_000_000_000, "message", json!({"message": "m2"})),
-            ])
-            .await;
-
-            // Video segments.
-            ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
-
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (1_000_000_000, "message", json!({"message": "m1"})),
-                    (20_000_000_000, "message", json!({"message": "m2"})),
-                ],
-                &[(0, 20000)],
-            )
-            .await;
-        });
+                (20_000_000_000, "message", json!({"message": "m2"})),
+            ],
+            &[(0, 20000)],
+        )
+        .await;
     }
 
     // Single stream started 10 seconds after room opened, no preroll offset
     // Both events must be moved 10s to the left
-    #[test]
-    fn adjust_room_test_4() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
-                (1_000_000_000, "message", json!({"message": "m1"})),
-                (15_000_000_000, "message", json!({"message": "m2"})),
-            ])
-            .await;
+    #[tokio::test]
+    async fn adjust_room_test_4() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m1"})),
+            (15_000_000_000, "message", json!({"message": "m2"})),
+        ])
+        .await;
 
-            // Video segments.
-            ctx.set_segments(
-                vec![(0, 20000)],
-                ctx.opened_at + Duration::seconds(10),
-                "0 seconds",
-            );
+        // Video segments.
+        ctx.set_segments(
+            vec![(0, 20000)],
+            ctx.opened_at + Duration::seconds(10),
+            "0 seconds",
+        );
 
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (0, "message", json!({"message": "m1"})),
-                    (5_000_000_000, "message", json!({"message": "m2"})),
-                ],
-                &[(0, 20000)],
-            )
-            .await;
-        });
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
+                (0, "message", json!({"message": "m1"})),
+                (5_000_000_000, "message", json!({"message": "m2"})),
+            ],
+            &[(0, 20000)],
+        )
+        .await;
     }
 
     // Single stream started 10 seconds after room opened, 3s preroll offset
     // Both events must be moved 10s to the left and 3s to the right
-    #[test]
-    fn adjust_room_test_5() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
-                (1_000_000_000, "message", json!({"message": "m1"})),
-                (15_000_000_000, "message", json!({"message": "m2"})),
-                (35_000_000_000, "message", json!({"message": "m3"})),
-            ])
-            .await;
+    #[tokio::test]
+    async fn adjust_room_test_5() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m1"})),
+            (15_000_000_000, "message", json!({"message": "m2"})),
+            (35_000_000_000, "message", json!({"message": "m3"})),
+        ])
+        .await;
 
-            // Video segments.
-            ctx.set_segments(
-                vec![(0, 20000)],
-                ctx.opened_at + Duration::seconds(10),
-                "3 seconds",
-            );
+        // Video segments.
+        ctx.set_segments(
+            vec![(0, 20000)],
+            ctx.opened_at + Duration::seconds(10),
+            "3 seconds",
+        );
 
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (3_000_000_000, "message", json!({"message": "m1"})),
-                    (8_000_000_000, "message", json!({"message": "m2"})),
-                    (23_000_000_000, "message", json!({"message": "m3"})),
-                ],
-                &[(0, 20000)],
-            )
-            .await;
-        });
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
+                (3_000_000_000, "message", json!({"message": "m1"})),
+                (8_000_000_000, "message", json!({"message": "m2"})),
+                (23_000_000_000, "message", json!({"message": "m3"})),
+            ],
+            &[(0, 20000)],
+        )
+        .await;
     }
 
     // Two stream started as soon as room opened, no preroll offset
     // 1st stream messages are left as is
     // 2nd stream messages are moved with gap
     // gap messages are moved to the start of second stream
-    #[test]
-    fn adjust_room_test_6() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
+    #[tokio::test]
+    async fn adjust_room_test_6() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m1"})),
+            (15_000_000_000, "message", json!({"message": "m2"})),
+            (22_000_000_000, "message", json!({"message": "m3"})),
+            (23_000_000_000, "message", json!({"message": "m4"})),
+            (28_000_000_000, "message", json!({"message": "m5"})),
+            (36_000_000_000, "message", json!({"message": "m6"})),
+        ])
+        .await;
+
+        // Video segments.
+        ctx.set_segments(vec![(0, 20000), (26000, 34000)], ctx.opened_at, "0 seconds");
+
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
                 (1_000_000_000, "message", json!({"message": "m1"})),
                 (15_000_000_000, "message", json!({"message": "m2"})),
-                (22_000_000_000, "message", json!({"message": "m3"})),
-                (23_000_000_000, "message", json!({"message": "m4"})),
-                (28_000_000_000, "message", json!({"message": "m5"})),
-                (36_000_000_000, "message", json!({"message": "m6"})),
-            ])
-            .await;
-
-            // Video segments.
-            ctx.set_segments(vec![(0, 20000), (26000, 34000)], ctx.opened_at, "0 seconds");
-
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (1_000_000_000, "message", json!({"message": "m1"})),
-                    (15_000_000_000, "message", json!({"message": "m2"})),
-                    (20_000_000_000, "message", json!({"message": "m3"})),
-                    (20_000_000_001, "message", json!({"message": "m4"})),
-                    (22_000_000_000, "message", json!({"message": "m5"})),
-                    (28_000_000_000, "message", json!({"message": "m6"})),
-                ],
-                &[(0, 28000)],
-            )
-            .await;
-        });
+                (20_000_000_000, "message", json!({"message": "m3"})),
+                (20_000_000_001, "message", json!({"message": "m4"})),
+                (22_000_000_000, "message", json!({"message": "m5"})),
+                (28_000_000_000, "message", json!({"message": "m6"})),
+            ],
+            &[(0, 28000)],
+        )
+        .await;
     }
 
     // Two stream started as soon as room opened, 3s preroll offset
     // 1st stream messages are left as is
     // 2nd stream messages are moved with gap
     // gap messages are moved to the start of second stream
-    #[test]
-    fn adjust_room_test_7() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
-                (1_000_000_000, "message", json!({"message": "m1"})),
-                (15_000_000_000, "message", json!({"message": "m2"})),
-                (22_000_000_000, "message", json!({"message": "m3"})),
-                (23_000_000_000, "message", json!({"message": "m4"})),
-                (28_000_000_000, "message", json!({"message": "m5"})),
-                (36_000_000_000, "message", json!({"message": "m6"})),
-            ])
-            .await;
+    #[tokio::test]
+    async fn adjust_room_test_7() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m1"})),
+            (15_000_000_000, "message", json!({"message": "m2"})),
+            (22_000_000_000, "message", json!({"message": "m3"})),
+            (23_000_000_000, "message", json!({"message": "m4"})),
+            (28_000_000_000, "message", json!({"message": "m5"})),
+            (36_000_000_000, "message", json!({"message": "m6"})),
+        ])
+        .await;
 
-            // Video segments.
-            ctx.set_segments(vec![(0, 20000), (26000, 34000)], ctx.opened_at, "3 seconds");
+        // Video segments.
+        ctx.set_segments(vec![(0, 20000), (26000, 34000)], ctx.opened_at, "3 seconds");
 
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (4_000_000_000, "message", json!({"message": "m1"})),
-                    (18_000_000_000, "message", json!({"message": "m2"})),
-                    (23_000_000_000, "message", json!({"message": "m3"})),
-                    (23_000_000_001, "message", json!({"message": "m4"})),
-                    (25_000_000_000, "message", json!({"message": "m5"})),
-                    (31_000_000_000, "message", json!({"message": "m6"})),
-                ],
-                &[(0, 28000)],
-            )
-            .await;
-        });
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
+                (4_000_000_000, "message", json!({"message": "m1"})),
+                (18_000_000_000, "message", json!({"message": "m2"})),
+                (23_000_000_000, "message", json!({"message": "m3"})),
+                (23_000_000_001, "message", json!({"message": "m4"})),
+                (25_000_000_000, "message", json!({"message": "m5"})),
+                (31_000_000_000, "message", json!({"message": "m6"})),
+            ],
+            &[(0, 28000)],
+        )
+        .await;
     }
 
     // single stream started as soon as room opened, no preroll offset
     // single cut over 1 message
     // message in cut must be moved to cut start
     // message after the cut must be moved to cut duration seconds the left
-    #[test]
-    fn adjust_room_test_8() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
+    #[tokio::test]
+    async fn adjust_room_test_8() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m1"})),
+            (10_000_000_000, "stream", json!({"cut": "start"})),
+            (12_000_000_000, "message", json!({"message": "m2"})),
+            (13_000_000_000, "stream", json!({"cut": "stop"})),
+            (15_000_000_000, "message", json!({"message": "m3"})),
+        ])
+        .await;
+
+        // RTC started when the room opened and preroll is 0 seconds long.
+        ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
                 (1_000_000_000, "message", json!({"message": "m1"})),
-                (10_000_000_000, "stream", json!({"cut": "start"})),
-                (12_000_000_000, "message", json!({"message": "m2"})),
-                (13_000_000_000, "stream", json!({"cut": "stop"})),
-                (15_000_000_000, "message", json!({"message": "m3"})),
-            ])
-            .await;
-
-            // RTC started when the room opened and preroll is 0 seconds long.
-            ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
-
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (1_000_000_000, "message", json!({"message": "m1"})),
-                    (10_000_000_000, "message", json!({"message": "m2"})),
-                    (12_000_000_000, "message", json!({"message": "m3"})),
-                ],
-                &[(0, 10000), (13000, 20000)],
-            )
-            .await;
-        });
+                (10_000_000_000, "message", json!({"message": "m2"})),
+                (12_000_000_000, "message", json!({"message": "m3"})),
+            ],
+            &[(0, 10000), (13000, 20000)],
+        )
+        .await;
     }
 
     // single stream started 10 seconds after room opened, no preroll offset
     // single cut over 2 messages, ending before the stream has started
     // cut messages must be moved to stream start and monotonized
     // messages during stream must be moved 10 seconds to the left
-    #[test]
-    fn adjust_room_test_9() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
-                (1_000_000_000, "stream", json!({"cut": "start"})),
-                (3_000_000_000, "message", json!({"message": "m1"})),
-                (6_000_000_000, "message", json!({"message": "m1a"})),
-                (7_000_000_000, "stream", json!({"cut": "stop"})),
-                (9_000_000_000, "message", json!({"message": "m2"})),
-                (12_000_000_000, "message", json!({"message": "m3"})),
-                (15_000_000_000, "message", json!({"message": "m4"})),
-            ])
-            .await;
+    #[tokio::test]
+    async fn adjust_room_test_9() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "stream", json!({"cut": "start"})),
+            (3_000_000_000, "message", json!({"message": "m1"})),
+            (6_000_000_000, "message", json!({"message": "m1a"})),
+            (7_000_000_000, "stream", json!({"cut": "stop"})),
+            (9_000_000_000, "message", json!({"message": "m2"})),
+            (12_000_000_000, "message", json!({"message": "m3"})),
+            (15_000_000_000, "message", json!({"message": "m4"})),
+        ])
+        .await;
 
-            ctx.set_segments(
-                vec![(0, 20000)],
-                ctx.opened_at + Duration::seconds(10),
-                "0 seconds",
-            );
+        ctx.set_segments(
+            vec![(0, 20000)],
+            ctx.opened_at + Duration::seconds(10),
+            "0 seconds",
+        );
 
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (0_000_000_000, "message", json!({"message": "m1"})),
-                    (0_000_000_001, "message", json!({"message": "m1a"})),
-                    (0_000_000_002, "message", json!({"message": "m2"})),
-                    (2_000_000_000, "message", json!({"message": "m3"})),
-                    (5_000_000_000, "message", json!({"message": "m4"})),
-                ],
-                &[(0, 20000)],
-            )
-            .await;
-        });
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
+                (0_000_000_000, "message", json!({"message": "m1"})),
+                (0_000_000_001, "message", json!({"message": "m1a"})),
+                (0_000_000_002, "message", json!({"message": "m2"})),
+                (2_000_000_000, "message", json!({"message": "m3"})),
+                (5_000_000_000, "message", json!({"message": "m4"})),
+            ],
+            &[(0, 20000)],
+        )
+        .await;
     }
 
     // same as previous test but with 3s offset
     // every message must be moved as before and then 3s to the right
-    #[test]
-    fn adjust_room_test_10() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
-                (1_000_000_000, "stream", json!({"cut": "start"})),
+    #[tokio::test]
+    async fn adjust_room_test_10() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "stream", json!({"cut": "start"})),
+            (3_000_000_000, "message", json!({"message": "m1"})),
+            (6_000_000_000, "message", json!({"message": "m1a"})),
+            (7_000_000_000, "stream", json!({"cut": "stop"})),
+            (9_000_000_000, "message", json!({"message": "m2"})),
+            (12_000_000_000, "message", json!({"message": "m3"})),
+            (15_000_000_000, "message", json!({"message": "m4"})),
+        ])
+        .await;
+
+        ctx.set_segments(
+            vec![(0, 20000)],
+            ctx.opened_at + Duration::seconds(10),
+            "3 seconds",
+        );
+
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
                 (3_000_000_000, "message", json!({"message": "m1"})),
-                (6_000_000_000, "message", json!({"message": "m1a"})),
-                (7_000_000_000, "stream", json!({"cut": "stop"})),
-                (9_000_000_000, "message", json!({"message": "m2"})),
-                (12_000_000_000, "message", json!({"message": "m3"})),
-                (15_000_000_000, "message", json!({"message": "m4"})),
-            ])
-            .await;
-
-            ctx.set_segments(
-                vec![(0, 20000)],
-                ctx.opened_at + Duration::seconds(10),
-                "3 seconds",
-            );
-
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (3_000_000_000, "message", json!({"message": "m1"})),
-                    (3_000_000_001, "message", json!({"message": "m1a"})),
-                    (3_000_000_002, "message", json!({"message": "m2"})),
-                    (5_000_000_000, "message", json!({"message": "m3"})),
-                    (8_000_000_000, "message", json!({"message": "m4"})),
-                ],
-                &[(0, 20000)],
-            )
-            .await;
-        });
+                (3_000_000_001, "message", json!({"message": "m1a"})),
+                (3_000_000_002, "message", json!({"message": "m2"})),
+                (5_000_000_000, "message", json!({"message": "m3"})),
+                (8_000_000_000, "message", json!({"message": "m4"})),
+            ],
+            &[(0, 20000)],
+        )
+        .await;
     }
 
     // single stream started 10 seconds after room opened, no preroll offset
@@ -1003,175 +983,165 @@ mod tests {
     // m2 must be moved N seconds the left, N = stream and 1st cut overlap duration
     // m3 must be moved (start of 2nd cut + N) seconds to the left
     // m4 must be moved (2nd cut duration + N) seconds to the left
-    #[test]
-    fn adjust_room_test_11() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
-                (1_000_000_000, "stream", json!({"cut": "start"})),
-                (3_000_000_000, "message", json!({"message": "m1"})),
-                (12_000_000_000, "stream", json!({"cut": "stop"})),
-                (13_000_000_000, "message", json!({"message": "m2"})),
-                (14_000_000_000, "stream", json!({"cut": "start"})),
-                (15_000_000_000, "message", json!({"message": "m3"})),
-                (17_000_000_000, "stream", json!({"cut": "stop"})),
-                (19_000_000_000, "message", json!({"message": "m4"})),
-            ])
-            .await;
+    #[tokio::test]
+    async fn adjust_room_test_11() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "stream", json!({"cut": "start"})),
+            (3_000_000_000, "message", json!({"message": "m1"})),
+            (12_000_000_000, "stream", json!({"cut": "stop"})),
+            (13_000_000_000, "message", json!({"message": "m2"})),
+            (14_000_000_000, "stream", json!({"cut": "start"})),
+            (15_000_000_000, "message", json!({"message": "m3"})),
+            (17_000_000_000, "stream", json!({"cut": "stop"})),
+            (19_000_000_000, "message", json!({"message": "m4"})),
+        ])
+        .await;
 
-            ctx.set_segments(
-                vec![(0, 20000)],
-                ctx.opened_at + Duration::seconds(10),
-                "0 seconds",
-            );
+        ctx.set_segments(
+            vec![(0, 20000)],
+            ctx.opened_at + Duration::seconds(10),
+            "0 seconds",
+        );
 
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (0_000_000_000, "message", json!({"message": "m1"})),
-                    (1_000_000_000, "message", json!({"message": "m2"})),
-                    (2_000_000_000, "message", json!({"message": "m3"})),
-                    (4_000_000_000, "message", json!({"message": "m4"})),
-                ],
-                &[(2000, 4000), (7000, 20000)],
-            )
-            .await;
-        });
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
+                (0_000_000_000, "message", json!({"message": "m1"})),
+                (1_000_000_000, "message", json!({"message": "m2"})),
+                (2_000_000_000, "message", json!({"message": "m3"})),
+                (4_000_000_000, "message", json!({"message": "m4"})),
+            ],
+            &[(2000, 4000), (7000, 20000)],
+        )
+        .await;
     }
 
     // same as previous test + 3s preroll
     // every message must be moved as before then 3s to the right
-    #[test]
-    fn adjust_room_test_12() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
-                (1_000_000_000, "stream", json!({"cut": "start"})),
+    #[tokio::test]
+    async fn adjust_room_test_12() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "stream", json!({"cut": "start"})),
+            (3_000_000_000, "message", json!({"message": "m1"})),
+            (12_000_000_000, "stream", json!({"cut": "stop"})),
+            (13_000_000_000, "message", json!({"message": "m2"})),
+            (14_000_000_000, "stream", json!({"cut": "start"})),
+            (15_000_000_000, "message", json!({"message": "m3"})),
+            (17_000_000_000, "stream", json!({"cut": "stop"})),
+            (19_000_000_000, "message", json!({"message": "m4"})),
+        ])
+        .await;
+
+        ctx.set_segments(
+            vec![(0, 20000)],
+            ctx.opened_at + Duration::seconds(10),
+            "3 seconds",
+        );
+
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
                 (3_000_000_000, "message", json!({"message": "m1"})),
-                (12_000_000_000, "stream", json!({"cut": "stop"})),
-                (13_000_000_000, "message", json!({"message": "m2"})),
-                (14_000_000_000, "stream", json!({"cut": "start"})),
-                (15_000_000_000, "message", json!({"message": "m3"})),
-                (17_000_000_000, "stream", json!({"cut": "stop"})),
-                (19_000_000_000, "message", json!({"message": "m4"})),
-            ])
-            .await;
-
-            ctx.set_segments(
-                vec![(0, 20000)],
-                ctx.opened_at + Duration::seconds(10),
-                "3 seconds",
-            );
-
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (3_000_000_000, "message", json!({"message": "m1"})),
-                    (4_000_000_000, "message", json!({"message": "m2"})),
-                    (5_000_000_000, "message", json!({"message": "m3"})),
-                    (7_000_000_000, "message", json!({"message": "m4"})),
-                ],
-                &[(2000, 4000), (7000, 20000)],
-            )
-            .await;
-        });
+                (4_000_000_000, "message", json!({"message": "m2"})),
+                (5_000_000_000, "message", json!({"message": "m3"})),
+                (7_000_000_000, "message", json!({"message": "m4"})),
+            ],
+            &[(2000, 4000), (7000, 20000)],
+        )
+        .await;
     }
 
     // two streams started as soon as room opened, no preroll
     // cut that overlaps streams gap
     // m2, m3, m4 must be moved cut start
     // m5 must be moved to the left according to overlap between streams and cut
-    #[test]
-    fn adjust_room_test_14() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
+    #[tokio::test]
+    async fn adjust_room_test_14() {
+        let mut ctx = TestCtx::new(&[
+            (3_000_000_000, "message", json!({"message": "m1"})),
+            (18_000_000_000, "stream", json!({"cut": "start"})),
+            (19_000_000_000, "message", json!({"message": "m2"})),
+            (22_000_000_000, "message", json!({"message": "m3"})),
+            (29_000_000_000, "message", json!({"message": "m4"})),
+            (31_000_000_000, "stream", json!({"cut": "stop"})),
+            (33_000_000_000, "message", json!({"message": "m5"})),
+        ])
+        .await;
+
+        ctx.set_segments(vec![(0, 20000), (28000, 34000)], ctx.opened_at, "0 seconds");
+
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
                 (3_000_000_000, "message", json!({"message": "m1"})),
-                (18_000_000_000, "stream", json!({"cut": "start"})),
-                (19_000_000_000, "message", json!({"message": "m2"})),
-                (22_000_000_000, "message", json!({"message": "m3"})),
-                (29_000_000_000, "message", json!({"message": "m4"})),
-                (31_000_000_000, "stream", json!({"cut": "stop"})),
-                (33_000_000_000, "message", json!({"message": "m5"})),
-            ])
-            .await;
-
-            ctx.set_segments(vec![(0, 20000), (28000, 34000)], ctx.opened_at, "0 seconds");
-
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (3_000_000_000, "message", json!({"message": "m1"})),
-                    (18_000_000_000, "message", json!({"message": "m2"})),
-                    (18_000_000_001, "message", json!({"message": "m3"})),
-                    (18_000_000_002, "message", json!({"message": "m4"})),
-                    (20_000_000_000, "message", json!({"message": "m5"})),
-                ],
-                &[(0, 18000), (23000, 26000)],
-            )
-            .await;
-        });
+                (18_000_000_000, "message", json!({"message": "m2"})),
+                (18_000_000_001, "message", json!({"message": "m3"})),
+                (18_000_000_002, "message", json!({"message": "m4"})),
+                (20_000_000_000, "message", json!({"message": "m5"})),
+            ],
+            &[(0, 18000), (23000, 26000)],
+        )
+        .await;
     }
 
     // same as previous test but 3 seconds offset
-    #[test]
-    fn adjust_room_test_15() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
-                (3_000_000_000, "message", json!({"message": "m1"})),
-                (18_000_000_000, "stream", json!({"cut": "start"})),
-                (19_000_000_000, "message", json!({"message": "m2"})),
-                (22_000_000_000, "message", json!({"message": "m3"})),
-                (29_000_000_000, "message", json!({"message": "m4"})),
-                (31_000_000_000, "stream", json!({"cut": "stop"})),
-                (33_000_000_000, "message", json!({"message": "m5"})),
-            ])
-            .await;
+    #[tokio::test]
+    async fn adjust_room_test_15() {
+        let mut ctx = TestCtx::new(&[
+            (3_000_000_000, "message", json!({"message": "m1"})),
+            (18_000_000_000, "stream", json!({"cut": "start"})),
+            (19_000_000_000, "message", json!({"message": "m2"})),
+            (22_000_000_000, "message", json!({"message": "m3"})),
+            (29_000_000_000, "message", json!({"message": "m4"})),
+            (31_000_000_000, "stream", json!({"cut": "stop"})),
+            (33_000_000_000, "message", json!({"message": "m5"})),
+        ])
+        .await;
 
-            ctx.set_segments(vec![(0, 20000), (28000, 34000)], ctx.opened_at, "3 seconds");
+        ctx.set_segments(vec![(0, 20000), (28000, 34000)], ctx.opened_at, "3 seconds");
 
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (6_000_000_000, "message", json!({"message": "m1"})),
-                    (21_000_000_000, "message", json!({"message": "m2"})),
-                    (21_000_000_001, "message", json!({"message": "m3"})),
-                    (21_000_000_002, "message", json!({"message": "m4"})),
-                    (23_000_000_000, "message", json!({"message": "m5"})),
-                ],
-                &[(0, 18000), (23000, 26000)],
-            )
-            .await;
-        });
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
+                (6_000_000_000, "message", json!({"message": "m1"})),
+                (21_000_000_000, "message", json!({"message": "m2"})),
+                (21_000_000_001, "message", json!({"message": "m3"})),
+                (21_000_000_002, "message", json!({"message": "m4"})),
+                (23_000_000_000, "message", json!({"message": "m5"})),
+            ],
+            &[(0, 18000), (23000, 26000)],
+        )
+        .await;
     }
 
     // single stream started as soon as room opened, no preroll offset
     // single cut that ends after the stream end
     // message in cut must be moved to cut start
     // message after the cut must be moved to cut start
-    #[test]
-    fn adjust_room_test_16() {
-        async_std::task::block_on(async {
-            let mut ctx = TestCtx::new(&[
+    #[tokio::test]
+    async fn adjust_room_test_16() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m1"})),
+            (10_000_000_000, "stream", json!({"cut": "start"})),
+            (12_000_000_000, "message", json!({"message": "m2"})),
+            (25_000_000_000, "stream", json!({"cut": "stop"})),
+            (27_000_000_000, "message", json!({"message": "m3"})),
+        ])
+        .await;
+
+        // RTC started when the room opened and preroll is 0 seconds long.
+        ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
                 (1_000_000_000, "message", json!({"message": "m1"})),
-                (10_000_000_000, "stream", json!({"cut": "start"})),
-                (12_000_000_000, "message", json!({"message": "m2"})),
-                (25_000_000_000, "stream", json!({"cut": "stop"})),
-                (27_000_000_000, "message", json!({"message": "m3"})),
-            ])
-            .await;
-
-            // RTC started when the room opened and preroll is 0 seconds long.
-            ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
-
-            ctx.run().await;
-            ctx.events_asserts(
-                &[
-                    (1_000_000_000, "message", json!({"message": "m1"})),
-                    (10_000_000_000, "message", json!({"message": "m2"})),
-                    (10_000_000_001, "message", json!({"message": "m3"})),
-                ],
-                &[(0, 10000)],
-            )
-            .await;
-        });
+                (10_000_000_000, "message", json!({"message": "m2"})),
+                (10_000_000_001, "message", json!({"message": "m3"})),
+            ],
+            &[(0, 10000)],
+        )
+        .await;
     }
 
     async fn create_event(

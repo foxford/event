@@ -2,9 +2,8 @@ use std::future::Future;
 use std::pin::Pin;
 
 use anyhow::Context as AnyhowContext;
-use async_std::prelude::*;
-use async_std::stream::{self, Stream};
 use chrono::{DateTime, Utc};
+use futures::{future, stream, Stream, StreamExt};
 use futures_util::pin_mut;
 use svc_agent::{
     mqtt::{
@@ -219,9 +218,9 @@ fn error_response(
     let e = err.to_svc_error();
     let resp = OutgoingResponse::unicast(e, props, reqp, API_VERSION);
 
-    Box::new(stream::once(
+    Box::new(stream::once(future::ready(
         Box::new(resp) as Box<dyn IntoPublishableMessage + Send>
-    ))
+    )))
 }
 
 pub(crate) fn publish_message(

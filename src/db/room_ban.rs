@@ -179,7 +179,7 @@ mod tests {
     use crate::test_helpers::prelude::*;
     use std::ops::Bound;
 
-    #[async_std::test]
+    #[tokio::test]
     async fn find_ban_multirooms() {
         let db = TestDb::new().await;
         let mut conn = db.get_conn().await;

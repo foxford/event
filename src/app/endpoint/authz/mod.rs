@@ -172,7 +172,7 @@ mod tests {
         assert_eq!(obj.to_ban_key(), None);
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn ban_by_room_obj() {
         let db = TestDb::new().await;
 
@@ -222,7 +222,7 @@ mod tests {
         assert_eq!(x, false);
     }
 
-    #[async_std::test]
+    #[tokio::test]
     async fn ban_by_classroom_obj() {
         let db = TestDb::new().await;
 

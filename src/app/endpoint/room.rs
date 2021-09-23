@@ -1,11 +1,9 @@
 use std::ops::Bound;
 
 use anyhow::Context as AnyhowContext;
-use async_std::prelude::*;
-use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use futures::FutureExt;
+use futures::{future, stream, StreamExt};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
@@ -151,7 +149,7 @@ impl RequestHandler for CreateHandler {
             context.start_timestamp(),
         );
 
-        Ok(Box::new(stream::from_iter(vec![response, notification])))
+        Ok(Box::new(stream::iter(vec![response, notification])))
     }
 }
 
@@ -189,12 +187,14 @@ impl RequestHandler for ReadHandler {
             )
             .await?;
 
-        Ok(Box::new(stream::once(helpers::build_response(
-            ResponseStatus::OK,
-            room,
-            reqp,
-            context.start_timestamp(),
-            Some(authz_time),
+        Ok(Box::new(stream::once(future::ready(
+            helpers::build_response(
+                ResponseStatus::OK,
+                room,
+                reqp,
+                context.start_timestamp(),
+                Some(authz_time),
+            ),
         ))))
     }
 }
@@ -324,7 +324,7 @@ impl RequestHandler for UpdateHandler {
             }
         }
 
-        Ok(Box::new(stream::from_iter(responses)))
+        Ok(Box::new(stream::iter(responses)))
     }
 }
 
@@ -406,7 +406,7 @@ impl RequestHandler for EnterHandler {
 
         requests.push(broadcast_subscribe_req);
 
-        Ok(Box::new(stream::from_iter(requests)))
+        Ok(Box::new(stream::iter(requests)))
     }
 }
 
@@ -519,7 +519,7 @@ impl RequestHandler for LeaveHandler {
         let to = &context.config().broker_id;
         let outgoing_request = OutgoingRequest::multicast(payload, props, to, API_VERSION);
         let boxed_request = Box::new(outgoing_request) as Box<dyn IntoPublishableMessage + Send>;
-        Ok(Box::new(stream::once(boxed_request)))
+        Ok(Box::new(stream::once(future::ready(boxed_request))))
     }
 }
 
@@ -568,7 +568,7 @@ impl RequestHandler for AdjustHandler {
         let metrics = context.metrics();
         let logger = context.logger().new(o!());
 
-        let notification_future = async_std::task::spawn(async move {
+        let notification_future = tokio::task::spawn(async move {
             let operation_result = adjust_room(
                 &db,
                 &metrics,
@@ -616,15 +616,15 @@ impl RequestHandler for AdjustHandler {
 
         // Respond with 202.
         // The actual task result will be broadcasted to the room topic when finished.
-        let response = stream::once(helpers::build_response(
+        let response = stream::once(future::ready(helpers::build_response(
             ResponseStatus::ACCEPTED,
             json!({}),
             reqp,
             context.start_timestamp(),
             Some(authz_time),
-        ));
+        )));
 
-        let notification = notification_future.into_stream();
+        let notification = notification_future.into_chainable_stream();
         Ok(Box::new(response.chain(notification)))
     }
 }
@@ -691,206 +691,196 @@ mod tests {
 
         use super::super::*;
 
-        #[test]
-        fn create_room() {
-            async_std::task::block_on(async {
-                // Allow agent to create rooms.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                authz.allow(agent.account_id(), vec!["rooms"], "create");
+        #[tokio::test]
+        async fn create_room() {
+            // Allow agent to create rooms.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            authz.allow(agent.account_id(), vec!["rooms"], "create");
 
-                // Make room.create request.
-                let mut context = TestContext::new(TestDb::new().await, authz);
-                let now = Utc::now().trunc_subsecs(0);
+            // Make room.create request.
+            let mut context = TestContext::new(TestDb::new().await, authz);
+            let now = Utc::now().trunc_subsecs(0);
 
-                let time = (
-                    Bound::Included(now + Duration::hours(1)),
-                    Bound::Excluded(now + Duration::hours(2)),
-                );
+            let time = (
+                Bound::Included(now + Duration::hours(1)),
+                Bound::Excluded(now + Duration::hours(2)),
+            );
 
-                let tags = json!({ "webinar_id": "123" });
+            let tags = json!({ "webinar_id": "123" });
 
-                let payload = CreateRequest {
-                    time: BoundedDateTimeTuple::from(time),
-                    audience: USR_AUDIENCE.to_owned(),
-                    tags: Some(tags.clone()),
-                    preserve_history: Some(false),
-                    classroom_id: None,
-                };
+            let payload = CreateRequest {
+                time: BoundedDateTimeTuple::from(time),
+                audience: USR_AUDIENCE.to_owned(),
+                tags: Some(tags.clone()),
+                preserve_history: Some(false),
+                classroom_id: None,
+            };
 
-                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Room creation failed");
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Room creation failed");
 
-                // Assert response.
-                let (room, respp, _) = find_response::<Room>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::CREATED);
-                assert_eq!(room.audience(), USR_AUDIENCE);
-                assert_eq!(room.time().map(|t| t.into()), Ok(time));
-                assert_eq!(room.tags(), Some(&tags));
+            // Assert response.
+            let (room, respp, _) = find_response::<Room>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(room.audience(), USR_AUDIENCE);
+            assert_eq!(room.time().map(|t| t.into()), Ok(time));
+            assert_eq!(room.tags(), Some(&tags));
 
-                // Assert notification.
-                let (room, evp, topic) = find_event::<Room>(messages.as_slice());
-                assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
-                assert_eq!(evp.label(), "room.create");
-                assert_eq!(room.audience(), USR_AUDIENCE);
-                assert_eq!(room.time().map(|t| t.into()), Ok(time));
-                assert_eq!(room.tags(), Some(&tags));
-                assert_eq!(room.preserve_history(), false);
-            });
+            // Assert notification.
+            let (room, evp, topic) = find_event::<Room>(messages.as_slice());
+            assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
+            assert_eq!(evp.label(), "room.create");
+            assert_eq!(room.audience(), USR_AUDIENCE);
+            assert_eq!(room.time().map(|t| t.into()), Ok(time));
+            assert_eq!(room.tags(), Some(&tags));
+            assert_eq!(room.preserve_history(), false);
         }
 
-        #[test]
-        fn create_room_unbounded() {
-            async_std::task::block_on(async {
-                // Allow agent to create rooms.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                authz.allow(agent.account_id(), vec!["rooms"], "create");
+        #[tokio::test]
+        async fn create_room_unbounded() {
+            // Allow agent to create rooms.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            authz.allow(agent.account_id(), vec!["rooms"], "create");
 
-                // Make room.create request.
-                let mut context = TestContext::new(TestDb::new().await, authz);
-                let now = Utc::now().trunc_subsecs(0);
+            // Make room.create request.
+            let mut context = TestContext::new(TestDb::new().await, authz);
+            let now = Utc::now().trunc_subsecs(0);
 
-                let time = (Bound::Included(now + Duration::hours(1)), Bound::Unbounded);
+            let time = (Bound::Included(now + Duration::hours(1)), Bound::Unbounded);
 
-                let tags = json!({ "webinar_id": "123" });
+            let tags = json!({ "webinar_id": "123" });
 
-                let payload = CreateRequest {
-                    time: BoundedDateTimeTuple::from(time),
-                    audience: USR_AUDIENCE.to_owned(),
-                    tags: Some(tags.clone()),
-                    preserve_history: Some(false),
-                    classroom_id: None,
-                };
+            let payload = CreateRequest {
+                time: BoundedDateTimeTuple::from(time),
+                audience: USR_AUDIENCE.to_owned(),
+                tags: Some(tags.clone()),
+                preserve_history: Some(false),
+                classroom_id: None,
+            };
 
-                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Room creation failed");
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Room creation failed");
 
-                // Assert response.
-                let (room, respp, _) = find_response::<Room>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::CREATED);
-                assert_eq!(room.audience(), USR_AUDIENCE);
-                assert_eq!(room.time().map(|t| t.into()), Ok(time));
-                assert_eq!(room.tags(), Some(&tags));
+            // Assert response.
+            let (room, respp, _) = find_response::<Room>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(room.audience(), USR_AUDIENCE);
+            assert_eq!(room.time().map(|t| t.into()), Ok(time));
+            assert_eq!(room.tags(), Some(&tags));
 
-                // Assert notification.
-                let (room, evp, topic) = find_event::<Room>(messages.as_slice());
-                assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
-                assert_eq!(evp.label(), "room.create");
-                assert_eq!(room.audience(), USR_AUDIENCE);
-                assert_eq!(room.time().map(|t| t.into()), Ok(time));
-                assert_eq!(room.tags(), Some(&tags));
-                assert_eq!(room.preserve_history(), false);
-            });
+            // Assert notification.
+            let (room, evp, topic) = find_event::<Room>(messages.as_slice());
+            assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
+            assert_eq!(evp.label(), "room.create");
+            assert_eq!(room.audience(), USR_AUDIENCE);
+            assert_eq!(room.time().map(|t| t.into()), Ok(time));
+            assert_eq!(room.tags(), Some(&tags));
+            assert_eq!(room.preserve_history(), false);
         }
 
-        #[test]
-        fn create_room_unbounded_with_classroom_id() {
-            async_std::task::block_on(async {
-                // Allow agent to create rooms.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                authz.allow(agent.account_id(), vec!["rooms"], "create");
+        #[tokio::test]
+        async fn create_room_unbounded_with_classroom_id() {
+            // Allow agent to create rooms.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            authz.allow(agent.account_id(), vec!["rooms"], "create");
 
-                // Make room.create request.
-                let mut context = TestContext::new(TestDb::new().await, authz);
-                let now = Utc::now().trunc_subsecs(0);
+            // Make room.create request.
+            let mut context = TestContext::new(TestDb::new().await, authz);
+            let now = Utc::now().trunc_subsecs(0);
 
-                let time = (Bound::Included(now + Duration::hours(1)), Bound::Unbounded);
+            let time = (Bound::Included(now + Duration::hours(1)), Bound::Unbounded);
 
-                let tags = json!({ "webinar_id": "123" });
-                let cid = Uuid::new_v4();
+            let tags = json!({ "webinar_id": "123" });
+            let cid = Uuid::new_v4();
 
-                let payload = CreateRequest {
-                    time: BoundedDateTimeTuple::from(time),
-                    audience: USR_AUDIENCE.to_owned(),
-                    tags: Some(tags.clone()),
-                    preserve_history: Some(false),
-                    classroom_id: Some(cid),
-                };
+            let payload = CreateRequest {
+                time: BoundedDateTimeTuple::from(time),
+                audience: USR_AUDIENCE.to_owned(),
+                tags: Some(tags.clone()),
+                preserve_history: Some(false),
+                classroom_id: Some(cid),
+            };
 
-                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Room creation failed");
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Room creation failed");
 
-                // Assert response.
-                let (room, respp, _) = find_response::<Room>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::CREATED);
-                assert_eq!(room.audience(), USR_AUDIENCE);
-                assert_eq!(room.time().map(|t| t.into()), Ok(time));
-                assert_eq!(room.tags(), Some(&tags));
-                assert_eq!(room.classroom_id(), Some(cid));
+            // Assert response.
+            let (room, respp, _) = find_response::<Room>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(room.audience(), USR_AUDIENCE);
+            assert_eq!(room.time().map(|t| t.into()), Ok(time));
+            assert_eq!(room.tags(), Some(&tags));
+            assert_eq!(room.classroom_id(), Some(cid));
 
-                // Assert notification.
-                let (room, evp, topic) = find_event::<Room>(messages.as_slice());
-                assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
-                assert_eq!(evp.label(), "room.create");
-                assert_eq!(room.audience(), USR_AUDIENCE);
-                assert_eq!(room.time().map(|t| t.into()), Ok(time));
-                assert_eq!(room.tags(), Some(&tags));
-                assert_eq!(room.preserve_history(), false);
-                assert_eq!(room.classroom_id(), Some(cid));
-            });
+            // Assert notification.
+            let (room, evp, topic) = find_event::<Room>(messages.as_slice());
+            assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
+            assert_eq!(evp.label(), "room.create");
+            assert_eq!(room.audience(), USR_AUDIENCE);
+            assert_eq!(room.time().map(|t| t.into()), Ok(time));
+            assert_eq!(room.tags(), Some(&tags));
+            assert_eq!(room.preserve_history(), false);
+            assert_eq!(room.classroom_id(), Some(cid));
         }
 
-        #[test]
-        fn create_room_not_authorized() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn create_room_not_authorized() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                // Make room.create request.
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-                let now = Utc::now().trunc_subsecs(0);
+            // Make room.create request.
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let now = Utc::now().trunc_subsecs(0);
 
-                let time = (
-                    Bound::Included(now + Duration::hours(1)),
-                    Bound::Excluded(now + Duration::hours(2)),
-                );
+            let time = (
+                Bound::Included(now + Duration::hours(1)),
+                Bound::Excluded(now + Duration::hours(2)),
+            );
 
-                let payload = CreateRequest {
-                    time: time.clone(),
-                    audience: USR_AUDIENCE.to_owned(),
-                    tags: None,
-                    preserve_history: None,
-                    classroom_id: None,
-                };
+            let payload = CreateRequest {
+                time: time.clone(),
+                audience: USR_AUDIENCE.to_owned(),
+                tags: None,
+                preserve_history: None,
+                classroom_id: None,
+            };
 
-                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room creation");
+            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room creation");
 
-                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
-            });
+            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
         }
 
-        #[test]
-        fn create_room_invalid_time() {
-            async_std::task::block_on(async {
-                // Allow agent to create rooms.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                authz.allow(agent.account_id(), vec!["rooms"], "create");
+        #[tokio::test]
+        async fn create_room_invalid_time() {
+            // Allow agent to create rooms.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            authz.allow(agent.account_id(), vec!["rooms"], "create");
 
-                // Make room.create request.
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            // Make room.create request.
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
-                let payload = CreateRequest {
-                    time: (Bound::Unbounded, Bound::Unbounded),
-                    audience: USR_AUDIENCE.to_owned(),
-                    tags: None,
-                    preserve_history: None,
-                    classroom_id: None,
-                };
+            let payload = CreateRequest {
+                time: (Bound::Unbounded, Bound::Unbounded),
+                audience: USR_AUDIENCE.to_owned(),
+                tags: None,
+                preserve_history: None,
+                classroom_id: None,
+            };
 
-                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room creation");
+            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room creation");
 
-                assert_eq!(err.status(), ResponseStatus::BAD_REQUEST);
-                assert_eq!(err.kind(), "invalid_room_time");
-            });
+            assert_eq!(err.status(), ResponseStatus::BAD_REQUEST);
+            assert_eq!(err.kind(), "invalid_room_time");
         }
     }
 
@@ -900,79 +890,73 @@ mod tests {
 
         use super::super::*;
 
-        #[test]
-        fn read_room() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
+        #[tokio::test]
+        async fn read_room() {
+            let db = TestDb::new().await;
 
-                let room = {
-                    // Create room.
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_room(&mut conn).await
-                };
+            let room = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
+            };
 
-                // Allow agent to read the room.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
+            // Allow agent to read the room.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
 
-                // Make room.read request.
-                let mut context = TestContext::new(db, authz);
-                let payload = ReadRequest { id: room.id() };
+            // Make room.read request.
+            let mut context = TestContext::new(db, authz);
+            let payload = ReadRequest { id: room.id() };
 
-                let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Room reading failed");
+            let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Room reading failed");
 
-                // Assert response.
-                let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::OK);
-                assert_eq!(resp_room.audience(), room.audience());
-                assert_eq!(resp_room.time(), room.time());
-                assert_eq!(resp_room.tags(), room.tags());
-                assert_eq!(resp_room.preserve_history(), room.preserve_history());
-            });
+            // Assert response.
+            let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(resp_room.audience(), room.audience());
+            assert_eq!(resp_room.time(), room.time());
+            assert_eq!(resp_room.tags(), room.tags());
+            assert_eq!(resp_room.preserve_history(), room.preserve_history());
         }
 
-        #[test]
-        fn read_room_not_authorized() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new().await;
+        #[tokio::test]
+        async fn read_room_not_authorized() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new().await;
 
-                let room = {
-                    // Create room.
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_room(&mut conn).await
-                };
+            let room = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
+            };
 
-                // Make room.read request.
-                let mut context = TestContext::new(db, TestAuthz::new());
-                let payload = ReadRequest { id: room.id() };
+            // Make room.read request.
+            let mut context = TestContext::new(db, TestAuthz::new());
+            let payload = ReadRequest { id: room.id() };
 
-                let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room reading");
+            let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room reading");
 
-                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
-            });
+            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
         }
 
-        #[test]
-        fn read_room_missing() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-                let payload = ReadRequest { id: Uuid::new_v4() };
+        #[tokio::test]
+        async fn read_room_missing() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let payload = ReadRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room reading");
+            let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room reading");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_not_found");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         }
     }
 
@@ -987,332 +971,317 @@ mod tests {
 
         use super::super::*;
 
-        #[test]
-        fn update_room() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let now = Utc::now().trunc_subsecs(0);
+        #[tokio::test]
+        async fn update_room() {
+            let db = TestDb::new().await;
+            let now = Utc::now().trunc_subsecs(0);
 
-                let room = {
-                    let mut conn = db.get_conn().await;
+            let room = {
+                let mut conn = db.get_conn().await;
 
-                    // Create room.
-                    factory::Room::new()
-                        .audience(USR_AUDIENCE)
-                        .time((
-                            Bound::Included(now + Duration::hours(1)),
-                            Bound::Excluded(now + Duration::hours(2)),
-                        ))
-                        .tags(&json!({ "webinar_id": "123" }))
-                        .insert(&mut conn)
-                        .await
-                };
-
-                // Allow agent to update the room.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
-
-                // Make room.update request.
-                let mut context = TestContext::new(db, authz);
-
-                let time = (
-                    Bound::Included(now + Duration::hours(2)),
-                    Bound::Excluded(now + Duration::hours(3)),
-                );
-
-                let tags = json!({"webinar_id": "456789"});
-
-                let payload = UpdateRequest {
-                    id: room.id(),
-                    time: Some(time),
-                    tags: Some(tags.clone()),
-                    classroom_id: None,
-                };
-
-                let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Room update failed");
-
-                // Assert response.
-                let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::OK);
-                assert_eq!(resp_room.id(), room.id());
-                assert_eq!(resp_room.audience(), room.audience());
-                assert_eq!(resp_room.time().map(|t| t.into()), Ok(time));
-                assert_eq!(resp_room.tags(), Some(&tags));
-            });
-        }
-
-        #[test]
-        fn update_closed_at_in_open_room() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let now = Utc::now().trunc_subsecs(0);
-
-                let room = {
-                    let mut conn = db.get_conn().await;
-
-                    // Create room.
-                    factory::Room::new()
-                        .audience(USR_AUDIENCE)
-                        .time((
-                            Bound::Included(now - Duration::hours(1)),
-                            Bound::Excluded(now + Duration::hours(1)),
-                        ))
-                        .insert(&mut conn)
-                        .await
-                };
-
-                // Allow agent to update the room.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
-
-                // Make room.update request.
-                let mut context = TestContext::new(db, authz);
-
-                let time = (
-                    Bound::Included(now + Duration::hours(1)),
-                    Bound::Excluded(now + Duration::hours(3)),
-                );
-
-                let payload = UpdateRequest {
-                    id: room.id(),
-                    time: Some(time),
-                    tags: None,
-                    classroom_id: None,
-                };
-
-                let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Room update failed");
-
-                let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::OK);
-                assert_eq!(resp_room.id(), room.id());
-                assert_eq!(resp_room.audience(), room.audience());
-                assert_eq!(
-                    resp_room.time().map(|t| t.into()),
-                    Ok((
-                        Bound::Included(now - Duration::hours(1)),
-                        Bound::Excluded(now + Duration::hours(3)),
+                // Create room.
+                factory::Room::new()
+                    .audience(USR_AUDIENCE)
+                    .time((
+                        Bound::Included(now + Duration::hours(1)),
+                        Bound::Excluded(now + Duration::hours(2)),
                     ))
-                );
-            });
+                    .tags(&json!({ "webinar_id": "123" }))
+                    .insert(&mut conn)
+                    .await
+            };
+
+            // Allow agent to update the room.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+
+            // Make room.update request.
+            let mut context = TestContext::new(db, authz);
+
+            let time = (
+                Bound::Included(now + Duration::hours(2)),
+                Bound::Excluded(now + Duration::hours(3)),
+            );
+
+            let tags = json!({"webinar_id": "456789"});
+
+            let payload = UpdateRequest {
+                id: room.id(),
+                time: Some(time),
+                tags: Some(tags.clone()),
+                classroom_id: None,
+            };
+
+            let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Room update failed");
+
+            // Assert response.
+            let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(resp_room.id(), room.id());
+            assert_eq!(resp_room.audience(), room.audience());
+            assert_eq!(resp_room.time().map(|t| t.into()), Ok(time));
+            assert_eq!(resp_room.tags(), Some(&tags));
         }
 
-        #[test]
-        fn update_closed_at_in_the_past_in_already_open_room() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let now = Utc::now().trunc_subsecs(0);
+        #[tokio::test]
+        async fn update_closed_at_in_open_room() {
+            let db = TestDb::new().await;
+            let now = Utc::now().trunc_subsecs(0);
 
-                let room = {
-                    let mut conn = db.get_conn().await;
+            let room = {
+                let mut conn = db.get_conn().await;
 
-                    // Create room.
-                    factory::Room::new()
-                        .audience(USR_AUDIENCE)
-                        .time((
-                            Bound::Included(now - Duration::hours(2)),
-                            Bound::Excluded(now + Duration::hours(2)),
-                        ))
-                        .insert(&mut conn)
-                        .await
-                };
-
-                // Allow agent to update the room.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
-
-                // Make room.update request.
-                let mut context = TestContext::new(db, authz);
-
-                let time = (
-                    Bound::Included(now - Duration::hours(2)),
-                    Bound::Excluded(now - Duration::hours(1)),
-                );
-
-                let payload = UpdateRequest {
-                    id: room.id(),
-                    time: Some(time),
-                    tags: None,
-                    classroom_id: None,
-                };
-
-                let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
+                // Create room.
+                factory::Room::new()
+                    .audience(USR_AUDIENCE)
+                    .time((
+                        Bound::Included(now - Duration::hours(1)),
+                        Bound::Excluded(now + Duration::hours(1)),
+                    ))
+                    .insert(&mut conn)
                     .await
-                    .expect("Room update failed");
+            };
 
-                let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::OK);
-                assert_eq!(resp_room.id(), room.id());
-                assert_eq!(resp_room.audience(), room.audience());
-                assert_eq!(
-                    resp_room.time().map(|t| t.start().to_owned()),
-                    Ok(now - Duration::hours(2))
-                );
+            // Allow agent to update the room.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
 
-                match resp_room.time().map(|t| t.end().to_owned()) {
-                    Ok(RoomTimeBound::Excluded(t)) => {
-                        let x = t - now;
-                        // Less than 1 second apart is basically 'now'
-                        // avoids intermittent failures
-                        assert!(x.num_seconds().abs() < 1);
-                    }
-                    v => panic!("Expected Excluded bound, got {:?}", v),
+            // Make room.update request.
+            let mut context = TestContext::new(db, authz);
+
+            let time = (
+                Bound::Included(now + Duration::hours(1)),
+                Bound::Excluded(now + Duration::hours(3)),
+            );
+
+            let payload = UpdateRequest {
+                id: room.id(),
+                time: Some(time),
+                tags: None,
+                classroom_id: None,
+            };
+
+            let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Room update failed");
+
+            let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(resp_room.id(), room.id());
+            assert_eq!(resp_room.audience(), room.audience());
+            assert_eq!(
+                resp_room.time().map(|t| t.into()),
+                Ok((
+                    Bound::Included(now - Duration::hours(1)),
+                    Bound::Excluded(now + Duration::hours(3)),
+                ))
+            );
+        }
+
+        #[tokio::test]
+        async fn update_closed_at_in_the_past_in_already_open_room() {
+            let db = TestDb::new().await;
+            let now = Utc::now().trunc_subsecs(0);
+
+            let room = {
+                let mut conn = db.get_conn().await;
+
+                // Create room.
+                factory::Room::new()
+                    .audience(USR_AUDIENCE)
+                    .time((
+                        Bound::Included(now - Duration::hours(2)),
+                        Bound::Excluded(now + Duration::hours(2)),
+                    ))
+                    .insert(&mut conn)
+                    .await
+            };
+
+            // Allow agent to update the room.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+
+            // Make room.update request.
+            let mut context = TestContext::new(db, authz);
+
+            let time = (
+                Bound::Included(now - Duration::hours(2)),
+                Bound::Excluded(now - Duration::hours(1)),
+            );
+
+            let payload = UpdateRequest {
+                id: room.id(),
+                time: Some(time),
+                tags: None,
+                classroom_id: None,
+            };
+
+            let messages = handle_request::<UpdateHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Room update failed");
+
+            let (resp_room, respp, _) = find_response::<Room>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(resp_room.id(), room.id());
+            assert_eq!(resp_room.audience(), room.audience());
+            assert_eq!(
+                resp_room.time().map(|t| t.start().to_owned()),
+                Ok(now - Duration::hours(2))
+            );
+
+            match resp_room.time().map(|t| t.end().to_owned()) {
+                Ok(RoomTimeBound::Excluded(t)) => {
+                    let x = t - now;
+                    // Less than 1 second apart is basically 'now'
+                    // avoids intermittent failures
+                    assert!(x.num_seconds().abs() < 1);
                 }
+                v => panic!("Expected Excluded bound, got {:?}", v),
+            }
 
-                // since we just closed the room we must receive a room.close event
-                let (ev_room, _, _) =
-                    find_event_by_predicate::<Room, _>(messages.as_slice(), |evp| {
-                        evp.label() == "room.close"
-                    })
-                    .expect("Failed to find room.close event");
-                assert_eq!(ev_room.id(), room.id());
-            });
+            // since we just closed the room we must receive a room.close event
+            let (ev_room, _, _) = find_event_by_predicate::<Room, _>(messages.as_slice(), |evp| {
+                evp.label() == "room.close"
+            })
+            .expect("Failed to find room.close event");
+            assert_eq!(ev_room.id(), room.id());
         }
 
-        #[test]
-        fn update_room_invalid_time() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let now = Utc::now().trunc_subsecs(0);
+        #[tokio::test]
+        async fn update_room_invalid_time() {
+            let db = TestDb::new().await;
+            let now = Utc::now().trunc_subsecs(0);
 
-                let room = {
-                    let mut conn = db.get_conn().await;
+            let room = {
+                let mut conn = db.get_conn().await;
 
-                    // Create room.
-                    factory::Room::new()
-                        .audience(USR_AUDIENCE)
-                        .time((
-                            Bound::Included(now + Duration::hours(1)),
-                            Bound::Excluded(now + Duration::hours(2)),
-                        ))
-                        .insert(&mut conn)
-                        .await
-                };
-
-                // Allow agent to update the room.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
-
-                // Make room.update request.
-                let mut context = TestContext::new(db, authz);
-
-                let time = (
-                    Bound::Included(now + Duration::hours(1)),
-                    Bound::Excluded(now - Duration::hours(2)),
-                );
-
-                let payload = UpdateRequest {
-                    id: room.id(),
-                    time: Some(time),
-                    tags: None,
-                    classroom_id: None,
-                };
-
-                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
+                // Create room.
+                factory::Room::new()
+                    .audience(USR_AUDIENCE)
+                    .time((
+                        Bound::Included(now + Duration::hours(1)),
+                        Bound::Excluded(now + Duration::hours(2)),
+                    ))
+                    .insert(&mut conn)
                     .await
-                    .expect_err("Unexpected success on room update");
+            };
 
-                assert_eq!(err.status(), ResponseStatus::BAD_REQUEST);
-                assert_eq!(err.kind(), "invalid_room_time");
-            });
+            // Allow agent to update the room.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+
+            // Make room.update request.
+            let mut context = TestContext::new(db, authz);
+
+            let time = (
+                Bound::Included(now + Duration::hours(1)),
+                Bound::Excluded(now - Duration::hours(2)),
+            );
+
+            let payload = UpdateRequest {
+                id: room.id(),
+                time: Some(time),
+                tags: None,
+                classroom_id: None,
+            };
+
+            let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room update");
+
+            assert_eq!(err.status(), ResponseStatus::BAD_REQUEST);
+            assert_eq!(err.kind(), "invalid_room_time");
         }
 
-        #[test]
-        fn update_room_not_authorized() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new().await;
+        #[tokio::test]
+        async fn update_room_not_authorized() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new().await;
 
-                let room = {
-                    // Create room.
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_room(&mut conn).await
-                };
+            let room = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
+            };
 
-                // Make room.update request.
-                let mut context = TestContext::new(db, TestAuthz::new());
-                let payload = UpdateRequest {
-                    id: room.id(),
-                    time: None,
-                    tags: None,
-                    classroom_id: None,
-                };
+            // Make room.update request.
+            let mut context = TestContext::new(db, TestAuthz::new());
+            let payload = UpdateRequest {
+                id: room.id(),
+                time: None,
+                tags: None,
+                classroom_id: None,
+            };
 
-                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room update");
+            let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room update");
 
-                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
-            });
+            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
         }
 
-        #[test]
-        fn update_room_missing() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+        #[tokio::test]
+        async fn update_room_missing() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
-                let payload = UpdateRequest {
-                    id: Uuid::new_v4(),
-                    time: None,
-                    tags: None,
-                    classroom_id: None,
-                };
+            let payload = UpdateRequest {
+                id: Uuid::new_v4(),
+                time: None,
+                tags: None,
+                classroom_id: None,
+            };
 
-                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room update");
+            let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room update");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_not_found");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         }
 
-        #[test]
-        fn update_room_closed() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new().await;
+        #[tokio::test]
+        async fn update_room_closed() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new().await;
 
-                let room = {
-                    // Create closed room.
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_closed_room(&mut conn).await
-                };
+            let room = {
+                // Create closed room.
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_closed_room(&mut conn).await
+            };
 
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-                let now = Utc::now().trunc_subsecs(0);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let now = Utc::now().trunc_subsecs(0);
 
-                let time = (
-                    Bound::Included(now - Duration::hours(2)),
-                    Bound::Excluded(now - Duration::hours(1)),
-                );
+            let time = (
+                Bound::Included(now - Duration::hours(2)),
+                Bound::Excluded(now - Duration::hours(1)),
+            );
 
-                let payload = UpdateRequest {
-                    id: room.id(),
-                    time: Some(time.into()),
-                    tags: None,
-                    classroom_id: None,
-                };
+            let payload = UpdateRequest {
+                id: room.id(),
+                time: Some(time.into()),
+                tags: None,
+                classroom_id: None,
+            };
 
-                let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room update");
+            let err = handle_request::<UpdateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room update");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_closed");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_closed");
         }
     }
 
@@ -1347,131 +1316,123 @@ mod tests {
             .expect("Failed to parse EnterRequest");
         }
 
-        #[test]
-        fn enter_room() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
+        #[tokio::test]
+        async fn enter_room() {
+            let db = TestDb::new().await;
 
-                let room = {
-                    // Create room.
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_room(&mut conn).await
-                };
+            let room = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
+            };
 
-                // Allow agent to subscribe to the rooms' events.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
+            // Allow agent to subscribe to the rooms' events.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
 
-                authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
+            authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
 
-                // Make room.enter request.
-                let mut context = TestContext::new(db, authz);
-                let payload = EnterRequest {
-                    id: room.id(),
-                    broadcast_subscription: false,
-                };
+            // Make room.enter request.
+            let mut context = TestContext::new(db, authz);
+            let payload = EnterRequest {
+                id: room.id(),
+                broadcast_subscription: false,
+            };
 
-                let messages = handle_request::<EnterHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Room entrance failed");
+            let messages = handle_request::<EnterHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Room entrance failed");
 
-                // Assert dynamic subscription request.
-                let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
+            // Assert dynamic subscription request.
+            let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
 
-                let expected_topic = format!(
-                    "agents/{}.{}/api/{}/out/{}",
-                    context.config().agent_label,
-                    context.config().id,
-                    API_VERSION,
-                    context.config().broker_id,
-                );
+            let expected_topic = format!(
+                "agents/{}.{}/api/{}/out/{}",
+                context.config().agent_label,
+                context.config().id,
+                API_VERSION,
+                context.config().broker_id,
+            );
 
-                assert_eq!(topic, expected_topic);
-                assert_eq!(reqp.method(), "subscription.create");
-                assert_eq!(payload.subject, agent.agent_id().to_owned());
-                assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
-            });
+            assert_eq!(topic, expected_topic);
+            assert_eq!(reqp.method(), "subscription.create");
+            assert_eq!(payload.subject, agent.agent_id().to_owned());
+            assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
         }
 
-        #[test]
-        fn enter_room_not_authorized() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new().await;
+        #[tokio::test]
+        async fn enter_room_not_authorized() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new().await;
 
-                let room = {
-                    // Create room.
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_room(&mut conn).await
-                };
+            let room = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
+            };
 
-                // Make room.enter request.
-                let mut context = TestContext::new(db, TestAuthz::new());
-                let payload = EnterRequest {
-                    id: room.id(),
-                    broadcast_subscription: false,
-                };
+            // Make room.enter request.
+            let mut context = TestContext::new(db, TestAuthz::new());
+            let payload = EnterRequest {
+                id: room.id(),
+                broadcast_subscription: false,
+            };
 
-                let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room entering");
+            let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room entering");
 
-                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
-            });
+            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
         }
 
-        #[test]
-        fn enter_room_missing() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-                let payload = EnterRequest {
-                    id: Uuid::new_v4(),
-                    broadcast_subscription: false,
-                };
+        #[tokio::test]
+        async fn enter_room_missing() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let payload = EnterRequest {
+                id: Uuid::new_v4(),
+                broadcast_subscription: false,
+            };
 
-                let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room entering");
+            let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room entering");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_not_found");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         }
 
-        #[test]
-        fn enter_room_closed() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
+        #[tokio::test]
+        async fn enter_room_closed() {
+            let db = TestDb::new().await;
 
-                let room = {
-                    // Create closed room.
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_closed_room(&mut conn).await
-                };
+            let room = {
+                // Create closed room.
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_closed_room(&mut conn).await
+            };
 
-                // Allow agent to subscribe to the rooms' events.
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
+            // Allow agent to subscribe to the rooms' events.
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
 
-                authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
+            authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
 
-                // Make room.enter request.
-                let mut context = TestContext::new(db, TestAuthz::new());
-                let payload = EnterRequest {
-                    id: room.id(),
-                    broadcast_subscription: false,
-                };
+            // Make room.enter request.
+            let mut context = TestContext::new(db, TestAuthz::new());
+            let payload = EnterRequest {
+                id: room.id(),
+                broadcast_subscription: false,
+            };
 
-                let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room entering");
+            let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room entering");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_closed");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_closed");
         }
     }
 
@@ -1482,89 +1443,83 @@ mod tests {
         use super::super::*;
         use super::DynSubRequest;
 
-        #[test]
-        fn leave_room() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn leave_room() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let room = {
-                    // Create room.
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let room = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    // Put agent online in the room.
-                    shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
-                    room
-                };
+                // Put agent online in the room.
+                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+                room
+            };
 
-                // Make room.leave request.
-                let mut context = TestContext::new(db, TestAuthz::new());
-                let payload = LeaveRequest { id: room.id() };
+            // Make room.leave request.
+            let mut context = TestContext::new(db, TestAuthz::new());
+            let payload = LeaveRequest { id: room.id() };
 
-                let messages = handle_request::<LeaveHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Room leaving failed");
+            let messages = handle_request::<LeaveHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Room leaving failed");
 
-                // Assert dynamic subscription request.
-                let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
+            // Assert dynamic subscription request.
+            let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
 
-                let expected_topic = format!(
-                    "agents/{}.{}/api/{}/out/{}",
-                    context.config().agent_label,
-                    context.config().id,
-                    API_VERSION,
-                    context.config().broker_id,
-                );
+            let expected_topic = format!(
+                "agents/{}.{}/api/{}/out/{}",
+                context.config().agent_label,
+                context.config().id,
+                API_VERSION,
+                context.config().broker_id,
+            );
 
-                assert_eq!(topic, expected_topic);
-                assert_eq!(reqp.method(), "subscription.delete");
-                assert_eq!(&payload.subject, agent.agent_id());
+            assert_eq!(topic, expected_topic);
+            assert_eq!(reqp.method(), "subscription.delete");
+            assert_eq!(&payload.subject, agent.agent_id());
 
-                let room_id = room.id().to_string();
-                assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
-            });
+            let room_id = room.id().to_string();
+            assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
         }
 
-        #[test]
-        fn leave_room_while_not_entered() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new().await;
+        #[tokio::test]
+        async fn leave_room_while_not_entered() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new().await;
 
-                let room = {
-                    // Create room.
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_room(&mut conn).await
-                };
+            let room = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
+            };
 
-                // Make room.leave request.
-                let mut context = TestContext::new(db, TestAuthz::new());
-                let payload = LeaveRequest { id: room.id() };
+            // Make room.leave request.
+            let mut context = TestContext::new(db, TestAuthz::new());
+            let payload = LeaveRequest { id: room.id() };
 
-                let err = handle_request::<LeaveHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room leaving");
+            let err = handle_request::<LeaveHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room leaving");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "agent_not_entered_the_room");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "agent_not_entered_the_room");
         }
 
-        #[test]
-        fn leave_room_missing() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-                let payload = LeaveRequest { id: Uuid::new_v4() };
+        #[tokio::test]
+        async fn leave_room_missing() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let payload = LeaveRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<LeaveHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room leaving");
+            let err = handle_request::<LeaveHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room leaving");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_not_found");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         }
     }
 
@@ -1575,56 +1530,52 @@ mod tests {
 
         use super::super::*;
 
-        #[test]
-        fn adjust_room_not_authorized() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let db = TestDb::new().await;
+        #[tokio::test]
+        async fn adjust_room_not_authorized() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let db = TestDb::new().await;
 
-                let room = {
-                    // Create room.
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_room(&mut conn).await
-                };
+            let room = {
+                // Create room.
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
+            };
 
-                // Make room.adjust request.
-                let mut context = TestContext::new(db, TestAuthz::new());
+            // Make room.adjust request.
+            let mut context = TestContext::new(db, TestAuthz::new());
 
-                let payload = AdjustRequest {
-                    id: room.id(),
-                    started_at: Utc::now(),
-                    segments: vec![].into(),
-                    offset: 0,
-                };
+            let payload = AdjustRequest {
+                id: room.id(),
+                started_at: Utc::now(),
+                segments: vec![].into(),
+                offset: 0,
+            };
 
-                let err = handle_request::<AdjustHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room adjustment");
+            let err = handle_request::<AdjustHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room adjustment");
 
-                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
-            });
+            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
         }
 
-        #[test]
-        fn adjust_room_missing() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+        #[tokio::test]
+        async fn adjust_room_missing() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
-                let payload = AdjustRequest {
-                    id: Uuid::new_v4(),
-                    started_at: Utc::now(),
-                    segments: vec![].into(),
-                    offset: 0,
-                };
+            let payload = AdjustRequest {
+                id: Uuid::new_v4(),
+                started_at: Utc::now(),
+                segments: vec![].into(),
+                offset: 0,
+            };
 
-                let err = handle_request::<AdjustHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on room adjustment");
+            let err = handle_request::<AdjustHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on room adjustment");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_not_found");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         }
     }
 }

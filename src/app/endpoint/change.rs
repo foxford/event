@@ -1,7 +1,7 @@
 use anyhow::Context as AnyhowContext;
-use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use futures::stream;
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
 use svc_authn::Authenticable;
@@ -121,7 +121,7 @@ impl RequestHandler for CreateHandler {
             Some(authz_time),
         );
 
-        Ok(Box::new(stream::from_iter(vec![response])))
+        Ok(Box::new(stream::iter(vec![response])))
     }
 }
 
@@ -201,7 +201,7 @@ impl RequestHandler for ListHandler {
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
-        Ok(Box::new(stream::from_iter(vec![helpers::build_response(
+        Ok(Box::new(stream::iter(vec![helpers::build_response(
             ResponseStatus::OK,
             changes,
             reqp,
@@ -284,7 +284,7 @@ impl RequestHandler for DeleteHandler {
             Some(authz_time),
         );
 
-        Ok(Box::new(stream::from_iter(vec![response])))
+        Ok(Box::new(stream::iter(vec![response])))
     }
 }
 
@@ -303,305 +303,293 @@ mod tests {
 
         use super::super::*;
 
-        #[test]
-        fn create_addition_change() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn create_addition_change() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, edition) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (room, edition) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition =
-                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+                let edition =
+                    shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    (room, edition)
-                };
+                (room, edition)
+            };
 
-                // Allow agent to create editions
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                let object = vec!["rooms", &room_id];
-                authz.allow(agent.account_id(), object, "update");
+            // Allow agent to create editions
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "update");
 
-                // Make edition.create request
-                let mut context = TestContext::new(db, authz);
+            // Make edition.create request
+            let mut context = TestContext::new(db, authz);
 
-                let payload = CreateRequest {
-                    edition_id: edition.id(),
-                    changeset: Changeset::Addition(AdditionData {
-                        kind: "something".to_owned(),
-                        set: Some("type".to_owned()),
-                        label: None,
-                        data: json![{"key": "value" }],
-                        occurred_at: 0,
-                        created_by: agent.agent_id().to_owned(),
-                    }),
-                };
+            let payload = CreateRequest {
+                edition_id: edition.id(),
+                changeset: Changeset::Addition(AdditionData {
+                    kind: "something".to_owned(),
+                    set: Some("type".to_owned()),
+                    label: None,
+                    data: json![{"key": "value" }],
+                    occurred_at: 0,
+                    created_by: agent.agent_id().to_owned(),
+                }),
+            };
 
-                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Failed to create change");
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Failed to create change");
 
-                // Assert response
-                let (change, respp, _) = find_response::<Change>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::CREATED);
-                assert_eq!(change.edition_id(), edition.id());
-                assert_eq!(change.kind(), ChangeType::Addition);
-                assert_eq!(
-                    change
-                        .event_data()
-                        .as_ref()
-                        .expect("Couldn't get event data from Change"),
-                    &json![{"key": "value"}]
-                );
-            });
+            // Assert response
+            let (change, respp, _) = find_response::<Change>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(change.edition_id(), edition.id());
+            assert_eq!(change.kind(), ChangeType::Addition);
+            assert_eq!(
+                change
+                    .event_data()
+                    .as_ref()
+                    .expect("Couldn't get event data from Change"),
+                &json![{"key": "value"}]
+            );
         }
 
-        #[test]
-        fn create_removal_change() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn create_removal_change() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, edition, events) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (room, edition, events) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition =
-                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+                let edition =
+                    shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let mut events = vec![];
+                let mut events = vec![];
 
-                    for i in 1..4 {
-                        let event = factory::Event::new()
-                            .room_id(room.id())
-                            .kind("message")
-                            .data(&json!({ "text": format!("message {}", i) }))
-                            .occurred_at(i * 1000)
-                            .created_by(&agent.agent_id())
-                            .insert(&mut conn)
-                            .await;
+                for i in 1..4 {
+                    let event = factory::Event::new()
+                        .room_id(room.id())
+                        .kind("message")
+                        .data(&json!({ "text": format!("message {}", i) }))
+                        .occurred_at(i * 1000)
+                        .created_by(&agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                        events.push(event);
-                    }
+                    events.push(event);
+                }
 
-                    (room, edition, events)
-                };
+                (room, edition, events)
+            };
 
-                // Allow agent to create editions
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                let object = vec!["rooms", &room_id];
-                authz.allow(agent.account_id(), object, "update");
+            // Allow agent to create editions
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "update");
 
-                // Make edition.create request
-                let mut context = TestContext::new(db, authz);
+            // Make edition.create request
+            let mut context = TestContext::new(db, authz);
 
-                let payload = CreateRequest {
-                    edition_id: edition.id(),
-                    changeset: Changeset::Removal(RemovalData {
-                        event_id: events[0].id(),
-                        kind: None,
-                        occurred_at: None,
-                        set: None,
-                    }),
-                };
+            let payload = CreateRequest {
+                edition_id: edition.id(),
+                changeset: Changeset::Removal(RemovalData {
+                    event_id: events[0].id(),
+                    kind: None,
+                    occurred_at: None,
+                    set: None,
+                }),
+            };
 
-                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Failed to create change");
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Failed to create change");
 
-                // Assert response
-                let (change, respp, _) = find_response::<Change>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::CREATED);
-                assert_eq!(change.edition_id(), edition.id());
-                assert_eq!(change.kind(), ChangeType::Removal);
-                assert_eq!(change.event_id().unwrap(), events[0].id());
-            });
+            // Assert response
+            let (change, respp, _) = find_response::<Change>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(change.edition_id(), edition.id());
+            assert_eq!(change.kind(), ChangeType::Removal);
+            assert_eq!(change.event_id().unwrap(), events[0].id());
         }
 
-        #[test]
-        fn create_modification_change() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn create_modification_change() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, edition, events) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (room, edition, events) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition =
-                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+                let edition =
+                    shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let mut events = vec![];
+                let mut events = vec![];
 
-                    for i in 1..4 {
-                        let event = factory::Event::new()
-                            .room_id(room.id())
-                            .kind("message")
-                            .data(&json!({ "text": format!("message {}", i) }))
-                            .occurred_at(i * 1000)
-                            .created_by(&agent.agent_id())
-                            .insert(&mut conn)
-                            .await;
+                for i in 1..4 {
+                    let event = factory::Event::new()
+                        .room_id(room.id())
+                        .kind("message")
+                        .data(&json!({ "text": format!("message {}", i) }))
+                        .occurred_at(i * 1000)
+                        .created_by(&agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                        events.push(event);
-                    }
+                    events.push(event);
+                }
 
-                    (room, edition, events)
-                };
+                (room, edition, events)
+            };
 
-                // Allow agent to create editions
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                let object = vec!["rooms", &room_id];
-                authz.allow(agent.account_id(), object, "update");
+            // Allow agent to create editions
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "update");
 
-                // Make edition.create request
-                let mut context = TestContext::new(db, authz);
+            // Make edition.create request
+            let mut context = TestContext::new(db, authz);
 
-                let payload = CreateRequest {
-                    edition_id: edition.id(),
-                    changeset: Changeset::Modification(ModificationData {
-                        event_id: events[0].id(),
-                        kind: Some("something".to_owned()),
-                        set: Some("type".to_owned()),
-                        label: None,
-                        data: Some(json![{"key": "value"}]),
-                        occurred_at: Some(0),
-                        created_by: Some(agent.agent_id().to_owned()),
-                    }),
-                };
+            let payload = CreateRequest {
+                edition_id: edition.id(),
+                changeset: Changeset::Modification(ModificationData {
+                    event_id: events[0].id(),
+                    kind: Some("something".to_owned()),
+                    set: Some("type".to_owned()),
+                    label: None,
+                    data: Some(json![{"key": "value"}]),
+                    occurred_at: Some(0),
+                    created_by: Some(agent.agent_id().to_owned()),
+                }),
+            };
 
-                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Failed to create change");
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Failed to create change");
 
-                // Assert response
-                let (change, respp, _) = find_response::<Change>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::CREATED);
-                assert_eq!(change.edition_id(), edition.id());
-                assert_eq!(change.kind(), ChangeType::Modification);
-                assert_eq!(change.event_id().unwrap(), events[0].id());
-                assert_eq!(
-                    change
-                        .event_data()
-                        .as_ref()
-                        .expect("Couldn't get event data from ChangeWithChangeEvent"),
-                    &json![{"key": "value"}]
-                );
-            });
+            // Assert response
+            let (change, respp, _) = find_response::<Change>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(change.edition_id(), edition.id());
+            assert_eq!(change.kind(), ChangeType::Modification);
+            assert_eq!(change.event_id().unwrap(), events[0].id());
+            assert_eq!(
+                change
+                    .event_data()
+                    .as_ref()
+                    .expect("Couldn't get event data from ChangeWithChangeEvent"),
+                &json![{"key": "value"}]
+            );
         }
 
-        #[test]
-        fn create_change_with_improper_event_id() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn create_change_with_improper_event_id() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, edition) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (room, edition) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition =
-                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+                let edition =
+                    shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    (room, edition)
-                };
+                (room, edition)
+            };
 
-                // Allow agent to create editions
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                let object = vec!["rooms", &room_id];
-                authz.allow(agent.account_id(), object, "update");
+            // Allow agent to create editions
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "update");
 
-                // Make edition.create request
-                let mut context = TestContext::new(db, authz);
+            // Make edition.create request
+            let mut context = TestContext::new(db, authz);
 
-                let payload = CreateRequest {
-                    edition_id: edition.id(),
-                    changeset: Changeset::Removal(RemovalData {
-                        event_id: Uuid::new_v4(),
-                        kind: None,
-                        occurred_at: None,
-                        set: None,
-                    }),
-                };
+            let payload = CreateRequest {
+                edition_id: edition.id(),
+                changeset: Changeset::Removal(RemovalData {
+                    event_id: Uuid::new_v4(),
+                    kind: None,
+                    occurred_at: None,
+                    set: None,
+                }),
+            };
 
-                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success creating change with wrong params");
+            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success creating change with wrong params");
 
-                assert_eq!(err.status(), ResponseStatus::UNPROCESSABLE_ENTITY);
-                assert_eq!(err.kind(), "database_query_failed");
-            });
+            assert_eq!(err.status(), ResponseStatus::UNPROCESSABLE_ENTITY);
+            assert_eq!(err.kind(), "database_query_failed");
         }
 
-        #[test]
-        fn create_change_not_authorized() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn create_change_not_authorized() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (_room, edition) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (_room, edition) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition =
-                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+                let edition =
+                    shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    (room, edition)
-                };
+                (room, edition)
+            };
 
-                let mut context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
 
-                let payload = CreateRequest {
-                    edition_id: edition.id(),
-                    changeset: Changeset::Addition(AdditionData {
-                        kind: "something".to_owned(),
-                        set: Some("type".to_owned()),
-                        label: None,
-                        data: json![{"key": "value"}],
-                        occurred_at: 0,
-                        created_by: agent.agent_id().to_owned(),
-                    }),
-                };
+            let payload = CreateRequest {
+                edition_id: edition.id(),
+                changeset: Changeset::Addition(AdditionData {
+                    kind: "something".to_owned(),
+                    set: Some("type".to_owned()),
+                    label: None,
+                    data: json![{"key": "value"}],
+                    occurred_at: 0,
+                    created_by: agent.agent_id().to_owned(),
+                }),
+            };
 
-                let response = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success creating change with no authorization");
+            let response = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success creating change with no authorization");
 
-                assert_eq!(response.status(), ResponseStatus::FORBIDDEN);
-            });
+            assert_eq!(response.status(), ResponseStatus::FORBIDDEN);
         }
 
-        #[test]
-        fn create_change_missing_edition() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+        #[tokio::test]
+        async fn create_change_missing_edition() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
-                let payload = CreateRequest {
-                    edition_id: Uuid::new_v4(),
-                    changeset: Changeset::Addition(AdditionData {
-                        kind: "something".to_owned(),
-                        label: None,
-                        set: Some("type".to_owned()),
-                        data: json![{"key": "value" }],
-                        occurred_at: 0,
-                        created_by: agent.agent_id().to_owned(),
-                    }),
-                };
+            let payload = CreateRequest {
+                edition_id: Uuid::new_v4(),
+                changeset: Changeset::Addition(AdditionData {
+                    kind: "something".to_owned(),
+                    label: None,
+                    set: Some("type".to_owned()),
+                    data: json![{"key": "value" }],
+                    occurred_at: 0,
+                    created_by: agent.agent_id().to_owned(),
+                }),
+            };
 
-                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success creating change for no edition");
+            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success creating change for no edition");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "edition_not_found");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "edition_not_found");
         }
     }
 
@@ -612,143 +600,136 @@ mod tests {
         use crate::db::change::{ChangeType, Object as Change};
         use crate::test_helpers::prelude::*;
 
-        #[test]
-        fn list_changes() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn list_changes() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, edition, changes) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (room, edition, changes) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition =
-                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+                let edition =
+                    shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let mut changes = vec![];
+                let mut changes = vec![];
 
-                    for idx in 1..35 {
-                        let event = factory::Event::new()
-                            .room_id(room.id())
-                            .kind("message")
-                            .data(&json!({ "text": format!("message {}", idx) }))
-                            .occurred_at(idx * 1000)
-                            .created_by(&agent.agent_id())
-                            .insert(&mut conn)
-                            .await;
+                for idx in 1..35 {
+                    let event = factory::Event::new()
+                        .room_id(room.id())
+                        .kind("message")
+                        .data(&json!({ "text": format!("message {}", idx) }))
+                        .occurred_at(idx * 1000)
+                        .created_by(&agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                        let change = factory::Change::new(edition.id(), ChangeType::Modification)
-                            .event_id(event.id())
-                            .event_data(json![{"key": "value"}])
-                            .insert(&mut conn)
-                            .await;
+                    let change = factory::Change::new(edition.id(), ChangeType::Modification)
+                        .event_id(event.id())
+                        .event_data(json![{"key": "value"}])
+                        .insert(&mut conn)
+                        .await;
 
-                        changes.push(change);
-                    }
+                    changes.push(change);
+                }
 
-                    (room, edition, changes)
-                };
+                (room, edition, changes)
+            };
 
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                let object = vec!["rooms", &room_id];
-                authz.allow(agent.account_id(), object, "update");
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "update");
 
-                let mut context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
-                let payload = ListRequest {
-                    id: edition.id(),
-                    last_created_at: None,
-                    limit: None,
-                };
+            let payload = ListRequest {
+                id: edition.id(),
+                last_created_at: None,
+                limit: None,
+            };
 
-                let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Failed to list changes");
+            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Failed to list changes");
 
-                let (response_changes, respp, _) =
-                    find_response::<Vec<Change>>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::OK);
-                assert_eq!(response_changes.len(), 25);
+            let (response_changes, respp, _) = find_response::<Vec<Change>>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(response_changes.len(), 25);
 
-                let ids = changes.into_iter().map(|c| c.id()).collect::<Vec<Uuid>>();
+            let ids = changes.into_iter().map(|c| c.id()).collect::<Vec<Uuid>>();
 
-                assert!(ids.contains(&response_changes[0].id()));
-            });
+            assert!(ids.contains(&response_changes[0].id()));
         }
 
-        #[test]
-        fn list_changes_not_authorized() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn list_changes_not_authorized() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (_room, edition, _changes) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (_room, edition, _changes) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition =
-                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+                let edition =
+                    shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let mut changes = vec![];
+                let mut changes = vec![];
 
-                    for idx in 1..35 {
-                        let event = factory::Event::new()
-                            .room_id(room.id())
-                            .kind("message")
-                            .data(&json!({ "text": format!("message {}", idx) }))
-                            .occurred_at(idx * 1000)
-                            .created_by(&agent.agent_id())
-                            .insert(&mut conn)
-                            .await;
+                for idx in 1..35 {
+                    let event = factory::Event::new()
+                        .room_id(room.id())
+                        .kind("message")
+                        .data(&json!({ "text": format!("message {}", idx) }))
+                        .occurred_at(idx * 1000)
+                        .created_by(&agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                        let change = factory::Change::new(edition.id(), ChangeType::Modification)
-                            .event_id(event.id())
-                            .event_data(json![{"key": "value"}])
-                            .insert(&mut conn)
-                            .await;
+                    let change = factory::Change::new(edition.id(), ChangeType::Modification)
+                        .event_id(event.id())
+                        .event_data(json![{"key": "value"}])
+                        .insert(&mut conn)
+                        .await;
 
-                        changes.push(change);
-                    }
+                    changes.push(change);
+                }
 
-                    (room, edition, changes)
-                };
+                (room, edition, changes)
+            };
 
-                let mut context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
 
-                let payload = ListRequest {
-                    id: edition.id(),
-                    last_created_at: None,
-                    limit: None,
-                };
+            let payload = ListRequest {
+                id: edition.id(),
+                last_created_at: None,
+                limit: None,
+            };
 
-                let resp = handle_request::<ListHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success without authorization on changes list");
+            let resp = handle_request::<ListHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success without authorization on changes list");
 
-                assert_eq!(resp.status(), ResponseStatus::FORBIDDEN);
-            });
+            assert_eq!(resp.status(), ResponseStatus::FORBIDDEN);
         }
 
-        #[test]
-        fn list_changes_missing_edition() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+        #[tokio::test]
+        async fn list_changes_missing_edition() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
-                let payload = ListRequest {
-                    id: Uuid::new_v4(),
-                    last_created_at: None,
-                    limit: None,
-                };
+            let payload = ListRequest {
+                id: Uuid::new_v4(),
+                last_created_at: None,
+                limit: None,
+            };
 
-                let err = handle_request::<ListHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success listing changes for no edition");
+            let err = handle_request::<ListHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success listing changes for no edition");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "edition_not_found");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "edition_not_found");
         }
     }
 
@@ -758,206 +739,200 @@ mod tests {
         use crate::test_helpers::prelude::*;
         use serde_json::json;
 
-        #[test]
-        fn delete_change() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn delete_change() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, edition, changes) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (room, edition, changes) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition =
-                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+                let edition =
+                    shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let mut changes = vec![];
+                let mut changes = vec![];
 
-                    for idx in 1..15 {
-                        let event = factory::Event::new()
-                            .room_id(room.id())
-                            .kind("message")
-                            .data(&json!({ "text": format!("message {}", idx) }))
-                            .occurred_at(idx * 1000)
-                            .created_by(&agent.agent_id())
-                            .insert(&mut conn)
-                            .await;
+                for idx in 1..15 {
+                    let event = factory::Event::new()
+                        .room_id(room.id())
+                        .kind("message")
+                        .data(&json!({ "text": format!("message {}", idx) }))
+                        .occurred_at(idx * 1000)
+                        .created_by(&agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                        let change = factory::Change::new(edition.id(), ChangeType::Modification)
-                            .event_id(event.id())
-                            .event_data(json![{"key": "value"}])
-                            .insert(&mut conn)
-                            .await;
+                    let change = factory::Change::new(edition.id(), ChangeType::Modification)
+                        .event_id(event.id())
+                        .event_data(json![{"key": "value"}])
+                        .insert(&mut conn)
+                        .await;
 
-                        changes.push(change);
-                    }
+                    changes.push(change);
+                }
 
-                    (room, edition, changes)
-                };
+                (room, edition, changes)
+            };
 
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                let object = vec!["rooms", &room_id];
-                authz.allow(agent.account_id(), object, "update");
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "update");
 
-                let mut context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
-                let payload = DeleteRequest {
-                    id: changes[0].id(),
-                };
+            let payload = DeleteRequest {
+                id: changes[0].id(),
+            };
 
-                let messages = handle_request::<DeleteHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Failed to list editions");
+            let messages = handle_request::<DeleteHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Failed to list editions");
 
-                let (_, resp, _) = find_response::<Change>(messages.as_slice());
+            let (_, resp, _) = find_response::<Change>(messages.as_slice());
 
-                assert_eq!(resp.status(), ResponseStatus::OK);
+            assert_eq!(resp.status(), ResponseStatus::OK);
 
-                let mut conn = context
-                    .db()
-                    .acquire()
-                    .await
-                    .expect("Failed to get DB connection");
+            let mut conn = context
+                .db()
+                .acquire()
+                .await
+                .expect("Failed to get DB connection");
 
-                let db_changes = db::change::ListQuery::new(edition.id())
-                    .execute(&mut conn)
-                    .await
-                    .expect("Couldn't load changes from db");
+            let db_changes = db::change::ListQuery::new(edition.id())
+                .execute(&mut conn)
+                .await
+                .expect("Couldn't load changes from db");
 
-                assert_eq!(db_changes.len(), changes.len() - 1);
-            });
+            assert_eq!(db_changes.len(), changes.len() - 1);
         }
 
-        #[test]
-        fn delete_change_not_authorized() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn delete_change_not_authorized() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (_room, edition, changes) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (_room, edition, changes) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition =
-                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+                let edition =
+                    shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let mut changes = vec![];
+                let mut changes = vec![];
 
-                    for idx in 1..15 {
-                        let event = factory::Event::new()
-                            .room_id(room.id())
-                            .kind("message")
-                            .data(&json!({ "text": format!("message {}", idx) }))
-                            .occurred_at(idx * 1000)
-                            .created_by(&agent.agent_id())
-                            .insert(&mut conn)
-                            .await;
+                for idx in 1..15 {
+                    let event = factory::Event::new()
+                        .room_id(room.id())
+                        .kind("message")
+                        .data(&json!({ "text": format!("message {}", idx) }))
+                        .occurred_at(idx * 1000)
+                        .created_by(&agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                        let change = factory::Change::new(edition.id(), ChangeType::Modification)
-                            .event_id(event.id())
-                            .event_data(json![{"key": "value"}])
-                            .insert(&mut conn)
-                            .await;
+                    let change = factory::Change::new(edition.id(), ChangeType::Modification)
+                        .event_id(event.id())
+                        .event_data(json![{"key": "value"}])
+                        .insert(&mut conn)
+                        .await;
 
-                        changes.push(change);
-                    }
+                    changes.push(change);
+                }
 
-                    (room, edition, changes)
-                };
+                (room, edition, changes)
+            };
 
-                let mut context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
 
-                let payload = DeleteRequest {
-                    id: changes[0].id(),
-                };
+            let payload = DeleteRequest {
+                id: changes[0].id(),
+            };
 
-                let response = handle_request::<DeleteHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success deleting change without authorization");
+            let response = handle_request::<DeleteHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success deleting change without authorization");
 
-                assert_eq!(response.status(), ResponseStatus::FORBIDDEN);
+            assert_eq!(response.status(), ResponseStatus::FORBIDDEN);
 
-                let mut conn = context
-                    .db()
-                    .acquire()
-                    .await
-                    .expect("Failed to get DB connection");
+            let mut conn = context
+                .db()
+                .acquire()
+                .await
+                .expect("Failed to get DB connection");
 
-                let db_changes = db::change::ListQuery::new(edition.id())
-                    .execute(&mut conn)
-                    .await
-                    .expect("Couldn't load changes from db");
+            let db_changes = db::change::ListQuery::new(edition.id())
+                .execute(&mut conn)
+                .await
+                .expect("Couldn't load changes from db");
 
-                assert_eq!(db_changes.len(), changes.len());
-            });
+            assert_eq!(db_changes.len(), changes.len());
         }
 
-        #[test]
-        fn delete_change_with_wrong_uuid() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn delete_change_with_wrong_uuid() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, edition, changes) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (room, edition, changes) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition =
-                        shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+                let edition =
+                    shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
 
-                    let mut changes = vec![];
+                let mut changes = vec![];
 
-                    for idx in 1..15 {
-                        let event = factory::Event::new()
-                            .room_id(room.id())
-                            .kind("message")
-                            .data(&json!({ "text": format!("message {}", idx) }))
-                            .occurred_at(idx * 1000)
-                            .created_by(&agent.agent_id())
-                            .insert(&mut conn)
-                            .await;
+                for idx in 1..15 {
+                    let event = factory::Event::new()
+                        .room_id(room.id())
+                        .kind("message")
+                        .data(&json!({ "text": format!("message {}", idx) }))
+                        .occurred_at(idx * 1000)
+                        .created_by(&agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                        let change = factory::Change::new(edition.id(), ChangeType::Modification)
-                            .event_id(event.id())
-                            .event_data(json![{"key": "value"}])
-                            .insert(&mut conn)
-                            .await;
+                    let change = factory::Change::new(edition.id(), ChangeType::Modification)
+                        .event_id(event.id())
+                        .event_data(json![{"key": "value"}])
+                        .insert(&mut conn)
+                        .await;
 
-                        changes.push(change);
-                    }
+                    changes.push(change);
+                }
 
-                    (room, edition, changes)
-                };
+                (room, edition, changes)
+            };
 
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                let object = vec!["rooms", &room_id];
-                authz.allow(agent.account_id(), object, "update");
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "update");
 
-                let mut context = TestContext::new(db, authz);
-                let payload = DeleteRequest { id: Uuid::new_v4() };
+            let mut context = TestContext::new(db, authz);
+            let payload = DeleteRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<DeleteHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Failed to list changes");
+            let err = handle_request::<DeleteHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Failed to list changes");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "change_not_found");
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "change_not_found");
 
-                let mut conn = context
-                    .db()
-                    .acquire()
-                    .await
-                    .expect("Failed to get DB connection");
+            let mut conn = context
+                .db()
+                .acquire()
+                .await
+                .expect("Failed to get DB connection");
 
-                let db_changes = db::change::ListQuery::new(edition.id())
-                    .execute(&mut conn)
-                    .await
-                    .expect("Couldn't load changes from db");
+            let db_changes = db::change::ListQuery::new(edition.id())
+                .execute(&mut conn)
+                .await
+                .expect("Couldn't load changes from db");
 
-                assert_eq!(db_changes.len(), changes.len());
-            });
+            assert_eq!(db_changes.len(), changes.len());
         }
     }
 }

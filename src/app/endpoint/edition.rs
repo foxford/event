@@ -1,9 +1,7 @@
 use anyhow::Context as AnyhowContext;
-use async_std::prelude::*;
-use async_std::stream;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use futures::future::FutureExt;
+use futures::{future, stream, StreamExt};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
@@ -90,7 +88,7 @@ impl RequestHandler for CreateHandler {
             context.start_timestamp(),
         );
 
-        Ok(Box::new(stream::from_iter(vec![response, notification])))
+        Ok(Box::new(stream::iter(vec![response, notification])))
     }
 }
 
@@ -151,12 +149,14 @@ impl RequestHandler for ListHandler {
         };
 
         // Respond with events list.
-        Ok(Box::new(stream::once(helpers::build_response(
-            ResponseStatus::OK,
-            editions,
-            reqp,
-            context.start_timestamp(),
-            Some(authz_time),
+        Ok(Box::new(stream::once(future::ready(
+            helpers::build_response(
+                ResponseStatus::OK,
+                editions,
+                reqp,
+                context.start_timestamp(),
+                Some(authz_time),
+            ),
         ))))
     }
 }
@@ -233,7 +233,7 @@ impl RequestHandler for DeleteHandler {
             Some(authz_time),
         );
 
-        Ok(Box::new(stream::from_iter(vec![response])))
+        Ok(Box::new(stream::iter(vec![response])))
     }
 }
 
@@ -296,7 +296,7 @@ impl RequestHandler for CommitHandler {
         let metrics = context.metrics();
         let logger = context.logger().new(o!());
 
-        let notification_future = async_std::task::spawn(async move {
+        let notification_future = tokio::task::spawn(async move {
             let result = commit_edition(&db, &metrics, &edition, &room).await;
 
             // Handle result.
@@ -333,15 +333,15 @@ impl RequestHandler for CommitHandler {
 
         // Respond with 202.
         // The actual task result will be broadcasted to the room topic when finished.
-        let response = stream::once(helpers::build_response(
+        let response = stream::once(future::ready(helpers::build_response(
             ResponseStatus::ACCEPTED,
             json!({}),
             reqp,
             context.start_timestamp(),
             Some(authz_time),
-        ));
+        )));
 
-        let notification = notification_future.into_stream();
+        let notification = notification_future.into_chainable_stream();
         Ok(Box::new(response.chain(notification)))
     }
 }
@@ -387,77 +387,71 @@ mod tests {
         use crate::db::edition::Object as Edition;
         use crate::test_helpers::prelude::*;
 
-        #[test]
-        fn create_edition() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn create_edition() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let room = {
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_room(&mut conn).await
-                };
+            let room = {
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
+            };
 
-                // Allow agent to create editions
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                let object = vec!["rooms", &room_id];
-                authz.allow(agent.account_id(), object, "update");
+            // Allow agent to create editions
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "update");
 
-                // Make edition.create request
-                let mut context = TestContext::new(db, authz);
-                let payload = CreateRequest { room_id: room.id() };
+            // Make edition.create request
+            let mut context = TestContext::new(db, authz);
+            let payload = CreateRequest { room_id: room.id() };
 
-                let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Failed to create edition");
+            let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Failed to create edition");
 
-                // Assert response
-                let (edition, respp, _) = find_response::<Edition>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::CREATED);
-                assert_eq!(edition.source_room_id(), room.id());
-            });
+            // Assert response
+            let (edition, respp, _) = find_response::<Edition>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::CREATED);
+            assert_eq!(edition.source_room_id(), room.id());
         }
 
-        #[test]
-        fn create_edition_not_authorized() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn create_edition_not_authorized() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let room = {
-                    let mut conn = db.get_conn().await;
-                    shared_helpers::insert_room(&mut conn).await
-                };
+            let room = {
+                let mut conn = db.get_conn().await;
+                shared_helpers::insert_room(&mut conn).await
+            };
 
-                let mut context = TestContext::new(db, TestAuthz::new());
-                let payload = CreateRequest { room_id: room.id() };
+            let mut context = TestContext::new(db, TestAuthz::new());
+            let payload = CreateRequest { room_id: room.id() };
 
-                let response = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success creating edition with no authorization");
+            let response = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success creating edition with no authorization");
 
-                assert_eq!(response.status(), ResponseStatus::FORBIDDEN);
-            });
+            assert_eq!(response.status(), ResponseStatus::FORBIDDEN);
         }
 
-        #[test]
-        fn create_edition_missing_room() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+        #[tokio::test]
+        async fn create_edition_missing_room() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
-                let payload = CreateRequest {
-                    room_id: Uuid::new_v4(),
-                };
+            let payload = CreateRequest {
+                room_id: Uuid::new_v4(),
+            };
 
-                let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success creating edition for no room");
+            let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success creating edition for no room");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_not_found");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         }
     }
 
@@ -466,99 +460,93 @@ mod tests {
         use crate::db::edition::Object as Edition;
         use crate::test_helpers::prelude::*;
 
-        #[test]
-        fn list_editions() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn list_editions() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, editions) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (room, editions) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition = factory::Edition::new(room.id(), agent.agent_id())
-                        .insert(&mut conn)
-                        .await;
+                let edition = factory::Edition::new(room.id(), agent.agent_id())
+                    .insert(&mut conn)
+                    .await;
 
-                    (room, vec![edition])
-                };
+                (room, vec![edition])
+            };
 
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                let object = vec!["rooms", &room_id];
-                authz.allow(agent.account_id(), object, "update");
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "update");
 
-                let mut context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
-                let payload = ListRequest {
-                    room_id: room.id(),
-                    last_created_at: None,
-                    limit: None,
-                };
+            let payload = ListRequest {
+                room_id: room.id(),
+                last_created_at: None,
+                limit: None,
+            };
 
-                let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Failed to list editions");
+            let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Failed to list editions");
 
-                let (resp_editions, respp, _) = find_response::<Vec<Edition>>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::OK);
-                assert_eq!(resp_editions.len(), editions.len());
-                assert_eq!(resp_editions[0].id(), editions[0].id());
-            });
+            let (resp_editions, respp, _) = find_response::<Vec<Edition>>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::OK);
+            assert_eq!(resp_editions.len(), editions.len());
+            assert_eq!(resp_editions[0].id(), editions[0].id());
         }
 
-        #[test]
-        fn list_editions_not_authorized() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn list_editions_not_authorized() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, _editions) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
+            let (room, _editions) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
 
-                    let edition = factory::Edition::new(room.id(), agent.agent_id())
-                        .insert(&mut conn)
-                        .await;
+                let edition = factory::Edition::new(room.id(), agent.agent_id())
+                    .insert(&mut conn)
+                    .await;
 
-                    (room, vec![edition])
-                };
+                (room, vec![edition])
+            };
 
-                let mut context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
 
-                let payload = ListRequest {
-                    room_id: room.id(),
-                    last_created_at: None,
-                    limit: None,
-                };
+            let payload = ListRequest {
+                room_id: room.id(),
+                last_created_at: None,
+                limit: None,
+            };
 
-                let resp = handle_request::<ListHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success without authorization on editions list");
+            let resp = handle_request::<ListHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success without authorization on editions list");
 
-                assert_eq!(resp.status(), ResponseStatus::FORBIDDEN);
-            });
+            assert_eq!(resp.status(), ResponseStatus::FORBIDDEN);
         }
 
-        #[test]
-        fn list_editions_missing_room() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+        #[tokio::test]
+        async fn list_editions_missing_room() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
-                let payload = ListRequest {
-                    room_id: Uuid::new_v4(),
-                    last_created_at: None,
-                    limit: None,
-                };
+            let payload = ListRequest {
+                room_id: Uuid::new_v4(),
+                last_created_at: None,
+                limit: None,
+            };
 
-                let err = handle_request::<ListHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success listing editions for no room");
+            let err = handle_request::<ListHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success listing editions for no room");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "room_not_found");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "room_not_found");
         }
     }
 
@@ -567,125 +555,119 @@ mod tests {
         use crate::db::edition::Object as Edition;
         use crate::test_helpers::prelude::*;
 
-        #[test]
-        fn delete_edition() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn delete_edition() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, editions) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
-                    let mut editions = vec![];
+            let (room, editions) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+                let mut editions = vec![];
 
-                    for _ in 1..4 {
-                        let edition = factory::Edition::new(room.id(), agent.agent_id())
-                            .insert(&mut conn)
-                            .await;
+                for _ in 1..4 {
+                    let edition = factory::Edition::new(room.id(), agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                        editions.push(edition);
-                    }
+                    editions.push(edition);
+                }
 
-                    (room, editions)
-                };
+                (room, editions)
+            };
 
-                let mut authz = TestAuthz::new();
-                let room_id = room.id().to_string();
-                let object = vec!["rooms", &room_id];
-                authz.allow(agent.account_id(), object, "update");
+            let mut authz = TestAuthz::new();
+            let room_id = room.id().to_string();
+            let object = vec!["rooms", &room_id];
+            authz.allow(agent.account_id(), object, "update");
 
-                let mut context = TestContext::new(db, authz);
+            let mut context = TestContext::new(db, authz);
 
-                let payload = DeleteRequest {
-                    id: editions[0].id(),
-                };
+            let payload = DeleteRequest {
+                id: editions[0].id(),
+            };
 
-                let messages = handle_request::<DeleteHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("Failed to find deleted edition");
+            let messages = handle_request::<DeleteHandler>(&mut context, &agent, payload)
+                .await
+                .expect("Failed to find deleted edition");
 
-                let (resp_edition, resp, _) = find_response::<Edition>(messages.as_slice());
-                assert_eq!(resp.status(), ResponseStatus::OK);
-                assert_eq!(resp_edition.id(), editions[0].id());
+            let (resp_edition, resp, _) = find_response::<Edition>(messages.as_slice());
+            assert_eq!(resp.status(), ResponseStatus::OK);
+            assert_eq!(resp_edition.id(), editions[0].id());
 
-                let mut conn = context
-                    .db()
-                    .acquire()
-                    .await
-                    .expect("Failed to get DB connection");
+            let mut conn = context
+                .db()
+                .acquire()
+                .await
+                .expect("Failed to get DB connection");
 
-                let db_editions = db::edition::ListQuery::new(room.id())
-                    .execute(&mut conn)
-                    .await
-                    .expect("Failed to fetch editions");
+            let db_editions = db::edition::ListQuery::new(room.id())
+                .execute(&mut conn)
+                .await
+                .expect("Failed to fetch editions");
 
-                assert_eq!(db_editions.len(), editions.len() - 1);
-            });
+            assert_eq!(db_editions.len(), editions.len() - 1);
         }
 
-        #[test]
-        fn delete_edition_not_authorized() {
-            async_std::task::block_on(async {
-                let db = TestDb::new().await;
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        #[tokio::test]
+        async fn delete_edition_not_authorized() {
+            let db = TestDb::new().await;
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 
-                let (room, editions) = {
-                    let mut conn = db.get_conn().await;
-                    let room = shared_helpers::insert_room(&mut conn).await;
-                    let mut editions = vec![];
+            let (room, editions) = {
+                let mut conn = db.get_conn().await;
+                let room = shared_helpers::insert_room(&mut conn).await;
+                let mut editions = vec![];
 
-                    for _ in 1..4 {
-                        let edition = factory::Edition::new(room.id(), agent.agent_id())
-                            .insert(&mut conn)
-                            .await;
+                for _ in 1..4 {
+                    let edition = factory::Edition::new(room.id(), agent.agent_id())
+                        .insert(&mut conn)
+                        .await;
 
-                        editions.push(edition)
-                    }
+                    editions.push(edition)
+                }
 
-                    (room, editions)
-                };
+                (room, editions)
+            };
 
-                let mut context = TestContext::new(db, TestAuthz::new());
+            let mut context = TestContext::new(db, TestAuthz::new());
 
-                let payload = DeleteRequest {
-                    id: editions[0].id(),
-                };
+            let payload = DeleteRequest {
+                id: editions[0].id(),
+            };
 
-                let resp = handle_request::<DeleteHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success without authorization on editions list");
+            let resp = handle_request::<DeleteHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success without authorization on editions list");
 
-                assert_eq!(resp.status(), ResponseStatus::FORBIDDEN);
+            assert_eq!(resp.status(), ResponseStatus::FORBIDDEN);
 
-                let mut conn = context
-                    .db()
-                    .acquire()
-                    .await
-                    .expect("Failed to get DB connection");
+            let mut conn = context
+                .db()
+                .acquire()
+                .await
+                .expect("Failed to get DB connection");
 
-                let db_editions = db::edition::ListQuery::new(room.id())
-                    .execute(&mut conn)
-                    .await
-                    .expect("Failed to fetch editions");
+            let db_editions = db::edition::ListQuery::new(room.id())
+                .execute(&mut conn)
+                .await
+                .expect("Failed to fetch editions");
 
-                assert_eq!(db_editions.len(), editions.len());
-            });
+            assert_eq!(db_editions.len(), editions.len());
         }
 
-        #[test]
-        fn delete_editions_missing_room() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-                let payload = DeleteRequest { id: Uuid::new_v4() };
+        #[tokio::test]
+        async fn delete_editions_missing_room() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let payload = DeleteRequest { id: Uuid::new_v4() };
 
-                let err = handle_request::<DeleteHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success listing editions for no room");
+            let err = handle_request::<DeleteHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success listing editions for no room");
 
-                assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-                assert_eq!(err.kind(), "edition_not_found");
-            });
+            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+            assert_eq!(err.kind(), "edition_not_found");
         }
     }
 }
