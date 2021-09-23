@@ -1,5 +1,5 @@
-use async_std::stream;
 use async_trait::async_trait;
+use futures::{future, stream};
 use serde_derive::Deserialize;
 use serde_json::json;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
@@ -40,7 +40,7 @@ impl RequestHandler for VacuumHandler {
         let logger = context.logger().new(o!());
         let config = context.config().vacuum.to_owned();
 
-        async_std::task::spawn(async move {
+        tokio::task::spawn(async move {
             if let Err(err) = vacuum(&db, &metrics, &config).await {
                 error!(logger, "Vacuum failed: {:?}", err);
 
@@ -57,12 +57,14 @@ impl RequestHandler for VacuumHandler {
         });
 
         // Return empty 202 response.
-        Ok(Box::new(stream::once(helpers::build_response(
-            ResponseStatus::ACCEPTED,
-            json!({}),
-            reqp,
-            context.start_timestamp(),
-            Some(authz_time),
+        Ok(Box::new(stream::once(future::ready(
+            helpers::build_response(
+                ResponseStatus::ACCEPTED,
+                json!({}),
+                reqp,
+                context.start_timestamp(),
+                Some(authz_time),
+            ),
         ))))
     }
 }
@@ -78,44 +80,40 @@ mod tests {
 
         use super::super::*;
 
-        #[test]
-        fn vacuum() {
-            async_std::task::block_on(async {
-                let mut authz = TestAuthz::new();
-                authz.set_audience(SVC_AUDIENCE);
+        #[tokio::test]
+        async fn vacuum() {
+            let mut authz = TestAuthz::new();
+            authz.set_audience(SVC_AUDIENCE);
 
-                // Allow cron to perform vacuum.
-                let agent = TestAgent::new("alpha", "cron", SVC_AUDIENCE);
-                authz.allow(agent.account_id(), vec!["system"], "update");
+            // Allow cron to perform vacuum.
+            let agent = TestAgent::new("alpha", "cron", SVC_AUDIENCE);
+            authz.allow(agent.account_id(), vec!["system"], "update");
 
-                // Make system.vacuum request.
-                let mut context = TestContext::new(TestDb::new().await, authz);
-                let payload = VacuumRequest {};
+            // Make system.vacuum request.
+            let mut context = TestContext::new(TestDb::new().await, authz);
+            let payload = VacuumRequest {};
 
-                let messages = handle_request::<VacuumHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect("System vacuum failed");
+            let messages = handle_request::<VacuumHandler>(&mut context, &agent, payload)
+                .await
+                .expect("System vacuum failed");
 
-                let (payload, respp, _) = find_response::<JsonValue>(messages.as_slice());
-                assert_eq!(respp.status(), ResponseStatus::ACCEPTED);
-                assert_eq!(payload, json!({}));
-            });
+            let (payload, respp, _) = find_response::<JsonValue>(messages.as_slice());
+            assert_eq!(respp.status(), ResponseStatus::ACCEPTED);
+            assert_eq!(payload, json!({}));
         }
 
-        #[test]
-        fn vacuum_unauthorized() {
-            async_std::task::block_on(async {
-                let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-                let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-                let payload = VacuumRequest {};
+        #[tokio::test]
+        async fn vacuum_unauthorized() {
+            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+            let payload = VacuumRequest {};
 
-                let err = handle_request::<VacuumHandler>(&mut context, &agent, payload)
-                    .await
-                    .expect_err("Unexpected success on system vacuum");
+            let err = handle_request::<VacuumHandler>(&mut context, &agent, payload)
+                .await
+                .expect_err("Unexpected success on system vacuum");
 
-                assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
-                assert_eq!(err.kind(), "access_denied");
-            });
+            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
+            assert_eq!(err.kind(), "access_denied");
         }
     }
 }

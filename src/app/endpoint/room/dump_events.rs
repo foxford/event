@@ -1,8 +1,6 @@
-use async_std::prelude::*;
-use async_std::stream;
 use async_trait::async_trait;
 use chrono::Utc;
-use futures::FutureExt;
+use futures::{stream, StreamExt};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::mqtt::{
@@ -84,7 +82,7 @@ impl RequestHandler for EventsDumpHandler {
             })
             .error(AppErrorKind::NoS3Client)?;
 
-        let notification_future = async_std::task::spawn(async move {
+        let notification_future = tokio::task::spawn(async move {
             let result = dump_events_to_s3(&db, &metrics, s3_client, &room).await;
 
             // Handle result.
@@ -118,15 +116,15 @@ impl RequestHandler for EventsDumpHandler {
             Box::new(event) as Box<dyn IntoPublishableMessage + Send>
         });
 
-        let response = stream::once(helpers::build_response(
+        let response = stream::once(futures::future::ready(helpers::build_response(
             ResponseStatus::ACCEPTED,
             json!({}),
             reqp,
             context.start_timestamp(),
             Some(authz_time),
-        ));
+        )));
 
-        let notification = notification_future.into_stream();
+        let notification = notification_future.into_chainable_stream();
         Ok(Box::new(response.chain(notification)))
     }
 }
@@ -136,116 +134,108 @@ mod tests {
     use super::*;
     use crate::test_helpers::prelude::*;
 
-    #[test]
-    fn dump_events_not_authorized() {
-        async_std::task::block_on(async {
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new().await;
+    #[tokio::test]
+    async fn dump_events_not_authorized() {
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        let db = TestDb::new().await;
 
-            let room = {
-                let mut conn = db.get_conn().await;
-                shared_helpers::insert_room(&mut conn).await
-            };
+        let room = {
+            let mut conn = db.get_conn().await;
+            shared_helpers::insert_room(&mut conn).await
+        };
 
-            let mut context = TestContext::new(db, TestAuthz::new());
+        let mut context = TestContext::new(db, TestAuthz::new());
 
-            let payload = EventsDumpRequest { id: room.id() };
+        let payload = EventsDumpRequest { id: room.id() };
 
-            let err = handle_request::<EventsDumpHandler>(&mut context, &agent, payload)
-                .await
-                .expect_err("Unexpected success on room dump");
+        let err = handle_request::<EventsDumpHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Unexpected success on room dump");
 
-            assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
-        });
+        assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
     }
 
-    #[test]
-    fn dump_events_room_missing() {
-        async_std::task::block_on(async {
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
+    #[tokio::test]
+    async fn dump_events_room_missing() {
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
 
-            let payload = EventsDumpRequest { id: Uuid::new_v4() };
+        let payload = EventsDumpRequest { id: Uuid::new_v4() };
 
-            let err = handle_request::<EventsDumpHandler>(&mut context, &agent, payload)
-                .await
-                .expect_err("Unexpected success on room dump");
+        let err = handle_request::<EventsDumpHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Unexpected success on room dump");
 
-            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-            assert_eq!(err.kind(), "room_not_found");
-        });
+        assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
+        assert_eq!(err.kind(), "room_not_found");
     }
 
-    #[test]
-    fn dump_events_no_s3_client() {
-        async_std::task::block_on(async {
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new().await;
-            let mut authz = TestAuthz::new();
-            authz.allow(agent.account_id(), vec!["rooms"], "dump_events");
+    #[tokio::test]
+    async fn dump_events_no_s3_client() {
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        let db = TestDb::new().await;
+        let mut authz = TestAuthz::new();
+        authz.allow(agent.account_id(), vec!["rooms"], "dump_events");
 
-            let room = {
-                let mut conn = db.get_conn().await;
-                shared_helpers::insert_room(&mut conn).await
-            };
+        let room = {
+            let mut conn = db.get_conn().await;
+            shared_helpers::insert_room(&mut conn).await
+        };
 
-            let mut context = TestContext::new(TestDb::new().await, authz);
+        let mut context = TestContext::new(TestDb::new().await, authz);
 
-            let payload = EventsDumpRequest { id: room.id() };
+        let payload = EventsDumpRequest { id: room.id() };
 
-            let err = handle_request::<EventsDumpHandler>(&mut context, &agent, payload)
-                .await
-                .expect_err("Unexpected success on room dump");
+        let err = handle_request::<EventsDumpHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Unexpected success on room dump");
 
-            assert_eq!(err.status(), ResponseStatus::NOT_IMPLEMENTED);
-            assert_eq!(err.kind(), "no_s3_client");
-        });
+        assert_eq!(err.status(), ResponseStatus::NOT_IMPLEMENTED);
+        assert_eq!(err.kind(), "no_s3_client");
     }
 
-    #[test]
-    fn dump_events() {
-        async_std::task::block_on(async {
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new().await;
-            let mut authz = TestAuthz::new();
-            authz.allow(agent.account_id(), vec!["rooms"], "dump_events");
+    #[tokio::test]
+    async fn dump_events() {
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        let db = TestDb::new().await;
+        let mut authz = TestAuthz::new();
+        authz.allow(agent.account_id(), vec!["rooms"], "dump_events");
 
-            let room = {
-                let mut conn = db.get_conn().await;
-                shared_helpers::insert_room(&mut conn).await
-            };
+        let room = {
+            let mut conn = db.get_conn().await;
+            shared_helpers::insert_room(&mut conn).await
+        };
 
-            let mut context = TestContext::new(TestDb::new().await, authz);
-            context.set_s3(shared_helpers::mock_s3());
+        let mut context = TestContext::new(TestDb::new().await, authz);
+        context.set_s3(shared_helpers::mock_s3());
 
-            let payload = EventsDumpRequest { id: room.id() };
+        let payload = EventsDumpRequest { id: room.id() };
 
-            let messages = handle_request::<EventsDumpHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Failed to dump room events");
+        let messages = handle_request::<EventsDumpHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Failed to dump room events");
 
-            assert_eq!(messages.len(), 2);
-            let (_, respp, _) = find_response::<JsonValue>(messages.as_slice());
-            let (ev, evp, _) = find_event::<JsonValue>(messages.as_slice());
-            assert_eq!(respp.status(), ResponseStatus::ACCEPTED);
-            assert_eq!(evp.label(), "room.dump_events");
-            assert_eq!(
-                ev.get("result")
-                    .and_then(|v| v.get("room_id"))
-                    .and_then(|v| v.as_str()),
-                Some(room.id().to_string()).as_deref()
-            );
-            assert_eq!(
-                ev.get("result")
-                    .and_then(|v| v.get("s3_uri"))
-                    .and_then(|v| v.as_str()),
-                Some(format!(
-                    "s3://eventsdump.{}/{}.json",
-                    room.audience(),
-                    room.id()
-                ))
-                .as_deref()
-            );
-        });
+        assert_eq!(messages.len(), 2);
+        let (_, respp, _) = find_response::<JsonValue>(messages.as_slice());
+        let (ev, evp, _) = find_event::<JsonValue>(messages.as_slice());
+        assert_eq!(respp.status(), ResponseStatus::ACCEPTED);
+        assert_eq!(evp.label(), "room.dump_events");
+        assert_eq!(
+            ev.get("result")
+                .and_then(|v| v.get("room_id"))
+                .and_then(|v| v.as_str()),
+            Some(room.id().to_string()).as_deref()
+        );
+        assert_eq!(
+            ev.get("result")
+                .and_then(|v| v.get("s3_uri"))
+                .and_then(|v| v.as_str()),
+            Some(format!(
+                "s3://eventsdump.{}/{}.json",
+                room.audience(),
+                room.id()
+            ))
+            .as_deref()
+        );
     }
 }
