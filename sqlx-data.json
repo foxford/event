@@ -1897,6 +1897,67 @@
       ]
     }
   },
+  "a6eaefcfd2a4644be2b560a6353511bf7c6f4697fe59c6b6b31346f64afa4844": {
+    "query": "\n            SELECT\n                id, account_id AS \"account_id!: AccountId\",\n                room_id, reason, created_at\n            FROM room_ban\n            WHERE account_id = $1 AND room_id = (SELECT id FROM room WHERE classroom_id = $2 AND UPPER(time) IS NULL ORDER BY LOWER(time) DESC LIMIT 1)\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "account_id!: AccountId",
+          "type_info": {
+            "Custom": {
+              "name": "account_id",
+              "kind": {
+                "Composite": [
+                  [
+                    "label",
+                    "Text"
+                  ],
+                  [
+                    "audience",
+                    "Text"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "ordinal": 2,
+          "name": "room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 3,
+          "name": "reason",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 4,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Record",
+          "Uuid"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        false
+      ]
+    }
+  },
   "ac9057b29aa15bfce1867dca3324e3c3b27a6bb4184588bc6cca99ccc9e6cfca": {
     "query": "\n                SELECT\n                    c.id                 AS change_id,\n                    c.edition_id         AS change_edition_id,\n                    c.kind               AS \"change_kind!: ChangeType\",\n                    c.event_id           AS change_event_id,\n                    c.event_kind         AS change_event_kind,\n                    c.event_set          AS change_event_set,\n                    c.event_label        AS change_event_label,\n                    c.event_data         AS change_event_data,\n                    c.event_occurred_at  AS change_event_occurred_at,\n                    c.event_created_by   AS \"change_event_created_by?: AgentId\",\n                    c.created_at         AS change_created_at,\n                    r.id                 AS room_id,\n                    r.audience           AS room_audience,\n                    r.source_room_id     AS room_source_room_id,\n                    r.time               AS \"room_time!: RoomTime\",\n                    r.tags               AS room_tags,\n                    r.created_at         AS room_created_at,\n                    r.preserve_history   AS room_preserve_history,\n                    r.classroom_id       AS room_classroom_id\n                FROM change AS c\n                INNER JOIN edition AS e\n                ON e.id = c.edition_id\n                INNER JOIN room AS r\n                ON r.id = e.source_room_id\n                WHERE c.id = $1\n                ",
     "describe": {
@@ -2154,67 +2215,6 @@
       },
       "nullable": [
         null
-      ]
-    }
-  },
-  "d5de74f8fa086384ab3b01661d61f00230373e369b61f0ffd53b5fa5f5e15582": {
-    "query": "\n            SELECT\n                id, account_id AS \"account_id!: AccountId\",\n                room_id, reason, created_at\n            FROM room_ban\n            WHERE account_id = $1 AND room_id = (SELECT id FROM room WHERE classroom_id = $2)\n            ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "account_id!: AccountId",
-          "type_info": {
-            "Custom": {
-              "name": "account_id",
-              "kind": {
-                "Composite": [
-                  [
-                    "label",
-                    "Text"
-                  ],
-                  [
-                    "audience",
-                    "Text"
-                  ]
-                ]
-              }
-            }
-          }
-        },
-        {
-          "ordinal": 2,
-          "name": "room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 3,
-          "name": "reason",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 4,
-          "name": "created_at",
-          "type_info": "Timestamptz"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Record",
-          "Uuid"
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        true,
-        false
       ]
     }
   },
