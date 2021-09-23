@@ -128,7 +128,11 @@ impl ClassroomFindQuery {
                 id, account_id AS "account_id!: AccountId",
                 room_id, reason, created_at
             FROM room_ban
-            WHERE account_id = $1 AND room_id = (SELECT id FROM room WHERE classroom_id = $2)
+            WHERE account_id = $1 AND room_id = (
+                SELECT id FROM room
+                WHERE classroom_id = $2 AND UPPER(time) IS NULL
+                ORDER BY created_at DESC LIMIT 1
+            )
             "#,
             self.account_id as AccountId,
             self.classroom_id,
@@ -166,5 +170,46 @@ impl DeleteQuery {
         .execute(conn)
         .await
         .map(|r| r.rows_affected() as usize)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_helpers::prelude::*;
+    use std::ops::Bound;
+
+    #[async_std::test]
+    async fn find_ban_multirooms() {
+        let db = TestDb::new().await;
+        let mut conn = db.get_conn().await;
+
+        let banned_agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        let classroom_id = Uuid::new_v4();
+
+        let room = {
+            factory::Room::new()
+                .audience(USR_AUDIENCE)
+                .classroom_id(classroom_id)
+                .time((Bound::Included(Utc::now()), Bound::Unbounded))
+                .insert(&mut conn)
+                .await;
+            let room = factory::Room::new()
+                .audience(USR_AUDIENCE)
+                .time((Bound::Included(Utc::now()), Bound::Unbounded))
+                .classroom_id(classroom_id)
+                .insert(&mut conn)
+                .await;
+            factory::RoomBan::new(banned_agent.account_id(), room.id())
+                .insert(&mut conn)
+                .await;
+            room
+        };
+
+        let ban = ClassroomFindQuery::new(banned_agent.account_id().to_owned(), classroom_id)
+            .execute(&mut conn)
+            .await
+            .expect("Ban query failed");
+        assert!(ban.is_some());
     }
 }

@@ -161,6 +161,67 @@
       ]
     }
   },
+  "15edabc8a95c9d857c0d2f8083753208a750ef1a705a906eeb3235590a3cec62": {
+    "query": "\n            SELECT\n                id, account_id AS \"account_id!: AccountId\",\n                room_id, reason, created_at\n            FROM room_ban\n            WHERE account_id = $1 AND room_id = (\n                SELECT id FROM room\n                WHERE classroom_id = $2 AND UPPER(time) IS NULL\n                ORDER BY created_at DESC LIMIT 1\n            )\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "account_id!: AccountId",
+          "type_info": {
+            "Custom": {
+              "name": "account_id",
+              "kind": {
+                "Composite": [
+                  [
+                    "label",
+                    "Text"
+                  ],
+                  [
+                    "audience",
+                    "Text"
+                  ]
+                ]
+              }
+            }
+          }
+        },
+        {
+          "ordinal": 2,
+          "name": "room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 3,
+          "name": "reason",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 4,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Record",
+          "Uuid"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        false
+      ]
+    }
+  },
   "17c6509f281a68985995b3ebe82e220313fbaafc7bd87587e2ae0ec82a2410dd": {
     "query": "\n            INSERT INTO agent (agent_id, room_id, status)\n            VALUES ($1, $2, $3)\n            ON CONFLICT (agent_id, room_id) DO UPDATE SET status = $3\n            RETURNING\n                id,\n                agent_id AS \"agent_id!: AgentId\",\n                room_id,\n                status AS \"status!: Status\",\n                created_at\n            ",
     "describe": {
@@ -2154,67 +2215,6 @@
       },
       "nullable": [
         null
-      ]
-    }
-  },
-  "d5de74f8fa086384ab3b01661d61f00230373e369b61f0ffd53b5fa5f5e15582": {
-    "query": "\n            SELECT\n                id, account_id AS \"account_id!: AccountId\",\n                room_id, reason, created_at\n            FROM room_ban\n            WHERE account_id = $1 AND room_id = (SELECT id FROM room WHERE classroom_id = $2)\n            ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "account_id!: AccountId",
-          "type_info": {
-            "Custom": {
-              "name": "account_id",
-              "kind": {
-                "Composite": [
-                  [
-                    "label",
-                    "Text"
-                  ],
-                  [
-                    "audience",
-                    "Text"
-                  ]
-                ]
-              }
-            }
-          }
-        },
-        {
-          "ordinal": 2,
-          "name": "room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 3,
-          "name": "reason",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 4,
-          "name": "created_at",
-          "type_info": "Timestamptz"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Record",
-          "Uuid"
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        false,
-        true,
-        false
       ]
     }
   },
