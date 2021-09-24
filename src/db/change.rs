@@ -12,7 +12,7 @@ use crate::db::room::{Builder as RoomBuilder, Object as Room, Time as RoomTime};
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
-#[sqlx(rename = "change_type")]
+#[sqlx(type_name = "change_type")]
 pub(crate) enum ChangeType {
     #[sqlx(rename = "addition")]
     Addition,

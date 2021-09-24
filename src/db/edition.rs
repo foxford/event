@@ -1,7 +1,7 @@
 use chrono::serde::ts_seconds;
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
-use sqlx::{postgres::PgConnection, Done};
+use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
 use uuid::Uuid;
 

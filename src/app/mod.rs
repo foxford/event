@@ -1,7 +1,6 @@
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::thread;
 use std::time::Duration;
 
 use anyhow::{Context as AnyhowContext, Result};
@@ -24,7 +23,10 @@ use svc_agent::{AccountId, AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::{extension::sentry, Error as SvcError};
-use tokio::task;
+use tokio::{
+    sync::{mpsc, oneshot},
+    task,
+};
 
 use crate::{app::context::GlobalContext, metrics::Metrics};
 use crate::{
@@ -67,20 +69,6 @@ pub(crate) async fn run(
         .start(&agent_config)
         .context("Failed to create an agent")?;
 
-    // Message loop for incoming messages of MQTT Agent
-    let (mq_tx, mq_rx) = futures_channel::mpsc::unbounded::<AgentNotification>();
-
-    thread::Builder::new()
-        .name("event-notifications-loop".to_owned())
-        .spawn(move || {
-            for message in rx {
-                if mq_tx.unbounded_send(message).is_err() {
-                    error!(crate::LOG, "Error sending message to the internal channel");
-                }
-            }
-        })
-        .expect("Failed to start event notifications loop");
-
     let is_banned_f = crate::app::endpoint::authz::db_ban_callback(db.clone());
 
     // Authz
@@ -122,7 +110,7 @@ pub(crate) async fn run(
         .build(metrics);
 
     let metrics_task = if let Some(metrics) = config.metrics.as_ref() {
-        let (closer, metrics_close_receirver) = tokio::sync::oneshot::channel::<()>();
+        let (closer, metrics_close_receirver) = oneshot::channel::<()>();
         let join_handle = task::spawn(start_metrics_collector(
             registry,
             metrics.http.bind_address,
@@ -145,7 +133,7 @@ pub(crate) async fn run(
     let mut signals_stream = signal_hook_tokio::Signals::new(TERM_SIGNALS)?.fuse();
     let signals = signals_stream.next();
 
-    let main_loop_task = task::spawn(main_loop(mq_rx, message_handler.clone(), metrics.clone()));
+    let main_loop_task = task::spawn(main_loop(rx, message_handler.clone(), metrics.clone()));
     let _ = futures::future::select(signals, main_loop_task).await;
     unsubscribe(&mut agent, &agent_id)?;
 
@@ -163,12 +151,12 @@ pub(crate) async fn run(
 }
 
 async fn main_loop(
-    mut mq_rx: futures_channel::mpsc::UnboundedReceiver<AgentNotification>,
+    mut mq_rx: mpsc::UnboundedReceiver<AgentNotification>,
     message_handler: Arc<MessageHandler<context::AppContext>>,
     metrics: Arc<Metrics>,
 ) {
     loop {
-        if let Some(message) = mq_rx.next().await {
+        if let Some(message) = mq_rx.recv().await {
             let message_handler = message_handler.clone();
             let request_started = metrics.clone().request_started();
             let metrics = metrics.clone();
@@ -291,7 +279,7 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
 async fn start_metrics_collector(
     registry: Registry,
     bind_addr: SocketAddr,
-    rx: tokio::sync::oneshot::Receiver<()>,
+    rx: oneshot::Receiver<()>,
 ) -> Result<(), hyper::Error> {
     let app: Router<EmptyRouter<Infallible>> = Router::new();
 
@@ -330,8 +318,8 @@ async fn metrics_handler(
 }
 
 struct MetricsTask {
-    join_handle: tokio::task::JoinHandle<Result<(), hyper::Error>>,
-    closer: tokio::sync::oneshot::Sender<()>,
+    join_handle: task::JoinHandle<Result<(), hyper::Error>>,
+    closer: oneshot::Sender<()>,
 }
 
 impl MetricsTask {
