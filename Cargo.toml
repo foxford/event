@@ -30,12 +30,12 @@ slog-async = "2"
 slog-envlogger = "2"
 slog-json = "2"
 slog-serde = "1.0.0-alpha9"
-sqlx = {version = "0.4", features = ["offline", "postgres", "macros", "uuid", "chrono", "json", "bigdecimal", "runtime-tokio-rustls"]}
-svc-agent = {version = "0.17.2", features = ["sqlx", "queue-counter"]}
-svc-authn = {version = "0.6", features = ["jose", "sqlx"]}
-svc-authz = "=0.10"
-svc-error = {version = "0.1", features = ["sqlx", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"]}
-tokio = {version = "1", features = ["rt", "rt-multi-thread", "sync"]}
+sqlx = {version = "0.5", features = ["offline", "postgres", "macros", "uuid", "chrono", "json", "bigdecimal", "runtime-tokio-native-tls"]}
+svc-agent = {version = "0.19", features = ["sqlx", "queue-counter"]}
+svc-authn = {version = "0.7", features = ["jose", "sqlx"]}
+svc-authz = "0.11"
+svc-error = {version = "0.2", features = ["sqlx", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"]}
+tokio = {version = "1", features = ["full"]}
 url = "2"
 uuid = {version = "0.8", features = ["v4", "serde"]}
 sentry = {version = "0.23",  default-features = true }
@@ -44,7 +44,7 @@ enum-iterator = "0.7"
 parking_lot = "0.11"
 axum = "0.2"
 tower = "0.4"
-hyper = "0.14"
+hyper = { version = "0.14", features = [ "server" ]}
 
 [dev-dependencies]
 rusoto_mock = "0.47"
