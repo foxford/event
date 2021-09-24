@@ -1026,6 +1026,7 @@ dependencies = [
  "serde_json",
  "serial_test",
  "signal-hook",
+ "signal-hook-async-std",
  "slog 2.7.0",
  "slog-async",
  "slog-envlogger",
@@ -3092,6 +3093,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "signal-hook-async-std"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "90526e74631c69a79b38212e3d4fda4b00de9d6be56b3cead133bf67ad371af1"
+dependencies = [
+ "async-io",
+ "futures-lite",
+ "libc",
+ "signal-hook",
+]
+
+[[package]]
 name = "signal-hook-registry"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3467,9 +3480,9 @@ checksum = "45f6ee7c7b87caf59549e9fe45d6a69c75c8019e79e212a835c5da0e92f0ba08"
 
 [[package]]
 name = "svc-agent"
-version = "0.17.0"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f4803de98c81b3ce8afc28ce89799d2ad242c89a89dfe496593a9a301dc7cb0"
+checksum = "ab75f3dbbce2346e3387b3ab6ea99c434d3081e5d5f55fb9c22a7bed4244205a"
 dependencies = [
  "async-channel",
  "base64 0.13.0",

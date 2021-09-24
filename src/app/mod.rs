@@ -1,10 +1,7 @@
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use std::{
-    net::SocketAddr,
-    sync::atomic::{AtomicBool, Ordering},
-};
 
 use anyhow::{Context as AnyhowContext, Result};
 use async_std::task;
@@ -12,6 +9,7 @@ use chrono::Utc;
 use futures::StreamExt;
 use prometheus::{Encoder, Registry, TextEncoder};
 use serde_json::json;
+use signal_hook::consts::TERM_SIGNALS;
 use sqlx::postgres::PgPool as Db;
 use svc_agent::mqtt::{
     Agent, AgentBuilder, AgentNotification, ConnectionMode, OutgoingRequest,
@@ -64,7 +62,7 @@ pub(crate) async fn run(
         .context("Failed to create an agent")?;
 
     // Message loop for incoming messages of MQTT Agent
-    let (mq_tx, mut mq_rx) = futures_channel::mpsc::unbounded::<AgentNotification>();
+    let (mq_tx, mq_rx) = futures_channel::mpsc::unbounded::<AgentNotification>();
 
     thread::Builder::new()
         .name("event-notifications-loop".to_owned())
@@ -123,18 +121,31 @@ pub(crate) async fn run(
     let metrics = context.metrics();
 
     // Message handler
-    let message_handler = Arc::new(MessageHandler::new(agent, context));
+    let message_handler = Arc::new(MessageHandler::new(agent.clone(), context));
 
     // Message loop
-    let term_check_period = Duration::from_secs(1);
-    let term = Arc::new(AtomicBool::new(false));
-    signal_hook::flag::register(signal_hook::consts::SIGTERM, Arc::clone(&term))?;
-    signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&term))?;
+    let mut signals_stream = signal_hook_async_std::Signals::new(TERM_SIGNALS)?.fuse();
+    let signals = signals_stream.next();
 
-    while !term.load(Ordering::Relaxed) {
-        let fut = async_std::future::timeout(term_check_period, mq_rx.next());
+    let main_loop_task = task::spawn(main_loop(mq_rx, message_handler.clone(), metrics.clone()));
+    let _ = futures::future::select(signals, main_loop_task).await;
+    unsubscribe(&mut agent, &agent_id)?;
+    task::sleep(Duration::from_secs(3)).await;
+    info!(
+        crate::LOG,
+        "Running requests left: {}",
+        metrics.running_requests_total.get()
+    );
+    Ok(())
+}
 
-        if let Ok(Some(message)) = fut.await {
+async fn main_loop(
+    mut mq_rx: futures_channel::mpsc::UnboundedReceiver<AgentNotification>,
+    message_handler: Arc<MessageHandler<context::AppContext>>,
+    metrics: Arc<Metrics>,
+) {
+    loop {
+        if let Some(message) = mq_rx.next().await {
             let message_handler = message_handler.clone();
             let request_started = metrics.clone().request_started();
             let metrics = metrics.clone();
@@ -176,8 +187,6 @@ pub(crate) async fn run(
             });
         }
     }
-
-    Ok(())
 }
 
 fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<()> {
@@ -204,6 +213,25 @@ fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<(
     {
         subscribe_to_kruonis(kruonis_id, agent)?;
     }
+
+    Ok(())
+}
+
+fn unsubscribe(agent: &mut Agent, agent_id: &AgentId) -> Result<()> {
+    let group = SharedGroup::new("loadbalancer", agent_id.as_account_id().clone());
+
+    // Multicast requests
+    agent
+        .unsubscribe(
+            &Subscription::multicast_requests(Some(API_VERSION)),
+            Some(&group),
+        )
+        .context("Error subscribing to multicast requests")?;
+
+    // Unicast requests
+    agent
+        .unsubscribe(&Subscription::unicast_requests(), None)
+        .context("Error subscribing to unicast requests")?;
 
     Ok(())
 }
