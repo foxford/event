@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use sqlx::{postgres::PgConnection, Done};
+use sqlx::postgres::PgConnection;
 use svc_agent::AccountId;
 use uuid::Uuid;
 
