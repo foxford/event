@@ -1,0 +1,42 @@
+app:
+  replicas:
+    ng:
+      classroom:
+        _default: "2"
+  resources:
+    cpu:
+      ng:
+        classroom:
+          _default: 500m
+          production: "2"
+    memory:
+      ng:
+        classroom:
+          _default: 500Mi
+          production: 1Gi
+  database:
+    port:
+      ng:
+        classroom:
+          _default: "5432"
+  redis:
+    host:
+      ng:
+        classroom:
+          _default: redis-event
+    port:
+      ng:
+        classroom:
+          _default: "6379"
+postgres:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
+  storage:
+    size:
+      _default: 50Gi
+    storageClassName:
+      _default: universal.ru-2c

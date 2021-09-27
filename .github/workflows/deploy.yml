@@ -1,40 +1,44 @@
-name: deploy
+name: Converge
 
 on:
   workflow_dispatch:
     inputs:
-      namespace:
-        description: 'Namespace'
+      organization:
+        description: 'Deploy to organization...'
+        required: true
+        default: 'ng'
+      application:
+        description: 'Deploy to application...'
+        required: true
+        default: 'classroom'
+      environment:
+        description: 'Deploy to environment...'
         required: true
         default: 'testing01'
-      version:
-        description: 'Commit/tag/branch'
-        required: false
 
 jobs:
-  deploy:
-
+  converge:
+    name: Converge
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-      with:
-        ref: ${{ github.event.inputs.version }}
-        fetch-depth: 0
-    - uses: satackey/action-docker-layer-caching@46d2c640b1d8ef50d185452ad6fb324e6bd1d052
-      continue-on-error: true
-    - name: Deploy
-      run: |
-        for NAMESPACE in $NAMESPACES; do
-          NAMESPACE=$NAMESPACE ./deploy.init.sh && NAMESPACE=$NAMESPACE ./deploy/github-actions-run.sh
-        done
-      env:
-        NAMESPACES: ${{ github.event.inputs.namespace }}
-        KUBE_TOKEN_TESTING: ${{ secrets.KUBE_TOKEN_TESTING }}
-        KUBE_SERVER_TESTING: ${{ secrets.KUBE_SERVER_TESTING }}
-        OVPN_CONFIG: ${{ secrets.OVPN_CONFIG }}
-        OVPN_CA: ${{ secrets.OVPN_CA }}
-        OVPN_CERT: ${{ secrets.OVPN_CERT }}
-        OVPN_KEY: ${{ secrets.OVPN_KEY }}
-        GITHUB_TOKEN: ${{ secrets._GITHUB_TOKEN }}
-        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+      - name: Login to Registry
+        uses: docker/login-action@v1
+        with:
+          username: ${{ secrets.WERF_REPO_DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.WERF_REPO_DOCKER_HUB_PASSWORD }}
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Converge
+        uses: werf/actions/converge@v1.2
+        with:
+          channel: beta
+          env: ${{ github.event.inputs.environment }}
+          kube-config-base64-data: ${{ secrets.KUBE_CONFIG_BASE64_DATA }}
+        env:
+          WERF_REPO: "foxford/event"
+          WERF_SECRET_KEY: ${{ secrets.WERF_SECRET_KEY }}
+          WERF_NAMESPACE: ${{ github.event.inputs.application }}-${{ github.event.inputs.environment }}-${{ github.event.inputs.organization }}
+          WERF_SET_ORG: "global.org=${{ github.event.inputs.organization }}"
+          WERF_SET_APP: "global.app=${{ github.event.inputs.application }}"

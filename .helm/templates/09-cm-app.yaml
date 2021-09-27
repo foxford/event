@@ -1,0 +1,89 @@
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Chart.Name }}-config
+data:
+  App.toml: |
+    id = {{ pluck .Values.werf.env (index .Values.app.id .Values.global.org .Values.global.app) | first | default (index .Values.app.id .Values.global.org .Values.global.app)._default | quote }}
+    broker_id = {{ pluck .Values.werf.env (index .Values.app.broker_id .Values.global.org .Values.global.app) | first | default (index .Values.app.broker_id .Values.global.org .Values.global.app)._default | quote }}
+
+    [mqtt]
+    uri = {{ pluck .Values.werf.env (index .Values.app.mqtt.uri .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.uri .Values.global.org .Values.global.app)._default }}
+    clean_session = {{ pluck .Values.werf.env (index .Values.app.mqtt.clean_session .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.clean_session .Values.global.org .Values.global.app)._default }}
+    reconnect_interval = {{ pluck .Values.werf.env (index .Values.app.mqtt.reconnect_interval .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.reconnect_interval .Values.global.org .Values.global.app)._default }}
+    keep_alive = {{ pluck .Values.werf.env (index .Values.app.mqtt.keep_alive .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.keep_alive .Values.global.org .Values.global.app)._default }}
+    max_message_size = {{ pluck .Values.werf.env (index .Values.app.mqtt.max_message_size .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.max_message_size .Values.global.org .Values.global.app)._default }}
+
+    [sentry]
+    dsn = {{ pluck .Values.werf.env (index .Values.app.mqtt.max_message_size .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.max_message_size .Values.global.org .Values.global.app)._default }}
+    environment = {{ .Values.werf.env }}
+
+    ##
+    ## ULMS
+    ##
+    [id_token]
+    algorithm = {{ pluck .Values.werf.env (index .Values.app.id_token.algorithm .Values.global.org .Values.global.app) | first | default (index .Values.app.id_token.algorithm .Values.global.org .Values.global.app)._default }}
+    key = {{ pluck .Values.werf.env (index .Values.app.id_token.key .Values.global.org .Values.global.app) | first | default (index .Values.app.id_token.key .Values.global.org .Values.global.app)._default }}
+
+{{- range $tenant := .Values.app.tenants }}
+
+{{- if hasPrefix "production" $.Values.werf.env }}
+{{- if (pluck $.Values.werf.env $tenant.authz.ident | first) }}
+    ##
+    ## {{ $tenant.name }}
+    ##
+    [authz.{{ pluck $.Values.werf.env $tenant.authz.ident | first | default $tenant.authz.ident._default | quote }}]
+    type = {{ pluck $.Values.werf.env $tenant.authz.type | first | default $tenant.authz.type._default | quote }}
+{{- if (pluck $.Values.werf.env $tenant.authz.trusted | first)}}
+    trusted = [{{ pluck $.Values.werf.env $tenant.authz.trusted | first | default $tenant.authz.trusted._default | quote }}]
+{{- end }}
+    uri = {{ pluck $.Values.werf.env $tenant.authz.uri | first | default $tenant.authz.uri._default | quote }}
+    algorithm = {{ pluck $.Values.werf.env $tenant.authz.algorithm | first | default $tenant.authz.algorithm._default | quote }}
+    key = "{{ printf "/app/%s" (pluck $.Values.werf.env $tenant.authz.key | first | default $tenant.authz.key._default) }}"
+    user_agent = {{ pluck $.Values.werf.env $tenant.authz.user_agent | first | default $tenant.authz.user_agent._default | quote }}
+    max_retries = {{ pluck $.Values.werf.env $tenant.authz.max_retries | first | default $tenant.authz.max_retries._default | quote }}
+{{- end }}
+{{- else if hasPrefix "staging" $.Values.werf.env }}
+{{- if (pluck $.Values.werf.env $tenant.authz.ident | first) }}
+    ##
+    ## {{ $tenant.name }}
+    ##
+    [authz.{{ pluck $.Values.werf.env $tenant.authz.ident | first | default $tenant.authz.ident._default | quote }}]
+    type = {{ pluck $.Values.werf.env $tenant.authz.type | first | default $tenant.authz.type._default | quote }}
+{{- if (pluck $.Values.werf.env $tenant.authz.trusted | first)}}
+    trusted = [{{ pluck $.Values.werf.env $tenant.authz.trusted | first | default $tenant.authz.trusted._default | quote }}]
+{{- end }}
+    uri = {{ pluck $.Values.werf.env $tenant.authz.uri | first | default $tenant.authz.uri._default | quote }}
+    algorithm = {{ pluck $.Values.werf.env $tenant.authz.algorithm | first | default $tenant.authz.algorithm._default | quote }}
+    key = "{{ printf "/app/%s" (pluck $.Values.werf.env $tenant.authz.key | first | default $tenant.authz.key._default) }}"
+    user_agent = {{ pluck $.Values.werf.env $tenant.authz.user_agent | first | default $tenant.authz.user_agent._default | quote }}
+    max_retries = {{ pluck $.Values.werf.env $tenant.authz.max_retries | first | default $tenant.authz.max_retries._default | quote }}
+{{- end }}
+{{- else if hasPrefix "testing" $.Values.werf.env }}
+{{- if (pluck $.Values.werf.env $tenant.authz.ident | first) }}
+    ##
+    ## {{ $tenant.name }}
+    ##
+    [authz.{{ pluck $.Values.werf.env $tenant.authz.ident | first | default $tenant.authz.ident._default | quote }}]
+    type = {{ pluck $.Values.werf.env $tenant.authz.type | first | default $tenant.authz.type._default | quote }}
+{{- if (pluck $.Values.werf.env $tenant.authz.trusted | first)}}
+    trusted = [{{ pluck $.Values.werf.env $tenant.authz.trusted | first | default $tenant.authz.trusted._default | quote }}]
+{{- end }}
+    uri = {{ pluck $.Values.werf.env $tenant.authz.uri | first | default $tenant.authz.uri._default | quote }}
+    algorithm = {{ pluck $.Values.werf.env $tenant.authz.algorithm | first | default $tenant.authz.algorithm._default | quote }}
+    key = "{{ printf "/app/%s" (pluck $.Values.werf.env $tenant.authz.key | first | default $tenant.authz.key._default) }}"
+    user_agent = {{ pluck $.Values.werf.env $tenant.authz.user_agent | first | default $tenant.authz.user_agent._default | quote }}
+    max_retries = {{ pluck $.Values.werf.env $tenant.authz.max_retries | first | default $tenant.authz.max_retries._default | quote }}
+{{- end }}
+{{- end }}
+
+{{- end }}
+
+    [telemetry]
+    id = {{ pluck .Values.werf.env (index .Values.app.telemetry.id .Values.global.org .Values.global.app) | first | default (index .Values.app.telemetry.id .Values.global.org .Values.global.app)._default }}
+    [kruonis]
+    id = {{ pluck .Values.werf.env (index .Values.app.kruonis.id .Values.global.org .Values.global.app) | first | default (index .Values.app.kruonis.id .Values.global.org .Values.global.app)._default }}
+
+    [metrics.http]
+    bind_address = "0.0.0.0:8080"
