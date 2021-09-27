@@ -1,4 +1,11 @@
 app:
+  hpa:
+    min_replicas:
+      _default: "2"
+    max_replicas:
+      _default: "4"
+    average_utilization:
+      _default: "80"
   replicas:
     ng:
       classroom:
@@ -31,10 +38,13 @@ app:
 postgres:
   resources:
     requests:
-      cpu: 100m
-      memory: 256Mi
+      cpu:
+        _default: 100m
+      memory:
+        _default: 256Mi
     limits:
-      memory: 1Gi
+      memory:
+        _default: 1Gi
   storage:
     size:
       _default: 50Gi

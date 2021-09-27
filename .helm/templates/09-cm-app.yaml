@@ -10,21 +10,22 @@ data:
 
     [mqtt]
     uri = {{ pluck .Values.werf.env (index .Values.app.mqtt.uri .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.uri .Values.global.org .Values.global.app)._default }}
-    clean_session = {{ pluck .Values.werf.env (index .Values.app.mqtt.clean_session .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.clean_session .Values.global.org .Values.global.app)._default }}
-    reconnect_interval = {{ pluck .Values.werf.env (index .Values.app.mqtt.reconnect_interval .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.reconnect_interval .Values.global.org .Values.global.app)._default }}
-    keep_alive = {{ pluck .Values.werf.env (index .Values.app.mqtt.keep_alive .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.keep_alive .Values.global.org .Values.global.app)._default }}
-    max_message_size = {{ pluck .Values.werf.env (index .Values.app.mqtt.max_message_size .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.max_message_size .Values.global.org .Values.global.app)._default }}
+    clean_session = {{ pluck .Values.werf.env .Values.app.mqtt.clean_session | first | default .Values.app.mqtt.clean_session._default }}
+    reconnect_interval = {{ pluck .Values.werf.env .Values.app.mqtt.reconnect_interval | first | default .Values.app.mqtt.reconnect_interval._default }}
+    keep_alive = {{ pluck .Values.werf.env .Values.app.mqtt.keep_alive | first | default .Values.app.mqtt.keep_alive._default }}
+    max_message_size = {{ pluck .Values.werf.env .Values.app.mqtt.max_message_size | first | default .Values.app.mqtt.max_message_size._default }}
 
     [sentry]
-    dsn = {{ pluck .Values.werf.env (index .Values.app.mqtt.max_message_size .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.max_message_size .Values.global.org .Values.global.app)._default }}
+    dsn = {{ pluck .Values.werf.env (index .Values.app.sentry.dsn .Values.global.org .Values.global.app) | first | default (index .Values.app.sentry.dsn .Values.global.org .Values.global.app)._default }}
     environment = {{ .Values.werf.env }}
 
     ##
     ## ULMS
     ##
     [id_token]
-    algorithm = {{ pluck .Values.werf.env (index .Values.app.id_token.algorithm .Values.global.org .Values.global.app) | first | default (index .Values.app.id_token.algorithm .Values.global.org .Values.global.app)._default }}
-    key = {{ pluck .Values.werf.env (index .Values.app.id_token.key .Values.global.org .Values.global.app) | first | default (index .Values.app.id_token.key .Values.global.org .Values.global.app)._default }}
+    algorithm = {{ pluck .Values.werf.env .Values.app.id_token.algorithm | first | default .Values.app.id_token.algorithm._default }}
+    key = {{ pluck .Values.werf.env .Values.app.id_token.key | first | default .Values.app.id_token.key._default }}
+
 
 {{- range $tenant := .Values.app.tenants }}
 
@@ -35,7 +36,7 @@ data:
     ##
     [authz.{{ pluck $.Values.werf.env $tenant.authz.ident | first | default $tenant.authz.ident._default | quote }}]
     type = {{ pluck $.Values.werf.env $tenant.authz.type | first | default $tenant.authz.type._default | quote }}
-{{- if (pluck $.Values.werf.env $tenant.authz.trusted | first)}}
+{{- if (pluck $.Values.werf.env $tenant.authz.trusted | first) }}
     trusted = [{{ pluck $.Values.werf.env $tenant.authz.trusted | first | default $tenant.authz.trusted._default | quote }}]
 {{- end }}
     uri = {{ pluck $.Values.werf.env $tenant.authz.uri | first | default $tenant.authz.uri._default | quote }}
@@ -51,7 +52,7 @@ data:
     ##
     [authz.{{ pluck $.Values.werf.env $tenant.authz.ident | first | default $tenant.authz.ident._default | quote }}]
     type = {{ pluck $.Values.werf.env $tenant.authz.type | first | default $tenant.authz.type._default | quote }}
-{{- if (pluck $.Values.werf.env $tenant.authz.trusted | first)}}
+{{- if (pluck $.Values.werf.env $tenant.authz.trusted | first) }}
     trusted = [{{ pluck $.Values.werf.env $tenant.authz.trusted | first | default $tenant.authz.trusted._default | quote }}]
 {{- end }}
     uri = {{ pluck $.Values.werf.env $tenant.authz.uri | first | default $tenant.authz.uri._default | quote }}
@@ -67,7 +68,7 @@ data:
     ##
     [authz.{{ pluck $.Values.werf.env $tenant.authz.ident | first | default $tenant.authz.ident._default | quote }}]
     type = {{ pluck $.Values.werf.env $tenant.authz.type | first | default $tenant.authz.type._default | quote }}
-{{- if (pluck $.Values.werf.env $tenant.authz.trusted | first)}}
+{{- if (pluck $.Values.werf.env $tenant.authz.trusted | first) }}
     trusted = [{{ pluck $.Values.werf.env $tenant.authz.trusted | first | default $tenant.authz.trusted._default | quote }}]
 {{- end }}
     uri = {{ pluck $.Values.werf.env $tenant.authz.uri | first | default $tenant.authz.uri._default | quote }}
