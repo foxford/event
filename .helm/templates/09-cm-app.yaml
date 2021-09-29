@@ -9,15 +9,15 @@ data:
     broker_id = {{ pluck .Values.werf.env (index .Values.app.broker_id .Values.global.org .Values.global.app) | first | default (index .Values.app.broker_id .Values.global.org .Values.global.app)._default | quote }}
 
     [mqtt]
-    uri = {{ pluck .Values.werf.env (index .Values.app.mqtt.uri .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.uri .Values.global.org .Values.global.app)._default }}
+    uri = {{ pluck .Values.werf.env (index .Values.app.mqtt.uri .Values.global.org .Values.global.app) | first | default (index .Values.app.mqtt.uri .Values.global.org .Values.global.app)._default | quote }}
     clean_session = {{ pluck .Values.werf.env .Values.app.mqtt.clean_session | first | default .Values.app.mqtt.clean_session._default }}
     reconnect_interval = {{ pluck .Values.werf.env .Values.app.mqtt.reconnect_interval | first | default .Values.app.mqtt.reconnect_interval._default }}
     keep_alive = {{ pluck .Values.werf.env .Values.app.mqtt.keep_alive | first | default .Values.app.mqtt.keep_alive._default }}
     max_message_size = {{ pluck .Values.werf.env .Values.app.mqtt.max_message_size | first | default .Values.app.mqtt.max_message_size._default }}
 
     [sentry]
-    dsn = {{ pluck .Values.werf.env (index .Values.app.sentry.dsn .Values.global.org .Values.global.app) | first | default (index .Values.app.sentry.dsn .Values.global.org .Values.global.app)._default }}
-    environment = {{ .Values.werf.env }}
+    dsn = {{ pluck .Values.werf.env (index .Values.app.sentry.dsn .Values.global.org .Values.global.app) | first | default (index .Values.app.sentry.dsn .Values.global.org .Values.global.app)._default | quote }}
+    environment = {{ .Values.werf.env | quote }}
 
     ##
     ## ULMS
@@ -82,9 +82,9 @@ data:
 {{- end }}
 
     [telemetry]
-    id = {{ pluck .Values.werf.env (index .Values.app.telemetry.id .Values.global.org .Values.global.app) | first | default (index .Values.app.telemetry.id .Values.global.org .Values.global.app)._default }}
+    id = {{ pluck .Values.werf.env (index .Values.app.telemetry.id .Values.global.org .Values.global.app) | first | default (index .Values.app.telemetry.id .Values.global.org .Values.global.app)._default | quote }}
     [kruonis]
-    id = {{ pluck .Values.werf.env (index .Values.app.kruonis.id .Values.global.org .Values.global.app) | first | default (index .Values.app.kruonis.id .Values.global.org .Values.global.app)._default }}
+    id = {{ pluck .Values.werf.env (index .Values.app.kruonis.id .Values.global.org .Values.global.app) | first | default (index .Values.app.kruonis.id .Values.global.org .Values.global.app)._default | quote }}
 
     [metrics.http]
     bind_address = "0.0.0.0:{{ pluck .Values.werf.env .Values.app.port.number | first | default .Values.app.port.number._default }}"
