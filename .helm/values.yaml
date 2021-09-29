@@ -1,4 +1,9 @@
 app:
+  port:
+    number:
+      _default: "8080"
+    name:
+      _default: metrics
   hpa:
     min_replicas:
       _default: "2"
@@ -6,10 +11,6 @@ app:
       _default: "4"
     average_utilization:
       _default: "80"
-  replicas:
-    ng:
-      classroom:
-        _default: "2"
   resources:
     cpu:
       ng:

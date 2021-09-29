@@ -87,4 +87,4 @@ data:
     id = {{ pluck .Values.werf.env (index .Values.app.kruonis.id .Values.global.org .Values.global.app) | first | default (index .Values.app.kruonis.id .Values.global.org .Values.global.app)._default }}
 
     [metrics.http]
-    bind_address = "0.0.0.0:8080"
+    bind_address = "0.0.0.0:{{ pluck .Values.werf.env .Values.app.port.number | first | default .Values.app.port.number._default }}"

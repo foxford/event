@@ -24,15 +24,15 @@
 - name: DATABASE_POOL_MAX_LIFETIME
   value: {{ pluck .Values.werf.env (index .Values.app.env.database.pool_max_lifetime .Values.global.org .Values.global.app) | first | default (index .Values.app.env.database.pool_max_lifetime .Values.global.org .Values.global.app)._default }}
 - name: AWS_ACCESS_KEY_ID
-  value:
+  value: {{ pluck .Values.werf.env .Values.app.aws.access_key_id | first | default .Values.app.aws.access_key_id._default }}
 - name: AWS_SECRET_ACCESS_KEY
-  value:
+  value: {{ pluck .Values.werf.env .Values.app.aws.secret_key | first | default .Values.app.aws.secret_key._default }}
 - name: AWS_ENDPOINT
-  value:
+  value: {{ pluck .Values.werf.env .Values.app.aws.endpoint | first | default .Values.app.aws.endpoint._default }}
 - name: AWS_REGION
-  value:
+  value: {{ pluck .Values.werf.env .Values.app.aws.region | first | default .Values.app.aws.region._default }}
 - name: DATABASE_URL
-  value:
+  value: postgres://{{ pluck .Values.werf.env (index .Values.app.database.user .Values.global.org .Values.global.app) | first | default (index .Values.app.database.user .Values.global.org .Values.global.app)._default }}:{{ pluck .Values.werf.env (index .Values.app.database.password .Values.global.org .Values.global.app) | first | default (index .Values.app.database.password .Values.global.org .Values.global.app)._default }}@{{ pluck .Values.werf.env (index .Values.app.database.host .Values.global.org .Values.global.app) | first | default (index .Values.app.database.host .Values.global.org .Values.global.app)._default }}:{{ pluck .Values.werf.env (index .Values.app.database.port .Values.global.org .Values.global.app) | first | default (index .Values.app.database.port .Values.global.org .Values.global.app)._default }}/{{ pluck .Values.werf.env (index .Values.app.database.user .Values.global.org .Values.global.app) | first | default (index .Values.app.database.user .Values.global.org .Values.global.app)._default }}
 - name: CACHE_URL
-  value:
+  value: redis://{{ pluck .Values.werf.env (index .Values.app.redis.host .Values.global.org .Values.global.app) | first | default (index .Values.app.redis.host .Values.global.org .Values.global.app)._default }}:{{ pluck .Values.werf.env (index .Values.app.redis.port .Values.global.org .Values.global.app) | first | default (index .Values.app.redis.port .Values.global.org .Values.global.app)._default }}
 {{- end }}

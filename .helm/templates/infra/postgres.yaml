@@ -28,7 +28,7 @@ spec:
         - max_connections=200
         env:
         - name: POSTGRES_DB
-          value: {{ pluck .Values.werf.env (index .Values.app.database.name .Values.global.org .Values.global.app) | first | default (index .Values.app.database.name .Values.global.org .Values.global.app)._default | quote }}
+          value: {{ pluck .Values.werf.env (index .Values.app.database.db .Values.global.org .Values.global.app) | first | default (index .Values.app.database.db .Values.global.org .Values.global.app)._default | quote }}
         - name: POSTGRES_USER
           value: {{ pluck .Values.werf.env (index .Values.app.database.user .Values.global.org .Values.global.app) | first | default (index .Values.app.database.user .Values.global.org .Values.global.app)._default | quote }}
         - name: POSTGRES_PASSWORD

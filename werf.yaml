@@ -4,8 +4,11 @@ configVersion: 1
 image: event
 dockerfile: docker/Dockerfile
 ---
+image: migrate
+dockerfile: docker/migration.dockerfile
+---
 image: postgres
-from: postgres:9.6
+from: postgres:12.6
 ---
 image: alpine
 from: alpine:3.6
