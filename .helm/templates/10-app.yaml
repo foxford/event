@@ -8,13 +8,6 @@ metadata:
     "werf.io/replicas-on-creation": {{ pluck .Values.werf.env .Values.app.hpa.min_replicas | first | default .Values.app.hpa.min_replicas._default }}
 {{- end }}
 spec:
-  updateStrategy:
-    type: RollingUpdate
-{{- if eq .Values.werf.env "production" }}
-    rollingUpdate:
-      maxUnavailable: 0
-      maxSurge: 50%
-{{- end }}
   serviceName: {{ .Chart.Name }}-headless
   replicas: {{ pluck .Values.werf.env .Values.app.hpa.min_replicas | first | default .Values.app.hpa.min_replicas._default }}
   selector:
