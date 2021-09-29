@@ -8,8 +8,6 @@ metadata:
     service: {{ .Chart.Name }}-postgres
 spec:
   replicas: 1
-  strategy:
-    type: Recreate
   selector:
     matchLabels:
       service: {{ .Chart.Name }}-postgres
