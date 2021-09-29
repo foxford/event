@@ -23,8 +23,8 @@ data:
     ## ULMS
     ##
     [id_token]
-    algorithm = {{ pluck .Values.werf.env .Values.app.id_token.algorithm | first | default .Values.app.id_token.algorithm._default }}
-    key = {{ pluck .Values.werf.env .Values.app.id_token.key | first | default .Values.app.id_token.key._default }}
+    algorithm = {{ pluck .Values.werf.env .Values.app.id_token.algorithm | first | default .Values.app.id_token.algorithm._default | quote }}
+    key = {{ pluck .Values.werf.env .Values.app.id_token.key | first | default .Values.app.id_token.key._default | quote }}
 
 
 {{- range $tenant := .Values.app.tenants }}
