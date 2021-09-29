@@ -8,7 +8,7 @@ metadata:
     "werf.io/replicas-on-creation": {{ pluck .Values.werf.env .Values.app.hpa.min_replicas | first | default .Values.app.hpa.min_replicas._default }}
 {{- end }}
 spec:
-  strategy:
+  updateStrategy:
     type: RollingUpdate
 {{- if eq .Values.werf.env "production" }}
     rollingUpdate:
