@@ -44,13 +44,13 @@ spec:
             memory: {{ pluck .Values.werf.env (index .Values.app.resources.memory .Values.global.org .Values.global.app) | first | default (index .Values.app.resources.memory .Values.global.org .Values.global.app)._default }}
         env:
 {{- include "envs" . | indent 8 }}
+        ports:
+        - containerPort: {{ pluck .Values.werf.env .Values.app.port.number | first | default .Values.app.port.number._default }}
+          name: {{ pluck .Values.werf.env .Values.app.port.name | first | default .Values.app.port.name._default }}
         volumeMounts:
 {{- include "volumeMounts" . | indent 8 }}
       volumes:
 {{- include "volumes" . | indent 6 }}
-        ports:
-        - containerPort: {{ pluck .Values.werf.env .Values.app.port.number | first | default .Values.app.port.number._default }}
-          name: {{ pluck .Values.werf.env .Values.app.port.name | first | default .Values.app.port.name._default }}
 ---
 apiVersion: v1
 kind: Service
