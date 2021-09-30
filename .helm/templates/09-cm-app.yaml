@@ -43,7 +43,7 @@ data:
     algorithm = {{ pluck $.Values.werf.env $tenant.authz.algorithm | first | default $tenant.authz.algorithm._default | quote }}
     key = "{{ printf "/app/%s" (pluck $.Values.werf.env $tenant.authz.key | first | default $tenant.authz.key._default) }}"
     user_agent = {{ pluck $.Values.werf.env $tenant.authz.user_agent | first | default $tenant.authz.user_agent._default | quote }}
-    max_retries = {{ pluck $.Values.werf.env $tenant.authz.max_retries | first | default $tenant.authz.max_retries._default | quote }}
+    max_retries = {{ pluck $.Values.werf.env $tenant.authz.max_retries | first | default $tenant.authz.max_retries._default }}
 {{- end }}
 {{- else if hasPrefix "staging" $.Values.werf.env }}
 {{- if (pluck $.Values.werf.env $tenant.authz.ident | first) }}
@@ -59,7 +59,7 @@ data:
     algorithm = {{ pluck $.Values.werf.env $tenant.authz.algorithm | first | default $tenant.authz.algorithm._default | quote }}
     key = "{{ printf "/app/%s" (pluck $.Values.werf.env $tenant.authz.key | first | default $tenant.authz.key._default) }}"
     user_agent = {{ pluck $.Values.werf.env $tenant.authz.user_agent | first | default $tenant.authz.user_agent._default | quote }}
-    max_retries = {{ pluck $.Values.werf.env $tenant.authz.max_retries | first | default $tenant.authz.max_retries._default | quote }}
+    max_retries = {{ pluck $.Values.werf.env $tenant.authz.max_retries | first | default $tenant.authz.max_retries._default }}
 {{- end }}
 {{- else if hasPrefix "testing" $.Values.werf.env }}
 {{- if (pluck $.Values.werf.env $tenant.authz.ident | first) }}
@@ -75,7 +75,7 @@ data:
     algorithm = {{ pluck $.Values.werf.env $tenant.authz.algorithm | first | default $tenant.authz.algorithm._default | quote }}
     key = "{{ printf "/app/%s" (pluck $.Values.werf.env $tenant.authz.key | first | default $tenant.authz.key._default) }}"
     user_agent = {{ pluck $.Values.werf.env $tenant.authz.user_agent | first | default $tenant.authz.user_agent._default | quote }}
-    max_retries = {{ pluck $.Values.werf.env $tenant.authz.max_retries | first | default $tenant.authz.max_retries._default | quote }}
+    max_retries = {{ pluck $.Values.werf.env $tenant.authz.max_retries | first | default $tenant.authz.max_retries._default }}
 {{- end }}
 {{- end }}
 
