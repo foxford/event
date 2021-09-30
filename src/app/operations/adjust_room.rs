@@ -147,22 +147,14 @@ pub(crate) async fn call(
     )
     .await?;
 
-    clone_events(
-        &mut conn,
-        metrics,
-        &original_room,
-        &segment_gaps,
-        -rtc_offset * NANOSECONDS_IN_MILLISECOND,
-    )
-    .await?;
+    clone_events(&mut conn, metrics, &original_room, &segment_gaps, 0).await?;
 
     ///////////////////////////////////////////////////////////////////////////
 
     // Fetch shifted cut events and transform them to gaps.
     let query = EventListQuery::new()
         .room_id(original_room.id())
-        .kind("stream".to_string())
-        .last_occurred_at(offset * NANOSECONDS_IN_MILLISECOND); // Cut events only after the actual stream has started, not considering preroll
+        .kind("stream".to_string());
 
     let cut_events = metrics
         .measure_query(QueryKey::EventListQuery, query.execute(&mut conn))
@@ -286,11 +278,7 @@ async fn clone_events(
         starts.push(*start);
         stops.push(*stop);
     }
-    info!(crate::LOG, "clone_events query attrs: starts = {:?}, stops = {:?}, room_id = {:?}, offset = {:?}, source_room_id = {:?}", starts.as_slice(),
-    stops.as_slice(),
-    room.id(),
-    sqlx::types::BigDecimal::from(offset),
-    source_room_id);
+
     let query = sqlx::query!(
         "
         WITH
@@ -316,7 +304,13 @@ async fn clone_events(
             label,
             data,
             -- Monotonization
-            occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at ORDER BY created_at) - 1,
+            -- cutstarts and cutstops are left as is to avoid skew
+            (
+                CASE kind
+                WHEN 'stream' THEN occurred_at
+                ELSE occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at, kind = 'stream' ORDER BY created_at) - 1
+                END
+            ),
             created_by,
             created_at
         FROM (
@@ -327,32 +321,22 @@ async fn clone_events(
                 set,
                 label,
                 data,
-                CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)
-                WHEN TRUE THEN (SELECT stop FROM gaps WHERE start = 0)
-                ELSE occurred_at - (
-                    SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
-                    FROM gaps
-                    WHERE start < occurred_at
-                    AND   start > 0
-                )
-                END + $4 AS occurred_at,
+                (
+                    CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)
+                    WHEN TRUE THEN 0
+                    ELSE occurred_at - (
+                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)
+                        FROM gaps
+                        WHERE start < occurred_at
+                        AND   start >= 0
+                    )
+                    END
+                ) + $4 AS occurred_at,
                 created_by,
                 created_at
             FROM event
             WHERE room_id = $5
             AND   deleted_at IS NULL
-            -- Skip stream events if they land into the gaps
-            AND (
-                CASE kind = 'stream'
-                WHEN TRUE THEN (
-                    CASE (SELECT COUNT(*) FROM gaps WHERE start > occurred_at AND stop < occurred_at)
-                    WHEN 0 THEN FALSE
-                    ELSE TRUE
-                    END
-                )
-                ELSE TRUE
-                END
-            )
         ) AS sub
         ",
         starts.as_slice(),
@@ -452,107 +436,60 @@ pub(crate) fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>
 mod tests {
     use std::ops::Bound;
 
+    use super::call;
+
     use chrono::{DateTime, Duration, NaiveDateTime, Utc};
+    use humantime::parse_duration as pd;
     use prometheus::Registry;
     use serde_json::{json, Value as JsonValue};
     use sqlx::postgres::PgConnection;
     use svc_agent::{AccountId, AgentId};
 
+    use crate::db::adjustment::Segments;
     use crate::db::event::{
         InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,
     };
     use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room, Time as RoomTime};
     use crate::db::room_time::RoomTimeBound;
+    use crate::metrics::Metrics;
     use crate::test_helpers::db::TestDb;
-    use crate::{db::adjustment::Segments, metrics::Metrics};
 
     const AUDIENCE: &str = "dev.svc.example.org";
 
-    #[test]
-    fn adjust_room() {
-        async_std::task::block_on(async {
-            let metrics = Metrics::new(&Registry::new()).unwrap();
-            let db = TestDb::new().await;
-            let mut conn = db.get_conn().await;
-
-            // Create room.
-            let opened_at = DateTime::from_utc(NaiveDateTime::from_timestamp(1582002673, 0), Utc);
-            let closed_at = opened_at + Duration::seconds(50);
-            let time = RoomTime::from((Bound::Included(opened_at), Bound::Excluded(closed_at)));
-
-            let room = RoomInsertQuery::new(AUDIENCE, time)
-                .execute(&mut conn)
-                .await
-                .expect("Failed to insert room");
-
-            create_events(&mut conn, &room).await;
-
-            drop(conn);
-
-            // Video segments.
-            let segments = Segments::from(vec![
-                (Bound::Included(0), Bound::Excluded(6500)),
-                (Bound::Included(8500), Bound::Excluded(11500)),
-            ]);
-            let duration = Duration::milliseconds(6500 + 11500 - 8500);
-            // RTC started 10 seconds after the room opened and preroll is 3 seconds long.
-            let started_at = opened_at + Duration::seconds(10);
-
-            // Call room adjustment.
-            let (original_room, modified_room, modified_segments) = super::call(
-                &db.connection_pool(),
-                &metrics,
-                &room,
-                started_at,
-                &segments,
-                3000 as i64,
-            )
-            .await
-            .expect("Room adjustment failed");
-
-            // Assert original room.
-            assert_eq!(original_room.source_room_id(), Some(room.id()));
-            assert_eq!(original_room.audience(), room.audience());
-            assert_eq!(original_room.time().map(|t| *t.start()), Ok(started_at));
-            assert_eq!(
-                original_room.time().map(|t| t.end().to_owned()),
-                Ok(RoomTimeBound::Excluded(started_at + duration))
-            );
-            assert_eq!(original_room.tags(), room.tags());
-
-            // Assert original room events.
-            let mut conn = db.get_conn().await;
-            assert_events_original_room(&mut conn, &original_room).await;
-
-            // Assert modified room.
-            assert_eq!(modified_room.source_room_id(), Some(original_room.id()));
-            assert_eq!(modified_room.audience(), original_room.audience());
-            assert_eq!(modified_room.time(), original_room.time());
-            assert_eq!(modified_room.tags(), original_room.tags());
-
-            assert_events_modified_room(&mut conn, &modified_room).await;
-
-            // Assert modified segments.
-            let segments: Vec<(Bound<i64>, Bound<i64>)> = modified_segments.into();
-
-            assert_eq!(
-                segments,
-                vec![
-                    (Bound::Included(0), Bound::Excluded(6000)),
-                    (Bound::Included(8000), Bound::Excluded(9500)),
-                ]
-            )
-        });
+    enum TestCtxState {
+        Initialized,
+        SegmentsSet {
+            rtc_started_at: DateTime<Utc>,
+            segments: Segments,
+            duration: Duration,
+            offset: Duration,
+        },
+        Ran {
+            rtc_started_at: DateTime<Utc>,
+            #[allow(dead_code)]
+            segments: Segments,
+            duration: Duration,
+            #[allow(dead_code)]
+            offset: Duration,
+            original_room: Room,
+            modified_room: Room,
+            modified_segments: Segments,
+        },
     }
 
-    #[test]
-    fn adjust_room_unbounbded() {
-        async_std::task::block_on(async {
-            let metrics = Metrics::new(&Registry::new()).unwrap();
-            let db = TestDb::new().await;
-            let mut conn = db.get_conn().await;
+    struct TestCtx {
+        db: TestDb,
+        room: Room,
+        opened_at: DateTime<Utc>,
+        state: TestCtxState,
+        metrics: Metrics,
+    }
 
-            // Create room.
+    impl TestCtx {
+        async fn new(events: &[(i64, &str, JsonValue)]) -> Self {
+            let db = TestDb::new().await;
+            let metrics = Metrics::new(&Registry::new()).unwrap();
+            let mut conn = db.get_conn().await;
             let opened_at = DateTime::from_utc(NaiveDateTime::from_timestamp(1582002673, 0), Utc);
             let time = RoomTime::from((Bound::Included(opened_at), Bound::Unbounded));
 
@@ -561,31 +498,133 @@ mod tests {
                 .await
                 .expect("Failed to insert room");
 
-            create_events(&mut conn, &room).await;
+            for (occurred_at, kind, data) in events {
+                create_event(&mut conn, &room, *occurred_at, kind, data.to_owned()).await;
+            }
 
-            drop(conn);
+            Self {
+                db,
+                room,
+                opened_at,
+                metrics,
+                state: TestCtxState::Initialized,
+            }
+        }
 
-            // Video segments.
-            let segments = Segments::from(vec![
-                (Bound::Included(0), Bound::Excluded(6500)),
-                (Bound::Included(8500), Bound::Excluded(11500)),
-            ]);
-            let duration = Duration::milliseconds(6500 + 11500 - 8500);
+        fn set_segments(
+            &mut self,
+            segments: Vec<(i64, i64)>,
+            rtc_started_at: DateTime<Utc>,
+            offset: &str,
+        ) {
+            assert!(matches!(self.state, TestCtxState::Initialized));
 
-            // RTC started 10 seconds after the room opened and preroll is 3 seconds long.
-            let started_at = opened_at + Duration::seconds(10);
+            let duration = segments.iter().fold(0, |acc, (a, b)| acc + b - a);
+            let duration = Duration::milliseconds(duration);
 
-            // Call room adjustment.
-            let (original_room, modified_room, modified_segments) = super::call(
-                &db.connection_pool(),
-                &metrics,
-                &room,
-                started_at,
-                &segments,
-                3000 as i64,
+            let segments = segments
+                .into_iter()
+                .map(|(a, b)| (Bound::Included(a), Bound::Excluded(b)))
+                .collect::<Vec<_>>();
+
+            let offset = Duration::from_std(pd(offset).expect("Failed to parse duration")).unwrap();
+
+            self.state = TestCtxState::SegmentsSet {
+                duration,
+                rtc_started_at,
+                offset,
+                segments: segments.into(),
+            }
+        }
+
+        fn set_ran(
+            &mut self,
+            original_room: Room,
+            modified_room: Room,
+            modified_segments: Segments,
+        ) {
+            match &mut self.state {
+                TestCtxState::SegmentsSet {
+                    duration,
+                    segments,
+                    rtc_started_at,
+                    offset,
+                } => {
+                    let new_segments = std::mem::replace(segments, vec![].into());
+                    self.state = TestCtxState::Ran {
+                        duration: *duration,
+                        segments: new_segments,
+                        rtc_started_at: *rtc_started_at,
+                        offset: *offset,
+                        original_room,
+                        modified_room,
+                        modified_segments,
+                    }
+                }
+                _ => panic!("Wrong state"),
+            }
+        }
+
+        fn modified_room(&self) -> &Room {
+            match &self.state {
+                TestCtxState::Ran { modified_room, .. } => modified_room,
+                _ => panic!("Wrong state"),
+            }
+        }
+
+        fn modified_segments(&self) -> &Segments {
+            match &self.state {
+                TestCtxState::Ran {
+                    modified_segments, ..
+                } => modified_segments,
+                _ => panic!("Wrong state"),
+            }
+        }
+
+        async fn run(&mut self) {
+            let (segments, rtc_started_at, offset) = match &self.state {
+                TestCtxState::SegmentsSet {
+                    segments,
+                    rtc_started_at,
+                    offset,
+                    ..
+                } => (segments, *rtc_started_at, *offset),
+                _ => panic!("Wrong state"),
+            };
+
+            let (original_room, modified_room, modified_segments) = call(
+                &self.db.connection_pool(),
+                &self.metrics,
+                &self.room,
+                rtc_started_at,
+                segments,
+                offset.num_milliseconds(),
             )
             .await
             .expect("Room adjustment failed");
+
+            eprintln!(
+                "Og room = {:?}, mod room = {:?}",
+                original_room.id(),
+                modified_room.id()
+            );
+            self.set_ran(original_room, modified_room, modified_segments);
+
+            self.room_asserts();
+        }
+
+        fn room_asserts(&self) {
+            let (original_room, modified_room, started_at, duration) = match &self.state {
+                TestCtxState::Ran {
+                    original_room,
+                    modified_room,
+                    rtc_started_at,
+                    duration,
+                    ..
+                } => (original_room, modified_room, *rtc_started_at, *duration),
+                _ => panic!("Wrong state"),
+            };
+            let room = &self.room;
 
             // Assert original room.
             assert_eq!(original_room.source_room_id(), Some(room.id()));
@@ -597,322 +636,542 @@ mod tests {
             );
             assert_eq!(original_room.tags(), room.tags());
 
-            // Assert original room events.
-            let mut conn = db.get_conn().await;
-            assert_events_original_room(&mut conn, &original_room).await;
-
             // Assert modified room.
             assert_eq!(modified_room.source_room_id(), Some(original_room.id()));
             assert_eq!(modified_room.audience(), original_room.audience());
             assert_eq!(modified_room.time(), original_room.time());
             assert_eq!(modified_room.tags(), original_room.tags());
+        }
 
-            assert_events_modified_room(&mut conn, &modified_room).await;
+        async fn events_asserts(
+            &self,
+            asserts: &[(i64, &str, JsonValue)],
+            segments_assert: &[(i64, i64)],
+        ) {
+            let mut conn = self.db.get_conn().await;
+            let events = EventListQuery::new()
+                .room_id(self.modified_room().id())
+                .execute(&mut conn)
+                .await
+                .expect("Failed to fetch original room events");
+
+            assert_eq!(events.len(), asserts.len());
+
+            events
+                .iter()
+                .zip(asserts)
+                .for_each(|(event, (occurred_at, kind, data))| {
+                    assert_event(event, *occurred_at, kind, data);
+                });
 
             // Assert modified segments.
-            let segments: Vec<(Bound<i64>, Bound<i64>)> = modified_segments.into();
+            let segments: Vec<(Bound<i64>, Bound<i64>)> =
+                self.modified_segments().to_owned().into();
 
-            assert_eq!(
-                segments,
-                vec![
-                    (Bound::Included(0), Bound::Excluded(6000)),
-                    (Bound::Included(8000), Bound::Excluded(9500)),
-                ]
+            let segments_assert = segments_assert
+                .into_iter()
+                .map(|(a, b)| (Bound::Included(*a), Bound::Excluded(*b)))
+                .collect::<Vec<_>>();
+
+            assert_eq!(segments.as_slice(), segments_assert)
+        }
+    }
+
+    // single stream started as soon as room opened, no preroll offset
+    // all events must be left as is
+    #[test]
+    fn adjust_room_test_1() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "message", json!({"message": "m1"})),
+                (12_000_000_000, "message", json!({"message": "m2"})),
+            ])
+            .await;
+
+            // RTC started when the room opened and preroll is 0 seconds long.
+            ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (1_000_000_000, "message", json!({"message": "m1"})),
+                    (12_000_000_000, "message", json!({"message": "m2"})),
+                ],
+                &[(0, 20000)],
             )
+            .await;
         });
     }
 
-    async fn assert_events_original_room(mut conn: &mut PgConnection, original_room: &Room) {
-        let events = EventListQuery::new()
-            .room_id(original_room.id())
-            .execute(&mut conn)
-            .await
-            .expect("Failed to fetch original room events");
+    // single stream started as soon as room opened, 3s preroll offset
+    // all events must be moved 3s to the right
+    #[test]
+    fn adjust_room_test_2() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "message", json!({"message": "m1"})),
+                (12_000_000_000, "message", json!({"message": "m2"})),
+            ])
+            .await;
 
-        assert_eq!(events.len(), 12);
+            // Video segments.
+            ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "3 seconds");
 
-        assert_event(
-            &events[0],
-            // Bump to the first segment beginning because it's before the first segment.
-            // 3e9 (offset)
-            3_000_000_000,
-            "message",
-            &json!({"message": "m1"}),
-        );
-
-        assert_event(
-            &events[1],
-            // 12e9 - 10e9 (rtc offset) + 3e9 (offset)
-            5_000_000_000,
-            "message",
-            &json!({"message": "m2"}),
-        );
-
-        assert_event(
-            &events[2],
-            // 13e9 - 10e9 (rtc offset) + 3e9 (offset)
-            6_000_000_000,
-            "stream",
-            &json!({"cut": "start"}),
-        );
-
-        assert_event(
-            &events[3],
-            // 14e9 - 10e9 (rtc offset) + 3e9 (offset)
-            7_000_000_000,
-            "message",
-            &json!({"message": "m4"}),
-        );
-
-        assert_event(
-            &events[4],
-            // 15e9 - 10e9 (rtc offset) + 3e9 (offset)
-            8_000_000_000,
-            "stream",
-            &json!({"cut": "stop"}),
-        );
-
-        assert_event(
-            &events[5],
-            // 16e9 - 10e9 (rtc offset) + 3e9 (offset)
-            9_000_000_000,
-            "message",
-            &json!({"message": "m6"}),
-        );
-
-        assert_event(
-            &events[6],
-            // 17e9 - (17e9 - 16.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset)
-            9_500_000_000,
-            "message",
-            &json!({"message": "m7"}),
-        );
-
-        assert_event(
-            &events[7],
-            // 18e9 - (18e9 - 16.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset) + 1 (monotonize)
-            9_500_000_001,
-            "stream",
-            &json!({"cut": "start"}),
-        );
-
-        assert_event(
-            &events[8],
-            // 19e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
-            10_000_000_000,
-            "message",
-            &json!({"message": "m9"}),
-        );
-
-        assert_event(
-            &events[9],
-            // 20e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
-            11_000_000_000,
-            "stream",
-            &json!({"cut": "stop"}),
-        );
-
-        assert_event(
-            &events[10],
-            // 21e9 - 2e9 (gap) - 10e9 (rtc offset) + 3e9 (offset)
-            12_000_000_000,
-            "message",
-            &json!({"message": "m11"}),
-        );
-
-        assert_event(
-            &events[11],
-            // 22e9 - 2e9 (gap) - (22e9 - 21.5e9) (gap part) - 10e9 (rtc offset) + 3e9 (offset)
-            12_500_000_000,
-            "message",
-            &json!({"message": "m12"}),
-        );
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (4_000_000_000, "message", json!({"message": "m1"})),
+                    (15_000_000_000, "message", json!({"message": "m2"})),
+                ],
+                &[(0, 20000)],
+            )
+            .await;
+        });
     }
 
-    async fn assert_events_modified_room(mut conn: &mut PgConnection, modified_room: &Room) {
-        // Assert modified room events.
-        let events = EventListQuery::new()
-            .room_id(modified_room.id())
-            .execute(&mut conn)
-            .await
-            .expect("Failed to fetch modified room events");
+    // single stream started as soon as room opened, one message is after the stream end, no preroll offset
+    // event after the stream end must be moved to stream end
+    #[test]
+    fn adjust_room_test_3() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "message", json!({"message": "m1"})),
+                (21_000_000_000, "message", json!({"message": "m2"})),
+            ])
+            .await;
 
-        assert_eq!(events.len(), 8);
+            // Video segments.
+            ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
 
-        assert_event(
-            &events[0],
-            // No change
-            3_000_000_000,
-            "message",
-            &json!({"message": "m1"}),
-        );
-
-        assert_event(
-            &events[1],
-            // No change
-            5_000_000_000,
-            "message",
-            &json!({"message": "m2"}),
-        );
-
-        assert_event(
-            &events[2],
-            // 7e9 - (17e9 - 16e9) (cut 1 part) + 1 (monotonize)
-            6_000_000_001,
-            "message",
-            &json!({"message": "m4"}),
-        );
-
-        assert_event(
-            &events[3],
-            // 9e9 - 2e9 (cut 1)
-            7_000_000_000,
-            "message",
-            &json!({"message": "m6"}),
-        );
-
-        assert_event(
-            &events[4],
-            // 9.5e9 - 2e9 (cut 1)
-            7_500_000_000,
-            "message",
-            &json!({"message": "m7"}),
-        );
-
-        assert_event(
-            &events[5],
-            // 10e9 - 2e9 (cut 1) - (20e9 - 19.5e9) (cut 2 part) + 2 (monotonize)
-            7_500_000_002,
-            "message",
-            &json!({"message": "m9"}),
-        );
-
-        assert_event(
-            &events[6],
-            // 12e9 - 2e9 (cut 1) - 1.5e9 (cut 2) + 1 (monotonize)
-            8_500_000_001,
-            "message",
-            &json!({"message": "m11"}),
-        );
-
-        assert_event(
-            &events[7],
-            // 12.5e9 - 2e9 (cut 1) - 1.5e9 (cut 2) + 1 (monotonize)
-            9_000_000_001,
-            "message",
-            &json!({"message": "m12"}),
-        );
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (1_000_000_000, "message", json!({"message": "m1"})),
+                    (20_000_000_000, "message", json!({"message": "m2"})),
+                ],
+                &[(0, 20000)],
+            )
+            .await;
+        });
     }
 
-    async fn create_events(mut conn: &mut PgConnection, room: &Room) {
-        // Create events.
-        create_event(
-            &mut conn,
-            &room,
-            1_000_000_000,
-            "message",
-            json!({"message": "m1"}),
-        )
-        .await;
+    // Single stream started 10 seconds after room opened, no preroll offset
+    // Both events must be moved 10s to the left
+    #[test]
+    fn adjust_room_test_4() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "message", json!({"message": "m1"})),
+                (15_000_000_000, "message", json!({"message": "m2"})),
+            ])
+            .await;
 
-        create_event(
-            &mut conn,
-            &room,
-            12_000_000_000,
-            "message",
-            json!({"message": "m2"}),
-        )
-        .await;
+            // Video segments.
+            ctx.set_segments(
+                vec![(0, 20000)],
+                ctx.opened_at + Duration::seconds(10),
+                "0 seconds",
+            );
 
-        create_event(
-            &mut conn,
-            &room,
-            13_000_000_000,
-            "stream",
-            json!({"cut": "start"}),
-        )
-        .await;
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (0, "message", json!({"message": "m1"})),
+                    (5_000_000_000, "message", json!({"message": "m2"})),
+                ],
+                &[(0, 20000)],
+            )
+            .await;
+        });
+    }
 
-        create_event(
-            &mut conn,
-            &room,
-            14_000_000_000,
-            "message",
-            json!({"message": "m4"}),
-        )
-        .await;
+    // Single stream started 10 seconds after room opened, 3s preroll offset
+    // Both events must be moved 10s to the left and 3s to the right
+    #[test]
+    fn adjust_room_test_5() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "message", json!({"message": "m1"})),
+                (15_000_000_000, "message", json!({"message": "m2"})),
+                (35_000_000_000, "message", json!({"message": "m3"})),
+            ])
+            .await;
 
-        create_event(
-            &mut conn,
-            &room,
-            15_000_000_000,
-            "stream",
-            json!({"cut": "stop"}),
-        )
-        .await;
+            // Video segments.
+            ctx.set_segments(
+                vec![(0, 20000)],
+                ctx.opened_at + Duration::seconds(10),
+                "3 seconds",
+            );
 
-        create_event(
-            &mut conn,
-            &room,
-            16_000_000_000,
-            "message",
-            json!({"message": "m6"}),
-        )
-        .await;
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (3_000_000_000, "message", json!({"message": "m1"})),
+                    (8_000_000_000, "message", json!({"message": "m2"})),
+                    (23_000_000_000, "message", json!({"message": "m3"})),
+                ],
+                &[(0, 20000)],
+            )
+            .await;
+        });
+    }
 
-        create_event(
-            &mut conn,
-            &room,
-            17_000_000_000,
-            "message",
-            json!({"message": "m7"}),
-        )
-        .await;
+    // Two stream started as soon as room opened, no preroll offset
+    // 1st stream messages are left as is
+    // 2nd stream messages are moved with gap
+    // gap messages are moved to the start of second stream
+    #[test]
+    fn adjust_room_test_6() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "message", json!({"message": "m1"})),
+                (15_000_000_000, "message", json!({"message": "m2"})),
+                (22_000_000_000, "message", json!({"message": "m3"})),
+                (23_000_000_000, "message", json!({"message": "m4"})),
+                (28_000_000_000, "message", json!({"message": "m5"})),
+                (36_000_000_000, "message", json!({"message": "m6"})),
+            ])
+            .await;
 
-        create_event(
-            &mut conn,
-            &room,
-            18_000_000_000,
-            "stream",
-            json!({"cut": "start"}),
-        )
-        .await;
+            // Video segments.
+            ctx.set_segments(vec![(0, 20000), (26000, 34000)], ctx.opened_at, "0 seconds");
 
-        create_event(
-            &mut conn,
-            &room,
-            19_000_000_000,
-            "message",
-            json!({"message": "m9"}),
-        )
-        .await;
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (1_000_000_000, "message", json!({"message": "m1"})),
+                    (15_000_000_000, "message", json!({"message": "m2"})),
+                    (20_000_000_000, "message", json!({"message": "m3"})),
+                    (20_000_000_001, "message", json!({"message": "m4"})),
+                    (22_000_000_000, "message", json!({"message": "m5"})),
+                    (28_000_000_000, "message", json!({"message": "m6"})),
+                ],
+                &[(0, 28000)],
+            )
+            .await;
+        });
+    }
 
-        create_event(
-            &mut conn,
-            &room,
-            20_000_000_000,
-            "stream",
-            json!({"cut": "stop"}),
-        )
-        .await;
+    // Two stream started as soon as room opened, 3s preroll offset
+    // 1st stream messages are left as is
+    // 2nd stream messages are moved with gap
+    // gap messages are moved to the start of second stream
+    #[test]
+    fn adjust_room_test_7() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "message", json!({"message": "m1"})),
+                (15_000_000_000, "message", json!({"message": "m2"})),
+                (22_000_000_000, "message", json!({"message": "m3"})),
+                (23_000_000_000, "message", json!({"message": "m4"})),
+                (28_000_000_000, "message", json!({"message": "m5"})),
+                (36_000_000_000, "message", json!({"message": "m6"})),
+            ])
+            .await;
 
-        create_event(
-            &mut conn,
-            &room,
-            21_000_000_000,
-            "message",
-            json!({"message": "m11"}),
-        )
-        .await;
+            // Video segments.
+            ctx.set_segments(vec![(0, 20000), (26000, 34000)], ctx.opened_at, "3 seconds");
 
-        create_event(
-            &mut conn,
-            &room,
-            22_000_000_000,
-            "message",
-            json!({"message": "m12"}),
-        )
-        .await;
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (4_000_000_000, "message", json!({"message": "m1"})),
+                    (18_000_000_000, "message", json!({"message": "m2"})),
+                    (23_000_000_000, "message", json!({"message": "m3"})),
+                    (23_000_000_001, "message", json!({"message": "m4"})),
+                    (25_000_000_000, "message", json!({"message": "m5"})),
+                    (31_000_000_000, "message", json!({"message": "m6"})),
+                ],
+                &[(0, 28000)],
+            )
+            .await;
+        });
+    }
+
+    // single stream started as soon as room opened, no preroll offset
+    // single cut over 1 message
+    // message in cut must be moved to cut start
+    // message after the cut must be moved to cut duration seconds the left
+    #[test]
+    fn adjust_room_test_8() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "message", json!({"message": "m1"})),
+                (10_000_000_000, "stream", json!({"cut": "start"})),
+                (12_000_000_000, "message", json!({"message": "m2"})),
+                (13_000_000_000, "stream", json!({"cut": "stop"})),
+                (15_000_000_000, "message", json!({"message": "m3"})),
+            ])
+            .await;
+
+            // RTC started when the room opened and preroll is 0 seconds long.
+            ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (1_000_000_000, "message", json!({"message": "m1"})),
+                    (10_000_000_000, "message", json!({"message": "m2"})),
+                    (12_000_000_000, "message", json!({"message": "m3"})),
+                ],
+                &[(0, 10000), (13000, 20000)],
+            )
+            .await;
+        });
+    }
+
+    // single stream started 10 seconds after room opened, no preroll offset
+    // single cut over 2 messages, ending before the stream has started
+    // cut messages must be moved to stream start and monotonized
+    // messages during stream must be moved 10 seconds to the left
+    #[test]
+    fn adjust_room_test_9() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "stream", json!({"cut": "start"})),
+                (3_000_000_000, "message", json!({"message": "m1"})),
+                (6_000_000_000, "message", json!({"message": "m1a"})),
+                (7_000_000_000, "stream", json!({"cut": "stop"})),
+                (9_000_000_000, "message", json!({"message": "m2"})),
+                (12_000_000_000, "message", json!({"message": "m3"})),
+                (15_000_000_000, "message", json!({"message": "m4"})),
+            ])
+            .await;
+
+            ctx.set_segments(
+                vec![(0, 20000)],
+                ctx.opened_at + Duration::seconds(10),
+                "0 seconds",
+            );
+
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (0_000_000_000, "message", json!({"message": "m1"})),
+                    (0_000_000_001, "message", json!({"message": "m1a"})),
+                    (0_000_000_002, "message", json!({"message": "m2"})),
+                    (2_000_000_000, "message", json!({"message": "m3"})),
+                    (5_000_000_000, "message", json!({"message": "m4"})),
+                ],
+                &[(0, 20000)],
+            )
+            .await;
+        });
+    }
+
+    // same as previous test but with 3s offset
+    // every message must be moved as before and then 3s to the right
+    #[test]
+    fn adjust_room_test_10() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "stream", json!({"cut": "start"})),
+                (3_000_000_000, "message", json!({"message": "m1"})),
+                (6_000_000_000, "message", json!({"message": "m1a"})),
+                (7_000_000_000, "stream", json!({"cut": "stop"})),
+                (9_000_000_000, "message", json!({"message": "m2"})),
+                (12_000_000_000, "message", json!({"message": "m3"})),
+                (15_000_000_000, "message", json!({"message": "m4"})),
+            ])
+            .await;
+
+            ctx.set_segments(
+                vec![(0, 20000)],
+                ctx.opened_at + Duration::seconds(10),
+                "3 seconds",
+            );
+
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (3_000_000_000, "message", json!({"message": "m1"})),
+                    (3_000_000_001, "message", json!({"message": "m1a"})),
+                    (3_000_000_002, "message", json!({"message": "m2"})),
+                    (5_000_000_000, "message", json!({"message": "m3"})),
+                    (8_000_000_000, "message", json!({"message": "m4"})),
+                ],
+                &[(0, 20000)],
+            )
+            .await;
+        });
+    }
+
+    // single stream started 10 seconds after room opened, no preroll offset
+    // two cuts, one ending after the stream start, one during the stream
+    // m1 must be moved to stream start
+    // m2 must be moved N seconds the left, N = stream and 1st cut overlap duration
+    // m3 must be moved (start of 2nd cut + N) seconds to the left
+    // m4 must be moved (2nd cut duration + N) seconds to the left
+    #[test]
+    fn adjust_room_test_11() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "stream", json!({"cut": "start"})),
+                (3_000_000_000, "message", json!({"message": "m1"})),
+                (12_000_000_000, "stream", json!({"cut": "stop"})),
+                (13_000_000_000, "message", json!({"message": "m2"})),
+                (14_000_000_000, "stream", json!({"cut": "start"})),
+                (15_000_000_000, "message", json!({"message": "m3"})),
+                (17_000_000_000, "stream", json!({"cut": "stop"})),
+                (19_000_000_000, "message", json!({"message": "m4"})),
+            ])
+            .await;
+
+            ctx.set_segments(
+                vec![(0, 20000)],
+                ctx.opened_at + Duration::seconds(10),
+                "0 seconds",
+            );
+
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (0_000_000_000, "message", json!({"message": "m1"})),
+                    (1_000_000_000, "message", json!({"message": "m2"})),
+                    (2_000_000_000, "message", json!({"message": "m3"})),
+                    (4_000_000_000, "message", json!({"message": "m4"})),
+                ],
+                &[(2000, 4000), (7000, 20000)],
+            )
+            .await;
+        });
+    }
+
+    // same as previous test + 3s preroll
+    // every message must be moved as before then 3s to the right
+    #[test]
+    fn adjust_room_test_12() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "stream", json!({"cut": "start"})),
+                (3_000_000_000, "message", json!({"message": "m1"})),
+                (12_000_000_000, "stream", json!({"cut": "stop"})),
+                (13_000_000_000, "message", json!({"message": "m2"})),
+                (14_000_000_000, "stream", json!({"cut": "start"})),
+                (15_000_000_000, "message", json!({"message": "m3"})),
+                (17_000_000_000, "stream", json!({"cut": "stop"})),
+                (19_000_000_000, "message", json!({"message": "m4"})),
+            ])
+            .await;
+
+            ctx.set_segments(
+                vec![(0, 20000)],
+                ctx.opened_at + Duration::seconds(10),
+                "3 seconds",
+            );
+
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (3_000_000_000, "message", json!({"message": "m1"})),
+                    (4_000_000_000, "message", json!({"message": "m2"})),
+                    (5_000_000_000, "message", json!({"message": "m3"})),
+                    (7_000_000_000, "message", json!({"message": "m4"})),
+                ],
+                &[(2000, 4000), (7000, 20000)],
+            )
+            .await;
+        });
+    }
+
+    // two streams started as soon as room opened, no preroll
+    // cut that overlaps streams gap
+    // m2, m3, m4 must be moved cut start
+    // m5 must be moved to the left according to overlap between streams and cut
+    #[test]
+    fn adjust_room_test_14() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (3_000_000_000, "message", json!({"message": "m1"})),
+                (18_000_000_000, "stream", json!({"cut": "start"})),
+                (19_000_000_000, "message", json!({"message": "m2"})),
+                (22_000_000_000, "message", json!({"message": "m3"})),
+                (29_000_000_000, "message", json!({"message": "m4"})),
+                (31_000_000_000, "stream", json!({"cut": "stop"})),
+                (33_000_000_000, "message", json!({"message": "m5"})),
+            ])
+            .await;
+
+            ctx.set_segments(vec![(0, 20000), (28000, 34000)], ctx.opened_at, "0 seconds");
+
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (3_000_000_000, "message", json!({"message": "m1"})),
+                    (18_000_000_000, "message", json!({"message": "m2"})),
+                    (18_000_000_001, "message", json!({"message": "m3"})),
+                    (18_000_000_002, "message", json!({"message": "m4"})),
+                    (20_000_000_000, "message", json!({"message": "m5"})),
+                ],
+                &[(0, 18000), (23000, 26000)],
+            )
+            .await;
+        });
+    }
+
+    // same as previous test but 3 seconds offset
+    #[test]
+    fn adjust_room_test_15() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (3_000_000_000, "message", json!({"message": "m1"})),
+                (18_000_000_000, "stream", json!({"cut": "start"})),
+                (19_000_000_000, "message", json!({"message": "m2"})),
+                (22_000_000_000, "message", json!({"message": "m3"})),
+                (29_000_000_000, "message", json!({"message": "m4"})),
+                (31_000_000_000, "stream", json!({"cut": "stop"})),
+                (33_000_000_000, "message", json!({"message": "m5"})),
+            ])
+            .await;
+
+            ctx.set_segments(vec![(0, 20000), (28000, 34000)], ctx.opened_at, "3 seconds");
+
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (6_000_000_000, "message", json!({"message": "m1"})),
+                    (21_000_000_000, "message", json!({"message": "m2"})),
+                    (21_000_000_001, "message", json!({"message": "m3"})),
+                    (21_000_000_002, "message", json!({"message": "m4"})),
+                    (23_000_000_000, "message", json!({"message": "m5"})),
+                ],
+                &[(0, 18000), (23000, 26000)],
+            )
+            .await;
+        });
+    }
+
+    // single stream started as soon as room opened, no preroll offset
+    // single cut that ends after the stream end
+    // message in cut must be moved to cut start
+    // message after the cut must be moved to cut start
+    #[test]
+    fn adjust_room_test_16() {
+        async_std::task::block_on(async {
+            let mut ctx = TestCtx::new(&[
+                (1_000_000_000, "message", json!({"message": "m1"})),
+                (10_000_000_000, "stream", json!({"cut": "start"})),
+                (12_000_000_000, "message", json!({"message": "m2"})),
+                (25_000_000_000, "stream", json!({"cut": "stop"})),
+                (27_000_000_000, "message", json!({"message": "m3"})),
+            ])
+            .await;
+
+            // RTC started when the room opened and preroll is 0 seconds long.
+            ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+
+            ctx.run().await;
+            ctx.events_asserts(
+                &[
+                    (1_000_000_000, "message", json!({"message": "m1"})),
+                    (10_000_000_000, "message", json!({"message": "m2"})),
+                    (10_000_000_001, "message", json!({"message": "m3"})),
+                ],
+                &[(0, 10000)],
+            )
+            .await;
+        });
     }
 
     async fn create_event(
