@@ -66,7 +66,7 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: postgres
+  name: {{ .Chart.Name }}-postgres
 spec:
   clusterIP: None
   selector:

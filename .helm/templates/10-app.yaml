@@ -22,6 +22,7 @@ spec:
     spec:
       imagePullSecrets:
       - name: registrysecret
+{{- include "affinity" . | indent 6 }}
       initContainers:
 {{ include "wait_postgres" . | indent 6 }}
 {{ include "wait_redis" . | indent 6 }}
