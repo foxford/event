@@ -1,17 +1,10 @@
-use std::convert::Infallible;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context as AnyhowContext, Result};
-use axum::{
-    extract, handler,
-    routing::{EmptyRouter, Router},
-    AddExtensionLayer, Server,
-};
 use chrono::Utc;
 use futures::StreamExt;
-use prometheus::{Encoder, Registry, TextEncoder};
+use prometheus::Registry;
 use serde_json::json;
 use signal_hook::consts::TERM_SIGNALS;
 use sqlx::postgres::PgPool as Db;
@@ -23,10 +16,7 @@ use svc_agent::{AccountId, AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::{extension::sentry, Error as SvcError};
-use tokio::{
-    sync::{mpsc, oneshot},
-    task,
-};
+use tokio::{sync::mpsc, task};
 
 use crate::{app::context::GlobalContext, metrics::Metrics};
 use crate::{
@@ -109,20 +99,9 @@ pub(crate) async fn run(
         .queue_counter(agent.get_queue_counter())
         .build(metrics);
 
-    let metrics_task = if let Some(metrics) = config.metrics.as_ref() {
-        let (closer, metrics_close_receirver) = oneshot::channel::<()>();
-        let join_handle = task::spawn(start_metrics_collector(
-            registry,
-            metrics.http.bind_address,
-            metrics_close_receirver,
-        ));
-        Some(MetricsTask {
-            join_handle,
-            closer,
-        })
-    } else {
-        None
-    };
+    let metrics_task = config.metrics.as_ref().map(|metrics| {
+        svc_utils::metrics::MetricsServer::new_with_registry(registry, metrics.http.bind_address)
+    });
 
     let metrics = context.metrics();
 
@@ -273,82 +252,6 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
 
         sentry::send(svc_error)
             .unwrap_or_else(|err| warn!(crate::LOG, "Error sending error to Sentry: {:?}", err));
-    }
-}
-
-async fn start_metrics_collector(
-    registry: Registry,
-    bind_addr: SocketAddr,
-    rx: oneshot::Receiver<()>,
-) -> Result<(), hyper::Error> {
-    let app: Router<EmptyRouter<Infallible>> = Router::new();
-
-    let app = app
-        .route("/metrics", handler::get(metrics_handler))
-        .layer(AddExtensionLayer::new(registry));
-    Server::bind(&bind_addr)
-        .serve(app.into_make_service())
-        .with_graceful_shutdown(async {
-            rx.await.ok();
-        })
-        .await
-}
-
-async fn metrics_handler(
-    state: extract::Extension<Registry>,
-) -> hyper::Response<hyper::body::Body> {
-    let registry = state.0;
-    let mut buffer = vec![];
-    let encoder = TextEncoder::new();
-    let metric_families = registry.gather();
-    let response = match encoder.encode(&metric_families, &mut buffer) {
-        Ok(_) => hyper::Response::builder()
-            .status(200)
-            .body(buffer.into())
-            .unwrap(),
-        Err(err) => {
-            warn!(crate::LOG, "Metrics not gathered: {:?}", err);
-            hyper::Response::builder()
-                .status(500)
-                .body(vec![].into())
-                .unwrap()
-        }
-    };
-    response
-}
-
-struct MetricsTask {
-    join_handle: task::JoinHandle<Result<(), hyper::Error>>,
-    closer: oneshot::Sender<()>,
-}
-
-impl MetricsTask {
-    pub async fn shutdown(self) {
-        info!(
-            crate::LOG,
-            "Received signal, triggering metrics server shutdown"
-        );
-
-        let _ = self.closer.send(());
-        let fut = tokio::time::timeout(Duration::from_secs(3), self.join_handle);
-
-        match fut.await {
-            Err(e) => {
-                error!(
-                    crate::LOG,
-                    "Metrics server timed out during shutdown, error = {:?}", e
-                );
-            }
-            Ok(Err(e)) => {
-                error!(
-                    crate::LOG,
-                    "Metrics server failed during shutdown, error = {:?}", e
-                );
-            }
-            Ok(Ok(_)) => {
-                info!(crate::LOG, "Metrics server successfully exited");
-            }
-        }
     }
 }
 
