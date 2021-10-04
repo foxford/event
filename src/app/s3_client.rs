@@ -27,8 +27,7 @@ impl S3Client {
     pub fn new_with_client(s3_client: RusotoClient) -> Option<Self> {
         let (sender, mut receiver) = mpsc_channel::<Message>(10);
 
-        let _guard = crate::TOKIO.enter();
-
+        // TODO: on shutdown await all s3 client tasks to finish
         tokio::task::spawn(async move {
             while let Some((request, response_sender)) = receiver.next().await {
                 let s3_client = s3_client.clone();

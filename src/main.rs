@@ -22,25 +22,6 @@ lazy_static! {
     };
 }
 
-lazy_static! {
-    static ref TOKIO: tokio::runtime::Runtime = {
-        let mut rt_builder = tokio::runtime::Builder::new_multi_thread();
-        rt_builder.enable_all();
-
-        let thread_count = std::env::var("TOKIO_THREAD_COUNT").ok().map(|value| {
-            value
-                .parse::<usize>()
-                .expect("Error converting TOKIO_THREAD_COUNT variable into usize")
-        });
-
-        if let Some(value) = thread_count {
-            rt_builder.worker_threads(value);
-        }
-
-        rt_builder.build().expect("Failed to start tokio runtime")
-    };
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     warn!(crate::LOG, "Launching event, version: {}", APP_VERSION);
