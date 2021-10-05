@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "%s-postgres-mysql-migrations-%s" .Chart.Name (now | date "2006-01-02-15-04-05") }}
+  name: {{ printf "%s-postgres-migrations-%s" .Chart.Name (now | date "2006-01-02-15-04-05") }}
 spec:
   ttlSecondsAfterFinished: 1800
   activeDeadlineSeconds: 3600
