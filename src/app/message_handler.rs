@@ -12,6 +12,8 @@ use svc_agent::{
     },
     Addressable, Authenticable,
 };
+use tracing::{error, warn};
+use tracing_attributes::instrument;
 
 use crate::app::context::{AppMessageContext, Context, GlobalContext, MessageContext};
 use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
@@ -50,31 +52,24 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
             Ok(ref msg) => {
                 if let Err(err) = self.handle_message(&mut msg_context, msg).await {
                     let err = err.to_string();
-                    Self::report_error(&mut msg_context, message, &err).await;
+                    Self::report_error(message, &err).await;
                 }
             }
             Err(e) => {
-                Self::report_error(&mut msg_context, message, e).await;
+                Self::report_error(message, e).await;
             }
         }
     }
 
-    async fn report_error(
-        msg_context: &mut AppMessageContext<'_, C>,
-        message: &Result<IncomingMessage<String>, String>,
-        err: &str,
-    ) {
-        error!(
-            msg_context.logger(),
-            "Error processing a message: {:?}: {:?}", message, err
-        );
+    async fn report_error(message: &Result<IncomingMessage<String>, String>, err: &str) {
+        error!("Error processing a message: {:?}: {:?}", message, err);
 
         let app_error = AppError::new(
             AppErrorKind::MessageHandlingFailed,
             anyhow!(err.to_string()),
         );
 
-        app_error.notify_sentry(msg_context.logger());
+        app_error.notify_sentry();
     }
 
     async fn handle_message(
@@ -89,20 +84,20 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
         }
     }
 
+    #[instrument(
+        skip(self, msg_context, request),
+        fields(
+            agent_label = request.properties().as_agent_id().label(),
+            account_id = request.properties().as_agent_id().as_account_id().label(),
+            audience = request.properties().as_agent_id().as_account_id().audience(),
+            method = request.properties().method()
+        )
+    )]
     async fn handle_request(
         &self,
         msg_context: &mut AppMessageContext<'_, C>,
         request: &IncomingRequest<String>,
     ) -> Result<(), AppError> {
-        let agent_id = request.properties().as_agent_id();
-
-        msg_context.add_logger_tags(o!(
-            "agent_label" => agent_id.label().to_owned(),
-            "account_id" => agent_id.as_account_id().label().to_owned(),
-            "audience" => agent_id.as_account_id().audience().to_owned(),
-            "method" => request.properties().method().to_owned()
-        ));
-
         let outgoing_message_stream = endpoint::route_request(msg_context, request)
             .await
             .unwrap_or_else(|| {
@@ -120,27 +115,27 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
             .await
     }
 
+    #[instrument(
+        skip(self, msg_context, response),
+        fields(
+            agent_label = response.properties().as_agent_id().label(),
+            account_id = response.properties().as_agent_id().as_account_id().label(),
+            audience = response.properties().as_agent_id().as_account_id().audience(),
+        )
+    )]
     async fn handle_response(
         &self,
         msg_context: &mut AppMessageContext<'_, C>,
         response: &IncomingResponse<String>,
     ) -> Result<(), AppError> {
-        let agent_id = response.properties().as_agent_id();
-
-        msg_context.add_logger_tags(o!(
-            "agent_label" => agent_id.label().to_owned(),
-            "account_id" => agent_id.as_account_id().label().to_owned(),
-            "audience" => agent_id.as_account_id().audience().to_owned()
-        ));
-
         let raw_corr_data = response.properties().correlation_data();
 
         let corr_data = match endpoint::CorrelationData::parse(raw_corr_data) {
             Ok(corr_data) => corr_data,
             Err(err) => {
                 warn!(
-                    msg_context.logger(),
-                    "Failed to parse response correlation data '{}': {:?}", raw_corr_data, err
+                    "Failed to parse response correlation data '{}': {:?}",
+                    raw_corr_data, err
                 );
 
                 return Ok(());
@@ -154,32 +149,26 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
             .await
     }
 
+    #[instrument(
+        skip(self, msg_context, event),
+        fields(
+            agent_label = event.properties().as_agent_id().label(),
+            account_id = event.properties().as_agent_id().as_account_id().label(),
+            audience = event.properties().as_agent_id().as_account_id().audience(),
+            label = event.properties().label()
+        )
+    )]
     async fn handle_event(
         &self,
         msg_context: &mut AppMessageContext<'_, C>,
         event: &IncomingEvent<String>,
     ) -> Result<(), AppError> {
-        let agent_id = event.properties().as_agent_id();
-
-        msg_context.add_logger_tags(o!(
-            "agent_label" => agent_id.label().to_owned(),
-            "account_id" => agent_id.as_account_id().label().to_owned(),
-            "audience" => agent_id.as_account_id().audience().to_owned(),
-        ));
-
-        if let Some(label) = event.properties().label() {
-            msg_context.add_logger_tags(o!("label" => label.to_owned()));
-        }
-
         match event.properties().label() {
             Some(label) => {
                 let outgoing_message_stream = endpoint::route_event(msg_context, event)
                     .await
                     .unwrap_or_else(|| {
-                        warn!(
-                            msg_context.logger(),
-                            "Unexpected event with label = '{}'", label
-                        );
+                        warn!("Unexpected event with label = '{}'", label);
                         Box::new(stream::empty())
                     });
 
@@ -187,7 +176,7 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
                     .await
             }
             None => {
-                warn!(msg_context.logger(), "Got event with missing label");
+                warn!("Got event with missing label");
                 Ok(())
             }
         }
@@ -274,18 +263,9 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
                     let app_result = H::handle(context, payload, reqp).await;
                     context.metrics().observe_app_result(&app_result);
                     app_result.unwrap_or_else(|app_error| {
-                        context.add_logger_tags(o!(
-                            "status" => app_error.status().as_u16(),
-                            "kind" => app_error.kind().to_owned(),
-                        ));
+                        error!(err = ?app_error, status = app_error.status().as_u16(), kind = app_error.kind(), "Failed to handle request");
 
-                        error!(
-                            context.logger(),
-                            "Failed to handle request: {}",
-                            app_error.source(),
-                        );
-
-                        app_error.notify_sentry(context.logger());
+                        app_error.notify_sentry();
 
                         // Handler returned an error.
                         error_response(app_error, reqp, context.start_timestamp())
@@ -338,24 +318,16 @@ impl<'async_trait, H: 'async_trait + endpoint::ResponseHandler>
                     context.metrics().observe_app_result(&app_result);
                     app_result.unwrap_or_else(|app_error| {
                         // Handler returned an error.
-                        context.add_logger_tags(o!(
-                            "status" => app_error.status().as_u16(),
-                            "kind" => app_error.kind().to_owned(),
-                        ));
+                        error!(err = ?app_error, status = app_error.status().as_u16(), kind = app_error.kind(), "Failed to handle response");
 
-                        error!(
-                            context.logger(),
-                            "Failed to handle response: {}",
-                            app_error.source(),
-                        );
 
-                        app_error.notify_sentry(context.logger());
+                        app_error.notify_sentry();
                         Box::new(stream::empty())
                     })
                 }
                 Err(err) => {
                     // Bad envelope or payload format.
-                    error!(context.logger(), "Failed to parse response: {:?}", err);
+                    error!("Failed to parse response: {:?}", err);
                     Box::new(stream::empty())
                 }
             }
@@ -396,24 +368,16 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                     context.metrics().observe_app_result(&app_result);
                     app_result.unwrap_or_else(|app_error| {
                         // Handler returned an error.
-                        context.add_logger_tags(o!(
-                            "status" => app_error.status().as_u16(),
-                            "kind" => app_error.kind().to_owned(),
-                        ));
+                        error!(err = ?app_error, status = app_error.status().as_u16(), kind = app_error.kind(), "Failed to handle event");
 
-                        error!(
-                            context.logger(),
-                            "Failed to handle event: {}",
-                            app_error.source(),
-                        );
 
-                        app_error.notify_sentry(context.logger());
+                        app_error.notify_sentry();
                         Box::new(stream::empty())
                     })
                 }
                 Err(err) => {
                     // Bad envelope or payload format.
-                    error!(context.logger(), "Failed to parse event: {:?}", err);
+                    error!("Failed to parse event: {:?}", err);
                     Box::new(stream::empty())
                 }
             }

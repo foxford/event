@@ -5,6 +5,7 @@ use futures::stream;
 use serde_derive::Deserialize;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
 use svc_authn::Authenticable;
+use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -20,12 +21,19 @@ pub(crate) struct CreateHandler;
 impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            edition_id = %payload.edition_id,
+            scope, room_id, classroom_id, change_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
         reqp: &IncomingRequestProperties,
     ) -> Result {
-        let (edition, room) = {
+        let (_edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.edition_id);
             let mut conn = context.get_ro_conn().await?;
 
@@ -45,8 +53,7 @@ impl RequestHandler for CreateHandler {
             }
         };
 
-        helpers::add_room_logger_tags(context, &room);
-        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
+        helpers::add_room_logger_tags(&room);
 
         let object = AuthzObject::room(&room).into();
 
@@ -111,7 +118,7 @@ impl RequestHandler for CreateHandler {
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
-        context.add_logger_tags(o!("change_id" => change.id().to_string()));
+        Span::current().record("change_id", &display(change.id()));
 
         let response = helpers::build_response(
             ResponseStatus::CREATED,
@@ -140,6 +147,13 @@ pub(crate) struct ListRequest {
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            edition_id = %payload.id,
+            scope, room_id, classroom_id, change_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -165,8 +179,7 @@ impl RequestHandler for ListHandler {
             }
         };
 
-        helpers::add_room_logger_tags(context, &room);
-        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
+        helpers::add_room_logger_tags(&room);
 
         let object = AuthzObject::room(&room).into();
 
@@ -224,6 +237,13 @@ pub(crate) struct DeleteRequest {
 impl RequestHandler for DeleteHandler {
     type Payload = DeleteRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            change_id = %payload.id,
+            scope, room_id, classroom_id, edition_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -248,9 +268,8 @@ impl RequestHandler for DeleteHandler {
             }
         };
 
-        helpers::add_room_logger_tags(context, &room);
-        context.add_logger_tags(o!("edition_id" => change.edition_id().to_string()));
-        context.add_logger_tags(o!("change_id" => change.id().to_string()));
+        helpers::add_room_logger_tags(&room);
+        Span::current().record("edition_id", &display(change.edition_id()));
 
         let object = AuthzObject::room(&room).into();
 

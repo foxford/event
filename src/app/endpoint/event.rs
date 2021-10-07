@@ -9,6 +9,7 @@ use svc_agent::{
     mqtt::{IncomingRequestProperties, ResponseStatus},
     Addressable,
 };
+use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -57,6 +58,12 @@ pub(crate) struct TenantClaimNotification {
 impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            room_id = %payload.room_id, scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -74,10 +81,8 @@ impl RequestHandler for CreateHandler {
                     label: Some(ref label),
                     ..
                 } => {
-                    context.add_logger_tags(o!(
-                        "set" => set.to_string(),
-                        "set_label" => label.to_string(),
-                    ));
+                    Span::current().record("set", &set.as_str());
+                    Span::current().record("set_label", &label.as_str());
 
                     let query = db::event::OriginalEventQuery::new(
                         room.id(),
@@ -184,7 +189,7 @@ impl RequestHandler for CreateHandler {
                     .context("Failed to insert event")
                     .error(AppErrorKind::DbQueryFailed)?;
 
-                context.add_logger_tags(o!("event_id" => event.id().to_string()));
+                Span::current().record("event_id", &display(event.id()));
                 event
             }
         } else {
@@ -285,6 +290,12 @@ pub(crate) struct ListHandler;
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            room_id = %payload.room_id, scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,

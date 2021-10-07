@@ -2,9 +2,9 @@ use enum_iterator::IntoEnumIterator;
 use std::error::Error as StdError;
 use std::fmt;
 
-use slog::Logger;
 use svc_agent::mqtt::ResponseStatus;
 use svc_error::{extension::sentry, Error as SvcError};
+use tracing::warn;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -259,7 +259,7 @@ impl Error {
         let mut e = SvcError::builder()
             .status(properties.status)
             .kind(properties.kind, properties.title)
-            .detail(&self.source.as_ref().as_ref().to_string())
+            .detail(&self.source().to_string())
             .build();
 
         for (tag, val) in self.tags.iter() {
@@ -268,13 +268,13 @@ impl Error {
         e
     }
 
-    pub(crate) fn notify_sentry(&self, logger: &Logger) {
+    pub(crate) fn notify_sentry(&self) {
         if !self.kind.is_notify_sentry() {
             return;
         }
 
         sentry::send(self.to_svc_error()).unwrap_or_else(|err| {
-            warn!(logger, "Error sending error to Sentry: {:?}", err);
+            warn!("Error sending error to Sentry: {:?}", err);
         });
     }
 }
@@ -283,7 +283,7 @@ impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Error")
             .field("kind", &self.kind)
-            .field("source", &self.source.as_ref().as_ref())
+            .field("source", &self.source())
             .finish()
     }
 }

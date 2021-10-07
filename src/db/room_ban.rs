@@ -187,24 +187,21 @@ mod tests {
         let banned_agent = TestAgent::new("web", "user123", USR_AUDIENCE);
         let classroom_id = Uuid::new_v4();
 
-        let room = {
-            factory::Room::new()
-                .audience(USR_AUDIENCE)
-                .classroom_id(classroom_id)
-                .time((Bound::Included(Utc::now()), Bound::Unbounded))
-                .insert(&mut conn)
-                .await;
-            let room = factory::Room::new()
-                .audience(USR_AUDIENCE)
-                .time((Bound::Included(Utc::now()), Bound::Unbounded))
-                .classroom_id(classroom_id)
-                .insert(&mut conn)
-                .await;
-            factory::RoomBan::new(banned_agent.account_id(), room.id())
-                .insert(&mut conn)
-                .await;
-            room
-        };
+        factory::Room::new()
+            .audience(USR_AUDIENCE)
+            .classroom_id(classroom_id)
+            .time((Bound::Included(Utc::now()), Bound::Unbounded))
+            .insert(&mut conn)
+            .await;
+        let room = factory::Room::new()
+            .audience(USR_AUDIENCE)
+            .time((Bound::Included(Utc::now()), Bound::Unbounded))
+            .classroom_id(classroom_id)
+            .insert(&mut conn)
+            .await;
+        factory::RoomBan::new(banned_agent.account_id(), room.id())
+            .insert(&mut conn)
+            .await;
 
         let ban = ClassroomFindQuery::new(banned_agent.account_id().to_owned(), classroom_id)
             .execute(&mut conn)

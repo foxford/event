@@ -5,6 +5,7 @@ use svc_agent::mqtt::{
     IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
     OutgoingResponse, ResponseStatus, ShortTermTimingProperties,
 };
+use tracing::field::display;
 use uuid::Uuid;
 
 use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
@@ -57,7 +58,7 @@ pub(crate) async fn find_room<C: Context>(
     id: Uuid,
     opening_requirement: RoomTimeRequirement,
 ) -> Result<db::room::Object, AppError> {
-    context.add_logger_tags(o!("room_id" => id.to_string()));
+    tracing::Span::current().record("room_id", &display(id));
 
     let query = db::room::FindQuery::new(id);
     let mut conn = context.get_ro_conn().await?;
@@ -71,7 +72,7 @@ pub(crate) async fn find_room<C: Context>(
         .ok_or_else(|| anyhow!("Room not found"))
         .error(AppErrorKind::RoomNotFound)?;
 
-    add_room_logger_tags(context, &room);
+    add_room_logger_tags(&room);
 
     match opening_requirement {
         // Room time doesn't matter.
@@ -96,12 +97,17 @@ pub(crate) async fn find_room<C: Context>(
     }
 }
 
-pub(crate) fn add_room_logger_tags<C: Context>(context: &mut C, room: &db::room::Object) {
-    context.add_logger_tags(o!("room_id" => room.id().to_string()));
+pub(crate) fn add_room_logger_tags(room: &db::room::Object) {
+    let span = tracing::Span::current();
+    span.record("room_id", &display(room.id()));
 
     if let Some(tags) = room.tags() {
         if let Some(scope) = tags.get("scope") {
-            context.add_logger_tags(o!("scope" => scope.to_string()));
+            span.record("scope", &display(scope));
         }
+    }
+
+    if let Some(classroom_id) = room.classroom_id() {
+        span.record("classroom_id", &display(classroom_id));
     }
 }

@@ -4,6 +4,7 @@ use std::ops::Bound;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use sqlx::postgres::{PgConnection, PgPool as Db};
+use tracing::{info, instrument};
 
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::room_time::RoomTimeBound;
@@ -20,6 +21,15 @@ pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[instrument(
+    skip_all,
+    fields(
+        edition_id = %real_time_room.id(),
+        started_at = ?started_at,
+        segments = ?segments,
+        offset = ?offset,
+    )
+)]
 pub(crate) async fn call(
     db: &Db,
     metrics: &Metrics,
@@ -28,14 +38,7 @@ pub(crate) async fn call(
     segments: &Segments,
     offset: i64,
 ) -> Result<(Room, Room, Segments)> {
-    info!(
-        crate::LOG,
-        "Room adjustment task started for room_id = '{}', started_at = {:?}, segments = {:?}, offset = {:?}",
-        real_time_room.id(),
-        started_at,
-        segments,
-        offset
-    );
+    info!("Room adjustment task started",);
     let start_timestamp = Utc::now();
 
     // Parse segments.
@@ -216,10 +219,8 @@ pub(crate) async fn call(
 
     // Done.
     info!(
-        crate::LOG,
-        "Room adjustment task successfully finished for room_id = '{}', duration = {} ms",
-        real_time_room.id(),
-        (Utc::now() - start_timestamp).num_milliseconds()
+        duration_ms = (Utc::now() - start_timestamp).num_milliseconds(),
+        "Room adjustment task successfully finished",
     );
 
     Ok((

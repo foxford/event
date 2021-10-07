@@ -6,6 +6,7 @@ use futures::{future, stream};
 use serde_derive::Deserialize;
 use serde_json::{map::Map as JsonMap, Value as JsonValue};
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
+use tracing::{instrument, Span};
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -33,6 +34,12 @@ pub(crate) struct ReadHandler;
 impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            room_id = %payload.room_id, scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -94,7 +101,7 @@ impl RequestHandler for ReadHandler {
         let mut conn = context.get_ro_conn().await?;
 
         for set in payload.sets.iter() {
-            context.add_logger_tags(o!("set" => set.to_string()));
+            Span::current().record("set", &set.as_str());
 
             // Build a query for the particular set state.
             let mut query =

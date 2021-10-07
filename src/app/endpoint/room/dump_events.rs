@@ -8,6 +8,7 @@ use svc_agent::mqtt::{
     ResponseStatus, ShortTermTimingProperties,
 };
 use svc_error::Error as SvcError;
+use tracing::error;
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -72,12 +73,11 @@ impl RequestHandler for EventsDumpHandler {
 
         let db = context.db().to_owned();
         let metrics = context.metrics();
-        let logger = context.logger().new(o!());
 
         let s3_client = context
             .s3_client()
             .ok_or_else(|| {
-                error!(logger, "DumpEvents called with no s3client in context");
+                error!("DumpEvents called with no s3client in context");
                 anyhow!("No S3Client")
             })
             .error(AppErrorKind::NoS3Client)?;
@@ -92,9 +92,9 @@ impl RequestHandler for EventsDumpHandler {
                     s3_uri,
                 },
                 Err(err) => {
-                    error!(logger, "Events dump job failed: {:?}", err);
+                    error!("Events dump job failed: {:?}", err);
                     let app_error = AppError::new(AppErrorKind::EditionCommitTaskFailed, err);
-                    app_error.notify_sentry(&logger);
+                    app_error.notify_sentry();
                     EventsDumpResult::Error {
                         error: app_error.to_svc_error(),
                     }

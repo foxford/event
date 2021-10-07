@@ -3,7 +3,6 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use prometheus::Registry;
 use serde_json::json;
-use slog::{Logger, OwnedKV, SendSyncRefUnwindSafeKV};
 use sqlx::postgres::PgPool as Db;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
@@ -51,7 +50,6 @@ pub(crate) struct TestContext {
     db: TestDb,
     agent_id: AgentId,
     metrics: Arc<Metrics>,
-    logger: Logger,
     start_timestamp: DateTime<Utc>,
     s3_client: Option<S3Client>,
 }
@@ -68,7 +66,6 @@ impl TestContext {
             db,
             agent_id,
             metrics,
-            logger: crate::LOG.new(o!()),
             start_timestamp: Utc::now(),
             s3_client: None,
         }
@@ -85,7 +82,6 @@ impl TestContext {
             db,
             agent_id,
             metrics,
-            logger: crate::LOG.new(o!()),
             start_timestamp: Utc::now(),
             s3_client: None,
         }
@@ -137,17 +133,6 @@ impl GlobalContext for TestContext {
 impl MessageContext for TestContext {
     fn start_timestamp(&self) -> DateTime<Utc> {
         self.start_timestamp
-    }
-
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-
-    fn add_logger_tags<T>(&mut self, tags: OwnedKV<T>)
-    where
-        T: SendSyncRefUnwindSafeKV + Sized + 'static,
-    {
-        self.logger = self.logger.new(tags);
     }
 }
 

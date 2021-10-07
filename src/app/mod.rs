@@ -17,6 +17,7 @@ use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::{extension::sentry, Error as SvcError};
 use tokio::{sync::mpsc, task};
+use tracing::{error, info, warn};
 
 use crate::{app::context::GlobalContext, metrics::Metrics};
 use crate::{
@@ -38,11 +39,11 @@ pub(crate) async fn run(
 ) -> Result<()> {
     // Config
     let config = config::load().context("Failed to load config")?;
-    info!(crate::LOG, "App config: {:?}", config);
+    info!("App config: {:?}", config);
 
     // Agent
     let agent_id = AgentId::new(&config.agent_label, config.id.clone());
-    info!(crate::LOG, "Agent id: {:?}", &agent_id);
+    info!("Agent id: {:?}", &agent_id);
 
     let token = jws_compact::TokenBuilder::new()
         .issuer(&agent_id.as_account_id().audience().to_string())
@@ -122,7 +123,6 @@ pub(crate) async fn run(
 
     tokio::time::sleep(Duration::from_secs(3)).await;
     info!(
-        crate::LOG,
         "Running requests left: {}",
         metrics.running_requests_total.get()
     );
@@ -147,11 +147,11 @@ async fn main_loop(
                     }
                     AgentNotification::Disconnect => {
                         metrics.mqtt_disconnect.inc();
-                        error!(crate::LOG, "Disconnected from broker")
+                        error!("Disconnected from broker")
                     }
                     AgentNotification::Reconnection => {
                         metrics.mqtt_reconnection.inc();
-                        error!(crate::LOG, "Reconnected to broker");
+                        error!("Reconnected to broker");
 
                         resubscribe(
                             &mut message_handler.agent().to_owned(),
@@ -243,7 +243,7 @@ fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<()>
 fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
     if let Err(err) = subscribe(agent, agent_id, config) {
         let err = format!("Failed to resubscribe after reconnection: {:?}", err);
-        error!(crate::LOG, "{:?}", err);
+        error!("{:?}", err);
 
         let svc_error = SvcError::builder()
             .kind("resubscription_error", "Resubscription error")
@@ -251,7 +251,7 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
             .build();
 
         sentry::send(svc_error)
-            .unwrap_or_else(|err| warn!(crate::LOG, "Error sending error to Sentry: {:?}", err));
+            .unwrap_or_else(|err| warn!("Error sending error to Sentry: {:?}", err));
     }
 }
 
