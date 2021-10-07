@@ -204,7 +204,7 @@ pub(self) mod prelude {
                     match jh_res {
                         Ok(r) => Some(r),
                         Err(e) => {
-                            error!(crate::LOG, "Notification future erred, reason = {:?}", e);
+                            tracing::error!("Notification future erred, reason = {:?}", e);
                             None
                         }
                     }

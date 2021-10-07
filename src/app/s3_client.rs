@@ -12,6 +12,8 @@ use rusoto_credential::StaticProvider;
 use rusoto_s3::S3Client as RusotoClient;
 use rusoto_s3::{PutObjectOutput, PutObjectRequest, S3};
 
+use tracing::{error, warn};
+
 type Message = (PutObjectRequest, OnceSender<AnyResult<PutObjectOutput>>);
 
 #[derive(Debug, Clone)]
@@ -39,8 +41,8 @@ impl S3Client {
 
                     if let Err(e) = response_sender.send(response) {
                         error!(
-                            crate::LOG,
-                            "Failed to send S3 response to requesting thread, reason = {:?}", e
+                            "Failed to send S3 response to requesting thread, reason = {:?}",
+                            e
                         );
                     }
                 });
@@ -64,10 +66,7 @@ fn build_client() -> Option<RusotoClient> {
     let (key, secret, endpoint, region) = match get_aws_creds() {
         Some(creds) => creds,
         None => {
-            warn!(
-                crate::LOG,
-                "No S3 credentials specified, room.dump_events will err"
-            );
+            warn!("No S3 credentials specified, room.dump_events will err");
             return None;
         }
     };

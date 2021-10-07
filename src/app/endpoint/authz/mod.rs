@@ -4,6 +4,7 @@ use std::sync::Arc;
 use sqlx::postgres::PgPool as Db;
 use svc_agent::AccountId;
 use svc_authz::IntentObject;
+use tracing::error;
 use uuid::Uuid;
 
 use crate::db::room::Object as Room;
@@ -84,9 +85,7 @@ pub fn db_ban_callback(db: Db) -> svc_authz::BanCallback {
                                     match ban {
                                         Ok(maybe_ban) => return maybe_ban.is_some(),
                                         Err(e) => {
-                                            let logger = crate::LOG.new(o!());
                                             error!(
-                                            logger,
                                             "Failed to fetch ban from db, account = {}, room_id = {}, reason = {}",
                                             account_id,
                                             room_id,
@@ -114,9 +113,7 @@ pub fn db_ban_callback(db: Db) -> svc_authz::BanCallback {
                                     match ban {
                                         Ok(maybe_ban) => return maybe_ban.is_some(),
                                         Err(e) => {
-                                            let logger = crate::LOG.new(o!());
                                             error!(
-                                            logger,
                                             "Failed to fetch ban from db, account = {}, classroom_id = {}, reason = {}",
                                             account_id,
                                             classroom_id,

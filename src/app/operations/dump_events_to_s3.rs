@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use rusoto_s3::PutObjectRequest;
 use serde_derive::Serialize;
 use sqlx::postgres::PgPool as Db;
+use tracing::info;
 
 use crate::db::room::Object as Room;
 use crate::{app::s3_client::S3Client, metrics::Metrics};
@@ -34,11 +35,7 @@ pub(crate) async fn call(
     s3_client: S3Client,
     room: &Room,
 ) -> Result<String> {
-    info!(
-        crate::LOG,
-        "Dump events to S3 task started, room id = {}",
-        room.id()
-    );
+    info!("Dump events to S3 task started, room id = {}", room.id());
 
     let start_timestamp = Instant::now();
 
@@ -49,7 +46,6 @@ pub(crate) async fn call(
     let s3_uri = upload_events(s3_client, room, events, destination).await?;
 
     info!(
-        crate::LOG,
         "Dump events to S3 task successfully finished, room id = {}, duration = {} ms",
         room.id(),
         start_timestamp.elapsed().as_millis()
@@ -109,7 +105,6 @@ async fn upload_events(
             break;
         } else {
             info!(
-                crate::LOG,
                 "Dump events to S3 task errored, room id = {}, error = {:?}",
                 room.id(),
                 result

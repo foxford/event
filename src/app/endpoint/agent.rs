@@ -6,6 +6,7 @@ use serde_json::json;
 use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
 use svc_agent::AccountId;
 use svc_authn::Authenticable;
+use tracing::{error, instrument};
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -123,6 +124,7 @@ pub(crate) struct UpdateHandler;
 impl RequestHandler for UpdateHandler {
     type Payload = UpdateRequest;
 
+    #[instrument(skip_all, fields(scope, room_id, classroom_id))]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -130,8 +132,6 @@ impl RequestHandler for UpdateHandler {
     ) -> Result {
         let room = helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Open)
             .await?;
-
-        helpers::add_room_logger_tags(context, &room);
 
         let author = reqp.as_account_id().to_string();
 
@@ -197,11 +197,8 @@ impl RequestHandler for UpdateHandler {
             .await
         {
             error!(
-                context.logger(),
                 "Failed to write account ban into redis, account = {}, ban = {}, reason = {}",
-                &author,
-                payload.value,
-                e
+                &author, payload.value, e
             );
         }
 

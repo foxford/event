@@ -13,6 +13,7 @@ use svc_agent::{
 };
 use svc_authn::Authenticable;
 use svc_error::Error as SvcError;
+use tracing::{error, field::display, instrument, Span};
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -34,6 +35,13 @@ pub(crate) struct CreateRequest {
 impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            room_id = %payload.room_id,
+            scope, classroom_id, edition_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -70,7 +78,7 @@ impl RequestHandler for CreateHandler {
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
-        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
+        Span::current().record("edition_id", &display(edition.id()));
 
         let response = helpers::build_response(
             ResponseStatus::CREATED,
@@ -107,6 +115,13 @@ pub(crate) struct ListRequest {
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            room_id = %payload.room_id,
+            scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -174,6 +189,13 @@ pub(crate) struct DeleteRequest {
 impl RequestHandler for DeleteHandler {
     type Payload = DeleteRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            edition_id = %payload.id,
+            room_id, scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -198,8 +220,7 @@ impl RequestHandler for DeleteHandler {
             }
         };
 
-        helpers::add_room_logger_tags(context, &room);
-        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
+        helpers::add_room_logger_tags(&room);
 
         let object = AuthzObject::room(&room).into();
 
@@ -250,6 +271,13 @@ pub(crate) struct CommitRequest {
 impl RequestHandler for CommitHandler {
     type Payload = CommitRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            edition_id = %payload.id,
+            room_id, scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -275,8 +303,7 @@ impl RequestHandler for CommitHandler {
             }
         };
 
-        helpers::add_room_logger_tags(context, &room);
-        context.add_logger_tags(o!("edition_id" => edition.id().to_string()));
+        helpers::add_room_logger_tags(&room);
 
         // Authorize room update.
         let object = AuthzObject::room(&room).into();
@@ -294,7 +321,6 @@ impl RequestHandler for CommitHandler {
         // Run commit task asynchronously.
         let db = context.db().to_owned();
         let metrics = context.metrics();
-        let logger = context.logger().new(o!());
 
         let notification_future = tokio::task::spawn(async move {
             let result = commit_edition(&db, &metrics, &edition, &room).await;
@@ -307,9 +333,9 @@ impl RequestHandler for CommitHandler {
                     modified_segments,
                 },
                 Err(err) => {
-                    error!(logger, "Room adjustment job failed: {:?}", err);
+                    error!("Room adjustment job failed: {:?}", err);
                     let app_error = AppError::new(AppErrorKind::EditionCommitTaskFailed, err);
-                    app_error.notify_sentry(&logger);
+                    app_error.notify_sentry();
                     EditionCommitResult::Error {
                         error: app_error.to_svc_error(),
                     }

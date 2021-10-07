@@ -14,6 +14,7 @@ use svc_agent::{
     Addressable, AgentId, Subscription,
 };
 use svc_error::Error as SvcError;
+use tracing::{error, instrument};
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -61,6 +62,7 @@ pub(crate) struct CreateHandler;
 impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
+    #[instrument(skip_all, fields(room_id, scope, classroom_id))]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -130,7 +132,7 @@ impl RequestHandler for CreateHandler {
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
-        helpers::add_room_logger_tags(context, &room);
+        helpers::add_room_logger_tags(&room);
 
         // Respond and broadcast to the audience topic.
         let response = helpers::build_response(
@@ -166,6 +168,12 @@ pub(crate) struct ReadHandler;
 impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            room_id = %payload.id, scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -217,6 +225,12 @@ pub(crate) struct UpdateHandler;
 impl RequestHandler for UpdateHandler {
     type Payload = UpdateRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            room_id = %payload.id, scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -343,6 +357,12 @@ pub(crate) struct EnterHandler;
 impl RequestHandler for EnterHandler {
     type Payload = EnterRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            room_id = %payload.id, scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -462,6 +482,12 @@ pub(crate) struct LeaveHandler;
 impl RequestHandler for LeaveHandler {
     type Payload = LeaveRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            room_id = %payload.id, scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -541,6 +567,12 @@ pub(crate) struct AdjustHandler;
 impl RequestHandler for AdjustHandler {
     type Payload = AdjustRequest;
 
+    #[instrument(
+        skip_all,
+        fields(
+            room_id = %payload.id, scope, classroom_id
+        )
+    )]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -566,7 +598,6 @@ impl RequestHandler for AdjustHandler {
         // Run asynchronous task for adjustment.
         let db = context.db().to_owned();
         let metrics = context.metrics();
-        let logger = context.logger().new(o!());
 
         let notification_future = tokio::task::spawn(async move {
             let operation_result = adjust_room(
@@ -589,9 +620,9 @@ impl RequestHandler for AdjustHandler {
                     }
                 }
                 Err(err) => {
-                    error!(logger, "Room adjustment job failed: {:?}", err);
+                    error!("Room adjustment job failed: {:?}", err);
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
-                    app_error.notify_sentry(&logger);
+                    app_error.notify_sentry();
                     RoomAdjustResult::Error {
                         error: app_error.to_svc_error(),
                     }

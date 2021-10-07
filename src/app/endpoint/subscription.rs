@@ -10,8 +10,9 @@ use svc_agent::{
         IncomingEventProperties, IncomingRequestProperties, IncomingResponseProperties,
         IntoPublishableMessage, OutgoingEvent, ResponseStatus, ShortTermTimingProperties,
     },
-    Addressable, AgentId, Authenticable,
+    AgentId, Authenticable,
 };
+use tracing::{field::display, instrument, warn, Span};
 use uuid::Uuid;
 
 use crate::db::agent;
@@ -70,6 +71,7 @@ impl ResponseHandler for CreateResponseHandler {
     type Payload = CreateDeleteResponsePayload;
     type CorrelationData = CorrelationDataPayload;
 
+    #[instrument(skip_all, fields(room_id))]
     async fn handle<C: Context>(
         context: &mut C,
         _payload: Self::Payload,
@@ -85,16 +87,10 @@ impl ResponseHandler for CreateResponseHandler {
             )).error(AppErrorKind::AccessDenied);
         }
 
-        context.add_logger_tags(o!(
-            "agent_label" => respp.as_agent_id().label().to_owned(),
-            "account_label" => respp.as_account_id().label().to_owned(),
-            "audience" => respp.as_account_id().audience().to_owned(),
-        ));
-
         if respp.status() == ResponseStatus::OK {
             // Parse room id.
             let room_id = try_room_id(&corr_data.object)?;
-            context.add_logger_tags(o!("room_id" => room_id.to_string()));
+            Span::current().record("room_id", &display(room_id));
 
             // Determine whether the agent is banned.
             let agent_with_ban = {
@@ -190,13 +186,7 @@ impl ResponseHandler for BroadcastCreateResponseHandler {
             )).error(AppErrorKind::AccessDenied);
         }
 
-        context.add_logger_tags(o!(
-            "agent_label" => respp.as_agent_id().label().to_owned(),
-            "account_label" => respp.as_account_id().label().to_owned(),
-            "audience" => respp.as_account_id().audience().to_owned(),
-        ));
-
-        warn!(context.logger(), "Broadcast subscription created");
+        warn!("Broadcast subscription created");
 
         Ok(Box::new(stream::empty()))
     }
@@ -211,6 +201,7 @@ impl ResponseHandler for DeleteResponseHandler {
     type Payload = CreateDeleteResponsePayload;
     type CorrelationData = CorrelationDataPayload;
 
+    #[instrument(skip_all, fields(room_id))]
     async fn handle<C: Context>(
         context: &mut C,
         _payload: Self::Payload,
@@ -228,7 +219,7 @@ impl ResponseHandler for DeleteResponseHandler {
 
         // Parse room id.
         let room_id = try_room_id(&corr_data.object)?;
-        context.add_logger_tags(o!("room_id" => room_id.to_string()));
+        Span::current().record("room_id", &display(room_id));
 
         // Determine whether agent is active and banned and delete it from the db.
         let row_count = {
@@ -283,6 +274,7 @@ impl ResponseHandler for BroadcastDeleteResponseHandler {
     type Payload = CreateDeleteResponsePayload;
     type CorrelationData = CorrelationDataPayload;
 
+    #[instrument(skip_all, fields(room_id))]
     async fn handle<C: Context>(
         context: &mut C,
         _payload: Self::Payload,
@@ -300,7 +292,7 @@ impl ResponseHandler for BroadcastDeleteResponseHandler {
 
         // Parse room id.
         let room_id = try_room_id(&corr_data.object)?;
-        context.add_logger_tags(o!("room_id" => room_id.to_string()));
+        Span::current().record("room_id", &display(room_id));
 
         Ok(Box::new(stream::empty()))
     }
@@ -320,6 +312,7 @@ pub(crate) struct DeleteEventHandler;
 impl EventHandler for DeleteEventHandler {
     type Payload = DeleteEventPayload;
 
+    #[instrument(skip_all, fields(room_id))]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -336,7 +329,7 @@ impl EventHandler for DeleteEventHandler {
 
         // Delete agent from the DB.
         let room_id = try_room_id(&payload.object)?;
-        context.add_logger_tags(o!("room_id" => room_id.to_string()));
+        Span::current().record("room_id", &display(room_id));
 
         let row_count = {
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
@@ -398,6 +391,7 @@ pub(crate) struct BroadcastDeleteEventHandler;
 impl EventHandler for BroadcastDeleteEventHandler {
     type Payload = DeleteEventPayload;
 
+    #[instrument(skip_all, fields(room_id))]
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
@@ -413,9 +407,9 @@ impl EventHandler for BroadcastDeleteEventHandler {
         }
 
         let room_id = try_room_id(&payload.object)?;
-        context.add_logger_tags(o!("room_id" => room_id.to_string()));
+        Span::current().record("room_id", &display(room_id));
 
-        warn!(context.logger(), "Broadcast subscription deleted by event");
+        warn!("Broadcast subscription deleted by event");
 
         Ok(Box::new(stream::empty()))
     }

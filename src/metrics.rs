@@ -1,3 +1,5 @@
+use std::{collections::HashMap, sync::Arc};
+
 use enum_iterator::IntoEnumIterator;
 use futures::Future;
 use parking_lot::RwLock;
@@ -6,7 +8,7 @@ use prometheus::{
     Opts, Registry,
 };
 use serde::Serialize;
-use std::{collections::HashMap, sync::Arc};
+use tracing::error;
 
 use crate::app::error::ErrorKind;
 
@@ -148,7 +150,7 @@ impl Metrics {
                         {
                             Ok(x) => Some(x),
                             Err(err) => {
-                                error!(crate::LOG, "Bad metric: {:?}", err);
+                                error!("Bad metric: {:?}", err);
                                 None
                             }
                         }

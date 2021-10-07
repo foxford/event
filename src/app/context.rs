@@ -3,7 +3,6 @@ use std::sync::Arc;
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
-use slog::{Logger, OwnedKV, SendSyncRefUnwindSafeKV};
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgPool as Db, Postgres};
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
@@ -51,11 +50,6 @@ pub(crate) trait GlobalContext: Sync {
 
 pub(crate) trait MessageContext: Send {
     fn start_timestamp(&self) -> DateTime<Utc>;
-    fn logger(&self) -> &Logger;
-
-    fn add_logger_tags<T>(&mut self, tags: OwnedKV<T>)
-    where
-        T: SendSyncRefUnwindSafeKV + Sized + 'static;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -116,7 +110,6 @@ impl GlobalContext for AppContext {
 pub(crate) struct AppMessageContext<'a, C: GlobalContext> {
     global_context: &'a C,
     start_timestamp: DateTime<Utc>,
-    logger: Logger,
 }
 
 impl<'a, C: GlobalContext> AppMessageContext<'a, C> {
@@ -124,7 +117,6 @@ impl<'a, C: GlobalContext> AppMessageContext<'a, C> {
         Self {
             global_context,
             start_timestamp,
-            logger: crate::LOG.new(o!()),
         }
     }
 }
@@ -170,17 +162,6 @@ impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
 impl<'a, C: GlobalContext> MessageContext for AppMessageContext<'a, C> {
     fn start_timestamp(&self) -> DateTime<Utc> {
         self.start_timestamp
-    }
-
-    fn logger(&self) -> &Logger {
-        &self.logger
-    }
-
-    fn add_logger_tags<T>(&mut self, tags: OwnedKV<T>)
-    where
-        T: SendSyncRefUnwindSafeKV + Sized + 'static,
-    {
-        self.logger = self.logger.new(tags);
     }
 }
 
