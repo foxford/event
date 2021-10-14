@@ -10,12 +10,13 @@ use prometheus::{
 use serde::Serialize;
 use tracing::error;
 
+use crate::app::endpoint;
 use crate::app::error::ErrorKind;
 
 #[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, IntoEnumIterator)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum QueryKey {
+pub enum QueryKey {
     AdjustmentInsertQuery,
     AgentDeleteQuery,
     AgentFindWithBanQuery,
@@ -48,7 +49,7 @@ pub(crate) enum QueryKey {
     StateQuery,
 }
 
-pub(crate) struct Metrics {
+pub struct Metrics {
     pub request_duration: RwLock<HashMap<String, Option<Histogram>>>,
     pub request_duration_vec: HistogramVec,
     pub authorization_time: Histogram,
@@ -161,7 +162,7 @@ impl Metrics {
         }
     }
 
-    pub fn observe_app_result(&self, result: &crate::app::endpoint::Result) {
+    pub fn observe_app_result(&self, result: &endpoint::RequestResult) {
         match result {
             Ok(_) => {
                 self.app_result_ok.inc();

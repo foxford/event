@@ -2,11 +2,12 @@ use std::ops::Bound;
 
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use futures::{future, stream};
+use axum::extract::{Extension, Path, RawQuery};
 use serde_derive::Deserialize;
 use serde_json::{map::Map as JsonMap, Value as JsonValue};
-use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
-use tracing::{instrument, Span};
+use svc_agent::mqtt::ResponseStatus;
+use svc_utils::extractors::AuthnExtractor;
+use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -19,13 +20,39 @@ const MAX_SETS: usize = 10;
 const MAX_LIMIT_PER_SET: i64 = 100;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ReadRequest {
-    room_id: Uuid,
+pub(crate) struct ReadPayload {
     sets: Vec<String>,
     attribute: Option<String>,
     occurred_at: Option<i64>,
     original_occurred_at: Option<i64>,
     limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct ReadRequest {
+    room_id: Uuid,
+    #[serde(flatten)]
+    payload: ReadPayload,
+}
+
+pub async fn read(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(room_id): Path<Uuid>,
+    RawQuery(query): RawQuery,
+) -> RequestResult {
+    let payload = serde_qs::from_str(&query.unwrap_or_default())
+        .map_err(|e| anyhow!("Failed to parse qs, err = {:?}", e))
+        .error(AppErrorKind::InvalidQueryString)?;
+    let request = ReadRequest { room_id, payload };
+    ReadHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
 }
 
 pub(crate) struct ReadHandler;
@@ -34,17 +61,14 @@ pub(crate) struct ReadHandler;
 impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
 
-    #[instrument(
-        skip_all,
-        fields(
-            room_id = %payload.room_id, scope, classroom_id
-        )
-    )]
+    #[instrument(skip_all, fields(room_id, scope, classroom_id))]
     async fn handle<C: Context>(
         context: &mut C,
-        payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
+        Self::Payload { room_id, payload }: Self::Payload,
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
+        Span::current().record("room_id", &display(room_id));
+
         // Validate parameters.
         let validation_error = match payload.sets.len() {
             0 => Some(anyhow!("'sets' can't be empty")),
@@ -63,8 +87,7 @@ impl RequestHandler for ReadHandler {
         );
 
         // Check whether the room exists.
-        let room =
-            helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Any).await?;
+        let room = helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Any).await?;
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
@@ -155,15 +178,12 @@ impl RequestHandler for ReadHandler {
         }
 
         // Respond with state.
-        Ok(Box::new(stream::once(future::ready(
-            helpers::build_response(
-                ResponseStatus::OK,
-                JsonValue::Object(state),
-                reqp,
-                context.start_timestamp(),
-                Some(authz_time),
-            ),
-        ))))
+        Ok(AppResponse::new(
+            ResponseStatus::OK,
+            JsonValue::Object(state),
+            context.start_timestamp(),
+            Some(authz_time),
+        ))
     }
 }
 
@@ -233,11 +253,13 @@ mod tests {
 
         let payload = ReadRequest {
             room_id: room.id(),
-            sets: vec![String::from("messages"), String::from("layout")],
-            attribute: None,
-            occurred_at: None,
-            original_occurred_at: None,
-            limit: None,
+            payload: ReadPayload {
+                sets: vec![String::from("messages"), String::from("layout")],
+                attribute: None,
+                occurred_at: None,
+                original_occurred_at: None,
+                limit: None,
+            },
         };
 
         let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
@@ -302,11 +324,13 @@ mod tests {
 
         let payload = ReadRequest {
             room_id: room.id(),
-            sets: vec![String::from("messages")],
-            attribute: None,
-            occurred_at: Some(2001),
-            original_occurred_at: None,
-            limit: Some(2),
+            payload: ReadPayload {
+                sets: vec![String::from("messages")],
+                attribute: None,
+                occurred_at: Some(2001),
+                original_occurred_at: None,
+                limit: Some(2),
+            },
         };
 
         let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
@@ -324,11 +348,13 @@ mod tests {
         // Request the next page.
         let payload = ReadRequest {
             room_id: room.id(),
-            sets: vec![String::from("messages")],
-            attribute: None,
-            occurred_at: Some(1),
-            original_occurred_at: Some(state.messages[1].original_occurred_at()),
-            limit: Some(2),
+            payload: ReadPayload {
+                sets: vec![String::from("messages")],
+                attribute: None,
+                occurred_at: Some(1),
+                original_occurred_at: Some(state.messages[1].original_occurred_at()),
+                limit: Some(2),
+            },
         };
 
         let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
@@ -390,11 +416,13 @@ mod tests {
 
         let payload = ReadRequest {
             room_id: room.id(),
-            sets: vec![String::from("messages")],
-            attribute: Some(String::from("pinned")),
-            occurred_at: None,
-            original_occurred_at: None,
-            limit: None,
+            payload: ReadPayload {
+                sets: vec![String::from("messages")],
+                attribute: Some(String::from("pinned")),
+                occurred_at: None,
+                original_occurred_at: None,
+                limit: None,
+            },
         };
 
         let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
@@ -452,11 +480,13 @@ mod tests {
 
         let payload = ReadRequest {
             room_id: room.id(),
-            sets: vec![String::from("messages")],
-            attribute: None,
-            occurred_at: Some(2001),
-            original_occurred_at: None,
-            limit: Some(2),
+            payload: ReadPayload {
+                sets: vec![String::from("messages")],
+                attribute: None,
+                occurred_at: Some(2001),
+                original_occurred_at: None,
+                limit: Some(2),
+            },
         };
 
         let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
@@ -474,11 +504,13 @@ mod tests {
         // Request the next page.
         let payload = ReadRequest {
             room_id: room.id(),
-            sets: vec![String::from("messages")],
-            attribute: None,
-            occurred_at: Some(1),
-            original_occurred_at: Some(state.messages[1].original_occurred_at()),
-            limit: Some(2),
+            payload: ReadPayload {
+                sets: vec![String::from("messages")],
+                attribute: None,
+                occurred_at: Some(1),
+                original_occurred_at: Some(state.messages[1].original_occurred_at()),
+                limit: Some(2),
+            },
         };
 
         let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
@@ -568,11 +600,13 @@ mod tests {
 
         let payload = ReadRequest {
             room_id: room.id(),
-            sets: vec![String::from("messages")],
-            attribute: Some(String::from("pinned")),
-            occurred_at: None,
-            original_occurred_at: None,
-            limit: None,
+            payload: ReadPayload {
+                sets: vec![String::from("messages")],
+                attribute: Some(String::from("pinned")),
+                occurred_at: None,
+                original_occurred_at: None,
+                limit: None,
+            },
         };
 
         let messages = handle_request::<ReadHandler>(&mut context, &agent, payload)
@@ -600,11 +634,13 @@ mod tests {
 
         let payload = ReadRequest {
             room_id: room.id(),
-            sets: vec![String::from("messages"), String::from("layout")],
-            attribute: None,
-            occurred_at: None,
-            original_occurred_at: None,
-            limit: None,
+            payload: ReadPayload {
+                sets: vec![String::from("messages"), String::from("layout")],
+                attribute: None,
+                occurred_at: None,
+                original_occurred_at: None,
+                limit: None,
+            },
         };
 
         let err = handle_request::<ReadHandler>(&mut context, &agent, payload)
@@ -621,11 +657,13 @@ mod tests {
 
         let payload = ReadRequest {
             room_id: Uuid::new_v4(),
-            sets: vec![String::from("messages"), String::from("layout")],
-            attribute: None,
-            occurred_at: None,
-            original_occurred_at: None,
-            limit: None,
+            payload: ReadPayload {
+                sets: vec![String::from("messages"), String::from("layout")],
+                attribute: None,
+                occurred_at: None,
+                original_occurred_at: None,
+                limit: None,
+            },
         };
 
         let err = handle_request::<ReadHandler>(&mut context, &agent, payload)

@@ -1,8 +1,7 @@
 use async_trait::async_trait;
-use futures::{future, stream};
 use serde_derive::Deserialize;
 use serde_json::json;
-use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
+use svc_agent::mqtt::ResponseStatus;
 use svc_error::{extension::sentry, Error as SvcError};
 use tracing::{error, warn};
 
@@ -22,8 +21,8 @@ impl RequestHandler for VacuumHandler {
     async fn handle<C: Context>(
         context: &mut C,
         _payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
         // Authz: only trusted subjects.
         let authz_time = context
             .authz()
@@ -57,15 +56,12 @@ impl RequestHandler for VacuumHandler {
         });
 
         // Return empty 202 response.
-        Ok(Box::new(stream::once(future::ready(
-            helpers::build_response(
-                ResponseStatus::ACCEPTED,
-                json!({}),
-                reqp,
-                context.start_timestamp(),
-                Some(authz_time),
-            ),
-        ))))
+        Ok(AppResponse::new(
+            ResponseStatus::ACCEPTED,
+            json!({}),
+            context.start_timestamp(),
+            Some(authz_time),
+        ))
     }
 }
 

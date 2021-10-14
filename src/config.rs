@@ -1,29 +1,33 @@
+use std::net::SocketAddr;
+
 use chrono::Duration;
 use serde_derive::Deserialize;
 use svc_agent::{mqtt::AgentConfig, AccountId};
-use svc_authn::jose::Algorithm;
+use svc_authn::jose::{Algorithm, ConfigMap};
 use svc_authz::ConfigMap as Authz;
 use svc_error::extension::sentry::Config as SentryConfig;
 
 const DEFAULT_BAN_DUR_SECS: u64 = 5 * 3600;
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct Config {
-    pub(crate) id: AccountId,
-    pub(crate) id_token: JwtConfig,
-    pub(crate) agent_label: String,
-    pub(crate) broker_id: AccountId,
-    pub(crate) authz: Authz,
-    pub(crate) mqtt: AgentConfig,
-    pub(crate) sentry: Option<SentryConfig>,
+pub struct Config {
+    pub id: AccountId,
+    pub id_token: JwtConfig,
+    pub agent_label: String,
+    pub broker_id: AccountId,
+    pub authn: ConfigMap,
+    pub authz: Authz,
+    pub http_addr: SocketAddr,
+    pub mqtt: AgentConfig,
+    pub sentry: Option<SentryConfig>,
     #[serde(default)]
-    pub(crate) telemetry: TelemetryConfig,
+    pub telemetry: TelemetryConfig,
     #[serde(default)]
-    pub(crate) kruonis: KruonisConfig,
-    pub(crate) metrics: Option<MetricsConfig>,
+    pub kruonis: KruonisConfig,
+    pub metrics: Option<MetricsConfig>,
     ban_duration_s: Option<u64>,
     #[serde(default)]
-    pub(crate) vacuum: VacuumConfig,
+    pub vacuum: VacuumConfig,
 }
 
 impl Config {
@@ -43,11 +47,11 @@ pub struct MetricsHttpConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct JwtConfig {
+pub struct JwtConfig {
     #[serde(deserialize_with = "svc_authn::serde::algorithm")]
-    pub(crate) algorithm: Algorithm,
+    pub algorithm: Algorithm,
     #[serde(deserialize_with = "svc_authn::serde::file")]
-    pub(crate) key: Vec<u8>,
+    pub key: Vec<u8>,
 }
 
 pub(crate) fn load() -> Result<Config, config::ConfigError> {
@@ -58,22 +62,22 @@ pub(crate) fn load() -> Result<Config, config::ConfigError> {
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
-pub(crate) struct TelemetryConfig {
-    pub(crate) id: Option<AccountId>,
+pub struct TelemetryConfig {
+    pub id: Option<AccountId>,
 }
 
 #[derive(Clone, Debug, Deserialize, Default)]
-pub(crate) struct KruonisConfig {
-    pub(crate) id: Option<AccountId>,
+pub struct KruonisConfig {
+    pub id: Option<AccountId>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub(crate) struct VacuumConfig {
-    pub(crate) max_history_size: usize,
+pub struct VacuumConfig {
+    pub max_history_size: usize,
     #[serde(with = "crate::serde::duration_seconds")]
-    pub(crate) max_history_lifetime: Duration,
+    pub max_history_lifetime: Duration,
     #[serde(with = "crate::serde::duration_seconds")]
-    pub(crate) max_deleted_lifetime: Duration,
+    pub max_deleted_lifetime: Duration,
 }
 
 impl Default for VacuumConfig {

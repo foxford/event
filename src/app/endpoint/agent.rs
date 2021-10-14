@@ -1,11 +1,16 @@
+use std::sync::Arc;
+
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use futures::{future, stream};
+use axum::extract::{
+    Json, {Extension, Path, Query},
+};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::json;
-use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
+use svc_agent::mqtt::ResponseStatus;
 use svc_agent::AccountId;
 use svc_authn::Authenticable;
+use svc_utils::extractors::AuthnExtractor;
 use tracing::{error, instrument};
 use uuid::Uuid;
 
@@ -19,10 +24,32 @@ use crate::db::room_ban::{DeleteQuery as BanDeleteQuery, InsertQuery as BanInser
 const MAX_LIMIT: usize = 25;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ListRequest {
-    room_id: Uuid,
+pub struct ListPayload {
     offset: Option<usize>,
     limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListRequest {
+    room_id: Uuid,
+    payload: ListPayload,
+}
+
+pub async fn list(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(room_id): Path<Uuid>,
+    Query(payload): Query<ListPayload>,
+) -> RequestResult {
+    let request = ListRequest { room_id, payload };
+    ListHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
 }
 
 pub(crate) struct ListHandler;
@@ -33,11 +60,10 @@ impl RequestHandler for ListHandler {
 
     async fn handle<C: Context>(
         context: &mut C,
-        payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
-        let room = helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Open)
-            .await?;
+        Self::Payload { room_id, payload }: Self::Payload,
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
+        let room = helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Open).await?;
 
         // Authorize agents listing in the room.
         let object = {
@@ -61,7 +87,7 @@ impl RequestHandler for ListHandler {
             let mut conn = context.get_ro_conn().await?;
 
             let query = db::agent::ListWithBansQuery::new(
-                payload.room_id,
+                room_id,
                 db::agent::Status::Ready,
                 payload.offset.unwrap_or(0),
                 std::cmp::min(payload.limit.unwrap_or(MAX_LIMIT), MAX_LIMIT),
@@ -76,26 +102,29 @@ impl RequestHandler for ListHandler {
         };
 
         // Respond with agents list.
-        Ok(Box::new(stream::once(future::ready(
-            helpers::build_response(
-                ResponseStatus::OK,
-                agents,
-                reqp,
-                context.start_timestamp(),
-                Some(authz_time),
-            ),
-        ))))
+        Ok(AppResponse::new(
+            ResponseStatus::OK,
+            agents,
+            context.start_timestamp(),
+            Some(authz_time),
+        ))
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct UpdateRequest {
+pub struct UpdatePayload {
     account_id: AccountId,
-    room_id: Uuid,
     value: bool,
     reason: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateRequest {
+    room_id: Uuid,
+    #[serde(flatten)]
+    payload: UpdatePayload,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -118,6 +147,23 @@ pub(crate) struct TenantBanNotification {
     classroom_id: Option<Uuid>,
 }
 
+pub async fn update(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(room_id): Path<Uuid>,
+    Json(payload): Json<UpdatePayload>,
+) -> RequestResult {
+    let request = UpdateRequest { room_id, payload };
+    UpdateHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
+}
+
 pub(crate) struct UpdateHandler;
 
 #[async_trait]
@@ -127,11 +173,10 @@ impl RequestHandler for UpdateHandler {
     #[instrument(skip_all, fields(scope, room_id, classroom_id))]
     async fn handle<C: Context>(
         context: &mut C,
-        payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
-        let room = helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Open)
-            .await?;
+        Self::Payload { room_id, payload }: Self::Payload,
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
+        let room = helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Open).await?;
 
         let author = reqp.as_account_id().to_string();
 
@@ -160,7 +205,7 @@ impl RequestHandler for UpdateHandler {
         };
 
         if payload.value {
-            let mut query = BanInsertQuery::new(payload.account_id.clone(), payload.room_id);
+            let mut query = BanInsertQuery::new(payload.account_id.clone(), room_id);
 
             if let Some(ref reason) = payload.reason {
                 query.reason(reason);
@@ -174,7 +219,7 @@ impl RequestHandler for UpdateHandler {
                 .context("Failed to insert room ban")
                 .error(AppErrorKind::DbQueryFailed)?;
         } else {
-            let query = BanDeleteQuery::new(payload.account_id.clone(), payload.room_id);
+            let query = BanDeleteQuery::new(payload.account_id.clone(), room_id);
 
             let mut conn = context.get_conn().await?;
             context
@@ -202,16 +247,13 @@ impl RequestHandler for UpdateHandler {
             );
         }
 
-        let mut messages = Vec::with_capacity(3);
-
         // Respond to the agent.
-        messages.push(helpers::build_response(
+        let mut response = AppResponse::new(
             ResponseStatus::OK,
             json!({}),
-            reqp,
             context.start_timestamp(),
             Some(authz_time),
-        ));
+        );
 
         let tenant_notification = TenantBanNotification {
             room_id: room.id(),
@@ -222,13 +264,12 @@ impl RequestHandler for UpdateHandler {
             classroom_id: room.classroom_id(),
         };
 
-        messages.push(helpers::build_notification(
+        response.add_notification(
             "agent.ban",
             &format!("audiences/{}/events", room.audience()),
             tenant_notification,
-            reqp,
             context.start_timestamp(),
-        ));
+        );
 
         let room_notification = BanNotification {
             account_id: payload.account_id,
@@ -237,15 +278,14 @@ impl RequestHandler for UpdateHandler {
         };
 
         // Notify room subscribers.
-        messages.push(helpers::build_notification(
+        response.add_notification(
             "agent.update",
             &format!("rooms/{}/events", room.id()),
             room_notification,
-            reqp,
             context.start_timestamp(),
-        ));
+        );
 
-        Ok(Box::new(stream::iter(messages)))
+        Ok(response)
     }
 }
 
@@ -302,8 +342,10 @@ mod tests {
 
         let payload = ListRequest {
             room_id: room.id(),
-            offset: None,
-            limit: None,
+            payload: ListPayload {
+                offset: None,
+                limit: None,
+            },
         };
 
         let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -337,8 +379,10 @@ mod tests {
 
         let payload = ListRequest {
             room_id: room.id(),
-            offset: None,
-            limit: None,
+            payload: ListPayload {
+                offset: None,
+                limit: None,
+            },
         };
 
         let err = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -370,8 +414,10 @@ mod tests {
 
         let payload = ListRequest {
             room_id: room.id(),
-            offset: None,
-            limit: None,
+            payload: ListPayload {
+                offset: None,
+                limit: None,
+            },
         };
 
         let err = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -389,8 +435,10 @@ mod tests {
 
         let payload = ListRequest {
             room_id: Uuid::new_v4(),
-            offset: None,
-            limit: None,
+            payload: ListPayload {
+                offset: None,
+                limit: None,
+            },
         };
 
         let err = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -453,13 +501,15 @@ mod tests {
         // User posts something bad and is allowed to do so
         let payload = super::super::event::CreateRequest {
             room_id: room.id(),
-            kind: String::from("message"),
-            set: Some(String::from("messages")),
-            label: Some(String::from("message-1")),
-            attribute: None,
-            data: json!({ "text": "banmsg" }),
-            is_claim: false,
-            is_persistent: true,
+            payload: super::super::event::CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "banmsg" }),
+                is_claim: false,
+                is_persistent: true,
+            },
         };
 
         let messages = handle_request::<crate::app::endpoint::event::CreateHandler>(
@@ -479,9 +529,11 @@ mod tests {
         // Admin bans user
         let payload = UpdateRequest {
             room_id: room.id(),
-            account_id: user.account_id().to_owned(),
-            value: true,
-            reason: Some("some reason".into()),
+            payload: UpdatePayload {
+                account_id: user.account_id().to_owned(),
+                value: true,
+                reason: Some("some reason".into()),
+            },
         };
 
         let messages = handle_request::<UpdateHandler>(&mut context, &admin, payload)
@@ -528,9 +580,11 @@ mod tests {
         // Ban once again, this should do nothing
         let payload = UpdateRequest {
             room_id: room.id(),
-            account_id: user.account_id().to_owned(),
-            value: true,
-            reason: None,
+            payload: UpdatePayload {
+                account_id: user.account_id().to_owned(),
+                value: true,
+                reason: None,
+            },
         };
 
         let messages = handle_request::<UpdateHandler>(&mut context, &admin, payload)
@@ -544,13 +598,15 @@ mod tests {
         // Make event.create request to check that user is actually banned
         let payload = super::super::event::CreateRequest {
             room_id: room.id(),
-            kind: String::from("message"),
-            set: Some(String::from("messages")),
-            label: Some(String::from("message-1")),
-            attribute: None,
-            data: json!({ "text": "hello" }),
-            is_claim: false,
-            is_persistent: true,
+            payload: super::super::event::CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+            },
         };
 
         let err =
@@ -563,9 +619,11 @@ mod tests {
         // Unban the user
         let payload = UpdateRequest {
             room_id: room.id(),
-            account_id: user.account_id().to_owned(),
-            value: false,
-            reason: None,
+            payload: UpdatePayload {
+                account_id: user.account_id().to_owned(),
+                value: false,
+                reason: None,
+            },
         };
 
         let messages = handle_request::<UpdateHandler>(&mut context, &admin, payload)
@@ -610,13 +668,15 @@ mod tests {
         // Make event.create request to check that user is unbanned
         let payload = super::super::event::CreateRequest {
             room_id: room.id(),
-            kind: String::from("message"),
-            set: Some(String::from("messages")),
-            label: Some(String::from("message-1")),
-            attribute: None,
-            data: json!({ "text": "hello 2" }),
-            is_claim: false,
-            is_persistent: true,
+            payload: super::super::event::CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "hello 2" }),
+                is_claim: false,
+                is_persistent: true,
+            },
         };
 
         let messages = handle_request::<crate::app::endpoint::event::CreateHandler>(

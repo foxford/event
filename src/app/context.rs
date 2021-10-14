@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgPool as Db, Postgres};
+use svc_agent::mqtt::Agent;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 
@@ -17,10 +18,10 @@ use crate::{app::s3_client::S3Client, authz::Authz};
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) trait Context: GlobalContext + MessageContext {}
+pub trait Context: GlobalContext + MessageContext {}
 
 #[async_trait]
-pub(crate) trait GlobalContext: Sync {
+pub trait GlobalContext: Sync {
     fn authz(&self) -> &Authz;
     fn config(&self) -> &Config;
     fn db(&self) -> &Db;
@@ -48,14 +49,14 @@ pub(crate) trait GlobalContext: Sync {
     }
 }
 
-pub(crate) trait MessageContext: Send {
+pub trait MessageContext: Send {
     fn start_timestamp(&self) -> DateTime<Utc>;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone)]
-pub(crate) struct AppContext {
+pub struct AppContext {
     config: Arc<Config>,
     authz: Authz,
     db: Db,
@@ -65,6 +66,13 @@ pub(crate) struct AppContext {
     redis_pool: Option<RedisConnectionPool>,
     metrics: Arc<Metrics>,
     s3_client: Option<S3Client>,
+    agent: Agent,
+}
+
+impl AppContext {
+    pub fn start_message(&self) -> AppMessageContext<'_, Self> {
+        AppMessageContext::new(self, Utc::now())
+    }
 }
 
 impl GlobalContext for AppContext {
@@ -107,7 +115,7 @@ impl GlobalContext for AppContext {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct AppMessageContext<'a, C: GlobalContext> {
+pub struct AppMessageContext<'a, C: GlobalContext> {
     global_context: &'a C,
     start_timestamp: DateTime<Utc>,
 }
@@ -170,6 +178,7 @@ impl<'a, C: GlobalContext> Context for AppMessageContext<'a, C> {}
 ///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct AppContextBuilder {
+    agent: Agent,
     config: Config,
     authz: Authz,
     db: Db,
@@ -180,10 +189,11 @@ pub(crate) struct AppContextBuilder {
 }
 
 impl AppContextBuilder {
-    pub(crate) fn new(config: Config, authz: Authz, db: Db) -> Self {
+    pub(crate) fn new(config: Config, authz: Authz, db: Db, agent: Agent) -> Self {
         let agent_id = AgentId::new(&config.agent_label, config.id.to_owned());
 
         Self {
+            agent,
             config,
             authz,
             db,
@@ -217,6 +227,7 @@ impl AppContextBuilder {
 
     pub(crate) fn build(self, metrics: Arc<Metrics>) -> AppContext {
         AppContext {
+            agent: self.agent,
             config: Arc::new(self.config),
             authz: self.authz,
             db: self.db,

@@ -26,7 +26,7 @@ impl EventHandler for PullHandler {
         _context: &mut C,
         _payload: Self::Payload,
         _evp: &IncomingEventProperties,
-    ) -> Result {
+    ) -> MqttResult {
         Ok(Box::new(stream::empty()))
     }
 }

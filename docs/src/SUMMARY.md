@@ -2,6 +2,7 @@
 
 - [Overview](overview.md)
 - [API](api.md)
+    - [HTTP](api/http.md)
     - [Room](api/room.md)
         - [Create](api/room/create.md)
         - [Read](api/room/read.md)

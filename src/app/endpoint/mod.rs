@@ -4,8 +4,8 @@ use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::mqtt::{
-    IncomingEvent, IncomingEventProperties, IncomingRequest, IncomingRequestProperties,
-    IncomingResponse, IncomingResponseProperties,
+    IncomingEvent, IncomingEventProperties, IncomingRequest, IncomingResponse,
+    IncomingResponseProperties,
 };
 
 use crate::app::context::Context;
@@ -15,9 +15,12 @@ use crate::app::message_handler::{
     EventEnvelopeHandler, RequestEnvelopeHandler, ResponseEnvelopeHandler,
 };
 
+use super::service_utils::{RequestParams, Response as AppResponse};
+
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) type Result = StdResult<MessageStream, AppError>;
+pub type RequestResult = StdResult<AppResponse, AppError>;
+pub(crate) type MqttResult = StdResult<MessageStream, AppError>;
 
 #[async_trait]
 pub(crate) trait RequestHandler {
@@ -26,8 +29,8 @@ pub(crate) trait RequestHandler {
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result;
+        reqp: RequestParams<'_>,
+    ) -> RequestResult;
 }
 
 macro_rules! request_routes {
@@ -94,7 +97,7 @@ pub(crate) trait ResponseHandler {
         payload: Self::Payload,
         respp: &IncomingResponseProperties,
         corr_data: &Self::CorrelationData,
-    ) -> Result;
+    ) -> MqttResult;
 }
 
 macro_rules! response_routes {
@@ -131,7 +134,7 @@ pub(crate) trait EventHandler {
         context: &mut C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
-    ) -> Result;
+    ) -> MqttResult;
 }
 
 macro_rules! event_routes {
@@ -163,24 +166,30 @@ event_routes!(
 
 ///////////////////////////////////////////////////////////////////////////////
 
-mod agent;
+pub mod agent;
 pub(crate) mod authz;
-mod change;
-mod edition;
-mod event;
-pub(self) mod helpers;
+pub mod change;
+pub mod edition;
+pub mod event;
+pub mod helpers;
 pub(crate) mod metric;
-mod room;
-mod state;
+pub mod room;
+pub mod state;
 mod subscription;
 mod system;
 
 pub(self) mod prelude {
-    pub(super) use super::{helpers, EventHandler, RequestHandler, ResponseHandler, Result};
+    pub(super) use super::{
+        helpers, AppResponse, EventHandler, MqttResult, RequestHandler, RequestParams,
+        RequestResult, ResponseHandler,
+    };
     pub(super) use crate::app::endpoint::authz::AuthzObject;
     pub(super) use crate::app::endpoint::CorrelationData;
     pub(super) use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
     pub(super) use crate::metrics::QueryKey;
+
+    pub use crate::app::context::{AppContext, Context};
+    pub use std::sync::Arc;
 
     pub(super) use svc_authn::Authenticable;
 

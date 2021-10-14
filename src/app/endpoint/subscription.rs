@@ -8,7 +8,7 @@ use serde_json::json;
 use svc_agent::{
     mqtt::{
         IncomingEventProperties, IncomingRequestProperties, IncomingResponseProperties,
-        IntoPublishableMessage, OutgoingEvent, ResponseStatus, ShortTermTimingProperties,
+        OutgoingEvent, ResponseStatus, ShortTermTimingProperties,
     },
     AgentId, Authenticable,
 };
@@ -77,7 +77,7 @@ impl ResponseHandler for CreateResponseHandler {
         _payload: Self::Payload,
         respp: &IncomingResponseProperties,
         corr_data: &Self::CorrelationData,
-    ) -> Result {
+    ) -> MqttResult {
         // Check if the event is sent by the broker.
         if respp.as_account_id() != &context.config().broker_id {
             return Err(anyhow!(
@@ -176,7 +176,7 @@ impl ResponseHandler for BroadcastCreateResponseHandler {
         _payload: Self::Payload,
         respp: &IncomingResponseProperties,
         _corr_data: &Self::CorrelationData,
-    ) -> Result {
+    ) -> MqttResult {
         // Check if the event is sent by the broker.
         if respp.as_account_id() != &context.config().broker_id {
             return Err(anyhow!(
@@ -207,7 +207,7 @@ impl ResponseHandler for DeleteResponseHandler {
         _payload: Self::Payload,
         respp: &IncomingResponseProperties,
         corr_data: &Self::CorrelationData,
-    ) -> Result {
+    ) -> MqttResult {
         // Check if the event is sent by the broker.
         if respp.as_account_id() != &context.config().broker_id {
             return Err(anyhow!(
@@ -280,7 +280,7 @@ impl ResponseHandler for BroadcastDeleteResponseHandler {
         _payload: Self::Payload,
         respp: &IncomingResponseProperties,
         corr_data: &Self::CorrelationData,
-    ) -> Result {
+    ) -> MqttResult {
         // Check if the event is sent by the broker.
         if respp.as_account_id() != &context.config().broker_id {
             return Err(anyhow!(
@@ -317,7 +317,7 @@ impl EventHandler for DeleteEventHandler {
         context: &mut C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
-    ) -> Result {
+    ) -> MqttResult {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
             return Err(anyhow!(
@@ -378,7 +378,7 @@ impl EventHandler for DeleteEventHandler {
         let props = evp.to_event("room.leave", short_term_timing);
         let to_uri = format!("rooms/{}/events", room_id);
         let outgoing_event = OutgoingEvent::broadcast(outgoing_event_payload, props, &to_uri);
-        let boxed_event = Box::new(outgoing_event) as Box<dyn IntoPublishableMessage + Send>;
+        let boxed_event = Box::new(outgoing_event) as Box<_>;
         Ok(Box::new(stream::once(future::ready(boxed_event))))
     }
 }
@@ -396,7 +396,7 @@ impl EventHandler for BroadcastDeleteEventHandler {
         context: &mut C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
-    ) -> Result {
+    ) -> MqttResult {
         // Check if the event is sent by the broker.
         if evp.as_account_id() != &context.config().broker_id {
             return Err(anyhow!(
