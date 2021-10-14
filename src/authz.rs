@@ -7,7 +7,7 @@ use svc_authz::{ClientMap, Error, IntentObject};
 use crate::metrics::Metrics;
 
 #[derive(Clone)]
-pub(crate) struct Authz {
+pub struct Authz {
     metrics: Arc<Metrics>,
     client_map: Arc<ClientMap>,
 }

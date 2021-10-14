@@ -11,6 +11,7 @@ use uuid::Uuid;
 use crate::app::endpoint::{EventHandler, RequestHandler, ResponseHandler};
 use crate::app::error::Error as AppError;
 use crate::app::message_handler::MessageStream;
+use crate::app::service_utils::RequestParams;
 use crate::app::API_VERSION;
 
 use self::agent::TestAgent;
@@ -31,8 +32,8 @@ pub(crate) async fn handle_request<H: RequestHandler>(
     payload: H::Payload,
 ) -> Result<Vec<OutgoingEnvelope>, AppError> {
     let reqp = build_reqp(agent.agent_id(), "ignore");
-    let messages = H::handle(context, payload, &reqp).await?;
-    Ok(parse_messages(messages).await)
+    let messages = H::handle(context, payload, RequestParams::MqttParams(&reqp)).await?;
+    Ok(parse_messages(messages.into_mqtt_messages(&reqp)?).await)
 }
 
 pub(crate) async fn handle_response<H: ResponseHandler>(

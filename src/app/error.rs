@@ -16,7 +16,7 @@ struct ErrorKindProperties {
 }
 
 #[derive(Debug, Clone, Copy, IntoEnumIterator, Hash, PartialEq, Eq)]
-pub(crate) enum ErrorKind {
+pub enum ErrorKind {
     AccessDenied,
     AgentNotEnteredTheRoom,
     AuthorizationFailed,
@@ -27,6 +27,7 @@ pub(crate) enum ErrorKind {
     EditionCommitTaskFailed,
     EditionNotFound,
     InvalidPayload,
+    InvalidQueryString,
     InvalidRoomTime,
     InvalidStateSets,
     InvalidSubscriptionObject,
@@ -43,17 +44,22 @@ pub(crate) enum ErrorKind {
 }
 
 impl ErrorKind {
-    pub(crate) fn status(self) -> ResponseStatus {
+    pub fn status(self) -> ResponseStatus {
         let properties: ErrorKindProperties = self.into();
         properties.status
     }
 
-    pub(crate) fn kind(self) -> &'static str {
+    pub fn kind(self) -> &'static str {
         let properties: ErrorKindProperties = self.into();
         properties.kind
     }
 
-    pub(crate) fn is_notify_sentry(self) -> bool {
+    pub fn title(self) -> &'static str {
+        let properties: ErrorKindProperties = self.into();
+        properties.title
+    }
+
+    pub fn is_notify_sentry(self) -> bool {
         let properties: ErrorKindProperties = self.into();
         properties.is_notify_sentry
     }
@@ -127,6 +133,12 @@ impl From<ErrorKind> for ErrorKindProperties {
                 status: ResponseStatus::BAD_REQUEST,
                 kind: "invalid_payload",
                 title: "Invalid payload",
+                is_notify_sentry: false,
+            },
+            ErrorKind::InvalidQueryString => ErrorKindProperties {
+                status: ResponseStatus::BAD_REQUEST,
+                kind: "invalid_query_string",
+                title: "Invalid query string",
                 is_notify_sentry: false,
             },
             ErrorKind::InvalidRoomTime => ErrorKindProperties {
@@ -215,7 +227,7 @@ impl From<ErrorKind> for ErrorKindProperties {
 
 use std::collections::HashMap;
 
-pub(crate) struct Error {
+pub struct Error {
     kind: ErrorKind,
     source: Box<dyn AsRef<dyn StdError + Send + Sync + 'static> + Send + 'static>,
     tags: HashMap<String, String>,
@@ -233,27 +245,31 @@ impl Error {
         }
     }
 
-    pub(crate) fn status(&self) -> ResponseStatus {
+    pub fn status(&self) -> ResponseStatus {
         self.kind.status()
     }
 
-    pub(crate) fn kind(&self) -> &str {
+    pub fn kind(&self) -> &str {
         self.kind.kind()
     }
 
-    pub(crate) fn error_kind(&self) -> ErrorKind {
+    pub fn title(&self) -> &str {
+        self.kind.title()
+    }
+
+    pub fn error_kind(&self) -> ErrorKind {
         self.kind
     }
 
-    pub(crate) fn source(&self) -> &(dyn StdError + Send + Sync + 'static) {
+    pub fn source(&self) -> &(dyn StdError + Send + Sync + 'static) {
         self.source.as_ref().as_ref()
     }
 
-    pub(crate) fn tag(&mut self, k: &str, v: &str) {
+    pub fn tag(&mut self, k: &str, v: &str) {
         self.tags.insert(k.to_owned(), v.to_owned());
     }
 
-    pub(crate) fn to_svc_error(&self) -> SvcError {
+    pub fn to_svc_error(&self) -> SvcError {
         let properties: ErrorKindProperties = self.kind.into();
 
         let mut e = SvcError::builder()
@@ -268,7 +284,7 @@ impl Error {
         e
     }
 
-    pub(crate) fn notify_sentry(&self) {
+    pub fn notify_sentry(&self) {
         if !self.kind.is_notify_sentry() {
             return;
         }
@@ -317,14 +333,12 @@ impl From<svc_authz::Error> for Error {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) trait ErrorExt<T> {
+pub trait ErrorExt<T> {
     fn error(self, kind: ErrorKind) -> Result<T, Error>;
 }
 
-impl<T, E: AsRef<dyn StdError + Send + Sync + 'static> + Send + 'static> ErrorExt<T>
-    for Result<T, E>
-{
+impl<T, E: Into<anyhow::Error>> ErrorExt<T> for Result<T, E> {
     fn error(self, kind: ErrorKind) -> Result<T, Error> {
-        self.map_err(|source| Error::new(kind, source))
+        self.map_err(|source| Error::new(kind, source.into()))
     }
 }

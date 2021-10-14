@@ -1,18 +1,17 @@
 use async_trait::async_trait;
 use chrono::Utc;
-use futures::{stream, StreamExt};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::mqtt::{
-    IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
-    ResponseStatus, ShortTermTimingProperties,
+    IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties, ResponseStatus,
+    ShortTermTimingProperties,
 };
 use svc_error::Error as SvcError;
 use tracing::error;
 use uuid::Uuid;
 
+use super::*;
 use crate::app::context::Context;
-use crate::app::endpoint::prelude::*;
 use crate::app::operations::dump_events_to_s3;
 
 #[derive(Debug, Deserialize)]
@@ -44,6 +43,22 @@ impl EventsDumpResult {
     }
 }
 
+pub async fn dump_events(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(room_id): Path<Uuid>,
+) -> RequestResult {
+    let request = EventsDumpRequest { id: room_id };
+    EventsDumpHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
+}
+
 pub(crate) struct EventsDumpHandler;
 
 #[async_trait]
@@ -53,8 +68,8 @@ impl RequestHandler for EventsDumpHandler {
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
         let room =
             helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Any).await?;
 
@@ -113,19 +128,19 @@ impl RequestHandler for EventsDumpHandler {
             let path = format!("audiences/{}/events", room.audience());
             let event = OutgoingEvent::broadcast(notification, props, &path);
 
-            Box::new(event) as Box<dyn IntoPublishableMessage + Send>
+            Box::new(event) as Box<dyn IntoPublishableMessage + Send + Sync + 'static>
         });
 
-        let response = stream::once(futures::future::ready(helpers::build_response(
+        let mut response = AppResponse::new(
             ResponseStatus::ACCEPTED,
             json!({}),
-            reqp,
             context.start_timestamp(),
             Some(authz_time),
-        )));
+        );
 
-        let notification = notification_future.into_chainable_stream();
-        Ok(Box::new(response.chain(notification)))
+        response.add_async_task(notification_future);
+
+        Ok(response)
     }
 }
 

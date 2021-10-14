@@ -19,6 +19,7 @@ use svc_error::{extension::sentry, Error as SvcError};
 use tokio::{sync::mpsc, task};
 use tracing::{error, info, warn};
 
+use crate::app::http::build_router;
 use crate::{app::context::GlobalContext, metrics::Metrics};
 use crate::{
     authz::Authz,
@@ -84,7 +85,8 @@ pub(crate) async fn run(
 
     // Context
     let authz = Authz::new(authz, metrics.clone());
-    let context_builder = AppContextBuilder::new(config.clone(), authz, db);
+    let queue_counter = agent.get_queue_counter();
+    let context_builder = AppContextBuilder::new(config.clone(), authz, db, agent.clone());
 
     let context_builder = match ro_db {
         Some(db) => context_builder.ro_db(db),
@@ -96,15 +98,29 @@ pub(crate) async fn run(
         None => context_builder,
     };
 
-    let context = context_builder
-        .queue_counter(agent.get_queue_counter())
-        .build(metrics);
+    let context = context_builder.queue_counter(queue_counter).build(metrics);
 
     let metrics_task = config.metrics.as_ref().map(|metrics| {
         svc_utils::metrics::MetricsServer::new_with_registry(registry, metrics.http.bind_address)
     });
 
     let metrics = context.metrics();
+
+    let (graceful_tx, graceful_rx) = tokio::sync::oneshot::channel();
+    let http_task = tokio::spawn(
+        axum::Server::bind(&config.http_addr)
+            .serve(
+                build_router(
+                    Arc::new(context.clone()),
+                    agent.clone(),
+                    config.authn.clone(),
+                )
+                .into_make_service(),
+            )
+            .with_graceful_shutdown(async move {
+                let _ = graceful_rx.await;
+            }),
+    );
 
     // Message handler
     let message_handler = Arc::new(MessageHandler::new(agent.clone(), context));
@@ -117,8 +133,14 @@ pub(crate) async fn run(
     let _ = futures::future::select(signals, main_loop_task).await;
     unsubscribe(&mut agent, &agent_id)?;
 
+    let _ = graceful_tx.send(());
+
     if let Some(metrics_task) = metrics_task {
         metrics_task.shutdown().await;
+    }
+
+    if let Err(e) = http_task.await {
+        error!("Failed to await http server completion, err = {:?}", e);
     }
 
     tokio::time::sleep(Duration::from_secs(3)).await;
@@ -258,6 +280,8 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
 pub(crate) mod context;
 pub(crate) mod endpoint;
 pub(crate) mod error;
+pub(crate) mod http;
 pub(crate) mod message_handler;
 pub(crate) mod operations;
 pub(crate) mod s3_client;
+pub(crate) mod service_utils;

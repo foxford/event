@@ -15,14 +15,17 @@ use svc_agent::{
 use tracing::{error, warn};
 use tracing_attributes::instrument;
 
-use crate::app::context::{AppMessageContext, Context, GlobalContext, MessageContext};
 use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
+use crate::app::{
+    context::{AppMessageContext, Context, GlobalContext, MessageContext},
+    service_utils::RequestParams,
+};
 use crate::app::{endpoint, API_VERSION};
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) type MessageStream =
-    Box<dyn Stream<Item = Box<dyn IntoPublishableMessage + Send>> + Send + Unpin>;
+pub type Message = Box<dyn IntoPublishableMessage + Send + Sync + 'static>;
+pub type MessageStream = Box<dyn Stream<Item = Message> + Send + Sync + Unpin + 'static>;
 
 pub(crate) struct MessageHandler<C: GlobalContext> {
     agent: Agent,
@@ -208,7 +211,7 @@ fn error_response(
     let resp = OutgoingResponse::unicast(e, props, reqp, API_VERSION);
 
     Box::new(stream::once(future::ready(
-        Box::new(resp) as Box<dyn IntoPublishableMessage + Send>
+        Box::new(resp) as Box<dyn IntoPublishableMessage + Send + Sync + 'static>
     )))
 }
 
@@ -260,9 +263,12 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
             match payload {
                 // Call handler.
                 Ok(payload) => {
-                    let app_result = H::handle(context, payload, reqp).await;
+                    let app_result =
+                        H::handle(context, payload, RequestParams::MqttParams(reqp)).await;
                     context.metrics().observe_app_result(&app_result);
-                    app_result.unwrap_or_else(|app_error| {
+                    app_result
+                        .and_then(|r| r.into_mqtt_messages(reqp))
+                        .unwrap_or_else(|app_error| {
                         error!(err = ?app_error, status = app_error.status().as_u16(), kind = app_error.kind(), "Failed to handle request");
 
                         app_error.notify_sentry();
@@ -315,7 +321,6 @@ impl<'async_trait, H: 'async_trait + endpoint::ResponseHandler>
                 // Call handler.
                 Ok(payload) => {
                     let app_result = H::handle(context, payload, respp, corr_data).await;
-                    context.metrics().observe_app_result(&app_result);
                     app_result.unwrap_or_else(|app_error| {
                         // Handler returned an error.
                         error!(err = ?app_error, status = app_error.status().as_u16(), kind = app_error.kind(), "Failed to handle response");
@@ -365,7 +370,6 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
                 // Call handler.
                 Ok(payload) => {
                     let app_result = H::handle(context, payload, evp).await;
-                    context.metrics().observe_app_result(&app_result);
                     app_result.unwrap_or_else(|app_error| {
                         // Handler returned an error.
                         error!(err = ?app_error, status = app_error.status().as_u16(), kind = app_error.kind(), "Failed to handle event");

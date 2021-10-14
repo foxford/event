@@ -1,18 +1,22 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
+use axum::{
+    extract::{Extension, Path},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use futures::{future, stream, StreamExt};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
     mqtt::{
-        IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
-        ResponseStatus, ShortTermTimingProperties,
+        IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties, ResponseStatus,
+        ShortTermTimingProperties,
     },
     Addressable,
 };
 use svc_authn::Authenticable;
 use svc_error::Error as SvcError;
+use svc_utils::extractors::AuthnExtractor;
 use tracing::{error, field::display, instrument, Span};
 use uuid::Uuid;
 
@@ -31,6 +35,22 @@ pub(crate) struct CreateRequest {
     room_id: Uuid,
 }
 
+pub async fn create(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(room_id): Path<Uuid>,
+) -> RequestResult {
+    let request = CreateRequest { room_id };
+    CreateHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
+}
+
 #[async_trait]
 impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
@@ -45,8 +65,8 @@ impl RequestHandler for CreateHandler {
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
         let room =
             helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Any).await?;
 
@@ -80,23 +100,21 @@ impl RequestHandler for CreateHandler {
 
         Span::current().record("edition_id", &display(edition.id()));
 
-        let response = helpers::build_response(
+        let mut response = AppResponse::new(
             ResponseStatus::CREATED,
             edition.clone(),
-            reqp,
             context.start_timestamp(),
             Some(authz_time),
         );
 
-        let notification = helpers::build_notification(
+        response.add_notification(
             "edition.create",
             &format!("rooms/{}/editions", payload.room_id),
             edition,
-            reqp,
             context.start_timestamp(),
         );
 
-        Ok(Box::new(stream::iter(vec![response, notification])))
+        Ok(response)
     }
 }
 
@@ -105,30 +123,46 @@ impl RequestHandler for CreateHandler {
 pub(crate) struct ListHandler;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ListRequest {
-    room_id: Uuid,
+pub struct ListPayload {
     last_created_at: Option<DateTime<Utc>>,
     limit: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListRequest {
+    room_id: Uuid,
+    #[serde(flatten)]
+    payload: ListPayload,
+}
+
+pub async fn list(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(room_id): Path<Uuid>,
+    Json(payload): Json<ListPayload>,
+) -> RequestResult {
+    let request = ListRequest { room_id, payload };
+    ListHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
 }
 
 #[async_trait]
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
-    #[instrument(
-        skip_all,
-        fields(
-            room_id = %payload.room_id,
-            scope, classroom_id
-        )
-    )]
+    #[instrument(skip_all, fields(room_id, scope, classroom_id))]
     async fn handle<C: Context>(
         context: &mut C,
-        payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
-        let room =
-            helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Any).await?;
+        Self::Payload { room_id, payload }: Self::Payload,
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
+        let room = helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Any).await?;
 
         let object = AuthzObject::room(&room).into();
 
@@ -164,15 +198,12 @@ impl RequestHandler for ListHandler {
         };
 
         // Respond with events list.
-        Ok(Box::new(stream::once(future::ready(
-            helpers::build_response(
-                ResponseStatus::OK,
-                editions,
-                reqp,
-                context.start_timestamp(),
-                Some(authz_time),
-            ),
-        ))))
+        Ok(AppResponse::new(
+            ResponseStatus::OK,
+            editions,
+            context.start_timestamp(),
+            Some(authz_time),
+        ))
     }
 }
 
@@ -183,6 +214,22 @@ pub(crate) struct DeleteHandler;
 #[derive(Debug, Deserialize)]
 pub(crate) struct DeleteRequest {
     id: Uuid,
+}
+
+pub async fn delete(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(id): Path<Uuid>,
+) -> RequestResult {
+    let request = DeleteRequest { id };
+    DeleteHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
 }
 
 #[async_trait]
@@ -199,8 +246,8 @@ impl RequestHandler for DeleteHandler {
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
             let mut conn = context.get_ro_conn().await?;
@@ -246,15 +293,12 @@ impl RequestHandler for DeleteHandler {
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
-        let response = helpers::build_response(
+        Ok(AppResponse::new(
             ResponseStatus::OK,
             edition,
-            reqp,
             context.start_timestamp(),
             Some(authz_time),
-        );
-
-        Ok(Box::new(stream::iter(vec![response])))
+        ))
     }
 }
 
@@ -265,6 +309,22 @@ pub(crate) struct CommitHandler;
 #[derive(Debug, Deserialize)]
 pub(crate) struct CommitRequest {
     id: Uuid,
+}
+
+pub async fn commit(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(id): Path<Uuid>,
+) -> RequestResult {
+    let request = CommitRequest { id };
+    CommitHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
 }
 
 #[async_trait]
@@ -281,8 +341,8 @@ impl RequestHandler for CommitHandler {
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
         // Find edition with its source room.
         let (edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.id);
@@ -354,21 +414,21 @@ impl RequestHandler for CommitHandler {
             let path = format!("audiences/{}/events", room.audience());
             let event = OutgoingEvent::broadcast(notification, props, &path);
 
-            Box::new(event) as Box<dyn IntoPublishableMessage + Send>
+            Box::new(event) as Box<dyn IntoPublishableMessage + Send + Sync + 'static>
         });
 
         // Respond with 202.
         // The actual task result will be broadcasted to the room topic when finished.
-        let response = stream::once(future::ready(helpers::build_response(
+        let mut response = AppResponse::new(
             ResponseStatus::ACCEPTED,
             json!({}),
-            reqp,
             context.start_timestamp(),
             Some(authz_time),
-        )));
+        );
 
-        let notification = notification_future.into_chainable_stream();
-        Ok(Box::new(response.chain(notification)))
+        response.add_async_task(notification_future);
+
+        Ok(response)
     }
 }
 
@@ -511,8 +571,10 @@ mod tests {
 
             let payload = ListRequest {
                 room_id: room.id(),
-                last_created_at: None,
-                limit: None,
+                payload: ListPayload {
+                    last_created_at: None,
+                    limit: None,
+                },
             };
 
             let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -545,8 +607,10 @@ mod tests {
 
             let payload = ListRequest {
                 room_id: room.id(),
-                last_created_at: None,
-                limit: None,
+                payload: ListPayload {
+                    last_created_at: None,
+                    limit: None,
+                },
             };
 
             let resp = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -563,8 +627,10 @@ mod tests {
 
             let payload = ListRequest {
                 room_id: Uuid::new_v4(),
-                last_created_at: None,
-                limit: None,
+                payload: ListPayload {
+                    last_created_at: None,
+                    limit: None,
+                },
             };
 
             let err = handle_request::<ListHandler>(&mut context, &agent, payload)

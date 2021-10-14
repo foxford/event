@@ -1,10 +1,14 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
+use axum::{
+    extract::{Extension, Path},
+    Json,
+};
 use chrono::{DateTime, Utc};
-use futures::stream;
 use serde_derive::Deserialize;
-use svc_agent::mqtt::{IncomingRequestProperties, ResponseStatus};
+use svc_agent::mqtt::ResponseStatus;
 use svc_authn::Authenticable;
+use svc_utils::extractors::AuthnExtractor;
 use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
@@ -16,6 +20,26 @@ use crate::db;
 ////////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct CreateHandler;
+
+pub async fn create(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(edition_id): Path<Uuid>,
+    Json(changeset): Json<Changeset>,
+) -> RequestResult {
+    let request = CreateRequest {
+        edition_id,
+        changeset,
+    };
+    CreateHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
+}
 
 #[async_trait]
 impl RequestHandler for CreateHandler {
@@ -31,8 +55,8 @@ impl RequestHandler for CreateHandler {
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
         let (_edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.edition_id);
             let mut conn = context.get_ro_conn().await?;
@@ -120,15 +144,12 @@ impl RequestHandler for CreateHandler {
 
         Span::current().record("change_id", &display(change.id()));
 
-        let response = helpers::build_response(
+        Ok(AppResponse::new(
             ResponseStatus::CREATED,
             change,
-            reqp,
             context.start_timestamp(),
             Some(authz_time),
-        );
-
-        Ok(Box::new(stream::iter(vec![response])))
+        ))
     }
 }
 
@@ -137,30 +158,48 @@ impl RequestHandler for CreateHandler {
 pub(crate) struct ListHandler;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ListRequest {
-    id: Uuid,
+pub struct ListPayload {
     last_created_at: Option<DateTime<Utc>>,
     limit: Option<usize>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ListRequest {
+    id: Uuid,
+    #[serde(flatten)]
+    payload: ListPayload,
+}
+
+pub async fn list(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(id): Path<Uuid>,
+    Json(payload): Json<ListPayload>,
+) -> RequestResult {
+    let request = ListRequest { id, payload };
+    ListHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
 }
 
 #[async_trait]
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
-    #[instrument(
-        skip_all,
-        fields(
-            edition_id = %payload.id,
-            scope, room_id, classroom_id, change_id
-        )
-    )]
+    #[instrument(skip_all, fields(edition_id, scope, room_id, classroom_id, change_id))]
     async fn handle<C: Context>(
         context: &mut C,
-        payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
+        Self::Payload { id, payload }: Self::Payload,
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
+        Span::current().record("edition_id", &display(id));
         let (edition, room) = {
-            let query = db::edition::FindWithRoomQuery::new(payload.id);
+            let query = db::edition::FindWithRoomQuery::new(id);
             let mut conn = context.get_ro_conn().await?;
 
             let maybe_edition_with_room = context
@@ -214,13 +253,12 @@ impl RequestHandler for ListHandler {
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
-        Ok(Box::new(stream::iter(vec![helpers::build_response(
+        Ok(AppResponse::new(
             ResponseStatus::OK,
             changes,
-            reqp,
             context.start_timestamp(),
             Some(authz_time),
-        )])))
+        ))
     }
 }
 
@@ -231,6 +269,22 @@ pub(crate) struct DeleteHandler;
 #[derive(Debug, Deserialize)]
 pub(crate) struct DeleteRequest {
     id: Uuid,
+}
+
+pub async fn delete(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(id): Path<Uuid>,
+) -> RequestResult {
+    let request = DeleteRequest { id };
+    DeleteHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
 }
 
 #[async_trait]
@@ -247,8 +301,8 @@ impl RequestHandler for DeleteHandler {
     async fn handle<C: Context>(
         context: &mut C,
         payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
         let (change, room) = {
             let query = db::change::FindWithRoomQuery::new(payload.id);
             let mut conn = context.get_ro_conn().await?;
@@ -295,15 +349,12 @@ impl RequestHandler for DeleteHandler {
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
-        let response = helpers::build_response(
+        Ok(AppResponse::new(
             ResponseStatus::OK,
             change,
-            reqp,
             context.start_timestamp(),
             Some(authz_time),
-        );
-
-        Ok(Box::new(stream::iter(vec![response])))
+        ))
     }
 }
 
@@ -664,8 +715,10 @@ mod tests {
 
             let payload = ListRequest {
                 id: edition.id(),
-                last_created_at: None,
-                limit: None,
+                payload: ListPayload {
+                    last_created_at: None,
+                    limit: None,
+                },
             };
 
             let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -721,8 +774,10 @@ mod tests {
 
             let payload = ListRequest {
                 id: edition.id(),
-                last_created_at: None,
-                limit: None,
+                payload: ListPayload {
+                    last_created_at: None,
+                    limit: None,
+                },
             };
 
             let resp = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -739,8 +794,10 @@ mod tests {
 
             let payload = ListRequest {
                 id: Uuid::new_v4(),
-                last_created_at: None,
-                limit: None,
+                payload: ListPayload {
+                    last_created_at: None,
+                    limit: None,
+                },
             };
 
             let err = handle_request::<ListHandler>(&mut context, &agent, payload)

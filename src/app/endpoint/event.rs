@@ -1,18 +1,20 @@
+use std::sync::Arc;
+
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
+use axum::{
+    extract::{Extension, Path},
+    Json,
+};
 use chrono::Utc;
-use futures::{future, stream};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use svc_agent::Authenticable;
-use svc_agent::{
-    mqtt::{IncomingRequestProperties, ResponseStatus},
-    Addressable,
-};
+use svc_agent::{mqtt::ResponseStatus, Addressable};
+use svc_utils::extractors::AuthnExtractor;
 use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
-use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::db;
 use crate::db::event::Object as Event;
@@ -20,8 +22,7 @@ use crate::db::event::Object as Event;
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CreateRequest {
-    pub room_id: Uuid,
+pub struct CreatePayload {
     #[serde(rename = "type")]
     pub kind: String,
     pub set: Option<String>,
@@ -34,6 +35,13 @@ pub(crate) struct CreateRequest {
     pub is_persistent: bool,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct CreateRequest {
+    pub room_id: Uuid,
+    #[serde(flatten)]
+    pub payload: CreatePayload,
+}
+
 impl CreateRequest {
     fn default_is_claim() -> bool {
         false
@@ -42,6 +50,23 @@ impl CreateRequest {
     fn default_is_persistent() -> bool {
         true
     }
+}
+
+pub async fn create(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(room_id): Path<Uuid>,
+    Json(payload): Json<CreatePayload>,
+) -> RequestResult {
+    let request = CreateRequest { room_id, payload };
+    CreateHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
 }
 
 pub(crate) struct CreateHandler;
@@ -58,25 +83,19 @@ pub(crate) struct TenantClaimNotification {
 impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
-    #[instrument(
-        skip_all,
-        fields(
-            room_id = %payload.room_id, scope, classroom_id
-        )
-    )]
+    #[instrument(skip_all, fields(room_id, scope, classroom_id))]
     async fn handle<C: Context>(
         context: &mut C,
-        payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
+        Self::Payload { room_id, payload }: Self::Payload,
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
         let (room, author) = {
             let room =
-                helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Open)
-                    .await?;
+                helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Open).await?;
 
             let author = match payload {
                 // Get author of the original event with the same label if applicable.
-                CreateRequest {
+                CreatePayload {
                     set: Some(ref set),
                     label: Some(ref label),
                     ..
@@ -149,7 +168,7 @@ impl RequestHandler for CreateHandler {
                 return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime);
             }
         };
-        let CreateRequest {
+        let CreatePayload {
             kind,
             data,
             set,
@@ -195,7 +214,7 @@ impl RequestHandler for CreateHandler {
         } else {
             // Build transient event.
             let mut builder = db::event::Builder::new()
-                .room_id(payload.room_id)
+                .room_id(room_id)
                 .kind(&kind)
                 .data(&data)
                 .occurred_at(occurred_at)
@@ -219,16 +238,13 @@ impl RequestHandler for CreateHandler {
                 .error(AppErrorKind::TransientEventCreationFailed)?
         };
 
-        let mut messages = Vec::with_capacity(3);
-
         // Respond to the agent.
-        messages.push(helpers::build_response(
+        let mut response = AppResponse::new(
             ResponseStatus::CREATED,
             event.clone(),
-            reqp,
             context.start_timestamp(),
             Some(authz_time),
-        ));
+        );
 
         // If the event is claim notify the tenant.
         if is_claim {
@@ -237,25 +253,23 @@ impl RequestHandler for CreateHandler {
                 classroom_id: room.classroom_id(),
             };
 
-            messages.push(helpers::build_notification(
+            response.add_notification(
                 "event.create",
                 &format!("audiences/{}/events", room.audience()),
                 claim_notification,
-                reqp,
                 context.start_timestamp(),
-            ));
+            );
         }
 
         // Notify room subscribers.
-        messages.push(helpers::build_notification(
+        response.add_notification(
             "event.create",
             &format!("rooms/{}/events", room.id()),
             event,
-            reqp,
             context.start_timestamp(),
-        ));
+        );
 
-        Ok(Box::new(stream::iter(messages)))
+        Ok(response)
     }
 }
 
@@ -271,8 +285,7 @@ enum ListTypesFilter {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ListRequest {
-    room_id: Uuid,
+pub struct ListPayload {
     #[serde(rename = "type")]
     kind: Option<ListTypesFilter>,
     set: Option<String>,
@@ -284,25 +297,43 @@ pub(crate) struct ListRequest {
     limit: Option<usize>,
 }
 
+#[derive(Debug, Deserialize)]
+pub struct ListRequest {
+    room_id: Uuid,
+    #[serde(flatten)]
+    payload: ListPayload,
+}
+
+pub async fn list(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(room_id): Path<Uuid>,
+    Json(payload): Json<ListPayload>,
+) -> RequestResult {
+    let request = ListRequest { room_id, payload };
+    ListHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
+}
+
 pub(crate) struct ListHandler;
 
 #[async_trait]
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
-    #[instrument(
-        skip_all,
-        fields(
-            room_id = %payload.room_id, scope, classroom_id
-        )
-    )]
+    #[instrument(skip_all, fields(room_id, scope, classroom_id))]
     async fn handle<C: Context>(
         context: &mut C,
-        payload: Self::Payload,
-        reqp: &IncomingRequestProperties,
-    ) -> Result {
-        let room =
-            helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Any).await?;
+        Self::Payload { room_id, payload }: Self::Payload,
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
+        let room = helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Any).await?;
 
         // Authorize room events listing.
         let room_id = room.id().to_string();
@@ -321,7 +352,7 @@ impl RequestHandler for ListHandler {
         // Retrieve events from the DB.
         let mut query = db::event::ListQuery::new().room_id(room.id());
 
-        let ListRequest {
+        let ListPayload {
             kind,
             set,
             label,
@@ -368,15 +399,12 @@ impl RequestHandler for ListHandler {
         };
 
         // Respond with events list.
-        Ok(Box::new(stream::once(future::ready(
-            helpers::build_response(
-                ResponseStatus::OK,
-                events,
-                reqp,
-                context.start_timestamp(),
-                Some(authz_time),
-            ),
-        ))))
+        Ok(AppResponse::new(
+            ResponseStatus::OK,
+            events,
+            context.start_timestamp(),
+            Some(authz_time),
+        ))
     }
 }
 
@@ -428,13 +456,15 @@ mod tests {
 
         let payload = CreateRequest {
             room_id: room.id(),
-            kind: String::from("message"),
-            set: Some(String::from("messages")),
-            label: Some(String::from("message-1")),
-            attribute: Some(String::from("pinned")),
-            data: json!({ "text": "hello" }),
-            is_claim: false,
-            is_persistent: true,
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: Some(String::from("pinned")),
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+            },
         };
 
         let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -516,13 +546,15 @@ mod tests {
 
         let payload = CreateRequest {
             room_id: room.id(),
-            kind: String::from("message"),
-            set: Some(String::from("messages")),
-            label: Some(String::from("message-1")),
-            attribute: None,
-            data: json!({ "text": "modified text" }),
-            is_claim: false,
-            is_persistent: true,
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "modified text" }),
+                is_claim: false,
+                is_persistent: true,
+            },
         };
 
         let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -560,13 +592,15 @@ mod tests {
 
         let payload = CreateRequest {
             room_id: room.id(),
-            kind: String::from("block"),
-            set: Some(String::from("blocks")),
-            label: Some(String::from("user-1")),
-            attribute: None,
-            data: json!({ "blocked": true }),
-            is_claim: true,
-            is_persistent: true,
+            payload: CreatePayload {
+                kind: String::from("block"),
+                set: Some(String::from("blocks")),
+                label: Some(String::from("user-1")),
+                attribute: None,
+                data: json!({ "blocked": true }),
+                is_claim: true,
+                is_persistent: true,
+            },
         };
 
         let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -655,13 +689,15 @@ mod tests {
 
         let payload = CreateRequest {
             room_id: room.id(),
-            kind: String::from("cursor"),
-            set: None,
-            label: None,
-            attribute: None,
-            data: data.clone(),
-            is_claim: false,
-            is_persistent: false,
+            payload: CreatePayload {
+                kind: String::from("cursor"),
+                set: None,
+                label: None,
+                attribute: None,
+                data: data.clone(),
+                is_claim: false,
+                is_persistent: false,
+            },
         };
 
         let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -708,13 +744,15 @@ mod tests {
 
         let payload = CreateRequest {
             room_id: room.id(),
-            kind: String::from("message"),
-            set: Some(String::from("messages")),
-            label: Some(String::from("message-1")),
-            attribute: None,
-            data: json!({ "text": "hello" }),
-            is_claim: false,
-            is_persistent: true,
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+            },
         };
 
         let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -756,13 +794,15 @@ mod tests {
 
         let payload = CreateRequest {
             room_id: room.id(),
-            kind: String::from("message"),
-            set: Some(String::from("messages")),
-            label: Some(String::from("message-1")),
-            attribute: None,
-            data: json!({ "text": "hello" }),
-            is_claim: false,
-            is_persistent: true,
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+            },
         };
 
         let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -806,13 +846,15 @@ mod tests {
 
         let payload = CreateRequest {
             room_id: room.id(),
-            kind: String::from("message"),
-            set: Some(String::from("messages")),
-            label: Some(String::from("message-1")),
-            attribute: None,
-            data: json!({ "text": "hello" }),
-            is_claim: false,
-            is_persistent: true,
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+            },
         };
 
         let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -830,13 +872,15 @@ mod tests {
 
         let payload = CreateRequest {
             room_id: Uuid::new_v4(),
-            kind: String::from("message"),
-            set: Some(String::from("messages")),
-            label: Some(String::from("message-1")),
-            attribute: None,
-            data: json!({ "text": "hello" }),
-            is_claim: false,
-            is_persistent: true,
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+            },
         };
 
         let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -889,13 +933,15 @@ mod tests {
 
         let payload = ListRequest {
             room_id: room.id(),
-            kind: None,
-            set: None,
-            label: None,
-            attribute: None,
-            last_occurred_at: None,
-            direction: Direction::Backward,
-            limit: Some(2),
+            payload: ListPayload {
+                kind: None,
+                set: None,
+                label: None,
+                attribute: None,
+                last_occurred_at: None,
+                direction: Direction::Backward,
+                limit: Some(2),
+            },
         };
 
         let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -912,13 +958,15 @@ mod tests {
         // Request the next page.
         let payload = ListRequest {
             room_id: room.id(),
-            kind: None,
-            set: None,
-            label: None,
-            attribute: None,
-            last_occurred_at: Some(events[1].occurred_at()),
-            direction: Direction::Backward,
-            limit: Some(2),
+            payload: ListPayload {
+                kind: None,
+                set: None,
+                label: None,
+                attribute: None,
+                last_occurred_at: Some(events[1].occurred_at()),
+                direction: Direction::Backward,
+                limit: Some(2),
+            },
         };
 
         let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -968,13 +1016,15 @@ mod tests {
 
         let payload = ListRequest {
             room_id: room.id(),
-            kind: Some(ListTypesFilter::Single("B".to_string())),
-            set: None,
-            label: None,
-            attribute: None,
-            last_occurred_at: None,
-            direction: Direction::Backward,
-            limit: None,
+            payload: ListPayload {
+                kind: Some(ListTypesFilter::Single("B".to_string())),
+                set: None,
+                label: None,
+                attribute: None,
+                last_occurred_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            },
         };
 
         let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -988,16 +1038,18 @@ mod tests {
 
         let payload = ListRequest {
             room_id: room.id(),
-            kind: Some(ListTypesFilter::Multiple(vec![
-                "B".to_string(),
-                "A".to_string(),
-            ])),
-            set: None,
-            label: None,
-            attribute: None,
-            last_occurred_at: None,
-            direction: Direction::Backward,
-            limit: None,
+            payload: ListPayload {
+                kind: Some(ListTypesFilter::Multiple(vec![
+                    "B".to_string(),
+                    "A".to_string(),
+                ])),
+                set: None,
+                label: None,
+                attribute: None,
+                last_occurred_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            },
         };
 
         let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -1050,13 +1102,15 @@ mod tests {
 
         let payload = ListRequest {
             room_id: room.id(),
-            kind: None,
-            set: None,
-            label: None,
-            attribute: Some(String::from("pinned")),
-            last_occurred_at: None,
-            direction: Direction::Backward,
-            limit: None,
+            payload: ListPayload {
+                kind: None,
+                set: None,
+                label: None,
+                attribute: Some(String::from("pinned")),
+                last_occurred_at: None,
+                direction: Direction::Backward,
+                limit: None,
+            },
         };
 
         let messages = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -1084,13 +1138,15 @@ mod tests {
 
         let payload = ListRequest {
             room_id: room.id(),
-            kind: None,
-            set: None,
-            label: None,
-            attribute: None,
-            last_occurred_at: None,
-            direction: Direction::Backward,
-            limit: Some(2),
+            payload: ListPayload {
+                kind: None,
+                set: None,
+                label: None,
+                attribute: None,
+                last_occurred_at: None,
+                direction: Direction::Backward,
+                limit: Some(2),
+            },
         };
 
         let err = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -1107,13 +1163,15 @@ mod tests {
 
         let payload = ListRequest {
             room_id: Uuid::new_v4(),
-            kind: None,
-            set: None,
-            label: None,
-            attribute: None,
-            last_occurred_at: None,
-            direction: Direction::Backward,
-            limit: Some(2),
+            payload: ListPayload {
+                kind: None,
+                set: None,
+                label: None,
+                attribute: None,
+                last_occurred_at: None,
+                direction: Direction::Backward,
+                limit: Some(2),
+            },
         };
 
         let err = handle_request::<ListHandler>(&mut context, &agent, payload)
@@ -1135,7 +1193,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(x.kind, None);
+        assert_eq!(x.payload.kind, None);
 
         let x: ListRequest = serde_json::from_str(
             r#"
@@ -1148,7 +1206,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            x.kind,
+            x.payload.kind,
             Some(ListTypesFilter::Multiple(vec![
                 "a".to_string(),
                 "c".to_string(),
@@ -1166,7 +1224,10 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(x.kind, Some(ListTypesFilter::Single("test".to_string())));
+        assert_eq!(
+            x.payload.kind,
+            Some(ListTypesFilter::Single("test".to_string()))
+        );
 
         let x: ListRequest = serde_json::from_str(
             r#"
@@ -1179,7 +1240,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            x.kind,
+            x.payload.kind,
             Some(ListTypesFilter::Multiple(vec!["test".to_string()]))
         );
     }
