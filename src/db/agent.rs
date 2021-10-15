@@ -60,6 +60,7 @@ impl AgentWithBan {
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[cfg(test)]
 #[derive(Debug)]
 pub(crate) struct ListQuery {
     agent_id: Option<AgentId>,
@@ -69,6 +70,7 @@ pub(crate) struct ListQuery {
     limit: Option<usize>,
 }
 
+#[cfg(test)]
 impl ListQuery {
     pub(crate) fn new() -> Self {
         Self {

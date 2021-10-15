@@ -84,13 +84,6 @@ impl Response {
             .push(Box::new(OutgoingEvent::broadcast(payload, props, path)))
     }
 
-    pub fn add_message(
-        &mut self,
-        message: Box<dyn IntoPublishableMessage + Send + Sync + 'static>,
-    ) {
-        self.notifications.push(message)
-    }
-
     pub fn add_async_task(
         &mut self,
         task: JoinHandle<Box<dyn IntoPublishableMessage + Send + Sync + 'static>>,

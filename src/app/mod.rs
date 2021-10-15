@@ -12,7 +12,10 @@ use svc_agent::mqtt::{
     Agent, AgentBuilder, AgentNotification, ConnectionMode, OutgoingRequest,
     OutgoingRequestProperties, QoS, ShortTermTimingProperties, SubscriptionTopic,
 };
-use svc_agent::{AccountId, AgentId, Authenticable, SharedGroup, Subscription};
+use svc_agent::{
+    request::Dispatcher as MqttDispatcher, AccountId, AgentId, Authenticable, SharedGroup,
+    Subscription,
+};
 use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::{extension::sentry, Error as SvcError};
@@ -86,7 +89,9 @@ pub(crate) async fn run(
     // Context
     let authz = Authz::new(authz, metrics.clone());
     let queue_counter = agent.get_queue_counter();
-    let context_builder = AppContextBuilder::new(config.clone(), authz, db, agent.clone());
+    let dispatcher = MqttDispatcher::new(&agent);
+    let context_builder =
+        AppContextBuilder::new(config.clone(), authz, db, agent.clone(), dispatcher);
 
     let context_builder = match ro_db {
         Some(db) => context_builder.ro_db(db),

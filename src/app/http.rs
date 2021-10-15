@@ -34,7 +34,6 @@ pub fn build_router(
         )
         .route("/rooms/:id/adjust", post(endpoint::room::adjust))
         .route("/rooms/:id/enter", post(endpoint::room::enter))
-        .route("/rooms/:id/leave", post(endpoint::room::leave))
         .route("/rooms/:id/dump_events", post(endpoint::room::dump_events))
         .route(
             "/rooms/:id/events",

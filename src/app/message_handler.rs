@@ -131,25 +131,19 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
         msg_context: &mut AppMessageContext<'_, C>,
         response: &IncomingResponse<String>,
     ) -> Result<(), AppError> {
-        let raw_corr_data = response.properties().correlation_data();
-
-        let corr_data = match endpoint::CorrelationData::parse(raw_corr_data) {
-            Ok(corr_data) => corr_data,
-            Err(err) => {
-                warn!(
-                    "Failed to parse response correlation data '{}': {:?}",
-                    raw_corr_data, err
-                );
-
-                return Ok(());
-            }
-        };
-
-        let outgoing_message_stream =
-            endpoint::route_response(msg_context, response, &corr_data).await;
-
-        self.publish_outgoing_messages(outgoing_message_stream)
-            .await
+        let json_response = IncomingResponse::convert(response.to_owned())
+            .map_err(|e| {
+                anyhow!(
+                    "Failed to convert response payload str to json, err = {:?}",
+                    e
+                )
+            })
+            .error(AppErrorKind::InvalidPayload)?;
+        msg_context
+            .dispatcher()
+            .response(json_response)
+            .map_err(|e| anyhow!("Failed to send response through dispatcher, err = {:?}", e))
+            .error(AppErrorKind::MessageHandlingFailed)
     }
 
     #[instrument(
@@ -396,9 +390,5 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
 impl endpoint::CorrelationData {
     pub(crate) fn dump(&self) -> anyhow::Result<String> {
         serde_json::to_string(self).context("Failed to dump correlation data")
-    }
-
-    fn parse(raw_corr_data: &str) -> anyhow::Result<Self> {
-        serde_json::from_str::<Self>(raw_corr_data).context("Failed to parse correlation data")
     }
 }

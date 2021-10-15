@@ -6,6 +6,7 @@ use chrono::{DateTime, Utc};
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgPool as Db, Postgres};
 use svc_agent::mqtt::Agent;
+use svc_agent::request::Dispatcher;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 
@@ -31,6 +32,7 @@ pub trait GlobalContext: Sync {
     fn redis_pool(&self) -> &Option<RedisConnectionPool>;
     fn metrics(&self) -> Arc<Metrics>;
     fn s3_client(&self) -> Option<S3Client>;
+    fn dispatcher(&self) -> Arc<Dispatcher>;
 
     async fn get_conn(&self) -> Result<PoolConnection<Postgres>, AppError> {
         self.db()
@@ -67,6 +69,7 @@ pub struct AppContext {
     metrics: Arc<Metrics>,
     s3_client: Option<S3Client>,
     agent: Agent,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl AppContext {
@@ -110,6 +113,10 @@ impl GlobalContext for AppContext {
 
     fn s3_client(&self) -> Option<S3Client> {
         self.s3_client.clone()
+    }
+
+    fn dispatcher(&self) -> Arc<Dispatcher> {
+        self.dispatcher.clone()
     }
 }
 
@@ -165,6 +172,10 @@ impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
     fn s3_client(&self) -> Option<S3Client> {
         self.global_context.s3_client()
     }
+
+    fn dispatcher(&self) -> Arc<Dispatcher> {
+        self.global_context.dispatcher()
+    }
 }
 
 impl<'a, C: GlobalContext> MessageContext for AppMessageContext<'a, C> {
@@ -182,6 +193,7 @@ pub(crate) struct AppContextBuilder {
     config: Config,
     authz: Authz,
     db: Db,
+    dispatcher: Arc<Dispatcher>,
     ro_db: Option<Db>,
     agent_id: AgentId,
     queue_counter: Option<QueueCounterHandle>,
@@ -189,14 +201,22 @@ pub(crate) struct AppContextBuilder {
 }
 
 impl AppContextBuilder {
-    pub(crate) fn new(config: Config, authz: Authz, db: Db, agent: Agent) -> Self {
+    pub(crate) fn new(
+        config: Config,
+        authz: Authz,
+        db: Db,
+        agent: Agent,
+        dispatcher: Dispatcher,
+    ) -> Self {
         let agent_id = AgentId::new(&config.agent_label, config.id.to_owned());
+        let dispatcher = Arc::new(dispatcher);
 
         Self {
             agent,
             config,
             authz,
             db,
+            dispatcher,
             ro_db: None,
             agent_id,
             queue_counter: None,
@@ -232,6 +252,7 @@ impl AppContextBuilder {
             authz: self.authz,
             db: self.db,
             ro_db: self.ro_db,
+            dispatcher: self.dispatcher,
             agent_id: self.agent_id,
             queue_counter: self.queue_counter,
             redis_pool: self.redis_pool,

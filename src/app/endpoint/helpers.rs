@@ -2,7 +2,7 @@ use anyhow::Context as AnyhowContext;
 use chrono::{DateTime, Duration, Utc};
 use serde::ser::Serialize;
 use svc_agent::mqtt::{
-    IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
+    IncomingRequestProperties, IntoPublishableMessage,
     OutgoingResponse, ResponseStatus, ShortTermTimingProperties,
 };
 use tracing::field::display;
@@ -30,19 +30,6 @@ pub(crate) fn build_response(
 
     let props = reqp.to_response(status, timing);
     Box::new(OutgoingResponse::unicast(payload, props, reqp, API_VERSION))
-}
-
-pub(crate) fn build_notification(
-    label: &'static str,
-    path: &str,
-    payload: impl Serialize + Send + Sync + 'static,
-    reqp: &IncomingRequestProperties,
-    start_timestamp: DateTime<Utc>,
-) -> Box<dyn IntoPublishableMessage + Send + Sync> {
-    let timing = ShortTermTimingProperties::until_now(start_timestamp);
-    let mut props = OutgoingEventProperties::new(label, timing);
-    props.set_tracking(reqp.tracking().to_owned());
-    Box::new(OutgoingEvent::broadcast(payload, props, path))
 }
 
 ////////////////////////////////////////////////////////////////////////////////
