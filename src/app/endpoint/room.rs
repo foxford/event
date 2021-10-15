@@ -13,7 +13,8 @@ use serde_json::{json, Value as JsonValue};
 use svc_agent::{
     mqtt::{
         IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
-        OutgoingRequest, ResponseStatus, ShortTermTimingProperties, SubscriptionTopic,
+        OutgoingMessage, OutgoingRequest, ResponseStatus, ShortTermTimingProperties,
+        SubscriptionTopic,
     },
     Addressable, AgentId, Subscription,
 };
@@ -398,10 +399,21 @@ pub struct EnterPayload {
 }
 
 #[derive(Debug, Deserialize)]
+pub(crate) struct CreateDeleteResponsePayload {}
+
+#[derive(Debug, Deserialize)]
 pub struct EnterRequest {
     id: Uuid,
     #[serde(flatten)]
     payload: EnterPayload,
+}
+
+#[derive(Deserialize, Serialize)]
+pub(crate) struct RoomEnterEvent {
+    id: Uuid,
+    agent_id: AgentId,
+    banned: bool,
+    agent: crate::db::agent::AgentWithBan,
 }
 
 pub(crate) struct EnterHandler;
@@ -453,10 +465,8 @@ impl RequestHandler for EnterHandler {
             helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Open).await?;
 
         // Authorize subscribing to the room's events.
-        let room_id = room.id().to_string();
-
         let object: Box<dyn svc_authz::IntentObject> =
-            AuthzObject::new(&["rooms", &room_id]).into();
+            AuthzObject::new(&["rooms", &room.id().to_string()]).into();
 
         let authz_time = context
             .authz()
@@ -494,43 +504,125 @@ impl RequestHandler for EnterHandler {
         let subscribe_req = subscription_request(
             context,
             mqtt_params,
-            &room_id,
+            room.id(),
             "subscription.create",
             authz_time,
         )?;
 
+        let dispatcher = context.dispatcher();
+
+        let msg = if let OutgoingMessage::Request(msg) = subscribe_req {
+            msg
+        } else {
+            unreachable!()
+        };
+        let req1 = dispatcher.request::<_, CreateDeleteResponsePayload>(msg);
+
         let broadcast_subscribe_req = subscription_request(
             context,
             mqtt_params,
-            &room_id,
+            room.id(),
             "broadcast_subscription.create",
             authz_time,
         )?;
 
-        let mut response = AppResponse::new(
-            ResponseStatus::OK,
-            json!({}),
-            context.start_timestamp(),
-            None,
-        );
-        response.add_message(subscribe_req);
-        response.add_message(broadcast_subscribe_req);
+        let msg = if let OutgoingMessage::Request(msg) = broadcast_subscribe_req {
+            msg
+        } else {
+            unreachable!()
+        };
+        let req2 = dispatcher.request::<_, CreateDeleteResponsePayload>(msg);
 
-        Ok(response)
+        let (resp1, resp2) = tokio::join!(req1, req2);
+        let resp1 = resp1
+            .map_err(|e| anyhow!("Broker request failed, err = {:?}", e))
+            .error(AppErrorKind::BrokerRequestFailed)?;
+        let _ = resp2
+            .map_err(|e| anyhow!("Broker request failed, err = {:?}", e))
+            .error(AppErrorKind::BrokerRequestFailed)?;
+
+        let respp = resp1.properties();
+
+        if respp.status() == ResponseStatus::OK {
+            // Determine whether the agent is banned.
+            let agent_with_ban = {
+                // Find room.
+                helpers::find_room(context, room.id(), helpers::RoomTimeRequirement::Open).await?;
+
+                // Update agent state to `ready`.
+                let q = agent::UpdateQuery::new(reqp.as_agent_id().clone(), room.id())
+                    .status(agent::Status::Ready);
+
+                let mut conn = context.get_conn().await?;
+
+                context
+                    .metrics()
+                    .measure_query(QueryKey::AgentUpdateQuery, q.execute(&mut conn))
+                    .await
+                    .context("Failed to put agent into 'ready' status")
+                    .error(AppErrorKind::DbQueryFailed)?;
+
+                let query = agent::FindWithBanQuery::new(reqp.as_agent_id().clone(), room.id());
+
+                context
+                    .metrics()
+                    .measure_query(QueryKey::AgentFindWithBanQuery, query.execute(&mut conn))
+                    .await
+                    .context("Failed to find agent with ban")
+                    .error(AppErrorKind::DbQueryFailed)?
+                    .ok_or_else(|| anyhow!("No agent {} in room {}", reqp.as_agent_id(), room.id()))
+                    .error(AppErrorKind::AgentNotEnteredTheRoom)?
+            };
+
+            let banned = agent_with_ban.banned().unwrap_or(false);
+
+            // Send a response to the original `room.enter` request and a room-wide notification.
+            let mut response = AppResponse::new(
+                ResponseStatus::OK,
+                json!({}),
+                context.start_timestamp(),
+                None,
+            );
+
+            response.add_notification(
+                "room.enter",
+                &format!("rooms/{}/events", room.id()),
+                RoomEnterEvent {
+                    id: room.id(),
+                    agent_id: reqp.as_agent_id().to_owned(),
+                    agent: agent_with_ban,
+                    banned,
+                },
+                context.start_timestamp(),
+            );
+
+            Ok(response)
+        } else {
+            match respp.status() {
+                ResponseStatus::NOT_FOUND => Err(anyhow!("Subscriber was absent in db"))
+                    .error(AppErrorKind::BrokerRequestFailed),
+                ResponseStatus::UNPROCESSABLE_ENTITY => {
+                    Err(anyhow!("Subscriber was present on multiple nodes"))
+                        .error(AppErrorKind::BrokerRequestFailed)
+                }
+                code => Err(anyhow!(format!("Something went wrong, code = {:?}", code)))
+                    .error(AppErrorKind::BrokerRequestFailed),
+            }
+        }
     }
 }
 
 fn subscription_request<C: Context>(
     context: &mut C,
     reqp: &IncomingRequestProperties,
-    room_id: &str,
+    room_id: Uuid,
     method: &str,
     authz_time: chrono::Duration,
-) -> std::result::Result<Box<dyn IntoPublishableMessage + Send + Sync + 'static>, AppError> {
+) -> std::result::Result<OutgoingMessage<SubscriptionRequest>, AppError> {
     let subject = reqp.as_agent_id().to_owned();
     let object = vec![
         "rooms".to_string(),
-        room_id.to_owned(),
+        room_id.to_string(),
         "events".to_string(),
     ];
     let payload = SubscriptionRequest::new(subject.clone(), object.clone());
@@ -554,129 +646,7 @@ fn subscription_request<C: Context>(
 
     let props = reqp.to_request(method, &response_topic, &corr_data, timing);
     let to = &context.config().broker_id;
-    let outgoing_request = OutgoingRequest::multicast(payload, props, to, API_VERSION);
-    let boxed_request = Box::new(outgoing_request) as Box<_>;
-    Ok(boxed_request)
-}
-
-///////////////////////////////////////////////////////////////////////////////
-
-#[derive(Debug, Deserialize)]
-pub struct LeavePayload {
-    #[serde(default)]
-    agent_label: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct LeaveRequest {
-    id: Uuid,
-}
-
-pub async fn leave(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
-    Path(room_id): Path<Uuid>,
-    Json(payload): Json<LeavePayload>,
-) -> RequestResult {
-    let agent_label = payload
-        .agent_label
-        .as_ref()
-        .ok_or_else(|| anyhow!("No agent label present"))
-        .error(AppErrorKind::InvalidPayload)?;
-    let agent_id = AgentId::new(agent_label, agent_id.as_account_id().to_owned());
-    let request = LeaveRequest { id: room_id };
-    LeaveHandler::handle(
-        &mut ctx.start_message(),
-        request,
-        RequestParams::Http {
-            agent_id: &agent_id,
-        },
-    )
-    .await
-}
-
-pub(crate) struct LeaveHandler;
-
-#[async_trait]
-impl RequestHandler for LeaveHandler {
-    type Payload = LeaveRequest;
-
-    #[instrument(
-        skip_all,
-        fields(
-            room_id = %payload.id, scope, classroom_id
-        )
-    )]
-    async fn handle<C: Context>(
-        context: &mut C,
-        payload: Self::Payload,
-        reqp: RequestParams<'_>,
-    ) -> RequestResult {
-        let mqtt_params = reqp.as_mqtt_params()?;
-
-        let (room, presence) = {
-            let room =
-                helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Any).await?;
-
-            // Check room presence.
-            let query = agent::ListQuery::new()
-                .room_id(room.id())
-                .agent_id(reqp.as_agent_id().to_owned())
-                .status(agent::Status::Ready);
-
-            let mut conn = context.get_ro_conn().await?;
-
-            let presence = context
-                .metrics()
-                .measure_query(QueryKey::AgentListQuery, query.execute(&mut conn))
-                .await
-                .context("Failed to list agents")
-                .error(AppErrorKind::DbQueryFailed)?;
-
-            (room, presence)
-        };
-
-        if presence.is_empty() {
-            return Err(anyhow!("Agent is not online in the room"))
-                .error(AppErrorKind::AgentNotEnteredTheRoom);
-        }
-        // Send dynamic subscription deletion request to the broker.
-        let subject = mqtt_params.as_agent_id().to_owned();
-        let room_id = room.id().to_string();
-        let object = vec![String::from("rooms"), room_id, String::from("events")];
-        let payload = SubscriptionRequest::new(subject.clone(), object.clone());
-
-        let broker_id = AgentId::new("nevermind", context.config().broker_id.to_owned());
-
-        let response_topic = Subscription::unicast_responses_from(&broker_id)
-            .subscription_topic(context.agent_id(), API_VERSION)
-            .context("Failed to build response topic")
-            .error(AppErrorKind::BrokerRequestFailed)?;
-
-        let corr_data_payload =
-            CorrelationDataPayload::new(mqtt_params.to_owned(), subject, object);
-
-        let corr_data = CorrelationData::SubscriptionDelete(corr_data_payload)
-            .dump()
-            .context("Failed to dump correlation data")
-            .error(AppErrorKind::BrokerRequestFailed)?;
-
-        let timing = ShortTermTimingProperties::until_now(context.start_timestamp());
-
-        let props =
-            mqtt_params.to_request("subscription.delete", &response_topic, &corr_data, timing);
-        let to = &context.config().broker_id;
-        let outgoing_request = OutgoingRequest::multicast(payload, props, to, API_VERSION);
-        let boxed_request = Box::new(outgoing_request) as Box<_>;
-        let mut response = AppResponse::new(
-            ResponseStatus::OK,
-            json!({}),
-            context.start_timestamp(),
-            None,
-        );
-        response.add_message(boxed_request);
-        Ok(response)
-    }
+    Ok(OutgoingRequest::multicast(payload, props, to, API_VERSION))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1640,93 +1610,6 @@ mod tests {
 
             assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
             assert_eq!(err.kind(), "room_closed");
-        }
-    }
-
-    mod leave {
-        use crate::app::API_VERSION;
-        use crate::test_helpers::prelude::*;
-
-        use super::super::*;
-        use super::DynSubRequest;
-
-        #[tokio::test]
-        async fn leave_room() {
-            let db = TestDb::new().await;
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-
-            let room = {
-                // Create room.
-                let mut conn = db.get_conn().await;
-                let room = shared_helpers::insert_room(&mut conn).await;
-
-                // Put agent online in the room.
-                shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
-                room
-            };
-
-            // Make room.leave request.
-            let mut context = TestContext::new(db, TestAuthz::new());
-            let payload = LeaveRequest { id: room.id() };
-
-            let messages = handle_request::<LeaveHandler>(&mut context, &agent, payload)
-                .await
-                .expect("Room leaving failed");
-
-            // Assert dynamic subscription request.
-            let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
-
-            let expected_topic = format!(
-                "agents/{}.{}/api/{}/out/{}",
-                context.config().agent_label,
-                context.config().id,
-                API_VERSION,
-                context.config().broker_id,
-            );
-
-            assert_eq!(topic, expected_topic);
-            assert_eq!(reqp.method(), "subscription.delete");
-            assert_eq!(&payload.subject, agent.agent_id());
-
-            let room_id = room.id().to_string();
-            assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
-        }
-
-        #[tokio::test]
-        async fn leave_room_while_not_entered() {
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let db = TestDb::new().await;
-
-            let room = {
-                // Create room.
-                let mut conn = db.get_conn().await;
-                shared_helpers::insert_room(&mut conn).await
-            };
-
-            // Make room.leave request.
-            let mut context = TestContext::new(db, TestAuthz::new());
-            let payload = LeaveRequest { id: room.id() };
-
-            let err = handle_request::<LeaveHandler>(&mut context, &agent, payload)
-                .await
-                .expect_err("Unexpected success on room leaving");
-
-            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-            assert_eq!(err.kind(), "agent_not_entered_the_room");
-        }
-
-        #[tokio::test]
-        async fn leave_room_missing() {
-            let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-            let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-            let payload = LeaveRequest { id: Uuid::new_v4() };
-
-            let err = handle_request::<LeaveHandler>(&mut context, &agent, payload)
-                .await
-                .expect_err("Unexpected success on room leaving");
-
-            assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-            assert_eq!(err.kind(), "room_not_found");
         }
     }
 

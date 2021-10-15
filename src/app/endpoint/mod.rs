@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::mqtt::{
-    IncomingEvent, IncomingEventProperties, IncomingRequest, IncomingResponse,
+    IncomingEvent, IncomingEventProperties, IncomingRequest,
     IncomingResponseProperties,
 };
 
@@ -12,7 +12,7 @@ use crate::app::context::Context;
 use crate::app::error::Error as AppError;
 pub(self) use crate::app::message_handler::MessageStream;
 use crate::app::message_handler::{
-    EventEnvelopeHandler, RequestEnvelopeHandler, ResponseEnvelopeHandler,
+    EventEnvelopeHandler, RequestEnvelopeHandler,
 };
 
 use super::service_utils::{RequestParams, Response as AppResponse};
@@ -70,7 +70,6 @@ request_routes!(
     "room.create" => room::CreateHandler,
     "room.dump_events" => room::EventsDumpHandler,
     "room.enter" => room::EnterHandler,
-    "room.leave" => room::LeaveHandler,
     "room.read" => room::ReadHandler,
     "room.update" => room::UpdateHandler,
     "state.read" => state::ReadHandler,
@@ -82,9 +81,7 @@ request_routes!(
 #[derive(Debug, Deserialize, Serialize)]
 pub(crate) enum CorrelationData {
     SubscriptionCreate(subscription::CorrelationDataPayload),
-    SubscriptionDelete(subscription::CorrelationDataPayload),
     BroadcastSubscriptionCreate(subscription::CorrelationDataPayload),
-    BroadcastSubscriptionDelete(subscription::CorrelationDataPayload),
 }
 
 #[async_trait]
@@ -99,30 +96,6 @@ pub(crate) trait ResponseHandler {
         corr_data: &Self::CorrelationData,
     ) -> MqttResult;
 }
-
-macro_rules! response_routes {
-    ($($c: tt => $h: ty),*) => {
-        #[allow(unused_variables)]
-        pub(crate) async fn route_response<C: Context>(
-            context: &mut C,
-            response: &IncomingResponse<String>,
-            corr_data: &CorrelationData,
-        ) -> MessageStream {
-            match corr_data {
-                $(
-                    CorrelationData::$c(cd) => <$h>::handle_envelope::<C>(context, response, cd).await,
-                )*
-            }
-        }
-    }
-}
-
-response_routes!(
-    SubscriptionCreate => subscription::CreateResponseHandler,
-    SubscriptionDelete => subscription::DeleteResponseHandler,
-    BroadcastSubscriptionCreate => subscription::BroadcastCreateResponseHandler,
-    BroadcastSubscriptionDelete => subscription::BroadcastDeleteResponseHandler
-);
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -181,7 +154,7 @@ mod system;
 pub(self) mod prelude {
     pub(super) use super::{
         helpers, AppResponse, EventHandler, MqttResult, RequestHandler, RequestParams,
-        RequestResult, ResponseHandler,
+        RequestResult,
     };
     pub(super) use crate::app::endpoint::authz::AuthzObject;
     pub(super) use crate::app::endpoint::CorrelationData;

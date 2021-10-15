@@ -26,6 +26,7 @@ pub enum ErrorKind {
     DbQueryFailed,
     EditionCommitTaskFailed,
     EditionNotFound,
+    InternalServerError,
     InvalidPayload,
     InvalidQueryString,
     InvalidRoomTime,
@@ -218,6 +219,12 @@ impl From<ErrorKind> for ErrorKindProperties {
                 kind: "unknown_method",
                 title: "Unknown method",
                 is_notify_sentry: false,
+            },
+            ErrorKind::InternalServerError => ErrorKindProperties {
+                status: ResponseStatus::INTERNAL_SERVER_ERROR,
+                kind: "internal_server_error",
+                title: "Internal server error",
+                is_notify_sentry: true,
             },
         }
     }
