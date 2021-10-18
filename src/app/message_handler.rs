@@ -1,7 +1,7 @@
 use std::future::Future;
 use std::pin::Pin;
+use std::sync::Arc;
 
-use anyhow::Context as AnyhowContext;
 use chrono::{DateTime, Utc};
 use futures::{future, stream, Stream, StreamExt};
 use futures_util::pin_mut;
@@ -10,6 +10,7 @@ use svc_agent::{
         Agent, IncomingEvent, IncomingMessage, IncomingRequest, IncomingRequestProperties,
         IncomingResponse, IntoPublishableMessage, OutgoingResponse, ShortTermTimingProperties,
     },
+    request::Dispatcher,
     Addressable, Authenticable,
 };
 use tracing::{error, warn};
@@ -30,13 +31,15 @@ pub type MessageStream = Box<dyn Stream<Item = Message> + Send + Sync + Unpin + 
 pub(crate) struct MessageHandler<C: GlobalContext> {
     agent: Agent,
     global_context: C,
+    dispatcher: Arc<Dispatcher>,
 }
 
 impl<C: GlobalContext + Sync> MessageHandler<C> {
-    pub(crate) fn new(agent: Agent, global_context: C) -> Self {
+    pub(crate) fn new(agent: Agent, global_context: C, dispatcher: Arc<Dispatcher>) -> Self {
         Self {
             agent,
             global_context,
+            dispatcher,
         }
     }
 
@@ -119,7 +122,7 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
     }
 
     #[instrument(
-        skip(self, msg_context, response),
+        skip(self, _msg_context, response),
         fields(
             agent_label = response.properties().as_agent_id().label(),
             account_id = response.properties().as_agent_id().as_account_id().label(),
@@ -128,7 +131,7 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
     )]
     async fn handle_response(
         &self,
-        msg_context: &mut AppMessageContext<'_, C>,
+        _msg_context: &mut AppMessageContext<'_, C>,
         response: &IncomingResponse<String>,
     ) -> Result<(), AppError> {
         let json_response = IncomingResponse::convert(response.to_owned())
@@ -139,8 +142,8 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
                 )
             })
             .error(AppErrorKind::InvalidPayload)?;
-        msg_context
-            .dispatcher()
+
+        self.dispatcher
             .response(json_response)
             .map_err(|e| anyhow!("Failed to send response through dispatcher, err = {:?}", e))
             .error(AppErrorKind::MessageHandlingFailed)
@@ -382,13 +385,5 @@ impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandle
         }
 
         Box::pin(handle_envelope::<H, C>(context, event))
-    }
-}
-
-////////////////////////////////////////////////////////////////////////////////
-
-impl endpoint::CorrelationData {
-    pub(crate) fn dump(&self) -> anyhow::Result<String> {
-        serde_json::to_string(self).context("Failed to dump correlation data")
     }
 }

@@ -4,16 +4,13 @@ use async_trait::async_trait;
 use serde::de::DeserializeOwned;
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::mqtt::{
-    IncomingEvent, IncomingEventProperties, IncomingRequest,
-    IncomingResponseProperties,
+    IncomingEvent, IncomingEventProperties, IncomingRequest, IncomingResponseProperties,
 };
 
 use crate::app::context::Context;
 use crate::app::error::Error as AppError;
 pub(self) use crate::app::message_handler::MessageStream;
-use crate::app::message_handler::{
-    EventEnvelopeHandler, RequestEnvelopeHandler,
-};
+use crate::app::message_handler::{EventEnvelopeHandler, RequestEnvelopeHandler};
 
 use super::service_utils::{RequestParams, Response as AppResponse};
 
@@ -157,7 +154,6 @@ pub(self) mod prelude {
         RequestResult,
     };
     pub(super) use crate::app::endpoint::authz::AuthzObject;
-    pub(super) use crate::app::endpoint::CorrelationData;
     pub(super) use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
     pub(super) use crate::metrics::QueryKey;
 

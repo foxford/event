@@ -29,13 +29,6 @@ pub(crate) struct Object {
     created_at: DateTime<Utc>,
 }
 
-impl Object {
-    #[cfg(test)]
-    pub(crate) fn status(&self) -> Status {
-        self.status
-    }
-}
-
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub(crate) struct AgentWithBan {
     #[serde(skip_serializing)]
@@ -92,13 +85,6 @@ impl ListQuery {
     pub(crate) fn room_id(self, room_id: Uuid) -> Self {
         Self {
             room_id: Some(room_id),
-            ..self
-        }
-    }
-
-    pub(crate) fn status(self, status: Status) -> Self {
-        Self {
-            status: Some(status),
             ..self
         }
     }

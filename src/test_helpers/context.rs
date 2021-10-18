@@ -7,6 +7,7 @@ use sqlx::postgres::PgPool as Db;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 
+use crate::app::broker_client::{BrokerClient, MockBrokerClient};
 use crate::config::Config;
 use crate::{
     app::context::{Context, GlobalContext, MessageContext},
@@ -54,6 +55,7 @@ pub(crate) struct TestContext {
     metrics: Arc<Metrics>,
     start_timestamp: DateTime<Utc>,
     s3_client: Option<S3Client>,
+    broker_client: Arc<MockBrokerClient>,
 }
 
 impl TestContext {
@@ -70,6 +72,7 @@ impl TestContext {
             metrics,
             start_timestamp: Utc::now(),
             s3_client: None,
+            broker_client: Arc::new(MockBrokerClient::new()),
         }
     }
 
@@ -86,11 +89,16 @@ impl TestContext {
             metrics,
             start_timestamp: Utc::now(),
             s3_client: None,
+            broker_client: Arc::new(MockBrokerClient::new()),
         }
     }
 
     pub fn set_s3(&mut self, s3_client: S3Client) {
         self.s3_client = Some(s3_client)
+    }
+
+    pub fn broker_client_mock(&mut self) -> &mut MockBrokerClient {
+        Arc::get_mut(&mut self.broker_client).expect("Failed to get broker client mock")
     }
 }
 
@@ -129,6 +137,10 @@ impl GlobalContext for TestContext {
 
     fn s3_client(&self) -> Option<S3Client> {
         self.s3_client.clone()
+    }
+
+    fn broker_client(&self) -> &dyn BrokerClient {
+        self.broker_client.as_ref()
     }
 }
 
