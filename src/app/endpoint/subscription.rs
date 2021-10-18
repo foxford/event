@@ -6,8 +6,8 @@ use futures::{future, stream};
 use serde_derive::{Deserialize, Serialize};
 use svc_agent::{
     mqtt::{
-        IncomingEventProperties, IncomingRequestProperties,
-        OutgoingEvent, ShortTermTimingProperties,
+        IncomingEventProperties, IncomingRequestProperties, OutgoingEvent,
+        ShortTermTimingProperties,
     },
     AgentId, Authenticable,
 };
@@ -28,20 +28,6 @@ pub(crate) struct CorrelationDataPayload {
     reqp: IncomingRequestProperties,
     subject: AgentId,
     object: Vec<String>,
-}
-
-impl CorrelationDataPayload {
-    pub(crate) fn new(
-        reqp: IncomingRequestProperties,
-        subject: AgentId,
-        object: Vec<String>,
-    ) -> Self {
-        Self {
-            reqp,
-            subject,
-            object,
-        }
-    }
 }
 
 #[derive(Deserialize, Serialize)]

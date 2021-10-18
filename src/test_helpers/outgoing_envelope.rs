@@ -58,19 +58,9 @@ impl OutgoingResponseProperties {
     pub(crate) fn status(&self) -> ResponseStatus {
         ResponseStatus::from_bytes(self.status.as_bytes()).expect("Invalid status code")
     }
-
-    pub(crate) fn correlation_data(&self) -> &str {
-        &self.correlation_data
-    }
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct OutgoingRequestProperties {
     method: String,
-}
-
-impl OutgoingRequestProperties {
-    pub(crate) fn method(&self) -> &str {
-        &self.method
-    }
 }

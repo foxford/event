@@ -12,11 +12,10 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
     mqtt::{
-        IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
-        OutgoingMessage, OutgoingRequest, ResponseStatus, ShortTermTimingProperties,
-        SubscriptionTopic,
+        IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties, ResponseStatus,
+        ShortTermTimingProperties,
     },
-    Addressable, AgentId, Subscription,
+    Addressable, AgentId,
 };
 use svc_error::Error as SvcError;
 use svc_utils::extractors::AuthnExtractor;
@@ -25,8 +24,6 @@ use uuid::Uuid;
 
 use crate::app::context::{AppContext, Context};
 use crate::app::endpoint::prelude::*;
-use crate::app::endpoint::subscription::CorrelationDataPayload;
-use crate::app::API_VERSION;
 use crate::db::adjustment::Segments;
 use crate::db::agent;
 use crate::db::room::{InsertQuery, UpdateQuery};
@@ -35,22 +32,6 @@ use crate::{
     app::operations::adjust_room,
     db::event::{insert_agent_action, AgentAction},
 };
-
-///////////////////////////////////////////////////////////////////////////////
-
-#[derive(Debug, Serialize)]
-struct SubscriptionRequest {
-    subject: AgentId,
-    object: Vec<String>,
-}
-
-impl SubscriptionRequest {
-    fn new(subject: AgentId, object: Vec<String>) -> Self {
-        Self { subject, object }
-    }
-}
-
-///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Deserialize)]
 pub struct CreateRequest {
@@ -399,9 +380,6 @@ pub struct EnterPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CreateDeleteResponsePayload {}
-
-#[derive(Debug, Deserialize)]
 pub struct EnterRequest {
     id: Uuid,
     #[serde(flatten)]
@@ -500,38 +478,12 @@ impl RequestHandler for EnterHandler {
                 .error(AppErrorKind::DbQueryFailed)?;
         }
 
-        // Send dynamic subscription creation request to the broker.
-        let subscribe_req = subscription_request(
-            context,
-            mqtt_params,
-            room.id(),
-            "subscription.create",
-            authz_time,
-        )?;
-
-        let dispatcher = context.dispatcher();
-
-        let msg = if let OutgoingMessage::Request(msg) = subscribe_req {
-            msg
-        } else {
-            unreachable!()
-        };
-        let req1 = dispatcher.request::<_, CreateDeleteResponsePayload>(msg);
-
-        let broadcast_subscribe_req = subscription_request(
-            context,
-            mqtt_params,
-            room.id(),
-            "broadcast_subscription.create",
-            authz_time,
-        )?;
-
-        let msg = if let OutgoingMessage::Request(msg) = broadcast_subscribe_req {
-            msg
-        } else {
-            unreachable!()
-        };
-        let req2 = dispatcher.request::<_, CreateDeleteResponsePayload>(msg);
+        let req1 = context
+            .broker_client()
+            .enter_room(room.id(), mqtt_params.as_agent_id());
+        let req2 = context
+            .broker_client()
+            .enter_broadcast_room(room.id(), mqtt_params.as_agent_id());
 
         let (resp1, resp2) = tokio::join!(req1, req2);
         let resp1 = resp1
@@ -581,7 +533,7 @@ impl RequestHandler for EnterHandler {
                 ResponseStatus::OK,
                 json!({}),
                 context.start_timestamp(),
-                None,
+                Some(authz_time),
             );
 
             response.add_notification(
@@ -610,43 +562,6 @@ impl RequestHandler for EnterHandler {
             }
         }
     }
-}
-
-fn subscription_request<C: Context>(
-    context: &mut C,
-    reqp: &IncomingRequestProperties,
-    room_id: Uuid,
-    method: &str,
-    authz_time: chrono::Duration,
-) -> std::result::Result<OutgoingMessage<SubscriptionRequest>, AppError> {
-    let subject = reqp.as_agent_id().to_owned();
-    let object = vec![
-        "rooms".to_string(),
-        room_id.to_string(),
-        "events".to_string(),
-    ];
-    let payload = SubscriptionRequest::new(subject.clone(), object.clone());
-
-    let broker_id = AgentId::new("nevermind", context.config().broker_id.to_owned());
-
-    let response_topic = Subscription::unicast_responses_from(&broker_id)
-        .subscription_topic(context.agent_id(), API_VERSION)
-        .context("Failed to build response topic")
-        .error(AppErrorKind::BrokerRequestFailed)?;
-
-    let corr_data_payload = CorrelationDataPayload::new(reqp.to_owned(), subject, object);
-
-    let corr_data = CorrelationData::SubscriptionCreate(corr_data_payload)
-        .dump()
-        .context("Failed to dump correlation data")
-        .error(AppErrorKind::BrokerRequestFailed)?;
-
-    let mut timing = ShortTermTimingProperties::until_now(context.start_timestamp());
-    timing.set_authorization_time(authz_time);
-
-    let props = reqp.to_request(method, &response_topic, &corr_data, timing);
-    let to = &context.config().broker_id;
-    Ok(OutgoingRequest::multicast(payload, props, to, API_VERSION))
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -821,16 +736,6 @@ pub(crate) use dump_events::EventsDumpHandler;
 
 #[cfg(test)]
 mod tests {
-    use serde_derive::Deserialize;
-
-    use super::AgentId;
-
-    #[derive(Deserialize)]
-    struct DynSubRequest {
-        subject: AgentId,
-        object: Vec<String>,
-    }
-
     mod create {
         use std::ops::Bound;
 
@@ -1451,11 +1356,12 @@ mod tests {
     }
 
     mod enter {
-        use crate::app::API_VERSION;
+        use crate::app::broker_client::CreateDeleteResponsePayload;
+        use svc_agent::mqtt::IncomingResponse;
+
         use crate::test_helpers::prelude::*;
 
         use super::super::*;
-        use super::DynSubRequest;
 
         #[test]
         fn test_parsing() {
@@ -1500,6 +1406,25 @@ mod tests {
 
             // Make room.enter request.
             let mut context = TestContext::new(db, authz);
+
+            context
+                .broker_client_mock()
+                .expect_enter_room()
+                .with(mockall::predicate::always(), mockall::predicate::always())
+                .returning(move |_, agent_id| {
+                    let props = build_respp(agent_id);
+                    Ok(IncomingResponse::new(CreateDeleteResponsePayload {}, props))
+                });
+
+            context
+                .broker_client_mock()
+                .expect_enter_broadcast_room()
+                .with(mockall::predicate::always(), mockall::predicate::always())
+                .returning(move |_, agent_id| {
+                    let props = build_respp(agent_id);
+                    Ok(IncomingResponse::new(CreateDeleteResponsePayload {}, props))
+                });
+
             let payload = EnterRequest {
                 id: room.id(),
                 payload: EnterPayload {
@@ -1512,21 +1437,17 @@ mod tests {
                 .await
                 .expect("Room entrance failed");
 
-            // Assert dynamic subscription request.
-            let (payload, reqp, topic) = find_request::<DynSubRequest>(messages.as_slice());
+            assert_eq!(messages.len(), 2);
 
-            let expected_topic = format!(
-                "agents/{}.{}/api/{}/out/{}",
-                context.config().agent_label,
-                context.config().id,
-                API_VERSION,
-                context.config().broker_id,
-            );
+            let (payload, _evp, _) = find_event_by_predicate::<JsonValue, _>(&messages, |evp| {
+                evp.label() == "room.enter"
+            })
+            .unwrap();
+            assert_eq!(payload["id"], room.id().to_string());
+            assert_eq!(payload["agent_id"], agent.agent_id().to_string());
 
-            assert_eq!(topic, expected_topic);
-            assert_eq!(reqp.method(), "subscription.create");
-            assert_eq!(payload.subject, agent.agent_id().to_owned());
-            assert_eq!(payload.object, vec!["rooms", &room_id, "events"]);
+            // assert response exists
+            find_response::<JsonValue>(&messages);
         }
 
         #[tokio::test]

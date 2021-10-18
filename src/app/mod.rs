@@ -13,8 +13,7 @@ use svc_agent::mqtt::{
     OutgoingRequestProperties, QoS, ShortTermTimingProperties, SubscriptionTopic,
 };
 use svc_agent::{
-    request::Dispatcher as MqttDispatcher, AccountId, AgentId, Authenticable, SharedGroup,
-    Subscription,
+    request::Dispatcher, AccountId, AgentId, Authenticable, SharedGroup, Subscription,
 };
 use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
@@ -22,6 +21,7 @@ use svc_error::{extension::sentry, Error as SvcError};
 use tokio::{sync::mpsc, task};
 use tracing::{error, info, warn};
 
+use crate::app::broker_client::{BrokerClient, MqttBrokerClient};
 use crate::app::http::build_router;
 use crate::{app::context::GlobalContext, metrics::Metrics};
 use crate::{
@@ -89,9 +89,10 @@ pub(crate) async fn run(
     // Context
     let authz = Authz::new(authz, metrics.clone());
     let queue_counter = agent.get_queue_counter();
-    let dispatcher = MqttDispatcher::new(&agent);
+    let dispatcher = Arc::new(Dispatcher::new(&agent));
+    let broker_client = build_broker_client(&config, dispatcher.clone());
     let context_builder =
-        AppContextBuilder::new(config.clone(), authz, db, agent.clone(), dispatcher);
+        AppContextBuilder::new(config.clone(), authz, db, agent.clone(), broker_client);
 
     let context_builder = match ro_db {
         Some(db) => context_builder.ro_db(db),
@@ -128,7 +129,7 @@ pub(crate) async fn run(
     );
 
     // Message handler
-    let message_handler = Arc::new(MessageHandler::new(agent.clone(), context));
+    let message_handler = Arc::new(MessageHandler::new(agent.clone(), context, dispatcher));
 
     // Message loop
     let mut signals_stream = signal_hook_tokio::Signals::new(TERM_SIGNALS)?.fuse();
@@ -282,6 +283,19 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
     }
 }
 
+fn build_broker_client(config: &Config, dispatcher: Arc<Dispatcher>) -> Arc<dyn BrokerClient> {
+    let agent_id = AgentId::new(&config.agent_label, config.id.clone());
+
+    Arc::new(MqttBrokerClient::new(
+        agent_id,
+        config.broker_id.clone(),
+        dispatcher,
+        Some(Duration::from_secs(5)),
+        "v1",
+    ))
+}
+
+pub mod broker_client;
 pub(crate) mod context;
 pub(crate) mod endpoint;
 pub(crate) mod error;

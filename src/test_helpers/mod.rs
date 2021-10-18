@@ -8,7 +8,7 @@ use svc_agent::{
 };
 use uuid::Uuid;
 
-use crate::app::endpoint::{EventHandler, RequestHandler, ResponseHandler};
+use crate::app::endpoint::{EventHandler, RequestHandler};
 use crate::app::error::Error as AppError;
 use crate::app::message_handler::MessageStream;
 use crate::app::service_utils::RequestParams;
@@ -18,7 +18,7 @@ use self::agent::TestAgent;
 use self::context::TestContext;
 use self::outgoing_envelope::{
     OutgoingEnvelope, OutgoingEnvelopeProperties, OutgoingEventProperties,
-    OutgoingRequestProperties, OutgoingResponseProperties,
+    OutgoingResponseProperties,
 };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -34,17 +34,6 @@ pub(crate) async fn handle_request<H: RequestHandler>(
     let reqp = build_reqp(agent.agent_id(), "ignore");
     let messages = H::handle(context, payload, RequestParams::MqttParams(&reqp)).await?;
     Ok(parse_messages(messages.into_mqtt_messages(&reqp)?).await)
-}
-
-pub(crate) async fn handle_response<H: ResponseHandler>(
-    context: &mut TestContext,
-    agent: &TestAgent,
-    payload: H::Payload,
-    corr_data: &H::CorrelationData,
-) -> Result<Vec<OutgoingEnvelope>, AppError> {
-    let respp = build_respp(agent.agent_id());
-    let messages = H::handle(context, payload, &respp, corr_data).await?;
-    Ok(parse_messages(messages).await)
 }
 
 pub(crate) async fn handle_event<H: EventHandler>(
@@ -120,21 +109,6 @@ where
     }
 
     panic!("Response not found");
-}
-
-pub(crate) fn find_request<P>(
-    messages: &[OutgoingEnvelope],
-) -> (P, &OutgoingRequestProperties, &str)
-where
-    P: DeserializeOwned,
-{
-    for message in messages {
-        if let OutgoingEnvelopeProperties::Request(reqp) = message.properties() {
-            return (message.payload::<P>(), reqp, message.topic());
-        }
-    }
-
-    panic!("Request not found");
 }
 
 pub(crate) fn build_reqp(agent_id: &AgentId, method: &str) -> IncomingRequestProperties {
@@ -225,8 +199,8 @@ pub(crate) mod prelude {
         build_evp, build_reqp, build_respp,
         context::TestContext,
         db::{test_db_ban_callback, TestDb},
-        factory, find_event, find_event_by_predicate, find_request, find_response, handle_event,
-        handle_request, handle_response, shared_helpers, SVC_AUDIENCE, USR_AUDIENCE,
+        factory, find_event, find_event_by_predicate, find_response, handle_event, handle_request,
+        shared_helpers, SVC_AUDIENCE, USR_AUDIENCE,
     };
 }
 

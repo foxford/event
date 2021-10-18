@@ -2,8 +2,8 @@ use anyhow::Context as AnyhowContext;
 use chrono::{DateTime, Duration, Utc};
 use serde::ser::Serialize;
 use svc_agent::mqtt::{
-    IncomingRequestProperties, IntoPublishableMessage,
-    OutgoingResponse, ResponseStatus, ShortTermTimingProperties,
+    IncomingRequestProperties, IntoPublishableMessage, OutgoingResponse, ResponseStatus,
+    ShortTermTimingProperties,
 };
 use tracing::field::display;
 use uuid::Uuid;
