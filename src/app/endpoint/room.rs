@@ -29,7 +29,7 @@ use crate::db::agent;
 use crate::db::room::{InsertQuery, UpdateQuery};
 use crate::db::room_time::{BoundedDateTimeTuple, RoomTime};
 use crate::{
-    app::operations::adjust_room,
+    app::operations::{adjust_room, AdjustOutput},
     db::event::{insert_agent_action, AgentAction},
 };
 
@@ -647,13 +647,17 @@ impl RequestHandler for AdjustHandler {
 
             // Handle result.
             let result = match operation_result {
-                Ok((original_room, modified_room, modified_segments)) => {
-                    RoomAdjustResult::Success {
-                        original_room_id: original_room.id(),
-                        modified_room_id: modified_room.id(),
-                        modified_segments,
-                    }
-                }
+                Ok(AdjustOutput {
+                    original_room,
+                    modified_room,
+                    modified_segments,
+                    cut_original_segments,
+                }) => RoomAdjustResult::Success {
+                    original_room_id: original_room.id(),
+                    modified_room_id: modified_room.id(),
+                    modified_segments,
+                    cut_original_segments,
+                },
                 Err(err) => {
                     error!("Room adjustment job failed: {:?}", err);
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
@@ -713,6 +717,8 @@ enum RoomAdjustResult {
         modified_room_id: Uuid,
         #[serde(with = "crate::db::adjustment::serde::segments")]
         modified_segments: Segments,
+        #[serde(with = "crate::db::adjustment::serde::segments")]
+        cut_original_segments: Segments,
     },
     Error {
         error: SvcError,
