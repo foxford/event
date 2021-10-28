@@ -322,7 +322,7 @@ mod test {
     struct NestedTestOptionData {
         v: Option<String>,
         #[serde(flatten)]
-        d: TestOptionData
+        d: TestOptionData,
     }
 
     #[test]
@@ -342,27 +342,36 @@ mod test {
         let data: TestOptionData = dbg!(serde_json::from_value(val).unwrap());
         assert!(data.time.is_none());
 
-        let data: TestOptionData = dbg!(serde_json::from_str(r#"
+        let data: TestOptionData = dbg!(serde_json::from_str(
+            r#"
         {
             "time": null
         }
-        "#).unwrap());
+        "#
+        )
+        .unwrap());
         assert!(data.time.is_none());
 
         // These two tests should catch troubles with nulls in flattened structs
-        let data: NestedTestOptionData = dbg!(serde_json::from_str(r#"
+        let data: NestedTestOptionData = dbg!(serde_json::from_str(
+            r#"
         {
             "v": "whatever",
             "time": null
         }
-        "#).unwrap());
+        "#
+        )
+        .unwrap());
         assert!(data.d.time.is_none());
 
-        let data: NestedTestOptionData = dbg!(serde_json::from_str(r#"
+        let data: NestedTestOptionData = dbg!(serde_json::from_str(
+            r#"
         {
             "v": "whatever"
         }
-        "#).unwrap());
+        "#
+        )
+        .unwrap());
         assert!(data.d.time.is_none());
     }
 

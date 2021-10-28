@@ -34,6 +34,10 @@ pub fn build_router(
         )
         .route("/rooms/:id/adjust", post(endpoint::room::adjust))
         .route("/rooms/:id/enter", post(endpoint::room::enter))
+        .route(
+            "/rooms/:id/locked_types",
+            post(endpoint::room::locked_types),
+        )
         .route("/rooms/:id/dump_events", post(endpoint::room::dump_events))
         .route(
             "/rooms/:id/events",
@@ -42,7 +46,7 @@ pub fn build_router(
         .route("/rooms/:id/state", get(endpoint::state::read))
         .route(
             "/rooms/:id/agents",
-            get(endpoint::agent::list).put(endpoint::agent::update),
+            get(endpoint::agent::list).patch(endpoint::agent::update),
         )
         .route(
             "/rooms/:id/editions",

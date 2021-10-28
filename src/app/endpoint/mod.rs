@@ -67,6 +67,7 @@ request_routes!(
     "room.create" => room::CreateHandler,
     "room.dump_events" => room::EventsDumpHandler,
     "room.enter" => room::EnterHandler,
+    "room.locked_types" => room::LockedTypesHandler,
     "room.read" => room::ReadHandler,
     "room.update" => room::UpdateHandler,
     "state.read" => state::ReadHandler,

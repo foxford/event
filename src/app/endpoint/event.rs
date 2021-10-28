@@ -142,11 +142,24 @@ impl RequestHandler for CreateHandler {
             "events"
         };
 
-        let object = {
+        // NOTE:
+        // Currently we simply override authz object to room update if event type is in locked_types
+        // Assumption here is that admins can always update rooms and its ok for them to post messages in locked chat
+        // So room update authz check works for them
+        // But the same check always fails for common users
+        //
+        // This is probably a temporary solution, relying on room update being allowed only to those who can post in locked chat
+        let (object, action) = {
             let object = room.authz_object();
             let mut object = object.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
-            object.extend([key, &payload.kind, "authors", &author].iter());
-            AuthzObject::new(&object).into()
+
+            if room.locked_types().get(&payload.kind) == Some(&true) {
+                (AuthzObject::new(&object).into(), "update")
+            } else {
+                object.extend([key, &payload.kind, "authors", &author].iter());
+
+                (AuthzObject::new(&object).into(), "create")
+            }
         };
 
         let authz_time = context
@@ -155,7 +168,7 @@ impl RequestHandler for CreateHandler {
                 room.audience().into(),
                 reqp.as_account_id().to_owned(),
                 object,
-                "create".into(),
+                action.into(),
             )
             .await?;
 
@@ -412,6 +425,8 @@ impl RequestHandler for ListHandler {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
+
     use serde_json::json;
 
     use crate::db::event::{Direction, Object as Event};
@@ -493,6 +508,162 @@ mod tests {
         assert_eq!(event.label(), Some("message-1"));
         assert_eq!(event.attribute(), Some("pinned"));
         assert_eq!(event.data(), &json!({ "text": "hello" }));
+    }
+
+    #[tokio::test]
+    async fn create_locked_event_as_user() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let room = {
+            // Create room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
+
+        // Allow agent to create events of type `message` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let account_id = agent.account_id().to_string();
+
+        let object = vec![
+            "rooms",
+            &room_id,
+            "events",
+            "message",
+            "authors",
+            &account_id,
+        ];
+
+        authz.allow(agent.account_id(), object, "create");
+
+        // Make event.create request. It should succeed
+        let mut context = TestContext::new(db.clone(), authz);
+
+        let payload = CreateRequest {
+            room_id: room.id(),
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+            },
+        };
+
+        handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Event creation failed");
+
+        // Lock messages for users
+        {
+            let mut m = HashMap::new();
+            m.insert("message".into(), true);
+            let q = db::room::UpdateQuery::new(room.id()).locked_types(m);
+            let mut conn = db.get_conn().await;
+            q.execute(&mut conn).await.expect("Failed to lock type");
+        }
+
+        // Make event.create request. Now it should fail since we locked kind='message' events
+        let payload = CreateRequest {
+            room_id: room.id(),
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-2")),
+                attribute: None,
+                data: json!({ "text": "locked chat hello" }),
+                is_claim: false,
+                is_persistent: true,
+            },
+        };
+
+        handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Event creation succeeded");
+    }
+
+    #[tokio::test]
+    async fn create_locked_event_as_room_updater() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let room = {
+            // Create room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
+
+        // Allow agent to create events of type `message` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let account_id = agent.account_id().to_string();
+
+        let object = vec![
+            "rooms",
+            &room_id,
+            "events",
+            "message",
+            "authors",
+            &account_id,
+        ];
+
+        authz.allow(agent.account_id(), object, "create");
+
+        let object = vec!["rooms", &room_id];
+        authz.allow(agent.account_id(), object, "update");
+
+        // Make event.create request.
+        let mut context = TestContext::new(db.clone(), authz);
+
+        let payload = CreateRequest {
+            room_id: room.id(),
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: None,
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+            },
+        };
+
+        handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Event creation failed");
+
+        // Lock messages for users
+        {
+            let mut m = HashMap::new();
+            m.insert("message".into(), true);
+            let q = db::room::UpdateQuery::new(room.id()).locked_types(m);
+            let mut conn = db.get_conn().await;
+            q.execute(&mut conn).await.expect("Failed to lock type");
+        }
+
+        let payload = CreateRequest {
+            room_id: room.id(),
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-2")),
+                attribute: None,
+                data: json!({ "text": "locked chat hello" }),
+                is_claim: false,
+                is_persistent: true,
+            },
+        };
+
+        handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Event creation failed");
     }
 
     #[tokio::test]
