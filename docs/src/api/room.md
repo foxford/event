@@ -23,6 +23,7 @@ source_room_id |       uuid | _optional_ | The identifier of the source room for
 time           | [int, int] | _required_ | Opening and closing timestamps in seconds. Second element can be null (considered unbounded).
 tags           |       json | _optional_ | Tags object associated with the room.
 created_at     |        int | _required_ | Room creation timestamp in seconds.
+locked_types   |   [string] | _required_ | List of event types that a user without room update rights cannot create (expected to be used for locked chats)
 
 
 ## Lifecycle events

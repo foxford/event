@@ -551,73 +551,6 @@
       "nullable": []
     }
   },
-  "29f6a3c2b6be004d1ac609a2a0dcc909b2e8227b8c18945c28e6227e75e290ba": {
-    "query": "\n            INSERT INTO room (audience, source_room_id, time, tags, preserve_history, classroom_id)\n            VALUES ($1, $2, $3, $4, $5, $6)\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id\n            ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "audience",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 2,
-          "name": "source_room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 3,
-          "name": "time!: Time",
-          "type_info": "TstzRange"
-        },
-        {
-          "ordinal": 4,
-          "name": "tags",
-          "type_info": "Json"
-        },
-        {
-          "ordinal": 5,
-          "name": "created_at",
-          "type_info": "Timestamptz"
-        },
-        {
-          "ordinal": 6,
-          "name": "preserve_history",
-          "type_info": "Bool"
-        },
-        {
-          "ordinal": 7,
-          "name": "classroom_id",
-          "type_info": "Uuid"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Text",
-          "Uuid",
-          "TstzRange",
-          "Json",
-          "Bool",
-          "Uuid"
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        true,
-        false,
-        true,
-        false,
-        false,
-        true
-      ]
-    }
-  },
   "30648a371672f6987fc07841a62926a649cd5ad562fb040828ca30be8b362258": {
     "query": "\n            SELECT\n                agent.id,\n                agent_id AS \"agent_id!: AgentId\",\n                agent.room_id,\n                status AS \"status!: Status\",\n                agent.created_at,\n                (rban.created_at IS NOT NULL)::boolean AS banned,\n                rban.reason\n            FROM agent\n            LEFT OUTER JOIN room_ban rban\n            ON rban.room_id = agent.room_id AND rban.account_id = (agent.agent_id).account_id\n            WHERE agent.room_id = $1 AND agent.status = $2\n            ORDER BY created_at DESC\n            LIMIT $3\n            OFFSET $4\n            ",
     "describe": {
@@ -875,6 +808,75 @@
         false,
         false,
         false,
+        false
+      ]
+    }
+  },
+  "45f7405c90a1bb78ba31c3bd8a139c3f69eb2f18fb65291f47921697436348d1": {
+    "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types\n            FROM room\n            WHERE id = $1\n            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "audience",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "source_room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 3,
+          "name": "time!: Time",
+          "type_info": "TstzRange"
+        },
+        {
+          "ordinal": 4,
+          "name": "tags",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 5,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 6,
+          "name": "preserve_history",
+          "type_info": "Bool"
+        },
+        {
+          "ordinal": 7,
+          "name": "classroom_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 8,
+          "name": "locked_types",
+          "type_info": "Jsonb"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "TstzRange"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        true,
         false
       ]
     }
@@ -1150,69 +1152,6 @@
         false,
         false,
         null,
-        true
-      ]
-    }
-  },
-  "81dcdef3e131f1035a77c710dae8122fe8bbb5382a4c9b17b23b408b9d64a545": {
-    "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id\n            FROM room\n            WHERE id = $1\n            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)\n            ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "audience",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 2,
-          "name": "source_room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 3,
-          "name": "time!: Time",
-          "type_info": "TstzRange"
-        },
-        {
-          "ordinal": 4,
-          "name": "tags",
-          "type_info": "Json"
-        },
-        {
-          "ordinal": 5,
-          "name": "created_at",
-          "type_info": "Timestamptz"
-        },
-        {
-          "ordinal": 6,
-          "name": "preserve_history",
-          "type_info": "Bool"
-        },
-        {
-          "ordinal": 7,
-          "name": "classroom_id",
-          "type_info": "Uuid"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "TstzRange"
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        true,
-        false,
-        true,
-        false,
-        false,
         true
       ]
     }
@@ -1762,6 +1701,80 @@
       "nullable": []
     }
   },
+  "9eb770f833dae7837768006094d875f1cd12963a760fcdc2929e323544c656d7": {
+    "query": "\n            INSERT INTO room (audience, source_room_id, time, tags, preserve_history, classroom_id, locked_types)\n            VALUES ($1, $2, $3, $4, $5, $6, $7)\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "audience",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "source_room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 3,
+          "name": "time!: Time",
+          "type_info": "TstzRange"
+        },
+        {
+          "ordinal": 4,
+          "name": "tags",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 5,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 6,
+          "name": "preserve_history",
+          "type_info": "Bool"
+        },
+        {
+          "ordinal": 7,
+          "name": "classroom_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 8,
+          "name": "locked_types",
+          "type_info": "Jsonb"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Uuid",
+          "TstzRange",
+          "Json",
+          "Bool",
+          "Uuid",
+          "Jsonb"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        true,
+        false
+      ]
+    }
+  },
   "a17265aab93b926729647128bfcaa0452be3f19ab5dba6855a89269653c4ff99": {
     "query": "\n            INSERT INTO event (\n                room_id,\n                set,\n                kind,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by,\n                created_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            RETURNING\n                id,\n                room_id,\n                kind,\n                set,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by AS \"created_by!: AgentId\",\n                created_at,\n                deleted_at,\n                original_occurred_at,\n                original_created_by as \"original_created_by: AgentId\"\n            ",
     "describe": {
@@ -2129,8 +2142,8 @@
       ]
     }
   },
-  "af8f0a7d8069ab074dbd2836b3dbcc8bc9d57fa94912a66844298a82bb85c6b5": {
-    "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags),\n                classroom_id = COALESCE($4, classroom_id)\n            WHERE id = $1\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id\n            ",
+  "c05f44fc45df4d8cdf323ab016a7cb72dfdb9ab54399ab2ba9ad73ff4af55674": {
+    "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags),\n                classroom_id = COALESCE($4, classroom_id),\n                locked_types = COALESCE($5, locked_types)\n            WHERE id = $1\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types\n            ",
     "describe": {
       "columns": [
         {
@@ -2172,6 +2185,11 @@
           "ordinal": 7,
           "name": "classroom_id",
           "type_info": "Uuid"
+        },
+        {
+          "ordinal": 8,
+          "name": "locked_types",
+          "type_info": "Jsonb"
         }
       ],
       "parameters": {
@@ -2179,7 +2197,8 @@
           "Uuid",
           "TstzRange",
           "Json",
-          "Uuid"
+          "Uuid",
+          "Jsonb"
         ]
       },
       "nullable": [
@@ -2190,7 +2209,8 @@
         true,
         false,
         false,
-        true
+        true,
+        false
       ]
     }
   },

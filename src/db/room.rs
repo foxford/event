@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::ops::{Bound, RangeBounds};
 
@@ -24,7 +25,116 @@ pub(crate) struct Object {
     preserve_history: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     classroom_id: Option<Uuid>,
+    #[serde(default)]
+    locked_types: HashMap<String, bool>,
 }
+
+#[derive(Clone, Debug)]
+struct DbObject {
+    id: Uuid,
+    audience: String,
+    source_room_id: Option<Uuid>,
+    time: Time,
+    tags: Option<JsonValue>,
+    created_at: DateTime<Utc>,
+    preserve_history: bool,
+    classroom_id: Option<Uuid>,
+    locked_types: JsonValue,
+}
+
+impl TryFrom<DbObject> for Object {
+    type Error = sqlx::Error;
+
+    fn try_from(v: DbObject) -> Result<Self, Self::Error> {
+        let DbObject {
+            id,
+            audience,
+            source_room_id,
+            time,
+            tags,
+            created_at,
+            preserve_history,
+            classroom_id,
+            locked_types,
+        } = v;
+
+        let locked_types = locked_types
+            .as_object()
+            .ok_or_else(|| sqlx::Error::ColumnDecode {
+                index: "locked_types".into(),
+                source: Box::new(JsonbConversionFail::new(id))
+                    as Box<dyn std::error::Error + Sync + Send>,
+            })?
+            .into_iter()
+            .map(|(k, v)| (k.into(), v.as_bool().unwrap_or(false)))
+            .collect();
+
+        Ok(Self {
+            id,
+            audience,
+            source_room_id,
+            time,
+            tags,
+            created_at,
+            preserve_history,
+            classroom_id,
+            locked_types,
+        })
+    }
+}
+
+impl From<Object> for DbObject {
+    fn from(v: Object) -> Self {
+        let Object {
+            id,
+            audience,
+            source_room_id,
+            time,
+            tags,
+            created_at,
+            preserve_history,
+            classroom_id,
+            locked_types,
+        } = v;
+
+        let locked_types = serde_json::to_value(&locked_types).unwrap();
+
+        Self {
+            id,
+            audience,
+            source_room_id,
+            time,
+            tags,
+            created_at,
+            preserve_history,
+            classroom_id,
+            locked_types,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct JsonbConversionFail {
+    room_id: Uuid,
+}
+
+impl JsonbConversionFail {
+    pub fn new(room_id: Uuid) -> Self {
+        Self { room_id }
+    }
+}
+
+impl std::fmt::Display for JsonbConversionFail {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Failed to convert jsonb to map, room id = {}",
+            self.room_id
+        )
+    }
+}
+
+impl std::error::Error for JsonbConversionFail {}
 
 impl Object {
     pub(crate) fn id(&self) -> Uuid {
@@ -54,6 +164,10 @@ impl Object {
 
     pub(crate) fn classroom_id(&self) -> Option<Uuid> {
         self.classroom_id
+    }
+
+    pub(crate) fn locked_types(&self) -> &HashMap<String, bool> {
+        &self.locked_types
     }
 
     pub fn authz_object(&self) -> Vec<String> {
@@ -92,6 +206,7 @@ pub(crate) struct Builder {
     created_at: Option<DateTime<Utc>>,
     preserve_history: Option<bool>,
     classroom_id: Option<Uuid>,
+    locked_types: HashMap<String, bool>,
 }
 
 impl Builder {
@@ -166,6 +281,7 @@ impl Builder {
                 .preserve_history
                 .ok_or_else(|| anyhow!("missing preserve_history"))?,
             classroom_id: self.classroom_id,
+            locked_types: Default::default(),
         })
     }
 }
@@ -187,7 +303,7 @@ impl FindQuery {
         let time: Option<PgRange<DateTime<Utc>>> = self.time.map(|t| t.into());
 
         sqlx::query_as!(
-            Object,
+            DbObject,
             r#"
             SELECT
                 id,
@@ -197,7 +313,8 @@ impl FindQuery {
                 tags,
                 created_at,
                 preserve_history,
-                classroom_id
+                classroom_id,
+                locked_types
             FROM room
             WHERE id = $1
             AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)
@@ -206,7 +323,9 @@ impl FindQuery {
             time,
         )
         .fetch_optional(conn)
-        .await
+        .await?
+        .map(|v| v.try_into())
+        .transpose()
     }
 }
 
@@ -220,6 +339,7 @@ pub(crate) struct InsertQuery {
     tags: Option<JsonValue>,
     preserve_history: bool,
     classroom_id: Option<Uuid>,
+    locked_types: HashMap<String, bool>,
 }
 
 impl InsertQuery {
@@ -231,6 +351,7 @@ impl InsertQuery {
             tags: None,
             preserve_history: true,
             classroom_id: None,
+            locked_types: Default::default(),
         }
     }
 
@@ -265,11 +386,13 @@ impl InsertQuery {
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let time: PgRange<DateTime<Utc>> = self.time.into();
 
+        let locked_types = serde_json::to_value(&self.locked_types).unwrap();
+
         sqlx::query_as!(
-            Object,
+            DbObject,
             r#"
-            INSERT INTO room (audience, source_room_id, time, tags, preserve_history, classroom_id)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO room (audience, source_room_id, time, tags, preserve_history, classroom_id, locked_types)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING
                 id,
                 audience,
@@ -278,7 +401,8 @@ impl InsertQuery {
                 tags,
                 created_at,
                 preserve_history,
-                classroom_id
+                classroom_id,
+                locked_types
             "#,
             self.audience,
             self.source_room_id,
@@ -286,9 +410,11 @@ impl InsertQuery {
             self.tags,
             self.preserve_history,
             self.classroom_id,
+            locked_types
         )
         .fetch_one(conn)
-        .await
+        .await?
+        .try_into()
     }
 }
 
@@ -300,6 +426,7 @@ pub(crate) struct UpdateQuery {
     time: Option<Time>,
     tags: Option<JsonValue>,
     classroom_id: Option<Uuid>,
+    locked_types: Option<HashMap<String, bool>>,
 }
 
 impl UpdateQuery {
@@ -309,6 +436,7 @@ impl UpdateQuery {
             time: None,
             tags: None,
             classroom_id: None,
+            locked_types: None,
         }
     }
 
@@ -327,16 +455,30 @@ impl UpdateQuery {
         }
     }
 
+    pub(crate) fn locked_types(self, locked_types: HashMap<String, bool>) -> Self {
+        Self {
+            locked_types: Some(locked_types),
+            ..self
+        }
+    }
+
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let time: Option<PgRange<DateTime<Utc>>> = self.time.map(|t| t.into());
 
+        // Delete false values from map not to accumulate them
+        let locked_types = self.locked_types.map(|mut m| {
+            m.retain(|_k, v| *v);
+            serde_json::to_value(&m).unwrap()
+        });
+
         sqlx::query_as!(
-            Object,
+            DbObject,
             r#"
             UPDATE room
             SET time = COALESCE($2, time),
                 tags = COALESCE($3::JSON, tags),
-                classroom_id = COALESCE($4, classroom_id)
+                classroom_id = COALESCE($4, classroom_id),
+                locked_types = COALESCE($5, locked_types)
             WHERE id = $1
             RETURNING
                 id,
@@ -346,15 +488,18 @@ impl UpdateQuery {
                 tags,
                 created_at,
                 preserve_history,
-                classroom_id
+                classroom_id,
+                locked_types
             "#,
             self.id,
             time,
             self.tags,
-            self.classroom_id
+            self.classroom_id,
+            locked_types
         )
         .fetch_one(conn)
-        .await
+        .await?
+        .try_into()
     }
 }
 
