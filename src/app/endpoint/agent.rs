@@ -32,6 +32,7 @@ pub struct ListPayload {
 #[derive(Debug, Deserialize)]
 pub struct ListRequest {
     room_id: Uuid,
+    #[serde(flatten)]
     payload: ListPayload,
 }
 
