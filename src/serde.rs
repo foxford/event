@@ -217,6 +217,15 @@ pub(crate) mod ts_seconds_option_bound_tuple {
             let interval = super::ts_seconds_bound_tuple::deserialize(d)?;
             Ok(Some(interval))
         }
+
+        // We need this to deserialize json's nulls when payload structs are flattened into requests structs
+        // Serde doesnt convert null to None thus we need to implement this
+        fn visit_unit<E>(self) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(None)
+        }
     }
 }
 
@@ -309,6 +318,13 @@ mod test {
         time: Option<(Bound<DateTime<Utc>>, Bound<DateTime<Utc>>)>,
     }
 
+    #[derive(Debug, Deserialize)]
+    struct NestedTestOptionData {
+        v: Option<String>,
+        #[serde(flatten)]
+        d: TestOptionData
+    }
+
     #[test]
     fn ts_seconds_option_bound_tuple() {
         let now = now();
@@ -325,6 +341,29 @@ mod test {
         let val = json!({});
         let data: TestOptionData = dbg!(serde_json::from_value(val).unwrap());
         assert!(data.time.is_none());
+
+        let data: TestOptionData = dbg!(serde_json::from_str(r#"
+        {
+            "time": null
+        }
+        "#).unwrap());
+        assert!(data.time.is_none());
+
+        // These two tests should catch troubles with nulls in flattened structs
+        let data: NestedTestOptionData = dbg!(serde_json::from_str(r#"
+        {
+            "v": "whatever",
+            "time": null
+        }
+        "#).unwrap());
+        assert!(data.d.time.is_none());
+
+        let data: NestedTestOptionData = dbg!(serde_json::from_str(r#"
+        {
+            "v": "whatever"
+        }
+        "#).unwrap());
+        assert!(data.d.time.is_none());
     }
 
     fn now() -> DateTime<Utc> {
