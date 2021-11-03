@@ -27,44 +27,77 @@ pub fn build_router(
     authn: svc_authn::jose::ConfigMap,
 ) -> Router<BoxRoute> {
     let router = Router::new()
+        .route(
+            "/healthz",
+            get(|| async { Response::builder().body(hyper::Body::from("Ok")).unwrap() }),
+        )
         .route("/rooms", post(endpoint::room::create))
         .route(
             "/rooms/:id",
-            get(endpoint::room::read).patch(endpoint::room::update),
+            get(endpoint::room::read)
+                .patch(endpoint::room::update)
+                .options(endpoint::read_options),
         )
         .route("/rooms/:id/adjust", post(endpoint::room::adjust))
-        .route("/rooms/:id/enter", post(endpoint::room::enter))
+        .route(
+            "/rooms/:id/enter",
+            post(endpoint::room::enter).options(endpoint::read_options),
+        )
         .route(
             "/rooms/:id/locked_types",
-            post(endpoint::room::locked_types),
+            post(endpoint::room::locked_types).options(endpoint::read_options),
         )
         .route("/rooms/:id/dump_events", post(endpoint::room::dump_events))
         .route(
             "/rooms/:id/events",
-            get(endpoint::event::list).post(endpoint::event::create),
+            get(endpoint::event::list)
+                .post(endpoint::event::create)
+                .options(endpoint::read_options),
         )
-        .route("/rooms/:id/state", get(endpoint::state::read))
+        .route(
+            "/rooms/:id/state",
+            get(endpoint::state::read).options(endpoint::read_options),
+        )
+        .boxed()
         .route(
             "/rooms/:id/agents",
-            get(endpoint::agent::list).patch(endpoint::agent::update),
+            get(endpoint::agent::list)
+                .patch(endpoint::agent::update)
+                .options(endpoint::read_options),
         )
         .route(
             "/rooms/:id/editions",
-            get(endpoint::edition::list).post(endpoint::edition::create),
+            get(endpoint::edition::list)
+                .post(endpoint::edition::create)
+                .options(endpoint::read_options),
         )
-        .route("/editions/:id", delete(endpoint::edition::delete))
-        .route("/editions/:id/commit", post(endpoint::edition::commit))
-        .route("/editions/:id", delete(endpoint::edition::delete))
+        .route(
+            "/editions/:id",
+            delete(endpoint::edition::delete).options(endpoint::read_options),
+        )
+        .route(
+            "/editions/:id/commit",
+            post(endpoint::edition::commit).options(endpoint::read_options),
+        )
+        .route(
+            "/editions/:id",
+            delete(endpoint::edition::delete).options(endpoint::read_options),
+        )
         .route(
             "/editions/:id/changes",
-            get(endpoint::change::list).post(endpoint::change::create),
+            get(endpoint::change::list)
+                .post(endpoint::change::create)
+                .options(endpoint::read_options),
         )
-        .route("/changes/:id", delete(endpoint::change::delete))
+        .route(
+            "/changes/:id",
+            delete(endpoint::change::delete).options(endpoint::read_options),
+        )
         .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
         .layer(svc_utils::middleware::CorsLayer)
         .layer(AddExtensionLayer::new(context))
         .layer(AddExtensionLayer::new(agent))
-        .layer(AddExtensionLayer::new(authn));
+        .layer(AddExtensionLayer::new(Arc::new(authn)));
     let router = Router::new().nest("/api/v1", router);
     router.boxed()
 }
