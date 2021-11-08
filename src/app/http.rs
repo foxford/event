@@ -5,9 +5,8 @@ use std::{
 
 use crate::app::message_handler::publish_message;
 use axum::{
-    handler::{delete, get, post},
     response::IntoResponse,
-    routing::BoxRoute,
+    routing::{delete, get, post},
     AddExtensionLayer, Router,
 };
 
@@ -25,7 +24,7 @@ pub fn build_router(
     context: Arc<AppContext>,
     agent: Agent,
     authn: svc_authn::jose::ConfigMap,
-) -> Router<BoxRoute> {
+) -> Router {
     let router = Router::new()
         .route(
             "/healthz",
@@ -58,7 +57,6 @@ pub fn build_router(
             "/rooms/:id/state",
             get(endpoint::state::read).options(endpoint::read_options),
         )
-        .boxed()
         .route(
             "/rooms/:id/agents",
             get(endpoint::agent::list)
@@ -80,10 +78,6 @@ pub fn build_router(
             post(endpoint::edition::commit).options(endpoint::read_options),
         )
         .route(
-            "/editions/:id",
-            delete(endpoint::edition::delete).options(endpoint::read_options),
-        )
-        .route(
             "/editions/:id/changes",
             get(endpoint::change::list)
                 .post(endpoint::change::create)
@@ -98,8 +92,8 @@ pub fn build_router(
         .layer(AddExtensionLayer::new(context))
         .layer(AddExtensionLayer::new(agent))
         .layer(AddExtensionLayer::new(Arc::new(authn)));
-    let router = Router::new().nest("/api/v1", router);
-    router.boxed()
+
+    Router::new().nest("/api/v1", router)
 }
 
 impl IntoResponse for error::Error {

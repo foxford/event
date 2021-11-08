@@ -37,7 +37,7 @@ sentry = {version = "0.23",  default-features = true }
 prometheus = "0.13"
 enum-iterator = "0.7"
 parking_lot = "0.11"
-axum = "0.2"
+axum = "0.3"
 tower = "0.4"
 hyper = { version = "0.14", features = [ "server" ]}
 svc-utils = { version = "0.1.1", features = ["authn-extractor", "cors-middleware"] }
