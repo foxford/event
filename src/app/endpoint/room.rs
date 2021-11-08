@@ -438,8 +438,6 @@ impl RequestHandler for EnterHandler {
         payload: Self::Payload,
         reqp: RequestParams<'_>,
     ) -> RequestResult {
-        let mqtt_params = reqp.as_mqtt_params()?;
-
         let room =
             helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Open).await?;
 
@@ -481,10 +479,10 @@ impl RequestHandler for EnterHandler {
 
         let req1 = context
             .broker_client()
-            .enter_room(room.id(), mqtt_params.as_agent_id());
+            .enter_room(room.id(), reqp.as_agent_id());
         let req2 = context
             .broker_client()
-            .enter_broadcast_room(room.id(), mqtt_params.as_agent_id());
+            .enter_broadcast_room(room.id(), reqp.as_agent_id());
 
         let (resp1, resp2) = tokio::join!(req1, req2);
         let resp1 = resp1
