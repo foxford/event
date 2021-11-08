@@ -115,18 +115,6 @@ pub enum RequestParams<'a> {
     MqttParams(&'a IncomingRequestProperties),
 }
 
-impl<'a> RequestParams<'a> {
-    pub fn as_mqtt_params(&self) -> Result<&IncomingRequestProperties, error::Error> {
-        match self {
-            RequestParams::Http { agent_id: _ } => Err(error::Error::new(
-                error::ErrorKind::AccessDenied,
-                anyhow::anyhow!("Trying convert http params into mqtt"),
-            )),
-            RequestParams::MqttParams(p) => Ok(p),
-        }
-    }
-}
-
 impl<'a> Addressable for RequestParams<'a> {
     fn as_agent_id(&self) -> &svc_agent::AgentId {
         match self {
