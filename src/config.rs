@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::time::Duration as StdDuration;
 
 use chrono::Duration;
 use serde_derive::Deserialize;
@@ -28,6 +29,8 @@ pub struct Config {
     ban_duration_s: Option<u64>,
     #[serde(default)]
     pub vacuum: VacuumConfig,
+    #[serde(default)]
+    pub http_broker_client: Option<HttpBrokerClientConfig>,
 }
 
 impl Config {
@@ -88,4 +91,11 @@ impl Default for VacuumConfig {
             max_deleted_lifetime: Duration::days(1),
         }
     }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct HttpBrokerClientConfig {
+    pub host: String,
+    #[serde(default, with = "humantime_serde")]
+    pub timeout: Option<StdDuration>,
 }
