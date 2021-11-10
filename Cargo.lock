@@ -2506,9 +2506,9 @@ dependencies = [
 
 [[package]]
 name = "svc-utils"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f9445bf79935b10fa74bcded60ffa313bad2c2eba9ce0f6384f092db497e400"
+checksum = "1b5172476f4557421d6e7067bf1088651445ad7dd7f6810c8964372b304b1e89"
 dependencies = [
  "axum",
  "futures",
