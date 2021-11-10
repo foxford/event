@@ -21,7 +21,7 @@ use svc_error::{extension::sentry, Error as SvcError};
 use tokio::{sync::mpsc, task};
 use tracing::{error, info, warn};
 
-use crate::app::broker_client::{BrokerClient, MqttBrokerClient};
+use crate::app::broker_client::{BrokerClient, HttpBrokerClient, MqttBrokerClient};
 use crate::app::http::build_router;
 use crate::{app::context::GlobalContext, metrics::Metrics};
 use crate::{
@@ -90,7 +90,7 @@ pub(crate) async fn run(
     let authz = Authz::new(authz, metrics.clone());
     let queue_counter = agent.get_queue_counter();
     let dispatcher = Arc::new(Dispatcher::new(&agent));
-    let broker_client = build_broker_client(&config, dispatcher.clone());
+    let broker_client = build_broker_client(&config, &token, dispatcher.clone());
     let context_builder =
         AppContextBuilder::new(config.clone(), authz, db, agent.clone(), broker_client);
 
@@ -283,16 +283,27 @@ fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
     }
 }
 
-fn build_broker_client(config: &Config, dispatcher: Arc<Dispatcher>) -> Arc<dyn BrokerClient> {
+fn build_broker_client(
+    config: &Config,
+    token: &str,
+    dispatcher: Arc<Dispatcher>,
+) -> Arc<dyn BrokerClient> {
     let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 
-    Arc::new(MqttBrokerClient::new(
-        agent_id,
-        config.broker_id.clone(),
-        dispatcher,
-        Some(Duration::from_secs(5)),
-        "v1",
-    ))
+    if let Some(http_cfg) = &config.http_broker_client {
+        Arc::new(
+            HttpBrokerClient::new(&http_cfg.host, token, http_cfg.timeout)
+                .expect("Failed to create Http Broker Client"),
+        )
+    } else {
+        Arc::new(MqttBrokerClient::new(
+            agent_id,
+            config.broker_id.clone(),
+            dispatcher,
+            Some(Duration::from_secs(5)),
+            "v1",
+        ))
+    }
 }
 
 pub mod broker_client;

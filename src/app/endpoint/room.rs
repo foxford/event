@@ -484,82 +484,63 @@ impl RequestHandler for EnterHandler {
             .broker_client()
             .enter_broadcast_room(room.id(), reqp.as_agent_id());
 
-        let (resp1, resp2) = tokio::join!(req1, req2);
-        let resp1 = resp1
-            .map_err(|e| anyhow!("Broker request failed, err = {:?}", e))
-            .error(AppErrorKind::BrokerRequestFailed)?;
-        let _ = resp2
+        tokio::try_join!(req1, req2)
             .map_err(|e| anyhow!("Broker request failed, err = {:?}", e))
             .error(AppErrorKind::BrokerRequestFailed)?;
 
-        let respp = resp1.properties();
+        // Determine whether the agent is banned.
+        let agent_with_ban = {
+            // Find room.
+            helpers::find_room(context, room.id(), helpers::RoomTimeRequirement::Open).await?;
 
-        if respp.status() == ResponseStatus::OK {
-            // Determine whether the agent is banned.
-            let agent_with_ban = {
-                // Find room.
-                helpers::find_room(context, room.id(), helpers::RoomTimeRequirement::Open).await?;
+            // Update agent state to `ready`.
+            let q = agent::UpdateQuery::new(reqp.as_agent_id().clone(), room.id())
+                .status(agent::Status::Ready);
 
-                // Update agent state to `ready`.
-                let q = agent::UpdateQuery::new(reqp.as_agent_id().clone(), room.id())
-                    .status(agent::Status::Ready);
+            let mut conn = context.get_conn().await?;
 
-                let mut conn = context.get_conn().await?;
+            context
+                .metrics()
+                .measure_query(QueryKey::AgentUpdateQuery, q.execute(&mut conn))
+                .await
+                .context("Failed to put agent into 'ready' status")
+                .error(AppErrorKind::DbQueryFailed)?;
 
-                context
-                    .metrics()
-                    .measure_query(QueryKey::AgentUpdateQuery, q.execute(&mut conn))
-                    .await
-                    .context("Failed to put agent into 'ready' status")
-                    .error(AppErrorKind::DbQueryFailed)?;
+            let query = agent::FindWithBanQuery::new(reqp.as_agent_id().clone(), room.id());
 
-                let query = agent::FindWithBanQuery::new(reqp.as_agent_id().clone(), room.id());
+            context
+                .metrics()
+                .measure_query(QueryKey::AgentFindWithBanQuery, query.execute(&mut conn))
+                .await
+                .context("Failed to find agent with ban")
+                .error(AppErrorKind::DbQueryFailed)?
+                .ok_or_else(|| anyhow!("No agent {} in room {}", reqp.as_agent_id(), room.id()))
+                .error(AppErrorKind::AgentNotEnteredTheRoom)?
+        };
 
-                context
-                    .metrics()
-                    .measure_query(QueryKey::AgentFindWithBanQuery, query.execute(&mut conn))
-                    .await
-                    .context("Failed to find agent with ban")
-                    .error(AppErrorKind::DbQueryFailed)?
-                    .ok_or_else(|| anyhow!("No agent {} in room {}", reqp.as_agent_id(), room.id()))
-                    .error(AppErrorKind::AgentNotEnteredTheRoom)?
-            };
+        let banned = agent_with_ban.banned().unwrap_or(false);
 
-            let banned = agent_with_ban.banned().unwrap_or(false);
+        // Send a response to the original `room.enter` request and a room-wide notification.
+        let mut response = AppResponse::new(
+            ResponseStatus::OK,
+            json!({}),
+            context.start_timestamp(),
+            Some(authz_time),
+        );
 
-            // Send a response to the original `room.enter` request and a room-wide notification.
-            let mut response = AppResponse::new(
-                ResponseStatus::OK,
-                json!({}),
-                context.start_timestamp(),
-                Some(authz_time),
-            );
+        response.add_notification(
+            "room.enter",
+            &format!("rooms/{}/events", room.id()),
+            RoomEnterEvent {
+                id: room.id(),
+                agent_id: reqp.as_agent_id().to_owned(),
+                agent: agent_with_ban,
+                banned,
+            },
+            context.start_timestamp(),
+        );
 
-            response.add_notification(
-                "room.enter",
-                &format!("rooms/{}/events", room.id()),
-                RoomEnterEvent {
-                    id: room.id(),
-                    agent_id: reqp.as_agent_id().to_owned(),
-                    agent: agent_with_ban,
-                    banned,
-                },
-                context.start_timestamp(),
-            );
-
-            Ok(response)
-        } else {
-            match respp.status() {
-                ResponseStatus::NOT_FOUND => Err(anyhow!("Subscriber was absent in db"))
-                    .error(AppErrorKind::BrokerRequestFailed),
-                ResponseStatus::UNPROCESSABLE_ENTITY => {
-                    Err(anyhow!("Subscriber was present on multiple nodes"))
-                        .error(AppErrorKind::BrokerRequestFailed)
-                }
-                code => Err(anyhow!(format!("Something went wrong, code = {:?}", code)))
-                    .error(AppErrorKind::BrokerRequestFailed),
-            }
-        }
+        Ok(response)
     }
 }
 
@@ -1466,7 +1447,6 @@ mod tests {
 
     mod enter {
         use crate::app::broker_client::CreateDeleteResponsePayload;
-        use svc_agent::mqtt::IncomingResponse;
 
         use crate::test_helpers::prelude::*;
 
@@ -1520,19 +1500,13 @@ mod tests {
                 .broker_client_mock()
                 .expect_enter_room()
                 .with(mockall::predicate::always(), mockall::predicate::always())
-                .returning(move |_, agent_id| {
-                    let props = build_respp(agent_id);
-                    Ok(IncomingResponse::new(CreateDeleteResponsePayload {}, props))
-                });
+                .returning(move |_, _agent_id| Ok(CreateDeleteResponsePayload {}));
 
             context
                 .broker_client_mock()
                 .expect_enter_broadcast_room()
                 .with(mockall::predicate::always(), mockall::predicate::always())
-                .returning(move |_, agent_id| {
-                    let props = build_respp(agent_id);
-                    Ok(IncomingResponse::new(CreateDeleteResponsePayload {}, props))
-                });
+                .returning(move |_, _agent_id| Ok(CreateDeleteResponsePayload {}));
 
             let payload = EnterRequest {
                 id: room.id(),

@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -6,12 +7,13 @@ use async_trait::async_trait;
 use chrono::Utc;
 #[cfg(test)]
 use mockall::automock;
-use serde_derive::{Deserialize, Serialize};
+use reqwest::{header, Url};
+use serde::{Deserialize, Serialize};
 use svc_agent::{
     error::Error as AgentError,
     mqtt::{
-        IncomingResponse, OutgoingMessage, OutgoingRequest, OutgoingRequestProperties,
-        ShortTermTimingProperties, SubscriptionTopic,
+        OutgoingMessage, OutgoingRequest, OutgoingRequestProperties, ShortTermTimingProperties,
+        SubscriptionTopic,
     },
     request::Dispatcher,
     AccountId, AgentId, Subscription,
@@ -22,11 +24,25 @@ use uuid::Uuid;
 struct SubscriptionRequest {
     subject: AgentId,
     object: Vec<String>,
+    version: &'static str,
 }
 
 impl SubscriptionRequest {
     fn new(subject: AgentId, object: Vec<String>) -> Self {
-        Self { subject, object }
+        Self {
+            subject,
+            object,
+            version: "v1",
+        }
+    }
+
+    fn room_events(subject: &AgentId, room_id: Uuid) -> Self {
+        let object = vec![
+            "rooms".to_string(),
+            room_id.to_string(),
+            "events".to_string(),
+        ];
+        Self::new(subject.clone(), object)
     }
 }
 
@@ -40,12 +56,12 @@ pub trait BrokerClient: Sync + Send {
         &self,
         id: Uuid,
         subject: &AgentId,
-    ) -> Result<IncomingResponse<CreateDeleteResponsePayload>, anyhow::Error>;
+    ) -> anyhow::Result<CreateDeleteResponsePayload>;
     async fn enter_broadcast_room(
         &self,
         id: Uuid,
         subject: &AgentId,
-    ) -> Result<IncomingResponse<CreateDeleteResponsePayload>, anyhow::Error>;
+    ) -> anyhow::Result<CreateDeleteResponsePayload>;
 }
 
 pub struct MqttBrokerClient {
@@ -62,7 +78,7 @@ impl BrokerClient for MqttBrokerClient {
         &self,
         id: Uuid,
         subject: &AgentId,
-    ) -> Result<IncomingResponse<CreateDeleteResponsePayload>, anyhow::Error> {
+    ) -> anyhow::Result<CreateDeleteResponsePayload> {
         self.subscription_request(id, subject, "subscription.create")
             .await
     }
@@ -71,7 +87,7 @@ impl BrokerClient for MqttBrokerClient {
         &self,
         id: Uuid,
         subject: &AgentId,
-    ) -> Result<IncomingResponse<CreateDeleteResponsePayload>, anyhow::Error> {
+    ) -> anyhow::Result<CreateDeleteResponsePayload> {
         self.subscription_request(id, subject, "broadcast_subscription.create")
             .await
     }
@@ -99,11 +115,10 @@ impl MqttBrokerClient {
         id: Uuid,
         subject: &AgentId,
         method: &str,
-    ) -> Result<IncomingResponse<CreateDeleteResponsePayload>, anyhow::Error> {
+    ) -> anyhow::Result<CreateDeleteResponsePayload> {
         let reqp = self.build_reqp(method)?;
-        let object = vec!["rooms".to_string(), id.to_string(), "events".to_string()];
 
-        let payload = SubscriptionRequest::new(subject.clone(), object);
+        let payload = SubscriptionRequest::room_events(subject, id);
 
         let msg = if let OutgoingMessage::Request(msg) =
             OutgoingRequest::multicast(payload, reqp, &self.broker_account_id, &self.api_version)
@@ -116,7 +131,7 @@ impl MqttBrokerClient {
         let request = self
             .dispatcher
             .request::<_, CreateDeleteResponsePayload>(msg);
-        let payload_result = if let Some(dur) = self.timeout {
+        let response = if let Some(dur) = self.timeout {
             tokio::time::timeout(dur, request)
                 .await
                 .map_err(|_e| anyhow!("Mqtt request timed out"))?
@@ -124,7 +139,15 @@ impl MqttBrokerClient {
             request.await
         };
 
-        payload_result.map_err(|e| anyhow!("Mqtt request failed, err = {:?}", e))
+        let response = response.map_err(|e| anyhow!("Mqtt request failed, err = {:?}", e))?;
+        match response.properties().status() {
+            svc_agent::mqtt::ResponseStatus::OK => Ok(response.extract_payload()),
+            status => Err(anyhow!(
+                "Mqtt request failed with status code = {:?}, payload = {:?}",
+                status,
+                response.extract_payload()
+            )),
+        }
     }
 
     fn response_topic(&self) -> Result<String, anyhow::Error> {
@@ -156,4 +179,86 @@ fn generate_correlation_data() -> String {
         .take(CORRELATION_DATA_LENGTH)
         .map(char::from)
         .collect()
+}
+
+#[derive(Debug, Clone)]
+pub struct HttpBrokerClient {
+    http: reqwest::Client,
+    host: Url,
+    token: String,
+    timeout: Option<std::time::Duration>,
+}
+
+impl HttpBrokerClient {
+    pub fn new(
+        host: &str,
+        token: &str,
+        timeout: Option<std::time::Duration>,
+    ) -> anyhow::Result<Self> {
+        let client = {
+            let mut builder =
+                reqwest::Client::builder().default_headers(Self::default_headers(token));
+            if let Some(timeout) = timeout {
+                builder = builder.timeout(timeout);
+            }
+            builder.build()?
+        };
+
+        Ok(Self {
+            http: client,
+            host: host.parse()?,
+            token: format!("Bearer {}", token),
+            timeout,
+        })
+    }
+
+    fn default_headers(token: &str) -> header::HeaderMap {
+        let mut headers = header::HeaderMap::new();
+        headers.insert(
+            http::header::AUTHORIZATION,
+            format!("Bearer {}", token).try_into().unwrap(),
+        );
+        headers.insert(
+            http::header::CONTENT_TYPE,
+            "application/json".try_into().unwrap(),
+        );
+        headers.insert(
+            http::header::USER_AGENT,
+            format!("event-{}", crate::APP_VERSION).try_into().unwrap(),
+        );
+
+        headers
+    }
+}
+
+#[async_trait]
+impl BrokerClient for HttpBrokerClient {
+    async fn enter_room(
+        &self,
+        id: Uuid,
+        subject: &AgentId,
+    ) -> anyhow::Result<CreateDeleteResponsePayload> {
+        let payload =
+            serde_json::to_string(&SubscriptionRequest::room_events(subject, id)).unwrap();
+
+        let url = self.host.join("/api/v1/subscriptions").unwrap();
+        let response = self.http.post(url).body(payload).send().await?;
+
+        match response.status() {
+            http::StatusCode::OK => Ok(CreateDeleteResponsePayload {}),
+            status => Err(anyhow!(
+                "HTTP request failed with status code = {:?}, payload = {:?}",
+                status,
+                response.text().await
+            )),
+        }
+    }
+
+    async fn enter_broadcast_room(
+        &self,
+        _id: Uuid,
+        _subject: &AgentId,
+    ) -> anyhow::Result<CreateDeleteResponsePayload> {
+        Ok(CreateDeleteResponsePayload {})
+    }
 }
