@@ -1307,10 +1307,10 @@ mod tests {
             match resp_room.time().map(|t| t.end().to_owned()) {
                 Ok(RoomTimeBound::Excluded(t)) => {
                     let x = t - now;
-                    // Less than 1 second apart is basically 'now'
-                    // avoids intermittent failures
+                    // Less than 2 seconds apart is basically 'now'
+                    // avoids intermittent failures (that were happening in CI even for 1 second boundary)
                     assert!(
-                        x.num_seconds().abs() < 1,
+                        x.num_seconds().abs() < 2,
                         "Duration exceeded 1 second = {:?}",
                         x
                     );
