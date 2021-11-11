@@ -1,9 +1,11 @@
 use std::{
     sync::Arc,
     task::{Context, Poll},
+    time::Duration,
 };
 
-use crate::app::message_handler::publish_message;
+use tower_http::trace::TraceLayer;
+
 use axum::{
     response::IntoResponse,
     routing::{delete, get, post},
@@ -13,12 +15,15 @@ use axum::{
 use futures::{future::BoxFuture, StreamExt};
 use futures_util::pin_mut;
 use http::{Request, Response};
-
+use hyper::{body::HttpBody, Body};
 use svc_agent::mqtt::{Agent, IntoPublishableMessage};
 use tower::{layer::layer_fn, Service};
+use tracing::{error, field::Empty, info, Span};
 
-use super::{context::AppContext, endpoint, error};
+use crate::app::message_handler::publish_message;
 use crate::app::message_handler::MessageStream;
+
+use super::{context::AppContext, endpoint, error::Error as AppError};
 
 pub fn build_router(
     context: Arc<AppContext>,
@@ -26,10 +31,6 @@ pub fn build_router(
     authn: svc_authn::jose::ConfigMap,
 ) -> Router {
     let router = Router::new()
-        .route(
-            "/healthz",
-            get(|| async { Response::builder().body(hyper::Body::from("Ok")).unwrap() }),
-        )
         .route("/rooms", post(endpoint::room::create))
         .route(
             "/rooms/:id",
@@ -93,10 +94,34 @@ pub fn build_router(
         .layer(AddExtensionLayer::new(agent))
         .layer(AddExtensionLayer::new(Arc::new(authn)));
 
-    Router::new().nest("/api/v1", router)
+    let routes = Router::new().nest("/api/v1", router);
+
+    let pingz_router = Router::new().route(
+        "/healthz",
+        get(|| async { Response::builder().body(Body::from("pong")).unwrap() }),
+    );
+
+    let routes = routes.merge(pingz_router);
+
+    routes.layer(
+        TraceLayer::new_for_http()
+            .make_span_with(|request: &Request<Body>| {
+                tracing::info_span!(
+                    "http-api-request",
+                    status_code = Empty,
+                    path = request.uri().path(),
+                    query = request.uri().query(),
+                    body_size_hint = ?request.body().size_hint()
+                )
+            })
+            .on_response(|response: &Response<_>, latency: Duration, span: &Span| {
+                span.record("status_code", &tracing::field::display(response.status()));
+                info!("response generated in {:?}", latency)
+            }),
+    )
 }
 
-impl IntoResponse for error::Error {
+impl IntoResponse for AppError {
     type Body = axum::body::Body;
 
     type BodyError = <Self::Body as axum::body::HttpBody>::Error;
