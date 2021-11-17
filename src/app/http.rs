@@ -4,8 +4,6 @@ use std::{
     time::Duration,
 };
 
-use tower_http::trace::TraceLayer;
-
 use axum::{
     response::IntoResponse,
     routing::{delete, get, post},
@@ -18,6 +16,7 @@ use http::{Request, Response};
 use hyper::{body::HttpBody, Body};
 use svc_agent::mqtt::{Agent, IntoPublishableMessage};
 use tower::{layer::layer_fn, Service};
+use tower_http::trace::TraceLayer;
 use tracing::{error, field::Empty, info, Span};
 
 use crate::app::message_handler::publish_message;
@@ -106,17 +105,21 @@ pub fn build_router(
     routes.layer(
         TraceLayer::new_for_http()
             .make_span_with(|request: &Request<Body>| {
-                tracing::info_span!(
+                tracing::error_span!(
                     "http-api-request",
                     status_code = Empty,
                     path = request.uri().path(),
                     query = request.uri().query(),
-                    body_size_hint = ?request.body().size_hint()
+                    body_size = ?request.body().size_hint().upper()
                 )
             })
             .on_response(|response: &Response<_>, latency: Duration, span: &Span| {
-                span.record("status_code", &tracing::field::display(response.status()));
-                info!("response generated in {:?}", latency)
+                span.record("status_code", &tracing::field::debug(response.status()));
+                if response.status().is_success() {
+                    info!("response generated in {:?}", latency)
+                } else {
+                    error!("response generated in {:?}", latency)
+                }
             }),
     )
 }
