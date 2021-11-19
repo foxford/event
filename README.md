@@ -1,5 +1,7 @@
 # Event
 
+[![dependency status](https://deps.rs/repo/github/foxford/event/status.svg)](https://deps.rs/repo/github/foxford/event)
+
 [Documentation][documentation]
 
 [documentation]:https://docs.netology-group.services/event/index.html
