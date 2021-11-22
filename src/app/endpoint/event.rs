@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
-    extract::{Extension, Path},
+    extract::{Extension, Path, Query},
     Json,
 };
 use chrono::Utc;
@@ -321,7 +321,7 @@ pub async fn list(
     Extension(ctx): Extension<Arc<AppContext>>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
-    Json(payload): Json<ListPayload>,
+    Query(payload): Query<ListPayload>,
 ) -> RequestResult {
     let request = ListRequest { room_id, payload };
     ListHandler::handle(

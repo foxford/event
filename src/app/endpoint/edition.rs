@@ -1,9 +1,6 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::{
-    extract::{Extension, Path},
-    Json,
-};
+use axum::extract::{Extension, Path, Query};
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -139,7 +136,7 @@ pub async fn list(
     Extension(ctx): Extension<Arc<AppContext>>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
-    Json(payload): Json<ListPayload>,
+    Query(payload): Query<ListPayload>,
 ) -> RequestResult {
     let request = ListRequest { room_id, payload };
     ListHandler::handle(

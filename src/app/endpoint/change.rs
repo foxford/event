@@ -1,7 +1,7 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
-    extract::{Extension, Path},
+    extract::{Extension, Path, Query},
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -174,7 +174,7 @@ pub async fn list(
     Extension(ctx): Extension<Arc<AppContext>>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(id): Path<Uuid>,
-    Json(payload): Json<ListPayload>,
+    Query(payload): Query<ListPayload>,
 ) -> RequestResult {
     let request = ListRequest { id, payload };
     ListHandler::handle(
