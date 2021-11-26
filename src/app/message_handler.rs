@@ -26,7 +26,9 @@ use crate::app::{endpoint, API_VERSION};
 ////////////////////////////////////////////////////////////////////////////////
 
 pub type Message = Box<dyn IntoPublishableMessage + Send + Sync + 'static>;
-pub type MessageStream = Box<dyn Stream<Item = Message> + Send + Sync + Unpin + 'static>;
+pub trait MessageStreamTrait: Stream<Item = Message> + Send + Sync + Unpin + 'static {}
+impl<T> MessageStreamTrait for T where T: Stream<Item = Message> + Send + Sync + Unpin + 'static {}
+pub type MessageStream = Box<dyn MessageStreamTrait>;
 
 pub(crate) struct MessageHandler<C: GlobalContext> {
     agent: Agent,

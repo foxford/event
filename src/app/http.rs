@@ -14,13 +14,13 @@ use futures::{future::BoxFuture, StreamExt};
 use futures_util::pin_mut;
 use http::{Request, Response};
 use hyper::{body::HttpBody, Body};
-use svc_agent::mqtt::{Agent, IntoPublishableMessage};
+use svc_agent::mqtt::Agent;
 use tower::{layer::layer_fn, Service};
 use tower_http::trace::TraceLayer;
 use tracing::{error, field::Empty, info, Span};
 
-use crate::app::message_handler::publish_message;
 use crate::app::message_handler::MessageStream;
+use crate::app::{message_handler::publish_message, service_utils};
 
 use super::{context::AppContext, endpoint, error::Error as AppError};
 
@@ -177,9 +177,10 @@ where
         Box::pin(async move {
             let mut agent = req.extensions().get::<Agent>().cloned().unwrap();
             let mut res: Response<ResBody> = inner.call(req).await?;
+
             if let Some(notifications) = res
                 .extensions_mut()
-                .remove::<Vec<Box<dyn IntoPublishableMessage + Send + Sync + 'static>>>()
+                .remove::<service_utils::Notifications>()
             {
                 for notification in notifications {
                     if let Err(err) = publish_message(&mut agent, notification) {
