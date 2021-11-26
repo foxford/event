@@ -3,7 +3,7 @@ use std::ops::Bound;
 use anyhow::{Context, Result};
 use chrono::Utc;
 use sqlx::postgres::{PgConnection, PgPool as Db};
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::db::change::{ListQuery as ChangeListQuery, Object as Change};
 use crate::db::edition::Object as Edition;
@@ -20,17 +20,20 @@ use crate::{db::adjustment::Segments, metrics::QueryKey};
 
 ////////////////////////////////////////////////////////////////////////////////
 
+#[instrument(
+    skip_all,
+    fields(
+        source_room_id = %source.id(),
+        edition_id = %edition.id(),
+    )
+)]
 pub(crate) async fn call(
     db: &Db,
     metrics: &Metrics,
     edition: &Edition,
     source: &Room,
 ) -> Result<(Room, Segments)> {
-    info!(
-        "Edition commit task started for edition_id = '{}', source room id = {}",
-        edition.id(),
-        source.id()
-    );
+    info!("Edition commit task started");
 
     let start_timestamp = Utc::now();
 
@@ -100,9 +103,10 @@ pub(crate) async fn call(
         .await?;
 
     info!(
-        "Edition commit successfully finished for edition_id = '{}', duration = {} ms",
-        edition.id(),
-        (Utc::now() - start_timestamp).num_milliseconds()
+        duration_ms = (Utc::now() - start_timestamp).num_milliseconds(),
+        destination_id = %destination.id(),
+        segments = ?modified_segments,
+        "Edition commit successfully finished",
     );
 
     Ok((destination, Segments::from(modified_segments))) as Result<(Room, Segments)>

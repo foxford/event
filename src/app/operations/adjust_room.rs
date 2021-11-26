@@ -35,7 +35,7 @@ pub struct AdjustOutput {
 #[instrument(
     skip_all,
     fields(
-        edition_id = %real_time_room.id(),
+        source_room_id = %real_time_room.id(),
         started_at = ?started_at,
         segments = ?segments,
         offset = ?offset,
