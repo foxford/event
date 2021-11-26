@@ -70,6 +70,10 @@ pub fn build_router(
                 .options(endpoint::read_options),
         )
         .route(
+            "/rooms/:id/bans",
+            get(endpoint::ban::list).options(endpoint::read_options),
+        )
+        .route(
             "/editions/:id",
             delete(endpoint::edition::delete).options(endpoint::read_options),
         )

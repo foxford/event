@@ -1,14 +1,17 @@
 use chrono::{DateTime, Utc};
+use serde::Serialize;
 use sqlx::postgres::PgConnection;
 use svc_agent::AccountId;
 use uuid::Uuid;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, sqlx::FromRow)]
+#[derive(Debug, sqlx::FromRow, Serialize)]
 pub(crate) struct Object {
+    #[serde(skip_serializing)]
     id: Uuid,
     account_id: AccountId,
+    #[serde(skip_serializing)]
     room_id: Uuid,
     created_at: DateTime<Utc>,
     reason: Option<String>,
@@ -48,7 +51,7 @@ impl InsertQuery {
     }
 
     pub(crate) fn reason(&mut self, reason: &str) {
-        self.reason = Some(reason.to_owned())
+        self.reason = Some(reason.to_owned());
     }
 
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
@@ -170,6 +173,33 @@ impl DeleteQuery {
         .execute(conn)
         .await
         .map(|r| r.rows_affected() as usize)
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct ListQuery {
+    room_id: Uuid,
+}
+
+impl ListQuery {
+    pub(crate) fn new(room_id: Uuid) -> Self {
+        Self { room_id }
+    }
+
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+        sqlx::query_as!(
+            Object,
+            r#"
+            SELECT
+                id, account_id AS "account_id!: AccountId",
+                room_id, reason, created_at
+            FROM room_ban
+            WHERE room_id = $1
+            "#,
+            self.room_id,
+        )
+        .fetch_all(conn)
+        .await
     }
 }
 
