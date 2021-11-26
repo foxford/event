@@ -12,12 +12,16 @@ use axum::{
 
 use futures::{future::BoxFuture, StreamExt};
 use futures_util::pin_mut;
-use http::{Request, Response};
+use http::{Method, Request, Response};
 use hyper::{body::HttpBody, Body};
 use svc_agent::mqtt::{Agent, IntoPublishableMessage};
 use tower::{layer::layer_fn, Service};
 use tower_http::trace::TraceLayer;
-use tracing::{error, field::Empty, info, Span};
+use tracing::{
+    error,
+    field::{self, Empty},
+    info, Span,
+};
 
 use crate::app::message_handler::publish_message;
 use crate::app::message_handler::MessageStream;
@@ -105,16 +109,25 @@ pub fn build_router(
     routes.layer(
         TraceLayer::new_for_http()
             .make_span_with(|request: &Request<Body>| {
-                tracing::error_span!(
+                let span = tracing::error_span!(
                     "http-api-request",
                     status_code = Empty,
                     path = request.uri().path(),
                     query = request.uri().query(),
-                    body_size = ?request.body().size_hint().upper()
-                )
+                    method = %request.method(),
+                );
+
+                if request.method() != Method::GET && request.method() != Method::OPTIONS {
+                    span.record(
+                        "body_size",
+                        &field::debug(request.body().size_hint().upper()),
+                    );
+                }
+
+                span
             })
             .on_response(|response: &Response<_>, latency: Duration, span: &Span| {
-                span.record("status_code", &tracing::field::debug(response.status()));
+                span.record("status_code", &field::debug(response.status()));
                 if response.status().is_success() {
                     info!("response generated in {:?}", latency)
                 } else {
