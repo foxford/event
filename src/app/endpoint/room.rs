@@ -12,10 +12,7 @@ use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
-    mqtt::{
-        IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties, ResponseStatus,
-        ShortTermTimingProperties,
-    },
+    mqtt::{OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties},
     Addressable, AgentId,
 };
 use svc_error::Error as SvcError;
@@ -23,8 +20,11 @@ use svc_utils::extractors::AuthnExtractor;
 use tracing::{error, instrument};
 use uuid::Uuid;
 
-use crate::app::context::{AppContext, Context};
 use crate::app::endpoint::prelude::*;
+use crate::app::{
+    context::{AppContext, Context},
+    message_handler::Message,
+};
 use crate::db::adjustment::Segments;
 use crate::db::agent;
 use crate::db::room::{InsertQuery, UpdateQuery};
@@ -761,7 +761,7 @@ impl RequestHandler for AdjustHandler {
             let path = format!("audiences/{}/events", room.audience());
             let event = OutgoingEvent::broadcast(notification, props, &path);
 
-            Box::new(event) as Box<dyn IntoPublishableMessage + Send + Sync + 'static>
+            Box::new(event) as Message
         });
 
         // Respond with 202.

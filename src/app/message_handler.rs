@@ -209,15 +209,10 @@ fn error_response(
     let e = err.to_svc_error();
     let resp = OutgoingResponse::unicast(e, props, reqp, API_VERSION);
 
-    Box::new(stream::once(future::ready(
-        Box::new(resp) as Box<dyn IntoPublishableMessage + Send + Sync + 'static>
-    )))
+    Box::new(stream::once(future::ready(Box::new(resp) as Message)))
 }
 
-pub(crate) fn publish_message(
-    agent: &mut Agent,
-    message: Box<dyn IntoPublishableMessage>,
-) -> Result<(), AppError> {
+pub(crate) fn publish_message(agent: &mut Agent, message: Message) -> Result<(), AppError> {
     agent
         .publish_publishable(message)
         .map_err(|err| anyhow!("Failed to publish message: {:?}", err))

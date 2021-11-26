@@ -2,13 +2,13 @@ use anyhow::Context as AnyhowContext;
 use chrono::{DateTime, Duration, Utc};
 use serde::ser::Serialize;
 use svc_agent::mqtt::{
-    IncomingRequestProperties, IntoPublishableMessage, OutgoingResponse, ResponseStatus,
-    ShortTermTimingProperties,
+    IncomingRequestProperties, OutgoingResponse, ResponseStatus, ShortTermTimingProperties,
 };
 use tracing::field::display;
 use uuid::Uuid;
 
 use crate::app::error::{Error as AppError, ErrorExt, ErrorKind as AppErrorKind};
+use crate::app::message_handler::Message;
 use crate::app::API_VERSION;
 use crate::db;
 use crate::{app::context::Context, metrics::QueryKey};
@@ -21,7 +21,7 @@ pub(crate) fn build_response(
     reqp: &IncomingRequestProperties,
     start_timestamp: DateTime<Utc>,
     maybe_authz_time: Option<Duration>,
-) -> Box<dyn IntoPublishableMessage + Send + Sync> {
+) -> Message {
     let mut timing = ShortTermTimingProperties::until_now(start_timestamp);
 
     if let Some(authz_time) = maybe_authz_time {
