@@ -19,6 +19,7 @@ Path                        | Method    | Description
 /rooms/:id/agents           | GET       | [List](./agent/list.md) agents
 /rooms/:id/agents           | PATCH     | [Update](./agent/update.md) agent
 /rooms/:id/state            | GET       | [Read](./state/read.md) room state
+/rooms/:id/bans             | GET       | [List](./ban/list.md) bans in room
 /rooms/:id/editions         | GET       | [List](./edition/list.md) room editions
 /rooms/:id/editions         | POST      | [Create](./edition/create.md) edition
 /editions/:id               | DELETE    | [Delete](./edition/delete.md) edition

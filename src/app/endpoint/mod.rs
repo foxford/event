@@ -54,6 +54,7 @@ macro_rules! request_routes {
 request_routes!(
     "agent.list" => agent::ListHandler,
     "agent.update" => agent::UpdateHandler,
+    "ban.list" => ban::ListHandler,
     "change.create" => change::CreateHandler,
     "change.delete" => change::DeleteHandler,
     "change.list" => change::ListHandler,
@@ -139,6 +140,7 @@ event_routes!(
 
 pub mod agent;
 pub(crate) mod authz;
+pub mod ban;
 pub mod change;
 pub mod edition;
 pub mod event;

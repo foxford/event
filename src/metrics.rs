@@ -25,6 +25,7 @@ pub enum QueryKey {
     AgentUpdateQuery,
     BanDeleteQuery,
     BanInsertQuery,
+    BanListQuery,
     ChangeDeleteQuery,
     ChangeFindWithRoomQuery,
     ChangeInsertQuery,
