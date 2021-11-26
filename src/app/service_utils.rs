@@ -6,7 +6,7 @@ use serde::Serialize;
 use serde_json::Value;
 use svc_agent::{
     mqtt::{
-        IncomingRequestProperties, IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties,
+        IncomingRequestProperties, OutgoingEvent, OutgoingEventProperties,
         ShortTermTimingProperties,
     },
     Addressable, AgentId, Authenticable,
@@ -125,10 +125,7 @@ impl Response {
             .push(Box::new(OutgoingEvent::broadcast(payload, props, path)))
     }
 
-    pub fn add_async_task(
-        &mut self,
-        task: JoinHandle<Box<dyn IntoPublishableMessage + Send + Sync + 'static>>,
-    ) {
+    pub fn add_async_task(&mut self, task: JoinHandle<Message>) {
         self.async_tasks.push(task);
     }
 }

@@ -5,10 +5,7 @@ use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::{
-    mqtt::{
-        IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties, ResponseStatus,
-        ShortTermTimingProperties,
-    },
+    mqtt::{OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties},
     Addressable,
 };
 use svc_authn::Authenticable;
@@ -17,9 +14,9 @@ use svc_utils::extractors::AuthnExtractor;
 use tracing::{error, field::display, instrument, Span};
 use uuid::Uuid;
 
-use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::app::operations::commit_edition;
+use crate::app::{context::Context, message_handler::Message};
 use crate::db;
 use crate::db::adjustment::Segments;
 
@@ -411,7 +408,7 @@ impl RequestHandler for CommitHandler {
             let path = format!("audiences/{}/events", room.audience());
             let event = OutgoingEvent::broadcast(notification, props, &path);
 
-            Box::new(event) as Box<dyn IntoPublishableMessage + Send + Sync + 'static>
+            Box::new(event) as Message
         });
 
         // Respond with 202.

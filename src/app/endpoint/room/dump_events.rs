@@ -3,8 +3,7 @@ use chrono::Utc;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use svc_agent::mqtt::{
-    IntoPublishableMessage, OutgoingEvent, OutgoingEventProperties, ResponseStatus,
-    ShortTermTimingProperties,
+    OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties,
 };
 use svc_error::Error as SvcError;
 use tracing::error;
@@ -12,6 +11,7 @@ use uuid::Uuid;
 
 use super::*;
 use crate::app::context::Context;
+use crate::app::message_handler::Message;
 use crate::app::operations::dump_events_to_s3;
 
 #[derive(Debug, Deserialize)]
@@ -128,7 +128,7 @@ impl RequestHandler for EventsDumpHandler {
             let path = format!("audiences/{}/events", room.audience());
             let event = OutgoingEvent::broadcast(notification, props, &path);
 
-            Box::new(event) as Box<dyn IntoPublishableMessage + Send + Sync + 'static>
+            Box::new(event) as Message
         });
 
         let mut response = AppResponse::new(
