@@ -33,9 +33,7 @@ pub(crate) struct Object {
     )]
     deleted_at: Option<DateTime<Utc>>,
     original_occurred_at: i64,
-    // TODO: remove Option and make the field NOT NULL once migrated production data.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    original_created_by: Option<AgentId>,
+    original_created_by: AgentId,
     removed: bool,
 }
 
@@ -183,7 +181,7 @@ impl Builder {
             created_at: Utc::now(),
             deleted_at: None,
             original_occurred_at: occurred_at,
-            original_created_by: Some(created_by),
+            original_created_by: created_by,
             removed: false,
         })
     }
