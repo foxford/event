@@ -13,8 +13,8 @@ use svc_agent::{
 };
 use tokio::task::JoinHandle;
 
+use crate::app::endpoint::helpers;
 use crate::app::message_handler::{Message, MessageStream, MessageStreamTrait};
-use crate::app::{endpoint::helpers, error::ErrorExt};
 
 use super::error;
 
@@ -66,7 +66,7 @@ pub struct Response {
     status: StatusCode,
     start_timestamp: DateTime<Utc>,
     authz_time: Option<Duration>,
-    payload: Result<Value, serde_json::Error>,
+    payload: Value,
     async_tasks: AsyncTasks,
 }
 
@@ -82,7 +82,7 @@ impl Response {
             status,
             start_timestamp,
             authz_time: maybe_authz_time,
-            payload: serde_json::to_value(&payload),
+            payload: serde_json::to_value(&payload).unwrap(),
             async_tasks: Default::default(),
         }
     }
@@ -93,10 +93,9 @@ impl Response {
     ) -> Result<MessageStream, error::Error> {
         let mut notifications = self.notifications;
         if self.status != StatusCode::NO_CONTENT {
-            let payload = self.payload.error(error::ErrorKind::InvalidPayload)?;
             let response = helpers::build_response(
                 self.status,
-                payload,
+                self.payload,
                 reqp,
                 self.start_timestamp,
                 self.authz_time,
@@ -143,7 +142,7 @@ impl IntoResponse for Response {
             .extension(self.notifications)
             .extension(tasks_stream)
             .body(axum::body::Body::from(
-                serde_json::to_string(&self.payload.expect("Todo")).expect("todo"),
+                serde_json::to_string(&self.payload).expect("todo"),
             ))
             .expect("Must be valid response")
     }

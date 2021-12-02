@@ -113,11 +113,9 @@ impl IntoResponse for AppError {
     type BodyError = <Self::Body as axum::body::HttpBody>::Error;
 
     fn into_response(self) -> hyper::Response<Self::Body> {
-        let err = svc_error::Error::builder()
-            .status(self.status())
-            .kind(self.kind(), self.title())
-            .detail(&self.source().to_string())
-            .build();
+        self.notify_sentry();
+
+        let err = self.to_svc_error();
         let error =
             serde_json::to_string(&err).unwrap_or_else(|_| "Failed to serialize error".to_string());
         http::Response::builder()
