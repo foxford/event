@@ -17,7 +17,7 @@ use svc_agent::{
 };
 use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
-use svc_error::{extension::sentry, Error as SvcError};
+use svc_error::extension::sentry as svc_sentry;
 use tokio::{sync::mpsc, task};
 use tracing::{error, info, warn};
 
@@ -76,9 +76,13 @@ pub(crate) async fn run(
     .context("Error converting authz config to clients")?;
 
     // Sentry
-    if let Some(sentry_config) = config.sentry.as_ref() {
-        svc_error::extension::sentry::init(sentry_config);
-    }
+    let _j = if let Some(ref sentry_config) = config.sentry {
+        let mut sentry_config = sentry_config.clone();
+        sentry_config.release = sentry::release_name!();
+        Some(svc_error::extension::sentry::init(&sentry_config))
+    } else {
+        None
+    };
 
     // Subscribe to topics
     subscribe(&mut agent, &agent_id, &config)?;
@@ -154,6 +158,7 @@ pub(crate) async fn run(
         "Running requests left: {}",
         metrics.running_requests_total.get()
     );
+
     Ok(())
 }
 
@@ -270,15 +275,10 @@ fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<()>
 
 fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
     if let Err(err) = subscribe(agent, agent_id, config) {
-        let err = format!("Failed to resubscribe after reconnection: {:?}", err);
+        let err = err.context("Failed to resubscribe after reconnection");
         error!("{:?}", err);
 
-        let svc_error = SvcError::builder()
-            .kind("resubscription_error", "Resubscription error")
-            .detail(&err)
-            .build();
-
-        sentry::send(svc_error)
+        svc_sentry::send(Arc::new(err))
             .unwrap_or_else(|err| warn!("Error sending error to Sentry: {:?}", err));
     }
 }

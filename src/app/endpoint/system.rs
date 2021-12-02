@@ -2,7 +2,7 @@ use async_trait::async_trait;
 use serde_derive::Deserialize;
 use serde_json::json;
 use svc_agent::mqtt::ResponseStatus;
-use svc_error::{extension::sentry, Error as SvcError};
+use svc_error::extension::sentry;
 use tracing::{error, warn};
 
 use crate::app::context::Context;
@@ -43,13 +43,7 @@ impl RequestHandler for VacuumHandler {
             if let Err(err) = vacuum(&db, &metrics, &config).await {
                 error!("Vacuum failed: {:?}", err);
 
-                let svc_error = SvcError::builder()
-                    .status(ResponseStatus::INTERNAL_SERVER_ERROR)
-                    .kind("vacuum_failed", "Vacuum failed")
-                    .detail(&err.to_string())
-                    .build();
-
-                sentry::send(svc_error).unwrap_or_else(|err| {
+                sentry::send(Arc::new(err)).unwrap_or_else(|err| {
                     warn!("Error sending error to Sentry: {:?}", err);
                 });
             }

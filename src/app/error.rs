@@ -1,10 +1,9 @@
 use enum_iterator::IntoEnumIterator;
-use std::error::Error as StdError;
 use std::fmt;
+use std::sync::Arc;
 
 use svc_agent::mqtt::ResponseStatus;
 use svc_error::{extension::sentry, Error as SvcError};
-use tracing::warn;
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -53,11 +52,6 @@ impl ErrorKind {
     pub fn kind(self) -> &'static str {
         let properties: ErrorKindProperties = self.into();
         properties.kind
-    }
-
-    pub fn title(self) -> &'static str {
-        let properties: ErrorKindProperties = self.into();
-        properties.title
     }
 
     pub fn is_notify_sentry(self) -> bool {
@@ -236,18 +230,15 @@ use std::collections::HashMap;
 
 pub struct Error {
     kind: ErrorKind,
-    source: Box<dyn AsRef<dyn StdError + Send + Sync + 'static> + Send + 'static>,
+    err: Arc<anyhow::Error>,
     tags: HashMap<String, String>,
 }
 
 impl Error {
-    pub(crate) fn new<E>(kind: ErrorKind, source: E) -> Self
-    where
-        E: AsRef<dyn StdError + Send + Sync + 'static> + Send + 'static,
-    {
+    pub(crate) fn new(kind: ErrorKind, err: anyhow::Error) -> Self {
         Self {
             kind,
-            source: Box::new(source),
+            err: Arc::new(err),
             tags: HashMap::new(),
         }
     }
@@ -260,16 +251,8 @@ impl Error {
         self.kind.kind()
     }
 
-    pub fn title(&self) -> &str {
-        self.kind.title()
-    }
-
     pub fn error_kind(&self) -> ErrorKind {
         self.kind
-    }
-
-    pub fn source(&self) -> &(dyn StdError + Send + Sync + 'static) {
-        self.source.as_ref().as_ref()
     }
 
     pub fn tag(&mut self, k: &str, v: &str) {
@@ -282,7 +265,7 @@ impl Error {
         let mut e = SvcError::builder()
             .status(properties.status)
             .kind(properties.kind, properties.title)
-            .detail(&self.source().to_string())
+            .detail(&self.err.to_string())
             .build();
 
         for (tag, val) in self.tags.iter() {
@@ -296,9 +279,9 @@ impl Error {
             return;
         }
 
-        sentry::send(self.to_svc_error()).unwrap_or_else(|err| {
-            warn!("Error sending error to Sentry: {:?}", err);
-        });
+        if let Err(e) = sentry::send(self.err.clone()) {
+            tracing::error!("Failed to send error to sentry, reason = {:?}", e);
+        }
     }
 }
 
@@ -306,20 +289,8 @@ impl fmt::Debug for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Error")
             .field("kind", &self.kind)
-            .field("source", &self.source())
+            .field("source", &self.err)
             .finish()
-    }
-}
-
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.kind, self.source.as_ref().as_ref())
-    }
-}
-
-impl StdError for Error {
-    fn source(&self) -> Option<&(dyn StdError + 'static)> {
-        Some(self.source.as_ref().as_ref())
     }
 }
 
@@ -332,7 +303,7 @@ impl From<svc_authz::Error> for Error {
 
         Self {
             kind,
-            source: Box::new(anyhow::Error::from(source)),
+            err: Arc::new(source.into()),
             tags: HashMap::new(),
         }
     }
@@ -344,8 +315,8 @@ pub trait ErrorExt<T> {
     fn error(self, kind: ErrorKind) -> Result<T, Error>;
 }
 
-impl<T, E: Into<anyhow::Error>> ErrorExt<T> for Result<T, E> {
+impl<T> ErrorExt<T> for Result<T, anyhow::Error> {
     fn error(self, kind: ErrorKind) -> Result<T, Error> {
-        self.map_err(|source| Error::new(kind, source.into()))
+        self.map_err(|source| Error::new(kind, source))
     }
 }
