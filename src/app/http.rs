@@ -1,7 +1,6 @@
 use std::{
     sync::Arc,
     task::{Context, Poll},
-    time::Duration,
 };
 
 use axum::{
@@ -12,16 +11,11 @@ use axum::{
 
 use futures::{future::BoxFuture, StreamExt};
 use futures_util::pin_mut;
-use http::{Method, Request, Response};
-use hyper::{body::HttpBody, Body};
+use http::{Request, Response};
+use hyper::Body;
 use svc_agent::mqtt::Agent;
 use tower::{layer::layer_fn, Service};
-use tower_http::trace::TraceLayer;
-use tracing::{
-    error,
-    field::{self, Empty},
-    info, Span,
-};
+use tracing::error;
 
 use crate::app::message_handler::MessageStream;
 use crate::app::{message_handler::publish_message, service_utils};
@@ -110,35 +104,7 @@ pub fn build_router(
 
     let routes = routes.merge(pingz_router);
 
-    routes.layer(
-        TraceLayer::new_for_http()
-            .make_span_with(|request: &Request<Body>| {
-                let span = tracing::error_span!(
-                    "http-api-request",
-                    status_code = Empty,
-                    path = request.uri().path(),
-                    query = request.uri().query(),
-                    method = %request.method(),
-                );
-
-                if request.method() != Method::GET && request.method() != Method::OPTIONS {
-                    span.record(
-                        "body_size",
-                        &field::debug(request.body().size_hint().upper()),
-                    );
-                }
-
-                span
-            })
-            .on_response(|response: &Response<_>, latency: Duration, span: &Span| {
-                span.record("status_code", &field::debug(response.status()));
-                if response.status().is_success() {
-                    info!("response generated in {:?}", latency)
-                } else {
-                    error!("response generated in {:?}", latency)
-                }
-            }),
-    )
+    routes.layer(svc_utils::middleware::LogLayer::new())
 }
 
 impl IntoResponse for AppError {
