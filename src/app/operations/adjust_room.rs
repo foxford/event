@@ -477,6 +477,8 @@ pub(crate) fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>
                 gaps.push((start, event.occurred_at()));
                 state = CutEventsToGapsState::Stopped;
             }
+            // if command is stop but we've already stopped - do nothing instead of failing
+            (Some("stop"), CutEventsToGapsState::Stopped) => {}
             _ => bail!(
                 "invalid cut event, id = '{}', command = {:?}, state = {:?}",
                 event.id(),
