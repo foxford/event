@@ -1,6 +1,6 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::extract::{Extension, Path, Query};
+use axum::extract::{Extension, Json, Path, Query};
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -301,16 +301,25 @@ impl RequestHandler for DeleteHandler {
 pub(crate) struct CommitHandler;
 
 #[derive(Debug, Deserialize)]
+pub struct CommitPayload {
+    #[serde(default)]
+    offset: i64,
+}
+
+#[derive(Debug, Deserialize)]
 pub(crate) struct CommitRequest {
     id: Uuid,
+    #[serde(flatten)]
+    payload: CommitPayload,
 }
 
 pub async fn commit(
     Extension(ctx): Extension<Arc<AppContext>>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(id): Path<Uuid>,
+    Json(payload): Json<CommitPayload>,
 ) -> RequestResult {
-    let request = CommitRequest { id };
+    let request = CommitRequest { id, payload };
     CommitHandler::handle(
         &mut ctx.start_message(),
         request,
@@ -325,21 +334,20 @@ pub async fn commit(
 impl RequestHandler for CommitHandler {
     type Payload = CommitRequest;
 
-    #[instrument(
-        skip_all,
-        fields(
-            edition_id = %payload.id,
-            room_id, scope, classroom_id
-        )
-    )]
+    #[instrument(skip_all, fields(edition_id, offset, room_id, scope, classroom_id,))]
     async fn handle<C: Context>(
         context: &mut C,
-        payload: Self::Payload,
+        CommitRequest {
+            id,
+            payload: CommitPayload { offset },
+        }: Self::Payload,
         reqp: RequestParams<'_>,
     ) -> RequestResult {
+        Span::current().record("edition_id", &display(id));
+        Span::current().record("offset", &display(offset));
         // Find edition with its source room.
         let (edition, room) = {
-            let query = db::edition::FindWithRoomQuery::new(payload.id);
+            let query = db::edition::FindWithRoomQuery::new(id);
             let mut conn = context.get_ro_conn().await?;
 
             let maybe_edition = context
@@ -377,7 +385,7 @@ impl RequestHandler for CommitHandler {
         let metrics = context.metrics();
 
         let notification_future = tokio::task::spawn(async move {
-            let result = commit_edition(&db, &metrics, &edition, &room).await;
+            let result = commit_edition(&db, &metrics, &edition, &room, offset).await;
 
             // Handle result.
             let result = match result {

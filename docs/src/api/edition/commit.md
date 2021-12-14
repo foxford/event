@@ -10,9 +10,10 @@ The tenant authorizes the current _agent_ for `update` action on `["rooms", room
 
 ## Multicast request
 
-Name  | Type       | Default    | Description
------ | ---------- | ---------- | ------------------------------------------------------------
-id    | uuid       | _required_ | Edition id
+Name   | Type       | Default    | Description
+------ | ---------- | ---------- | ------------------------------------------------------------
+id     | uuid       | _required_ | Edition id
+offset | i64        | 0          | Offset to move segments in milliseconds
 
 ## Unicast response
 
