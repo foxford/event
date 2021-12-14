@@ -25,6 +25,7 @@ use crate::{db::adjustment::Segments, metrics::QueryKey};
     fields(
         source_room_id = %source.id(),
         edition_id = %edition.id(),
+        offset = ?offset,
     )
 )]
 pub(crate) async fn call(
@@ -32,6 +33,7 @@ pub(crate) async fn call(
     metrics: &Metrics,
     edition: &Edition,
     source: &Room,
+    offset: i64,
 ) -> Result<(Room, Segments)> {
     info!("Edition commit task started");
 
@@ -74,7 +76,16 @@ pub(crate) async fn call(
     let cut_gaps = collect_gaps(&cut_events, &cut_changes)?;
     let destination = clone_room(&mut txn, metrics, source).await?;
 
-    clone_events(&mut txn, metrics, source, &destination, edition, &cut_gaps).await?;
+    clone_events(
+        &mut txn,
+        metrics,
+        source,
+        &destination,
+        edition,
+        &cut_gaps,
+        offset * NANOSECONDS_IN_MILLISECOND,
+    )
+    .await?;
 
     let query = EventDeleteQuery::new(destination.id(), "stream");
 
@@ -141,6 +152,7 @@ async fn clone_events(
     destination: &Room,
     edition: &Edition,
     gaps: &[(i64, i64)],
+    offset: i64,
 ) -> Result<()> {
     let mut starts = Vec::with_capacity(gaps.len());
     let mut stops = Vec::with_capacity(gaps.len());
@@ -174,7 +186,7 @@ async fn clone_events(
             set,
             label,
             data,
-            occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1,
+            occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1 + $6,
             created_by,
             created_at
         FROM (
@@ -241,6 +253,7 @@ async fn clone_events(
         edition.id(),
         starts.as_slice(),
         stops.as_slice(),
+        sqlx::types::BigDecimal::from(offset)
     );
 
     metrics
@@ -461,9 +474,10 @@ mod tests {
 
         drop(conn);
 
-        let (destination, segments) = super::call(&db.connection_pool(), &metrics, &edition, &room)
-            .await
-            .expect("edition commit failed");
+        let (destination, segments) =
+            super::call(&db.connection_pool(), &metrics, &edition, &room, 0)
+                .await
+                .expect("edition commit failed");
 
         // Assert original room.
         assert_eq!(destination.source_room_id().unwrap(), room.id());
@@ -589,9 +603,10 @@ mod tests {
 
         drop(conn);
 
-        let (destination, segments) = super::call(&db.connection_pool(), &metrics, &edition, &room)
-            .await
-            .expect("edition commit failed");
+        let (destination, segments) =
+            super::call(&db.connection_pool(), &metrics, &edition, &room, 0)
+                .await
+                .expect("edition commit failed");
 
         // Assert original room.
         assert_eq!(destination.source_room_id().unwrap(), room.id());
@@ -695,9 +710,10 @@ mod tests {
 
         drop(conn);
 
-        let (destination, segments) = super::call(&db.connection_pool(), &metrics, &edition, &room)
-            .await
-            .expect("edition commit failed");
+        let (destination, segments) =
+            super::call(&db.connection_pool(), &metrics, &edition, &room, 0)
+                .await
+                .expect("edition commit failed");
 
         // Assert original room.
         assert_eq!(destination.source_room_id().unwrap(), room.id());

@@ -81,6 +81,23 @@
       ]
     }
   },
+  "0d99aecde168a6a2e0b561f64912444aeb3c23d4cd764f9d5570989a9c0c0978": {
+    "query": "\n        WITH\n            gap_starts AS (\n                SELECT start, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($4::BIGINT[]) AS start\n            ),\n            gap_stops AS (\n                SELECT stop, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($5::BIGINT[]) AS stop\n            ),\n            gaps AS (\n                SELECT start, stop\n                FROM gap_starts, gap_stops\n                WHERE gap_stops.row_number = gap_starts.row_number\n            )\n        INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)\n        SELECT\n            id,\n            room_id,\n            kind,\n            set,\n            label,\n            data,\n            occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1 + $6,\n            created_by,\n            created_at\n        FROM (\n            SELECT\n                gen_random_uuid() AS id,\n                $2::UUID AS room_id,\n                (CASE change.kind\n                        WHEN 'addition' THEN change.event_kind\n                        WHEN 'modification' THEN COALESCE(change.event_kind, event.kind)\n                        ELSE event.kind\n                    END\n                ) AS kind,\n                (CASE change.kind\n                    WHEN 'addition' THEN COALESCE(change.event_set, change.event_kind)\n                    WHEN 'modification' THEN COALESCE(change.event_set, event.set, change.event_kind, event.kind)\n                    ELSE event.set\n                    END\n                ) AS set,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_label\n                    WHEN 'modification' THEN COALESCE(change.event_label, event.label)\n                    ELSE event.label\n                    END\n                ) AS label,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_data\n                    WHEN 'modification' THEN COALESCE(change.event_data, event.data)\n                    ELSE event.data\n                    END\n                ) AS data,\n                (\n                    (CASE change.kind\n                        WHEN 'addition' THEN change.event_occurred_at\n                        WHEN 'modification' THEN COALESCE(change.event_occurred_at, event.occurred_at)\n                        ELSE event.occurred_at\n                        END\n                    ) - (\n                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)\n                        FROM gaps\n                        WHERE start < occurred_at\n                    )\n                ) AS occurred_at,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_created_by\n                    ELSE event.created_by\n                    END\n                ) AS created_by,\n                COALESCE(event.created_at, NOW()) as created_at\n            FROM\n                (SELECT * FROM event WHERE event.room_id = $1 AND deleted_at IS NULL)\n                AS event\n                FULL OUTER JOIN\n                (SELECT * FROM change WHERE change.edition_id = $3)\n                AS change\n                ON change.event_id = event.id\n            WHERE\n                ((event.room_id = $1 AND deleted_at IS NULL) OR event.id IS NULL)\n                AND\n                ((change.edition_id = $3 AND change.kind <> 'removal') OR change.id IS NULL)\n        ) AS subquery\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Uuid",
+          "Uuid",
+          "Int8Array",
+          "Int8Array",
+          "Numeric"
+        ]
+      },
+      "nullable": []
+    }
+  },
   "15edabc8a95c9d857c0d2f8083753208a750ef1a705a906eeb3235590a3cec62": {
     "query": "\n            SELECT\n                id, account_id AS \"account_id!: AccountId\",\n                room_id, reason, created_at\n            FROM room_ban\n            WHERE account_id = $1 AND room_id = (\n                SELECT id FROM room\n                WHERE classroom_id = $2 AND UPPER(time) IS NULL\n                ORDER BY created_at DESC LIMIT 1\n            )\n            ",
     "describe": {
@@ -1297,22 +1314,6 @@
         false,
         false
       ]
-    }
-  },
-  "686fd13f8116d4bbb0afc70b96d1344011963296c80b823122c3f316eb90e329": {
-    "query": "\n        WITH\n            gap_starts AS (\n                SELECT start, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($4::BIGINT[]) AS start\n            ),\n            gap_stops AS (\n                SELECT stop, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($5::BIGINT[]) AS stop\n            ),\n            gaps AS (\n                SELECT start, stop\n                FROM gap_starts, gap_stops\n                WHERE gap_stops.row_number = gap_starts.row_number\n            )\n        INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)\n        SELECT\n            id,\n            room_id,\n            kind,\n            set,\n            label,\n            data,\n            occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1,\n            created_by,\n            created_at\n        FROM (\n            SELECT\n                gen_random_uuid() AS id,\n                $2::UUID AS room_id,\n                (CASE change.kind\n                        WHEN 'addition' THEN change.event_kind\n                        WHEN 'modification' THEN COALESCE(change.event_kind, event.kind)\n                        ELSE event.kind\n                    END\n                ) AS kind,\n                (CASE change.kind\n                    WHEN 'addition' THEN COALESCE(change.event_set, change.event_kind)\n                    WHEN 'modification' THEN COALESCE(change.event_set, event.set, change.event_kind, event.kind)\n                    ELSE event.set\n                    END\n                ) AS set,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_label\n                    WHEN 'modification' THEN COALESCE(change.event_label, event.label)\n                    ELSE event.label\n                    END\n                ) AS label,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_data\n                    WHEN 'modification' THEN COALESCE(change.event_data, event.data)\n                    ELSE event.data\n                    END\n                ) AS data,\n                (\n                    (CASE change.kind\n                        WHEN 'addition' THEN change.event_occurred_at\n                        WHEN 'modification' THEN COALESCE(change.event_occurred_at, event.occurred_at)\n                        ELSE event.occurred_at\n                        END\n                    ) - (\n                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)\n                        FROM gaps\n                        WHERE start < occurred_at\n                    )\n                ) AS occurred_at,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_created_by\n                    ELSE event.created_by\n                    END\n                ) AS created_by,\n                COALESCE(event.created_at, NOW()) as created_at\n            FROM\n                (SELECT * FROM event WHERE event.room_id = $1 AND deleted_at IS NULL)\n                AS event\n                FULL OUTER JOIN\n                (SELECT * FROM change WHERE change.edition_id = $3)\n                AS change\n                ON change.event_id = event.id\n            WHERE\n                ((event.room_id = $1 AND deleted_at IS NULL) OR event.id IS NULL)\n                AND\n                ((change.edition_id = $3 AND change.kind <> 'removal') OR change.id IS NULL)\n        ) AS subquery\n        ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "Uuid",
-          "Uuid",
-          "Int8Array",
-          "Int8Array"
-        ]
-      },
-      "nullable": []
     }
   },
   "7ceae51be9df68b6cc8b84ab1a3ad496654cc378148aed37349ffe7ab4e4a982": {
