@@ -93,6 +93,7 @@ async fn upload_events(
             bucket: bucket.clone(),
             key: key.clone(),
             body: Some(body.clone().into()),
+            content_type: Some("application/json".into()),
             ..Default::default()
         };
 
