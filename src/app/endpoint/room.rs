@@ -20,6 +20,7 @@ use svc_utils::extractors::AuthnExtractor;
 use tracing::{error, instrument};
 use uuid::Uuid;
 
+use crate::app::broker_client::CreateDeleteResponse;
 use crate::app::endpoint::prelude::*;
 use crate::app::{
     context::{AppContext, Context},
@@ -484,9 +485,18 @@ impl RequestHandler for EnterHandler {
             .broker_client()
             .enter_broadcast_room(room.id(), reqp.as_agent_id());
 
-        tokio::try_join!(req1, req2)
+        let result = tokio::try_join!(req1, req2)
             .map_err(|e| anyhow!("Broker request failed, err = {:?}", e))
             .error(AppErrorKind::BrokerRequestFailed)?;
+
+        match result {
+            (CreateDeleteResponse::ClientDisconnected, _)
+            | (_, CreateDeleteResponse::ClientDisconnected) => {
+                Err(anyhow!("Mqtt client disconnected from the broker"))
+                    .error(AppErrorKind::MqttClientNotConnected)?;
+            }
+            _ => {}
+        }
 
         // Determine whether the agent is banned.
         let agent_with_ban = {
@@ -1446,7 +1456,7 @@ mod tests {
     }
 
     mod enter {
-        use crate::app::broker_client::CreateDeleteResponsePayload;
+        use crate::app::broker_client::CreateDeleteResponse;
 
         use crate::test_helpers::prelude::*;
 
@@ -1500,13 +1510,13 @@ mod tests {
                 .broker_client_mock()
                 .expect_enter_room()
                 .with(mockall::predicate::always(), mockall::predicate::always())
-                .returning(move |_, _agent_id| Ok(CreateDeleteResponsePayload {}));
+                .returning(move |_, _agent_id| Ok(CreateDeleteResponse::Ok));
 
             context
                 .broker_client_mock()
                 .expect_enter_broadcast_room()
                 .with(mockall::predicate::always(), mockall::predicate::always())
-                .returning(move |_, _agent_id| Ok(CreateDeleteResponsePayload {}));
+                .returning(move |_, _agent_id| Ok(CreateDeleteResponse::Ok));
 
             let payload = EnterRequest {
                 id: room.id(),
