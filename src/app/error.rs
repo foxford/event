@@ -32,6 +32,7 @@ pub enum ErrorKind {
     InvalidStateSets,
     InvalidSubscriptionObject,
     MessageHandlingFailed,
+    MqttClientNotConnected,
     NoS3Client,
     StatsCollectionFailed,
     PublishFailed,
@@ -159,6 +160,12 @@ impl From<ErrorKind> for ErrorKindProperties {
                 kind: "message_handling_failed",
                 title: "Message handling failed",
                 is_notify_sentry: true,
+            },
+            ErrorKind::MqttClientNotConnected => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "mqtt_client_not_connected",
+                title: "Mqtt client not connected",
+                is_notify_sentry: false,
             },
             ErrorKind::NoS3Client => ErrorKindProperties {
                 status: ResponseStatus::NOT_IMPLEMENTED,
