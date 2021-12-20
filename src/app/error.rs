@@ -41,6 +41,7 @@ pub enum ErrorKind {
     SerializationFailed,
     TransientEventCreationFailed,
     UnknownMethod,
+    WhiteboardAccessUpdateNotChecked,
 }
 
 impl ErrorKind {
@@ -219,6 +220,12 @@ impl From<ErrorKind> for ErrorKindProperties {
                 kind: "internal_server_error",
                 title: "Internal server error",
                 is_notify_sentry: true,
+            },
+            ErrorKind::WhiteboardAccessUpdateNotChecked => ErrorKindProperties {
+                status: ResponseStatus::CONFLICT,
+                kind: "useless_whiteboard_access_update",
+                title: "Whiteboard access change in room with universal whiteboard access (which doesnt make sense)",
+                is_notify_sentry: false,
             },
         }
     }

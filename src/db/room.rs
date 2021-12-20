@@ -1,11 +1,13 @@
 use std::collections::HashMap;
 use std::convert::{TryFrom, TryInto};
 use std::ops::{Bound, RangeBounds};
+use std::str::FromStr;
 
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::postgres::{types::PgRange, PgConnection};
+use svc_authn::AccountId;
 use uuid::Uuid;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -27,6 +29,10 @@ pub(crate) struct Object {
     classroom_id: Option<Uuid>,
     #[serde(default)]
     locked_types: HashMap<String, bool>,
+    #[serde(default)]
+    validate_whiteboard_access: bool,
+    #[serde(default)]
+    whiteboard_access: HashMap<AccountId, bool>,
 }
 
 #[derive(Clone, Debug)]
@@ -40,6 +46,8 @@ struct DbObject {
     preserve_history: bool,
     classroom_id: Option<Uuid>,
     locked_types: JsonValue,
+    validate_whiteboard_access: bool,
+    whiteboard_access: JsonValue,
 }
 
 impl TryFrom<DbObject> for Object {
@@ -56,17 +64,38 @@ impl TryFrom<DbObject> for Object {
             preserve_history,
             classroom_id,
             locked_types,
+            validate_whiteboard_access,
+            whiteboard_access,
         } = v;
 
         let locked_types = locked_types
             .as_object()
             .ok_or_else(|| sqlx::Error::ColumnDecode {
                 index: "locked_types".into(),
-                source: Box::new(JsonbConversionFail::new(id))
-                    as Box<dyn std::error::Error + Sync + Send>,
+                source: Box::new(JsonbConversionFail::new(
+                    JsonbConversionFailKind::LockedTypes,
+                    id,
+                )) as Box<dyn std::error::Error + Sync + Send>,
             })?
             .into_iter()
             .map(|(k, v)| (k.into(), v.as_bool().unwrap_or(false)))
+            .collect();
+
+        let whiteboard_access = whiteboard_access
+            .as_object()
+            .ok_or_else(|| sqlx::Error::ColumnDecode {
+                index: "whiteboard_access".into(),
+                source: Box::new(JsonbConversionFail::new(
+                    JsonbConversionFailKind::WhiteboardAccess,
+                    id,
+                )) as Box<dyn std::error::Error + Sync + Send>,
+            })?
+            .into_iter()
+            .filter_map(|(k, v)| {
+                AccountId::from_str(k)
+                    .ok()
+                    .map(|k| (k, v.as_bool().unwrap_or(false)))
+            })
             .collect();
 
         Ok(Self {
@@ -79,6 +108,8 @@ impl TryFrom<DbObject> for Object {
             preserve_history,
             classroom_id,
             locked_types,
+            validate_whiteboard_access,
+            whiteboard_access,
         })
     }
 }
@@ -95,9 +126,12 @@ impl From<Object> for DbObject {
             preserve_history,
             classroom_id,
             locked_types,
+            validate_whiteboard_access,
+            whiteboard_access,
         } = v;
 
         let locked_types = serde_json::to_value(&locked_types).unwrap();
+        let whiteboard_access = serde_json::to_value(&whiteboard_access).unwrap();
 
         Self {
             id,
@@ -109,18 +143,27 @@ impl From<Object> for DbObject {
             preserve_history,
             classroom_id,
             locked_types,
+            validate_whiteboard_access,
+            whiteboard_access,
         }
     }
 }
 
 #[derive(Debug)]
 struct JsonbConversionFail {
+    kind: JsonbConversionFailKind,
     room_id: Uuid,
 }
 
+#[derive(Debug)]
+enum JsonbConversionFailKind {
+    LockedTypes,
+    WhiteboardAccess,
+}
+
 impl JsonbConversionFail {
-    pub fn new(room_id: Uuid) -> Self {
-        Self { room_id }
+    pub fn new(kind: JsonbConversionFailKind, room_id: Uuid) -> Self {
+        Self { kind, room_id }
     }
 }
 
@@ -128,8 +171,8 @@ impl std::fmt::Display for JsonbConversionFail {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Failed to convert jsonb to map, room id = {}",
-            self.room_id
+            "Failed to convert {:?} jsonb to map, room id = {}",
+            self.kind, self.room_id
         )
     }
 }
@@ -170,6 +213,14 @@ impl Object {
         &self.locked_types
     }
 
+    pub(crate) fn validate_whiteboard_access(&self) -> bool {
+        self.validate_whiteboard_access
+    }
+
+    pub(crate) fn whiteboard_access(&self) -> &HashMap<AccountId, bool> {
+        &self.whiteboard_access
+    }
+
     pub fn authz_object(&self) -> Vec<String> {
         match self.classroom_id {
             Some(cid) => vec!["classrooms".into(), cid.to_string()],
@@ -206,7 +257,6 @@ pub(crate) struct Builder {
     created_at: Option<DateTime<Utc>>,
     preserve_history: Option<bool>,
     classroom_id: Option<Uuid>,
-    locked_types: HashMap<String, bool>,
 }
 
 impl Builder {
@@ -282,6 +332,8 @@ impl Builder {
                 .ok_or_else(|| anyhow!("missing preserve_history"))?,
             classroom_id: self.classroom_id,
             locked_types: Default::default(),
+            validate_whiteboard_access: Default::default(),
+            whiteboard_access: Default::default(),
         })
     }
 }
@@ -314,7 +366,9 @@ impl FindQuery {
                 created_at,
                 preserve_history,
                 classroom_id,
-                locked_types
+                locked_types,
+                validate_whiteboard_access,
+                whiteboard_access
             FROM room
             WHERE id = $1
             AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)
@@ -340,6 +394,8 @@ pub(crate) struct InsertQuery {
     preserve_history: bool,
     classroom_id: Option<Uuid>,
     locked_types: HashMap<String, bool>,
+    validate_whiteboard_access: Option<bool>,
+    whiteboard_access: HashMap<AccountId, bool>,
 }
 
 impl InsertQuery {
@@ -352,6 +408,8 @@ impl InsertQuery {
             preserve_history: true,
             classroom_id: None,
             locked_types: Default::default(),
+            validate_whiteboard_access: Default::default(),
+            whiteboard_access: Default::default(),
         }
     }
 
@@ -383,16 +441,26 @@ impl InsertQuery {
         }
     }
 
+    pub(crate) fn validate_whiteboard_access(self, flag: bool) -> Self {
+        Self {
+            validate_whiteboard_access: Some(flag),
+            ..self
+        }
+    }
+
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let time: PgRange<DateTime<Utc>> = self.time.into();
 
         let locked_types = serde_json::to_value(&self.locked_types).unwrap();
+        let whiteboard_access = serde_json::to_value(&self.whiteboard_access).unwrap();
 
         sqlx::query_as!(
             DbObject,
             r#"
-            INSERT INTO room (audience, source_room_id, time, tags, preserve_history, classroom_id, locked_types)
-            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            INSERT INTO room (
+                audience, source_room_id, time, tags, preserve_history, classroom_id,
+                    locked_types, validate_whiteboard_access, whiteboard_access)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING
                 id,
                 audience,
@@ -402,7 +470,9 @@ impl InsertQuery {
                 created_at,
                 preserve_history,
                 classroom_id,
-                locked_types
+                locked_types,
+                validate_whiteboard_access,
+                whiteboard_access
             "#,
             self.audience,
             self.source_room_id,
@@ -410,7 +480,9 @@ impl InsertQuery {
             self.tags,
             self.preserve_history,
             self.classroom_id,
-            locked_types
+            locked_types,
+            self.validate_whiteboard_access.unwrap_or(false),
+            whiteboard_access,
         )
         .fetch_one(conn)
         .await?
@@ -427,6 +499,7 @@ pub(crate) struct UpdateQuery {
     tags: Option<JsonValue>,
     classroom_id: Option<Uuid>,
     locked_types: Option<HashMap<String, bool>>,
+    whiteboard_access: Option<HashMap<AccountId, bool>>,
 }
 
 impl UpdateQuery {
@@ -437,6 +510,7 @@ impl UpdateQuery {
             tags: None,
             classroom_id: None,
             locked_types: None,
+            whiteboard_access: None,
         }
     }
 
@@ -462,11 +536,22 @@ impl UpdateQuery {
         }
     }
 
+    pub(crate) fn whiteboard_access(self, whiteboard_access: HashMap<AccountId, bool>) -> Self {
+        Self {
+            whiteboard_access: Some(whiteboard_access),
+            ..self
+        }
+    }
+
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let time: Option<PgRange<DateTime<Utc>>> = self.time.map(|t| t.into());
 
         // Delete false values from map not to accumulate them
         let locked_types = self.locked_types.map(|mut m| {
+            m.retain(|_k, v| *v);
+            serde_json::to_value(&m).unwrap()
+        });
+        let whiteboard_access = self.whiteboard_access.map(|mut m| {
             m.retain(|_k, v| *v);
             serde_json::to_value(&m).unwrap()
         });
@@ -478,7 +563,8 @@ impl UpdateQuery {
             SET time = COALESCE($2, time),
                 tags = COALESCE($3::JSON, tags),
                 classroom_id = COALESCE($4, classroom_id),
-                locked_types = COALESCE($5, locked_types)
+                locked_types = COALESCE($5, locked_types),
+                whiteboard_access = COALESCE($6, whiteboard_access)
             WHERE id = $1
             RETURNING
                 id,
@@ -489,13 +575,16 @@ impl UpdateQuery {
                 created_at,
                 preserve_history,
                 classroom_id,
-                locked_types
+                locked_types,
+                validate_whiteboard_access,
+                whiteboard_access
             "#,
             self.id,
             time,
             self.tags,
             self.classroom_id,
-            locked_types
+            locked_types,
+            whiteboard_access
         )
         .fetch_one(conn)
         .await?
