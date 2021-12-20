@@ -14,6 +14,7 @@ Path                        | Method    | Description
 /rooms/:id/leave            | POST      | [Leave](./room/leave.md) room
 /rooms/:id/dump_events      | POST      | [Dump](./room/dump_events.md) room events
 /rooms/:id/locked_types     | POST      | [Update](./room/locked_types.md) locked types in room
+/rooms/:id/whiteboard_access| POST      | [Grant](./room/whiteboard_access.md) access to whiteboard for users
 /rooms/:id/events           | GET       | [List](./event/list.md) events
 /rooms/:id/events           | POST      | [Create](./event/create.md) event
 /rooms/:id/agents           | GET       | [List](./agent/list.md) agents
