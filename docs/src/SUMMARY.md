@@ -11,6 +11,7 @@
         - [Leave](api/room/leave.md)
         - [Adjust](api/room/adjust.md)
         - [Locked types](api/room/locked_types.md)
+        - [Whiteboard access](api/room/whiteboard_access.md)
     - [Agent](api/agent.md)
         - [List](api/agent/list.md)
         - [Update](api/agent/update.md)

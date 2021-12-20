@@ -43,6 +43,21 @@ pub(crate) async fn insert_closed_room(conn: &mut PgConnection) -> Room {
         .await
 }
 
+pub(crate) async fn insert_validating_whiteboard_access_room(conn: &mut PgConnection) -> Room {
+    let now = Utc::now().trunc_subsecs(0);
+
+    factory::Room::new()
+        .audience(USR_AUDIENCE)
+        .time((
+            Bound::Included(now),
+            Bound::Excluded(now + Duration::hours(1)),
+        ))
+        .tags(&json!({ "webinar_id": "123" }))
+        .validate_whiteboard_access(true)
+        .insert(conn)
+        .await
+}
+
 pub(crate) async fn insert_agent(
     conn: &mut PgConnection,
     agent_id: &AgentId,

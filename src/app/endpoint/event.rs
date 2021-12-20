@@ -21,7 +21,7 @@ use crate::db::event::Object as Event;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CreatePayload {
     #[serde(rename = "type")]
     pub kind: String,
@@ -35,7 +35,7 @@ pub struct CreatePayload {
     pub is_persistent: bool,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct CreateRequest {
     pub room_id: Uuid,
     #[serde(flatten)]
@@ -144,6 +144,8 @@ impl RequestHandler for CreateHandler {
 
         // NOTE:
         // Currently we simply override authz object to room update if event type is in locked_types
+        // or if room mandates whiteboard access validation and the user is not allowed access through whiteboard access map
+        //
         // Assumption here is that admins can always update rooms and its ok for them to post messages in locked chat
         // So room update authz check works for them
         // But the same check always fails for common users
@@ -154,6 +156,11 @@ impl RequestHandler for CreateHandler {
             let mut object = object.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
 
             if room.locked_types().get(&payload.kind) == Some(&true) {
+                (AuthzObject::new(&object).into(), "update")
+            } else if payload.kind == "draw"
+                && room.validate_whiteboard_access()
+                && room.whiteboard_access().get(reqp.as_account_id()) != Some(&true)
+            {
                 (AuthzObject::new(&object).into(), "update")
             } else {
                 object.extend([key, &payload.kind, "authors", &author].iter());
@@ -1060,6 +1067,130 @@ mod tests {
 
         assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
         assert_eq!(err.kind(), "room_not_found");
+    }
+
+    #[tokio::test]
+    async fn create_whiteboard_event_without_whiteboard_access() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let room = {
+            // Create room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_validating_whiteboard_access_room(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
+
+        // Allow agent to create events of type `draw` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let account_id = agent.account_id().to_string();
+
+        let object = vec!["rooms", &room_id, "events", "draw", "authors", &account_id];
+
+        authz.allow(agent.account_id(), object, "create");
+
+        let mut context = TestContext::new(db.clone(), authz);
+
+        // Make event.create request. It should fail
+        let payload = CreateRequest {
+            room_id: room.id(),
+            payload: CreatePayload {
+                kind: String::from("draw"),
+                set: Some(String::from("set")),
+                label: Some(String::from("label-1")),
+                attribute: None,
+                data: json!({ "foo": "bar" }),
+                is_claim: false,
+                is_persistent: true,
+            },
+        };
+
+        handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Event creation succeeded");
+
+        // Update whiteboard access for the agent
+        {
+            let mut m = HashMap::new();
+            m.insert(agent.account_id().to_owned(), true);
+            let q = db::room::UpdateQuery::new(room.id()).whiteboard_access(m);
+            let mut conn = db.get_conn().await;
+            q.execute(&mut conn)
+                .await
+                .expect("Failed to update whiteboard access");
+        }
+
+        // Make event.create request. Now it should succeed
+        let payload = CreateRequest {
+            room_id: room.id(),
+            payload: CreatePayload {
+                kind: String::from("draw"),
+                set: Some(String::from("set")),
+                label: Some(String::from("label-2")),
+                attribute: None,
+                data: json!({ "foo": "baz" }),
+                is_claim: false,
+                is_persistent: true,
+            },
+        };
+
+        handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Failed to create event");
+    }
+
+    #[tokio::test]
+    async fn create_whiteboard_event_as_room_updater() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let room = {
+            // Create room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_validating_whiteboard_access_room(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
+
+        // Allow agent to create events of type `draw` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let account_id = agent.account_id().to_string();
+
+        let object = vec!["rooms", &room_id, "events", "draw", "authors", &account_id];
+
+        authz.allow(agent.account_id(), object, "create");
+
+        let mut context = TestContext::new(db.clone(), authz.clone());
+
+        let payload = CreateRequest {
+            room_id: room.id(),
+            payload: CreatePayload {
+                kind: String::from("draw"),
+                set: Some(String::from("set")),
+                label: Some(String::from("label-2")),
+                attribute: None,
+                data: json!({ "foo": "bar" }),
+                is_claim: false,
+                is_persistent: true,
+            },
+        };
+
+        // This must fail since user has no room-update access and whiteboard access map is empty
+        handle_request::<CreateHandler>(&mut context, &agent, payload.clone())
+            .await
+            .expect_err("Event creation succeeded");
+
+        let object = vec!["rooms", &room_id];
+        authz.allow(agent.account_id(), object, "update");
+        let mut context = TestContext::new(db.clone(), authz);
+
+        // This must succeed cause even though whiteboard access map is empty user is allowed to update the room
+        handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect("Event creation faield");
     }
 
     ///////////////////////////////////////////////////////////////////////////

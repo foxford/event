@@ -44,6 +44,10 @@ pub fn build_router(
             "/rooms/:id/locked_types",
             post(endpoint::room::locked_types).options(endpoint::read_options),
         )
+        .route(
+            "/rooms/:id/whiteboard_access",
+            post(endpoint::room::whiteboard_access).options(endpoint::read_options),
+        )
         .route("/rooms/:id/dump_events", post(endpoint::room::dump_events))
         .route(
             "/rooms/:id/events",

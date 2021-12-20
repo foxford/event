@@ -18,6 +18,7 @@ pub(crate) struct Room {
     tags: Option<JsonValue>,
     preserve_history: Option<bool>,
     classroom_id: Option<Uuid>,
+    validate_whiteboard_access: Option<bool>,
 }
 
 impl Room {
@@ -60,6 +61,13 @@ impl Room {
         }
     }
 
+    pub(crate) fn validate_whiteboard_access(self, validate_whiteboard_access: bool) -> Self {
+        Self {
+            validate_whiteboard_access: Some(validate_whiteboard_access),
+            ..self
+        }
+    }
+
     pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::room::Object {
         let audience = self.audience.expect("Audience not set");
         let time = self.time.expect("Time not set");
@@ -76,6 +84,10 @@ impl Room {
 
         if let Some(classroom_id) = self.classroom_id {
             query = query.classroom_id(classroom_id)
+        }
+
+        if let Some(validate_whiteboard_access) = self.validate_whiteboard_access {
+            query = query.validate_whiteboard_access(validate_whiteboard_access)
         }
 
         query.execute(conn).await.expect("Failed to insert room")
