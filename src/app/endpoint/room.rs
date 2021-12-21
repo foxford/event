@@ -11,6 +11,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
+use sqlx::Acquire;
 use svc_agent::{
     mqtt::{OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties},
     AccountId, Addressable, AgentId,
@@ -31,7 +32,9 @@ use crate::db::room::{InsertQuery, UpdateQuery};
 use crate::db::room_time::{BoundedDateTimeTuple, RoomTime};
 use crate::{
     app::operations::{adjust_room, AdjustOutput},
-    db::event::{insert_agent_action, AgentAction},
+    db::event::{
+        insert_agent_action, insert_chat_lock_event, insert_whiteboard_access_event, AgentAction,
+    },
 };
 
 #[derive(Debug, Deserialize)]
@@ -618,17 +621,43 @@ impl RequestHandler for LockedTypesHandler {
                 .iter()
                 .map(|(k, v)| (k.to_owned(), *v))
                 .chain(payload.locked_types)
-                .collect();
-            let query = UpdateQuery::new(room.id()).locked_types(locked_types);
+                .collect::<HashMap<_, _>>();
 
             let mut conn = context.get_conn().await?;
 
-            context
+            let mut txn = conn
+                .begin()
+                .await
+                .context("Failed to acquire transaction")
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            if let Some(chat_lock) = locked_types.get("message") {
+                context
+                    .metrics()
+                    .measure_query(
+                        QueryKey::EventInsertQuery,
+                        insert_chat_lock_event(&room, *chat_lock, reqp.as_agent_id(), &mut txn),
+                    )
+                    .await
+                    .context("Failed to insert event")
+                    .error(AppErrorKind::DbQueryFailed)?;
+            }
+
+            let query = UpdateQuery::new(room.id()).locked_types(locked_types);
+
+            let room = context
                 .metrics()
-                .measure_query(QueryKey::RoomUpdateQuery, query.execute(&mut conn))
+                .measure_query(QueryKey::RoomUpdateQuery, query.execute(&mut txn))
                 .await
                 .context("Failed to update room")
-                .error(AppErrorKind::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            txn.commit()
+                .await
+                .context("Failed to commit transaction")
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            room
         };
 
         // Respond and broadcast to the audience topic.
@@ -726,16 +755,43 @@ impl RequestHandler for WhiteboardAccessHandler {
                 .map(|(k, v)| (k.to_owned(), *v))
                 .chain(payload.whiteboard_access)
                 .collect();
-            let query = UpdateQuery::new(room.id()).whiteboard_access(whiteboard_access);
-
             let mut conn = context.get_conn().await?;
+            let mut txn = conn
+                .begin()
+                .await
+                .context("Failed to acquire transaction")
+                .error(AppErrorKind::DbQueryFailed)?;
 
             context
                 .metrics()
-                .measure_query(QueryKey::RoomUpdateQuery, query.execute(&mut conn))
+                .measure_query(
+                    QueryKey::EventInsertQuery,
+                    insert_whiteboard_access_event(
+                        &room,
+                        &whiteboard_access,
+                        reqp.as_agent_id(),
+                        &mut txn,
+                    ),
+                )
+                .await
+                .context("Failed to insert event")
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            let query = UpdateQuery::new(room.id()).whiteboard_access(whiteboard_access);
+
+            let room = context
+                .metrics()
+                .measure_query(QueryKey::RoomUpdateQuery, query.execute(&mut txn))
                 .await
                 .context("Failed to update room")
-                .error(AppErrorKind::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            txn.commit()
+                .await
+                .context("Failed to commit transaction")
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            room
         };
 
         // Respond and broadcast to the audience topic.
