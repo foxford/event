@@ -55,3 +55,7 @@ reason           | string      | _optional_ | Ban reason if specified
 banned_by        | account_id  | _required_ | Ban issuer
 banned           | bool        | _required_ | Whether the account was banned or unbanned
 classroom_id     | uuid        | _optional_ | If room belongs to a dispatcher's classroom - id of the classroom.
+
+## Room events
+
+Will create an event of type = `account_ban` with data: `{"account_id": AccountId, "value": bool, reason: string | null}` depending on whether user is banned or not.
