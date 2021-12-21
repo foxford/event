@@ -1,9 +1,11 @@
+use std::collections::HashMap;
+
 use chrono::serde::{ts_milliseconds, ts_milliseconds_option};
 use chrono::{DateTime, Duration, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::postgres::PgConnection;
-use svc_agent::AgentId;
+use svc_agent::{AccountId, AgentId};
 use uuid::Uuid;
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -805,6 +807,89 @@ pub(crate) async fn insert_agent_action(
         room.id(),
         action.to_owned(),
         JsonValue::Null,
+        occurred_at,
+        agent_id.to_owned(),
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn insert_chat_lock_event(
+    room: &super::room::Object,
+    value: bool,
+    agent_id: &AgentId,
+    conn: &mut PgConnection,
+) -> anyhow::Result<()> {
+    let occurred_at = match room.time().as_ref().map(|t| t.start()) {
+        Ok(&opened_at) => (Utc::now() - opened_at)
+            .num_nanoseconds()
+            .unwrap_or(std::i64::MAX),
+        _ => {
+            return Err(anyhow!("Invalid room time"));
+        }
+    };
+
+    InsertQuery::new(
+        room.id(),
+        "chat_lock".to_string(),
+        serde_json::json!({ "value": value }),
+        occurred_at,
+        agent_id.to_owned(),
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn insert_whiteboard_access_event(
+    room: &super::room::Object,
+    value: &HashMap<AccountId, bool>,
+    agent_id: &AgentId,
+    conn: &mut PgConnection,
+) -> anyhow::Result<()> {
+    let occurred_at = match room.time().as_ref().map(|t| t.start()) {
+        Ok(&opened_at) => (Utc::now() - opened_at)
+            .num_nanoseconds()
+            .unwrap_or(std::i64::MAX),
+        _ => {
+            return Err(anyhow!("Invalid room time"));
+        }
+    };
+
+    InsertQuery::new(
+        room.id(),
+        "chat_lock".to_string(),
+        serde_json::to_value(&value).unwrap(),
+        occurred_at,
+        agent_id.to_owned(),
+    )
+    .execute(conn)
+    .await?;
+    Ok(())
+}
+
+pub(crate) async fn insert_account_ban_event(
+    room: &super::room::Object,
+    banned_user: &AccountId,
+    value: bool,
+    reason: Option<String>,
+    agent_id: &AgentId,
+    conn: &mut PgConnection,
+) -> anyhow::Result<()> {
+    let occurred_at = match room.time().as_ref().map(|t| t.start()) {
+        Ok(&opened_at) => (Utc::now() - opened_at)
+            .num_nanoseconds()
+            .unwrap_or(std::i64::MAX),
+        _ => {
+            return Err(anyhow!("Invalid room time"));
+        }
+    };
+
+    InsertQuery::new(
+        room.id(),
+        "account_ban".to_string(),
+        serde_json::json!({ "account_id": banned_user.to_owned(), "value": value, "reason": reason }),
         occurred_at,
         agent_id.to_owned(),
     )

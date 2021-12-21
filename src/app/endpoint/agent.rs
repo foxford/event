@@ -7,8 +7,9 @@ use axum::extract::{
 };
 use serde_derive::{Deserialize, Serialize};
 use serde_json::json;
+use sqlx::Acquire;
 use svc_agent::mqtt::ResponseStatus;
-use svc_agent::AccountId;
+use svc_agent::{AccountId, Addressable};
 use svc_authn::Authenticable;
 use svc_utils::extractors::AuthnExtractor;
 use tracing::{error, instrument};
@@ -17,6 +18,7 @@ use uuid::Uuid;
 use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::db;
+use crate::db::event::insert_account_ban_event;
 use crate::db::room_ban::{DeleteQuery as BanDeleteQuery, InsertQuery as BanInsertQuery};
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -205,6 +207,13 @@ impl RequestHandler for UpdateHandler {
             AuthzObject::new(&object)
         };
 
+        let mut conn = context.get_conn().await?;
+
+        let mut txn = conn
+            .begin()
+            .await
+            .context("Failed to acquire transaction")
+            .error(AppErrorKind::DbQueryFailed)?;
         if payload.value {
             let mut query = BanInsertQuery::new(payload.account_id.clone(), room_id);
 
@@ -212,24 +221,43 @@ impl RequestHandler for UpdateHandler {
                 query.reason(reason);
             }
 
-            let mut conn = context.get_conn().await?;
             context
                 .metrics()
-                .measure_query(QueryKey::BanInsertQuery, query.execute(&mut conn))
+                .measure_query(QueryKey::BanInsertQuery, query.execute(&mut txn))
                 .await
                 .context("Failed to insert room ban")
                 .error(AppErrorKind::DbQueryFailed)?;
         } else {
             let query = BanDeleteQuery::new(payload.account_id.clone(), room_id);
 
-            let mut conn = context.get_conn().await?;
             context
                 .metrics()
-                .measure_query(QueryKey::BanDeleteQuery, query.execute(&mut conn))
+                .measure_query(QueryKey::BanDeleteQuery, query.execute(&mut txn))
                 .await
                 .context("Failed to delete room ban")
                 .error(AppErrorKind::DbQueryFailed)?;
         }
+
+        context
+            .metrics()
+            .measure_query(
+                QueryKey::EventInsertQuery,
+                insert_account_ban_event(
+                    &room,
+                    &payload.account_id,
+                    payload.value,
+                    payload.reason.clone(),
+                    reqp.as_agent_id(),
+                    &mut txn,
+                ),
+            )
+            .await
+            .context("Failed to insert event")
+            .error(AppErrorKind::DbQueryFailed)?;
+        txn.commit()
+            .await
+            .context("Failed to commit transaction")
+            .error(AppErrorKind::DbQueryFailed)?;
 
         if let Err(e) = context
             .authz()

@@ -27,3 +27,7 @@ A notification is being sent to the _audience_ topic.
 
 **Label:** `room.update`.
 **Payload:** [room](../room.md#room) object.
+
+## Room events
+
+Will create an event of type = `chat_lock` with data: `{"value": bool}` depending on whether type `message` was locked or not.
