@@ -131,7 +131,6 @@ macro_rules! event_routes {
 
 // Event routes configuration: label => EventHandler
 event_routes!(
-    "metric.pull" => metric::PullHandler,
     "subscription.delete" => subscription::DeleteEventHandler,
     "broadcast_subscription.delete" => subscription::BroadcastDeleteEventHandler
 );
@@ -145,7 +144,6 @@ pub mod change;
 pub mod edition;
 pub mod event;
 pub mod helpers;
-pub(crate) mod metric;
 pub mod room;
 pub mod state;
 mod subscription;

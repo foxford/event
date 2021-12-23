@@ -385,16 +385,12 @@ impl RequestHandler for UpdateHandler {
 #[derive(Debug, Deserialize)]
 pub struct EnterPayload {
     #[serde(default)]
-    broadcast_subscription: bool,
-    #[serde(default)]
     agent_label: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct EnterRequest {
     id: Uuid,
-    #[serde(flatten)]
-    payload: EnterPayload,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -419,10 +415,7 @@ pub async fn enter(
         .ok_or_else(|| anyhow!("No agent label present"))
         .error(AppErrorKind::InvalidPayload)?;
     let agent_id = AgentId::new(agent_label, agent_id.as_account_id().to_owned());
-    let request = EnterRequest {
-        id: room_id,
-        payload,
-    };
+    let request = EnterRequest { id: room_id };
     EnterHandler::handle(
         &mut ctx.start_message(),
         request,
@@ -1692,13 +1685,7 @@ mod tests {
                 .with(mockall::predicate::always(), mockall::predicate::always())
                 .returning(move |_, _agent_id| Ok(CreateDeleteResponse::Ok));
 
-            let payload = EnterRequest {
-                id: room.id(),
-                payload: EnterPayload {
-                    broadcast_subscription: false,
-                    agent_label: None,
-                },
-            };
+            let payload = EnterRequest { id: room.id() };
 
             let messages = handle_request::<EnterHandler>(&mut context, &agent, payload)
                 .await
@@ -1730,13 +1717,7 @@ mod tests {
 
             // Make room.enter request.
             let mut context = TestContext::new(db, TestAuthz::new());
-            let payload = EnterRequest {
-                id: room.id(),
-                payload: EnterPayload {
-                    broadcast_subscription: false,
-                    agent_label: None,
-                },
-            };
+            let payload = EnterRequest { id: room.id() };
 
             let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                 .await
@@ -1749,13 +1730,7 @@ mod tests {
         async fn enter_room_missing() {
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-            let payload = EnterRequest {
-                id: Uuid::new_v4(),
-                payload: EnterPayload {
-                    broadcast_subscription: false,
-                    agent_label: None,
-                },
-            };
+            let payload = EnterRequest { id: Uuid::new_v4() };
 
             let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                 .await
@@ -1784,13 +1759,7 @@ mod tests {
 
             // Make room.enter request.
             let mut context = TestContext::new(db, TestAuthz::new());
-            let payload = EnterRequest {
-                id: room.id(),
-                payload: EnterPayload {
-                    broadcast_subscription: false,
-                    agent_label: None,
-                },
-            };
+            let payload = EnterRequest { id: room.id() };
 
             let err = handle_request::<EnterHandler>(&mut context, &agent, payload)
                 .await

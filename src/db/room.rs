@@ -228,6 +228,18 @@ impl Object {
         }
     }
 
+    pub fn account_in_whiteboard_access(&self, account: &AccountId) -> bool {
+        if self.validate_whiteboard_access {
+            self.whiteboard_access.get(account) == Some(&true)
+        } else {
+            true
+        }
+    }
+
+    pub fn locked_type(&self, kind: &str) -> bool {
+        self.locked_types.get(kind) == Some(&true)
+    }
+
     pub(crate) fn is_closed(&self) -> bool {
         match self.time.0.end_bound() {
             Bound::Included(t) => *t < Utc::now(),

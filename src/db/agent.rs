@@ -20,10 +20,12 @@ pub(crate) enum Status {
 #[derive(Debug, Serialize, sqlx::FromRow)]
 pub(crate) struct Object {
     #[serde(skip_serializing)]
+    #[allow(dead_code)]
     id: Uuid,
     agent_id: AgentId,
     room_id: Uuid,
     #[serde(skip_serializing)]
+    #[allow(dead_code)]
     status: Status,
     #[serde(with = "ts_seconds")]
     created_at: DateTime<Utc>,
@@ -32,10 +34,12 @@ pub(crate) struct Object {
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub(crate) struct AgentWithBan {
     #[serde(skip_serializing)]
+    #[allow(dead_code)]
     id: Uuid,
     agent_id: AgentId,
     room_id: Uuid,
     #[serde(skip_serializing)]
+    #[allow(dead_code)]
     status: Status,
     #[serde(with = "ts_seconds")]
     created_at: DateTime<Utc>,
