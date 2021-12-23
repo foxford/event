@@ -10,7 +10,7 @@ async-trait = "0.1"
 axum = "0.3"
 chrono = { version = "0.4", features = ["serde"] }
 config = "0.11"
-crossbeam-channel = "0.4"
+crossbeam-channel = "0.5"
 dotenv = "0.15"
 enum-iterator = "0.7"
 futures = "0.3"
@@ -19,6 +19,7 @@ futures-util = "0.3"
 http = "0.2"
 humantime-serde = "1"
 hyper = { version = "0.14.15", features = [ "server" ] }
+nats = "0.17"
 parking_lot = "0.11"
 prometheus = "0.13"
 quaint = { version = "0.1", features = ["uuid-0_8", "chrono-0_4"] }
