@@ -362,6 +362,7 @@ mod test {
         "#
         )
         .unwrap());
+        assert_eq!(data.v, Some("whatever".into()));
         assert!(data.d.time.is_none());
 
         let data: NestedTestOptionData = dbg!(serde_json::from_str(

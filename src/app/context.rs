@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgPool as Db, Postgres};
-use svc_agent::mqtt::Agent;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 
@@ -69,7 +68,6 @@ pub struct AppContext {
     redis_pool: Option<RedisConnectionPool>,
     metrics: Arc<Metrics>,
     s3_client: Option<S3Client>,
-    agent: Agent,
     broker_client: Arc<dyn BrokerClient>,
 }
 
@@ -190,7 +188,6 @@ impl<'a, C: GlobalContext> Context for AppMessageContext<'a, C> {}
 ///////////////////////////////////////////////////////////////////////////////
 
 pub(crate) struct AppContextBuilder {
-    agent: Agent,
     config: Config,
     authz: Authz,
     db: Db,
@@ -206,13 +203,11 @@ impl AppContextBuilder {
         config: Config,
         authz: Authz,
         db: Db,
-        agent: Agent,
         broker_client: Arc<dyn BrokerClient>,
     ) -> Self {
         let agent_id = AgentId::new(&config.agent_label, config.id.to_owned());
 
         Self {
-            agent,
             config,
             authz,
             db,
@@ -247,7 +242,6 @@ impl AppContextBuilder {
 
     pub(crate) fn build(self, metrics: Arc<Metrics>) -> AppContext {
         AppContext {
-            agent: self.agent,
             config: Arc::new(self.config),
             authz: self.authz,
             db: self.db,

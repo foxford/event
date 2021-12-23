@@ -95,8 +95,7 @@ pub(crate) async fn run(
     let queue_counter = agent.get_queue_counter();
     let dispatcher = Arc::new(Dispatcher::new(&agent));
     let broker_client = build_broker_client(&config, &token, dispatcher.clone());
-    let context_builder =
-        AppContextBuilder::new(config.clone(), authz, db, agent.clone(), broker_client);
+    let context_builder = AppContextBuilder::new(config.clone(), authz, db, broker_client);
 
     let context_builder = match ro_db {
         Some(db) => context_builder.ro_db(db),

@@ -9,9 +9,11 @@ use uuid::Uuid;
 #[derive(Debug, sqlx::FromRow, Serialize)]
 pub(crate) struct Object {
     #[serde(skip_serializing)]
+    #[allow(dead_code)]
     id: Uuid,
     account_id: AccountId,
     #[serde(skip_serializing)]
+    #[allow(dead_code)]
     room_id: Uuid,
     created_at: DateTime<Utc>,
     reason: Option<String>,
