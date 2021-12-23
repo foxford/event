@@ -36,7 +36,7 @@ pub(crate) struct ReadRequest {
 }
 
 pub async fn read(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     RawQuery(query): RawQuery,

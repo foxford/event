@@ -228,6 +228,14 @@ impl Object {
         }
     }
 
+    pub fn audience_topic(&self) -> Topic {
+        Topic::audience(self.audience.clone())
+    }
+
+    pub fn room_topic(&self) -> Topic {
+        Topic::room(self.id, self.classroom_id)
+    }
+
     fn account_has_whiteboard_access(&self, account: &AccountId) -> bool {
         if self.validate_whiteboard_access {
             self.whiteboard_access.get(account) == Some(&true)
@@ -612,6 +620,7 @@ impl UpdateQuery {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+use crate::app::topic::Topic;
 use crate::db::room_time::BoundedDateTimeTuple;
 use crate::db::room_time::RoomTime;
 

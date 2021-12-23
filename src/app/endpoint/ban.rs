@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::extract::{Extension, Path};
@@ -21,7 +19,7 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {

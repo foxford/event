@@ -29,6 +29,21 @@ pub(crate) async fn insert_room(conn: &mut PgConnection) -> Room {
         .await
 }
 
+pub(crate) async fn insert_room_with_classroom_id(conn: &mut PgConnection) -> Room {
+    let now = Utc::now().trunc_subsecs(0);
+
+    factory::Room::new()
+        .audience(USR_AUDIENCE)
+        .time((
+            Bound::Included(now),
+            Bound::Excluded(now + Duration::hours(1)),
+        ))
+        .classroom_id(Uuid::new_v4())
+        .tags(&json!({ "webinar_id": "123" }))
+        .insert(conn)
+        .await
+}
+
 pub(crate) async fn insert_closed_room(conn: &mut PgConnection) -> Room {
     let now = Utc::now().trunc_subsecs(0);
 

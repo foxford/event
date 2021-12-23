@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
@@ -9,13 +7,14 @@ use axum::{
 use chrono::Utc;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+use sqlx::Acquire;
 use svc_agent::Authenticable;
 use svc_agent::{mqtt::ResponseStatus, Addressable};
 use svc_utils::extractors::AuthnExtractor;
 use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
-use crate::app::endpoint::prelude::*;
+use crate::app::{endpoint::prelude::*, notification_puller::NatsIds};
 use crate::db;
 use crate::db::event::Object as Event;
 
@@ -55,7 +54,7 @@ impl CreateRequest {
 }
 
 pub async fn create(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<CreatePayload>,
@@ -194,6 +193,15 @@ impl RequestHandler for CreateHandler {
             removed,
             ..
         } = payload;
+
+        let mut conn = context.get_conn().await?;
+
+        let mut txn = conn
+            .begin()
+            .await
+            .context("Failed to acquire transaction")
+            .error(AppErrorKind::DbQueryFailed)?;
+
         let event = if payload.is_persistent {
             // Insert event into the DB.
             let mut query = db::event::InsertQuery::new(
@@ -220,19 +228,16 @@ impl RequestHandler for CreateHandler {
                 query = query.removed(true);
             }
 
-            {
-                let mut conn = context.get_conn().await?;
+            let event = context
+                .metrics()
+                .measure_query(QueryKey::EventInsertQuery, query.execute(&mut txn))
+                .await
+                .context("Failed to insert event")
+                .error(AppErrorKind::DbQueryFailed)?;
 
-                let event = context
-                    .metrics()
-                    .measure_query(QueryKey::EventInsertQuery, query.execute(&mut conn))
-                    .await
-                    .context("Failed to insert event")
-                    .error(AppErrorKind::DbQueryFailed)?;
+            Span::current().record("event_id", &display(event.id()));
 
-                Span::current().record("event_id", &display(event.id()));
-                event
-            }
+            event
         } else {
             // Build transient event.
             let mut builder = db::event::Builder::new()
@@ -260,6 +265,53 @@ impl RequestHandler for CreateHandler {
                 .error(AppErrorKind::TransientEventCreationFailed)?
         };
 
+        let mut nats_ids = NatsIds::with_capacity(2);
+
+        if let Some(q) = db::notification::InsertQuery::new(
+            "event.create",
+            room.room_topic(),
+            &context.config().nats.namespace,
+            &event,
+        ) {
+            let n = q
+                .execute(&mut txn)
+                .await
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            nats_ids.push(n.id());
+        }
+
+        // If the event is claim notify the tenant.
+        let claim_notification = if is_claim {
+            let notification = TenantClaimNotification {
+                event: event.clone(),
+                classroom_id: room.classroom_id(),
+            };
+
+            if let Some(q) = db::notification::InsertQuery::new(
+                "event.create",
+                room.audience_topic(),
+                &context.config().nats.namespace,
+                &notification,
+            ) {
+                let n = q
+                    .execute(&mut txn)
+                    .await
+                    .error(AppErrorKind::DbQueryFailed)?;
+
+                nats_ids.push(n.id());
+            }
+
+            Some(notification)
+        } else {
+            None
+        };
+
+        txn.commit()
+            .await
+            .context("Failed to commit transaction")
+            .error(AppErrorKind::DbQueryFailed)?;
+
         // Respond to the agent.
         let mut response = AppResponse::new(
             ResponseStatus::CREATED,
@@ -269,27 +321,24 @@ impl RequestHandler for CreateHandler {
         );
 
         // If the event is claim notify the tenant.
-        if is_claim {
-            let claim_notification = TenantClaimNotification {
-                event: event.clone(),
-                classroom_id: room.classroom_id(),
-            };
-
+        if let Some(n) = claim_notification {
             response.add_notification(
                 "event.create",
-                &format!("audiences/{}/events", room.audience()),
-                claim_notification,
+                room.audience_topic(),
+                n,
                 context.start_timestamp(),
             );
-        }
+        };
 
         // Notify room subscribers.
         response.add_notification(
             "event.create",
-            &format!("rooms/{}/events", room.id()),
+            room.room_topic(),
             event,
             context.start_timestamp(),
         );
+
+        response.set_nats_ids(nats_ids);
 
         Ok(response)
     }
@@ -327,7 +376,7 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     Query(payload): Query<ListPayload>,
@@ -454,19 +503,19 @@ mod tests {
         let room = {
             // Create room and put the agent online.
             let mut conn = db.get_conn().await;
-            let room = shared_helpers::insert_room(&mut conn).await;
+            let room = shared_helpers::insert_room_with_classroom_id(&mut conn).await;
             shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
             room
         };
 
         // Allow agent to create events of type `message` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let cid = room.classroom_id().unwrap().to_string();
         let account_id = agent.account_id().to_string();
 
         let object = vec![
-            "rooms",
-            &room_id,
+            "classrooms",
+            &cid,
             "pinned",
             "message",
             "authors",
@@ -518,6 +567,16 @@ mod tests {
         assert_eq!(event.label(), Some("message-1"));
         assert_eq!(event.attribute(), Some("pinned"));
         assert_eq!(event.data(), &json!({ "text": "hello" }));
+
+        let mut conn = context.get_conn().await.unwrap();
+        let notifications = crate::db::notification::ListQuery::new()
+            .topic(format!("classrooms.{}.event", room.classroom_id().unwrap()))
+            .execute(&mut conn)
+            .await
+            .unwrap();
+
+        assert_eq!(notifications.len(), 1);
+        assert_eq!(notifications[0].namespace(), "unittest");
     }
 
     #[tokio::test]

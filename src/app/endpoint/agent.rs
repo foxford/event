@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::extract::{
@@ -15,8 +13,8 @@ use svc_utils::extractors::AuthnExtractor;
 use tracing::{error, instrument};
 use uuid::Uuid;
 
-use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
+use crate::app::{context::Context, notification_puller::NatsIds};
 use crate::db;
 use crate::db::event::insert_account_ban_event;
 use crate::db::room_ban::{DeleteQuery as BanDeleteQuery, InsertQuery as BanInsertQuery};
@@ -39,7 +37,7 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     Query(payload): Query<ListPayload>,
@@ -151,7 +149,7 @@ pub(crate) struct TenantBanNotification {
 }
 
 pub async fn update(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<UpdatePayload>,
@@ -214,6 +212,7 @@ impl RequestHandler for UpdateHandler {
             .await
             .context("Failed to acquire transaction")
             .error(AppErrorKind::DbQueryFailed)?;
+
         if payload.value {
             let mut query = BanInsertQuery::new(payload.account_id.clone(), room_id);
 
@@ -254,6 +253,52 @@ impl RequestHandler for UpdateHandler {
             .await
             .context("Failed to insert event")
             .error(AppErrorKind::DbQueryFailed)?;
+
+        let mut nats_ids = NatsIds::with_capacity(2);
+
+        let tenant_notification = TenantBanNotification {
+            room_id: room.id(),
+            account_id: payload.account_id.clone(),
+            reason: payload.reason.clone(),
+            banned_by: reqp.to_owned().as_account_id().to_owned(),
+            banned: payload.value,
+            classroom_id: room.classroom_id(),
+        };
+
+        if let Some(q) = db::notification::InsertQuery::new(
+            "agent.ban",
+            room.audience_topic(),
+            &context.config().nats.namespace,
+            &tenant_notification,
+        ) {
+            let n = q
+                .execute(&mut txn)
+                .await
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            nats_ids.push(n.id());
+        }
+
+        let room_notification = BanNotification {
+            account_id: payload.account_id.clone(),
+            banned: payload.value,
+            reason: payload.reason,
+        };
+
+        if let Some(q) = db::notification::InsertQuery::new(
+            "agent.update",
+            room.room_topic(),
+            &context.config().nats.namespace,
+            &room_notification,
+        ) {
+            let n = q
+                .execute(&mut txn)
+                .await
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            nats_ids.push(n.id());
+        }
+
         txn.commit()
             .await
             .context("Failed to commit transaction")
@@ -263,7 +308,7 @@ impl RequestHandler for UpdateHandler {
             .authz()
             .ban(
                 room.audience().into(),
-                payload.account_id.clone(),
+                payload.account_id,
                 object.into(),
                 payload.value,
                 context.config().ban_duration() as usize,
@@ -284,35 +329,22 @@ impl RequestHandler for UpdateHandler {
             Some(authz_time),
         );
 
-        let tenant_notification = TenantBanNotification {
-            room_id: room.id(),
-            account_id: payload.account_id.clone(),
-            reason: payload.reason.clone(),
-            banned_by: reqp.to_owned().as_account_id().to_owned(),
-            banned: payload.value,
-            classroom_id: room.classroom_id(),
-        };
-
         response.add_notification(
             "agent.ban",
-            &format!("audiences/{}/events", room.audience()),
+            room.audience_topic(),
             tenant_notification,
             context.start_timestamp(),
         );
 
-        let room_notification = BanNotification {
-            account_id: payload.account_id,
-            banned: payload.value,
-            reason: payload.reason,
-        };
-
         // Notify room subscribers.
         response.add_notification(
             "agent.update",
-            &format!("rooms/{}/events", room.id()),
+            room.room_topic(),
             room_notification,
             context.start_timestamp(),
         );
+
+        response.set_nats_ids(nats_ids);
 
         Ok(response)
     }
