@@ -161,6 +161,87 @@
       ]
     }
   },
+  "05a4104370276e98923d26b0dd1fb384e334d7020de02afb68587607929b324c": {
+    "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                validate_whiteboard_access,\n                whiteboard_access\n            FROM room\n            WHERE id = $1\n            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "audience",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "source_room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 3,
+          "name": "time!: Time",
+          "type_info": "TstzRange"
+        },
+        {
+          "ordinal": 4,
+          "name": "tags",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 5,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 6,
+          "name": "preserve_history",
+          "type_info": "Bool"
+        },
+        {
+          "ordinal": 7,
+          "name": "classroom_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 8,
+          "name": "locked_types",
+          "type_info": "Jsonb"
+        },
+        {
+          "ordinal": 9,
+          "name": "validate_whiteboard_access",
+          "type_info": "Bool"
+        },
+        {
+          "ordinal": 10,
+          "name": "whiteboard_access",
+          "type_info": "Jsonb"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "TstzRange"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "15edabc8a95c9d857c0d2f8083753208a750ef1a705a906eeb3235590a3cec62": {
     "query": "\n            SELECT\n                id, account_id AS \"account_id!: AccountId\",\n                room_id, reason, created_at\n            FROM room_ban\n            WHERE account_id = $1 AND room_id = (\n                SELECT id FROM room\n                WHERE classroom_id = $2 AND UPPER(time) IS NULL\n                ORDER BY created_at DESC LIMIT 1\n            )\n            ",
     "describe": {
@@ -551,6 +632,94 @@
       "nullable": []
     }
   },
+  "281c4f58e41fd5ac304028de84507b381470182dd2ded08bd1c496c08ad8f544": {
+    "query": "\n            INSERT INTO room (\n                audience, source_room_id, time, tags, preserve_history, classroom_id,\n                    locked_types, validate_whiteboard_access, whiteboard_access)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                validate_whiteboard_access,\n                whiteboard_access\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "audience",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "source_room_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 3,
+          "name": "time!: Time",
+          "type_info": "TstzRange"
+        },
+        {
+          "ordinal": 4,
+          "name": "tags",
+          "type_info": "Json"
+        },
+        {
+          "ordinal": 5,
+          "name": "created_at",
+          "type_info": "Timestamptz"
+        },
+        {
+          "ordinal": 6,
+          "name": "preserve_history",
+          "type_info": "Bool"
+        },
+        {
+          "ordinal": 7,
+          "name": "classroom_id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 8,
+          "name": "locked_types",
+          "type_info": "Jsonb"
+        },
+        {
+          "ordinal": 9,
+          "name": "validate_whiteboard_access",
+          "type_info": "Bool"
+        },
+        {
+          "ordinal": 10,
+          "name": "whiteboard_access",
+          "type_info": "Jsonb"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Uuid",
+          "TstzRange",
+          "Json",
+          "Bool",
+          "Uuid",
+          "Jsonb",
+          "Bool",
+          "Jsonb"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "30648a371672f6987fc07841a62926a649cd5ad562fb040828ca30be8b362258": {
     "query": "\n            SELECT\n                agent.id,\n                agent_id AS \"agent_id!: AgentId\",\n                agent.room_id,\n                status AS \"status!: Status\",\n                agent.created_at,\n                (rban.created_at IS NOT NULL)::boolean AS banned,\n                rban.reason\n            FROM agent\n            LEFT OUTER JOIN room_ban rban\n            ON rban.room_id = agent.room_id AND rban.account_id = (agent.agent_id).account_id\n            WHERE agent.room_id = $1 AND agent.status = $2\n            ORDER BY created_at DESC\n            LIMIT $3\n            OFFSET $4\n            ",
     "describe": {
@@ -812,8 +981,8 @@
       ]
     }
   },
-  "45f7405c90a1bb78ba31c3bd8a139c3f69eb2f18fb65291f47921697436348d1": {
-    "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types\n            FROM room\n            WHERE id = $1\n            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)\n            ",
+  "6039c8fc3c3a35e4104b47ef5d3763a5dabb4e7e8a42ddc8f8f5fe787919b28e": {
+    "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags),\n                classroom_id = COALESCE($4, classroom_id),\n                locked_types = COALESCE($5, locked_types),\n                whiteboard_access = COALESCE($6, whiteboard_access)\n            WHERE id = $1\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                validate_whiteboard_access,\n                whiteboard_access\n            ",
     "describe": {
       "columns": [
         {
@@ -860,12 +1029,26 @@
           "ordinal": 8,
           "name": "locked_types",
           "type_info": "Jsonb"
+        },
+        {
+          "ordinal": 9,
+          "name": "validate_whiteboard_access",
+          "type_info": "Bool"
+        },
+        {
+          "ordinal": 10,
+          "name": "whiteboard_access",
+          "type_info": "Jsonb"
         }
       ],
       "parameters": {
         "Left": [
           "Uuid",
-          "TstzRange"
+          "TstzRange",
+          "Json",
+          "Uuid",
+          "Jsonb",
+          "Jsonb"
         ]
       },
       "nullable": [
@@ -877,6 +1060,8 @@
         false,
         false,
         true,
+        false,
+        false,
         false
       ]
     }
@@ -1701,80 +1886,6 @@
       "nullable": []
     }
   },
-  "9eb770f833dae7837768006094d875f1cd12963a760fcdc2929e323544c656d7": {
-    "query": "\n            INSERT INTO room (audience, source_room_id, time, tags, preserve_history, classroom_id, locked_types)\n            VALUES ($1, $2, $3, $4, $5, $6, $7)\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types\n            ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "audience",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 2,
-          "name": "source_room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 3,
-          "name": "time!: Time",
-          "type_info": "TstzRange"
-        },
-        {
-          "ordinal": 4,
-          "name": "tags",
-          "type_info": "Json"
-        },
-        {
-          "ordinal": 5,
-          "name": "created_at",
-          "type_info": "Timestamptz"
-        },
-        {
-          "ordinal": 6,
-          "name": "preserve_history",
-          "type_info": "Bool"
-        },
-        {
-          "ordinal": 7,
-          "name": "classroom_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 8,
-          "name": "locked_types",
-          "type_info": "Jsonb"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Text",
-          "Uuid",
-          "TstzRange",
-          "Json",
-          "Bool",
-          "Uuid",
-          "Jsonb"
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        true,
-        false,
-        true,
-        false,
-        false,
-        true,
-        false
-      ]
-    }
-  },
   "a17265aab93b926729647128bfcaa0452be3f19ab5dba6855a89269653c4ff99": {
     "query": "\n            INSERT INTO event (\n                room_id,\n                set,\n                kind,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by,\n                created_at\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            RETURNING\n                id,\n                room_id,\n                kind,\n                set,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by AS \"created_by!: AgentId\",\n                created_at,\n                deleted_at,\n                original_occurred_at,\n                original_created_by as \"original_created_by: AgentId\"\n            ",
     "describe": {
@@ -2195,78 +2306,6 @@
       },
       "nullable": [
         false,
-        false,
-        false,
-        true,
-        false
-      ]
-    }
-  },
-  "c05f44fc45df4d8cdf323ab016a7cb72dfdb9ab54399ab2ba9ad73ff4af55674": {
-    "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags),\n                classroom_id = COALESCE($4, classroom_id),\n                locked_types = COALESCE($5, locked_types)\n            WHERE id = $1\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types\n            ",
-    "describe": {
-      "columns": [
-        {
-          "ordinal": 0,
-          "name": "id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 1,
-          "name": "audience",
-          "type_info": "Text"
-        },
-        {
-          "ordinal": 2,
-          "name": "source_room_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 3,
-          "name": "time!: Time",
-          "type_info": "TstzRange"
-        },
-        {
-          "ordinal": 4,
-          "name": "tags",
-          "type_info": "Json"
-        },
-        {
-          "ordinal": 5,
-          "name": "created_at",
-          "type_info": "Timestamptz"
-        },
-        {
-          "ordinal": 6,
-          "name": "preserve_history",
-          "type_info": "Bool"
-        },
-        {
-          "ordinal": 7,
-          "name": "classroom_id",
-          "type_info": "Uuid"
-        },
-        {
-          "ordinal": 8,
-          "name": "locked_types",
-          "type_info": "Jsonb"
-        }
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "TstzRange",
-          "Json",
-          "Uuid",
-          "Jsonb"
-        ]
-      },
-      "nullable": [
-        false,
-        false,
-        true,
-        false,
-        true,
         false,
         false,
         true,
