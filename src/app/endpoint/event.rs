@@ -155,10 +155,7 @@ impl RequestHandler for CreateHandler {
             let object = room.authz_object();
             let mut object = object.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
 
-            if room.locked_type(&payload.kind)
-                || (payload.kind == "draw"
-                    && !room.account_in_whiteboard_access(reqp.as_account_id()))
-            {
+            if room.event_should_authz_room_update(&payload.kind, reqp.as_account_id()) {
                 (AuthzObject::new(&object).into(), "update")
             } else {
                 object.extend([key, &payload.kind, "authors", &author].iter());
