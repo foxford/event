@@ -124,6 +124,10 @@ async fn clone_room(conn: &mut PgConnection, metrics: &Metrics, source: &Room) -
         query = query.tags(tags.to_owned());
     }
 
+    if let Some(classroom_id) = source.classroom_id() {
+        query = query.classroom_id(classroom_id);
+    }
+
     metrics
         .measure_query(QueryKey::RoomInsertQuery, query.execute(conn))
         .await
@@ -342,7 +346,7 @@ fn collect_gaps(cut_events: &[Event], cut_changes: &[Change]) -> Result<Vec<(i64
 mod tests {
     use std::ops::Bound;
 
-    use chrono::Duration;
+    use chrono::{Duration, SubsecRound, Utc};
     use prometheus::Registry;
     use serde_json::{json, Value as JsonValue};
     use sqlx::postgres::PgConnection;
@@ -502,8 +506,19 @@ mod tests {
         let metrics = Metrics::new(&Registry::new()).unwrap();
         let db = TestDb::new().await;
         let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+        let classroom_id = uuid::Uuid::new_v4();
         let mut conn = db.get_conn().await;
-        let room = shared_helpers::insert_room(&mut conn).await;
+        let now = Utc::now().trunc_subsecs(0);
+        let room = factory::Room::new()
+            .audience(USR_AUDIENCE)
+            .time((
+                Bound::Included(now),
+                Bound::Excluded(now + Duration::hours(1)),
+            ))
+            .tags(&json!({ "webinar_id": "123" }))
+            .classroom_id(classroom_id)
+            .insert(&mut conn)
+            .await;
 
         create_event(
             &mut conn,
@@ -582,6 +597,7 @@ mod tests {
         assert_eq!(destination.source_room_id().unwrap(), room.id());
         assert_eq!(room.audience(), destination.audience());
         assert_eq!(room.tags(), destination.tags());
+        assert_eq!(Some(classroom_id), destination.classroom_id());
         let segments: Vec<(Bound<i64>, Bound<i64>)> = segments.into();
         assert_eq!(segments.len(), 3);
 

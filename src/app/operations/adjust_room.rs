@@ -557,6 +557,7 @@ mod tests {
             let time = RoomTime::from((Bound::Included(opened_at), Bound::Unbounded));
 
             let room = RoomInsertQuery::new(AUDIENCE, time)
+                .classroom_id(uuid::Uuid::new_v4())
                 .execute(&mut conn)
                 .await
                 .expect("Failed to insert room");
@@ -720,12 +721,14 @@ mod tests {
                 Ok(RoomTimeBound::Excluded(started_at + duration))
             );
             assert_eq!(original_room.tags(), room.tags());
+            assert_eq!(original_room.classroom_id(), room.classroom_id());
 
             // Assert modified room.
             assert_eq!(modified_room.source_room_id(), Some(original_room.id()));
             assert_eq!(modified_room.audience(), original_room.audience());
             assert_eq!(modified_room.time(), original_room.time());
             assert_eq!(modified_room.tags(), original_room.tags());
+            assert_eq!(modified_room.classroom_id(), room.classroom_id());
         }
 
         async fn events_asserts(
