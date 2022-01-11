@@ -228,7 +228,7 @@ impl Object {
         }
     }
 
-    pub fn account_in_whiteboard_access(&self, account: &AccountId) -> bool {
+    fn account_has_whiteboard_access(&self, account: &AccountId) -> bool {
         if self.validate_whiteboard_access {
             self.whiteboard_access.get(account) == Some(&true)
         } else {
@@ -236,8 +236,14 @@ impl Object {
         }
     }
 
-    pub fn locked_type(&self, kind: &str) -> bool {
+    fn has_locked_type(&self, kind: &str) -> bool {
         self.locked_types.get(kind) == Some(&true)
+    }
+
+    pub fn event_should_authz_room_update(&self, kind: &str, account: &AccountId) -> bool {
+        self.has_locked_type(kind)
+            || ((kind == "draw" || kind == "draw_lock")
+                && !self.account_has_whiteboard_access(account))
     }
 
     pub(crate) fn is_closed(&self) -> bool {
