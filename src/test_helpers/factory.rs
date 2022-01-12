@@ -159,6 +159,7 @@ pub(crate) struct Event {
     occurred_at: Option<i64>,
     created_by: Option<AgentId>,
     created_at: Option<DateTime<Utc>>,
+    removed: bool,
 }
 
 impl Event {
@@ -229,6 +230,10 @@ impl Event {
         }
     }
 
+    pub(crate) fn removed(self, removed: bool) -> Self {
+        Self { removed, ..self }
+    }
+
     pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::event::Object {
         let room_id = self.room_id.expect("Room ID not set");
         let kind = self.kind.expect("Kind not set");
@@ -236,7 +241,8 @@ impl Event {
         let occurred_at = self.occurred_at.expect("Occurrence date not set");
         let created_by = self.created_by.expect("Creator not set");
 
-        let mut query = db::event::InsertQuery::new(room_id, kind, data, occurred_at, created_by);
+        let mut query = db::event::InsertQuery::new(room_id, kind, data, occurred_at, created_by)
+            .removed(self.removed);
 
         if let Some(set) = self.set {
             query = query.set(set);

@@ -24,6 +24,8 @@ attribute     | string  | _optional_ | An attribute for authorization and filter
 data          | json    | _required_ | The event JSON payload.
 is_claim      | boolean |      false | Whether to notify the tenant.
 is_persistent | boolean |       true | Whether to persist the event.
+removed       | boolean |      false | Whether to "remove"[^1] the event
+
 
 The _type_ and _data_ is arbitrary except
 [stream editing events](../event.md#stream-editing-events).
@@ -71,3 +73,5 @@ original_occurred_at | int      | _required_ | `occurred_at` of the first event 
 created_by           | agent_id | _required_ | An agent who created the event.
 created_at           | int      | _required_ | The event's absolute creation timestamp in milliseconds.
 classroom_id         | uuid     | _optional_ | If room belongs to a dispatcher's classroom - id of the classroom.
+
+[^1]: All previous events with the same label will be excluded from set queries like they never existed.
