@@ -33,6 +33,8 @@ pub struct CreatePayload {
     pub is_claim: bool,
     #[serde(default = "CreateRequest::default_is_persistent")]
     pub is_persistent: bool,
+    #[serde(default)]
+    pub removed: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -192,6 +194,7 @@ impl RequestHandler for CreateHandler {
             set,
             label,
             attribute,
+            removed,
             ..
         } = payload;
         let event = if payload.is_persistent {
@@ -214,6 +217,10 @@ impl RequestHandler for CreateHandler {
 
             if let Some(attribute) = attribute {
                 query = query.attribute(attribute);
+            }
+
+            if removed {
+                query = query.removed(true);
             }
 
             {
@@ -484,6 +491,7 @@ mod tests {
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -557,6 +565,7 @@ mod tests {
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -584,6 +593,7 @@ mod tests {
                 data: json!({ "text": "locked chat hello" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -637,6 +647,7 @@ mod tests {
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -663,6 +674,7 @@ mod tests {
                 data: json!({ "text": "locked chat hello" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -730,6 +742,7 @@ mod tests {
                 data: json!({ "text": "modified text" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -776,6 +789,7 @@ mod tests {
                 data: json!({ "blocked": true }),
                 is_claim: true,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -873,6 +887,7 @@ mod tests {
                 data: data.clone(),
                 is_claim: false,
                 is_persistent: false,
+                removed: false,
             },
         };
 
@@ -928,6 +943,7 @@ mod tests {
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -978,6 +994,7 @@ mod tests {
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -1030,6 +1047,7 @@ mod tests {
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -1056,6 +1074,7 @@ mod tests {
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -1102,6 +1121,7 @@ mod tests {
                 data: json!({ "foo": "bar" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -1131,6 +1151,7 @@ mod tests {
                 data: json!({ "foo": "baz" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -1173,6 +1194,7 @@ mod tests {
                 data: json!({ "foo": "bar" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 

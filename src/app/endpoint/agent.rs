@@ -538,6 +538,7 @@ mod tests {
                 data: json!({ "text": "banmsg" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -635,6 +636,7 @@ mod tests {
                 data: json!({ "text": "hello" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
@@ -705,6 +707,7 @@ mod tests {
                 data: json!({ "text": "hello 2" }),
                 is_claim: false,
                 is_persistent: true,
+                removed: false,
             },
         };
 
