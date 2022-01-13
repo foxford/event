@@ -58,7 +58,8 @@ impl<'a> Query<'a> {
                     created_at,
                     deleted_at,
                     original_occurred_at,
-                    original_created_by as "original_created_by: AgentId"
+                    original_created_by as "original_created_by: AgentId",
+                    removed
                 FROM (
                     SELECT DISTINCT ON(original_occurred_at, label)
                         *,
@@ -105,7 +106,8 @@ impl<'a> Query<'a> {
                     created_at,
                     deleted_at,
                     original_occurred_at,
-                    original_created_by as "original_created_by: AgentId"
+                    original_created_by as "original_created_by: AgentId",
+                    removed
                 FROM (
                     SELECT DISTINCT ON(original_occurred_at, label) *
                     FROM event
