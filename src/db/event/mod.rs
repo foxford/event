@@ -36,6 +36,7 @@ pub(crate) struct Object {
     // TODO: remove Option and make the field NOT NULL once migrated production data.
     #[serde(skip_serializing_if = "Option::is_none")]
     original_created_by: Option<AgentId>,
+    removed: bool,
 }
 
 impl Object {
@@ -183,6 +184,7 @@ impl Builder {
             deleted_at: None,
             original_occurred_at: occurred_at,
             original_created_by: Some(created_by),
+            removed: false,
         })
     }
 }
@@ -454,7 +456,8 @@ impl InsertQuery {
                 created_at,
                 deleted_at,
                 original_occurred_at,
-                original_created_by as "original_created_by: AgentId"
+                original_created_by as "original_created_by: AgentId",
+                removed
             "#,
             self.room_id,
             self.set,
@@ -537,7 +540,8 @@ impl OriginalEventQuery {
                 created_at,
                 deleted_at,
                 original_occurred_at,
-                original_created_by as "original_created_by: AgentId"
+                original_created_by as "original_created_by: AgentId",
+                removed
             FROM event
             WHERE deleted_at IS NULL
             AND   room_id = $1
