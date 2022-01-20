@@ -85,6 +85,11 @@ impl Object {
     pub(crate) fn original_occurred_at(&self) -> i64 {
         self.original_occurred_at
     }
+
+    #[cfg(test)]
+    pub(crate) fn removed(&self) -> bool {
+        self.removed
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////

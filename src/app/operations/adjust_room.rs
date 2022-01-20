@@ -353,7 +353,7 @@ async fn clone_events(
                 FROM gap_starts, gap_stops
                 WHERE gap_stops.row_number = gap_starts.row_number
             )
-        INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
+        INSERT INTO event (id, room_id, kind, set, label, data, attribute, removed, occurred_at, created_by, created_at)
         SELECT
             id,
             room_id,
@@ -361,6 +361,8 @@ async fn clone_events(
             set,
             label,
             data,
+            attribute,
+            removed,
             -- Monotonization
             -- cutstarts and cutstops are left as is to avoid skew
             (
@@ -379,6 +381,8 @@ async fn clone_events(
                 set,
                 label,
                 data,
+                attribute,
+                removed,
                 (
                     CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)
                     WHEN TRUE THEN 0
@@ -549,6 +553,89 @@ mod tests {
     }
 
     impl TestCtx {
+        async fn get_conn(&self) -> sqlx::pool::PoolConnection<sqlx::Postgres> {
+            self.db.get_conn().await
+        }
+
+        fn get_modified_room(&self) -> &Room {
+            match &self.state {
+                TestCtxState::Ran { modified_room, .. } => modified_room,
+                _ => panic!("Invalid state"),
+            }
+        }
+
+        async fn create_event(
+            &self,
+            conn: &mut PgConnection,
+            occurred_at: i64,
+            kind: &str,
+            data: JsonValue,
+        ) {
+            self.create_event_f(
+                conn,
+                occurred_at,
+                kind,
+                data,
+                None::<fn(EventInsertQuery) -> EventInsertQuery>,
+            )
+            .await;
+        }
+
+        async fn create_event_f(
+            &self,
+            conn: &mut PgConnection,
+            occurred_at: i64,
+            kind: &str,
+            data: JsonValue,
+            f: Option<impl FnOnce(EventInsertQuery) -> EventInsertQuery>,
+        ) {
+            let created_by = AgentId::new("test", AccountId::new("test", AUDIENCE));
+
+            let opened_at = match self.room.time().map(|t| t.into()) {
+                Ok((Bound::Included(opened_at), _)) => opened_at,
+                _ => panic!("Invalid room time"),
+            };
+
+            let mut q = EventInsertQuery::new(
+                self.room.id(),
+                kind.to_owned(),
+                data.clone(),
+                occurred_at,
+                created_by,
+            )
+            .created_at(opened_at + Duration::nanoseconds(occurred_at));
+
+            if let Some(f) = f {
+                q = f(q);
+            }
+
+            q.execute(conn).await.expect("Failed to insert event");
+        }
+
+        async fn create_event_with_attribute(
+            &self,
+            conn: &mut PgConnection,
+            occurred_at: i64,
+            kind: &str,
+            data: JsonValue,
+            attribute: Option<&str>,
+        ) {
+            self.create_event_f(
+                conn,
+                occurred_at,
+                kind,
+                data,
+                Some(|q: EventInsertQuery| {
+                    if let Some(p) = attribute {
+                        q.attribute(p.to_owned())
+                    } else {
+                        q
+                    }
+                }),
+            )
+            .await;
+        }
+
         async fn new(events: &[(i64, &str, JsonValue)]) -> Self {
             let db = TestDb::new().await;
             let metrics = Metrics::new(&Registry::new()).unwrap();
@@ -562,17 +649,20 @@ mod tests {
                 .await
                 .expect("Failed to insert room");
 
-            for (occurred_at, kind, data) in events {
-                create_event(&mut conn, &room, *occurred_at, kind, data.to_owned()).await;
-            }
-
-            Self {
+            let ctx = Self {
                 db,
                 room,
                 opened_at,
                 metrics,
                 state: TestCtxState::Initialized,
+            };
+
+            for (occurred_at, kind, data) in events {
+                ctx.create_event(&mut conn, *occurred_at, kind, data.to_owned())
+                    .await;
             }
+
+            ctx
         }
 
         fn set_segments(
@@ -1291,31 +1381,85 @@ mod tests {
         ctx.assert_cut_original_segments(&[(0, 10000), (14000, 20000)])
     }
 
-    async fn create_event(
-        conn: &mut PgConnection,
-        room: &Room,
-        occurred_at: i64,
-        kind: &str,
-        data: JsonValue,
-    ) {
-        let created_by = AgentId::new("test", AccountId::new("test", AUDIENCE));
+    #[tokio::test]
+    async fn adjust_room_test_pin() {
+        let mut ctx = TestCtx::new(&[(1_000_000_000, "message", json!({"message": "m1"}))]).await;
 
-        let opened_at = match room.time().map(|t| t.into()) {
-            Ok((Bound::Included(opened_at), _)) => opened_at,
-            _ => panic!("Invalid room time"),
-        };
+        {
+            let mut conn = ctx.get_conn().await;
+            ctx.create_event_with_attribute(
+                &mut conn,
+                2_000_000_000,
+                "message",
+                json!({"message": "m1"}),
+                Some("pinned"),
+            )
+            .await;
+        }
 
-        EventInsertQuery::new(
-            room.id(),
-            kind.to_owned(),
-            data.clone(),
-            occurred_at,
-            created_by,
+        ctx.set_segments(vec![(0, 10000)], ctx.opened_at, "0 seconds");
+
+        ctx.run().await;
+        ctx.events_asserts(
+            &[
+                (1_000_000_000, "message", json!({"message": "m1"})),
+                (2_000_000_000, "message", json!({"message": "m1"})),
+            ],
+            &[(0, 10000)],
         )
-        .created_at(opened_at + Duration::nanoseconds(occurred_at))
-        .execute(conn)
-        .await
-        .expect("Failed to insert event");
+        .await;
+
+        ctx.assert_cut_original_segments(&[(0, 10000)]);
+
+        {
+            let mut conn = ctx.get_conn().await;
+            let events = EventListQuery::new()
+                .room_id(ctx.get_modified_room().id())
+                .attribute("pinned")
+                .execute(&mut conn)
+                .await
+                .unwrap();
+            assert_eq!(events.len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn adjust_room_test_removed() {
+        let mut ctx = TestCtx::new(&[]).await;
+
+        {
+            let mut conn = ctx.get_conn().await;
+            ctx.create_event_f(
+                &mut conn,
+                1_000_000_000,
+                "message",
+                json!({"message": "m1"}),
+                Some(|q: EventInsertQuery| q.removed(true)),
+            )
+            .await;
+        }
+
+        ctx.set_segments(vec![(0, 10000)], ctx.opened_at, "0 seconds");
+
+        ctx.run().await;
+        ctx.events_asserts(
+            &[(1_000_000_000, "message", json!({"message": "m1"}))],
+            &[(0, 10000)],
+        )
+        .await;
+
+        ctx.assert_cut_original_segments(&[(0, 10000)]);
+
+        {
+            let mut conn = ctx.get_conn().await;
+            let events = EventListQuery::new()
+                .room_id(ctx.get_modified_room().id())
+                .execute(&mut conn)
+                .await
+                .unwrap();
+            assert_eq!(events.len(), 1);
+            assert_eq!(events[0].removed(), true);
+        }
     }
 
     fn assert_event(event: &Event, occurred_at: i64, kind: &str, data: &JsonValue) {
