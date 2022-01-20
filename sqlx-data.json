@@ -2199,6 +2199,22 @@
       ]
     }
   },
+  "b3577f8d27f22e7ed6f1349eecd8cc55f28e5fc35b84a846030bcb77c85d0786": {
+    "query": "\n        WITH\n            gap_starts AS (\n                SELECT start, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($1::BIGINT[]) AS start\n            ),\n            gap_stops AS (\n                SELECT stop, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($2::BIGINT[]) AS stop\n            ),\n            gaps AS (\n                SELECT start, stop\n                FROM gap_starts, gap_stops\n                WHERE gap_stops.row_number = gap_starts.row_number\n            )\n        INSERT INTO event (id, room_id, kind, set, label, data, attribute, removed, occurred_at, created_by, created_at)\n        SELECT\n            id,\n            room_id,\n            kind,\n            set,\n            label,\n            data,\n            attribute,\n            removed,\n            -- Monotonization\n            -- cutstarts and cutstops are left as is to avoid skew\n            (\n                CASE kind\n                WHEN 'stream' THEN occurred_at\n                ELSE occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at, kind = 'stream' ORDER BY created_at) - 1\n                END\n            ),\n            created_by,\n            created_at\n        FROM (\n            SELECT\n                gen_random_uuid() AS id,\n                $3::UUID AS room_id,\n                kind,\n                set,\n                label,\n                data,\n                attribute,\n                removed,\n                (\n                    CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)\n                    WHEN TRUE THEN 0\n                    ELSE occurred_at - (\n                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)\n                        FROM gaps\n                        WHERE start < occurred_at\n                        AND   start >= 0\n                    )\n                    END\n                ) + $4 AS occurred_at,\n                created_by,\n                created_at\n            FROM event\n            WHERE room_id = $5\n            AND   deleted_at IS NULL\n        ) AS sub\n        ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
+          "Int8Array",
+          "Int8Array",
+          "Uuid",
+          "Numeric",
+          "Uuid"
+        ]
+      },
+      "nullable": []
+    }
+  },
   "da66580c20d184c7d43c67ec5ccf490283c56ae79795a8df439c3481d2e6b83a": {
     "query": "\n            INSERT INTO room_ban (account_id, room_id, reason)\n            VALUES ($1, $2, $3) ON CONFLICT (account_id, room_id) DO UPDATE\n            SET created_at=room_ban.created_at\n            RETURNING\n                id,\n                account_id AS \"account_id!: AccountId\",\n                room_id,\n                reason,\n                created_at\n            ",
     "describe": {
@@ -2286,22 +2302,6 @@
           "Int8",
           "Float8",
           "Float8"
-        ]
-      },
-      "nullable": []
-    }
-  },
-  "e8e5697eb510d2137cf7bd7dcaa59aa64c42399cd60be34a6a61aaf96123b626": {
-    "query": "\n        WITH\n            gap_starts AS (\n                SELECT start, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($1::BIGINT[]) AS start\n            ),\n            gap_stops AS (\n                SELECT stop, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($2::BIGINT[]) AS stop\n            ),\n            gaps AS (\n                SELECT start, stop\n                FROM gap_starts, gap_stops\n                WHERE gap_stops.row_number = gap_starts.row_number\n            )\n        INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)\n        SELECT\n            id,\n            room_id,\n            kind,\n            set,\n            label,\n            data,\n            -- Monotonization\n            -- cutstarts and cutstops are left as is to avoid skew\n            (\n                CASE kind\n                WHEN 'stream' THEN occurred_at\n                ELSE occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at, kind = 'stream' ORDER BY created_at) - 1\n                END\n            ),\n            created_by,\n            created_at\n        FROM (\n            SELECT\n                gen_random_uuid() AS id,\n                $3::UUID AS room_id,\n                kind,\n                set,\n                label,\n                data,\n                (\n                    CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)\n                    WHEN TRUE THEN 0\n                    ELSE occurred_at - (\n                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)\n                        FROM gaps\n                        WHERE start < occurred_at\n                        AND   start >= 0\n                    )\n                    END\n                ) + $4 AS occurred_at,\n                created_by,\n                created_at\n            FROM event\n            WHERE room_id = $5\n            AND   deleted_at IS NULL\n        ) AS sub\n        ",
-    "describe": {
-      "columns": [],
-      "parameters": {
-        "Left": [
-          "Int8Array",
-          "Int8Array",
-          "Uuid",
-          "Numeric",
-          "Uuid"
         ]
       },
       "nullable": []
