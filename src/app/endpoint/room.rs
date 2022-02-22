@@ -673,7 +673,7 @@ impl RequestHandler for LockedTypesHandler {
 
         response.add_notification(
             "room.update",
-            &format!("audiences/{}/events", room.audience()),
+            &format!("rooms/{}/events", room.id()),
             room,
             context.start_timestamp(),
         );
@@ -807,7 +807,7 @@ impl RequestHandler for WhiteboardAccessHandler {
 
         response.add_notification(
             "room.update",
-            &format!("audiences/{}/events", room.audience()),
+            &format!("rooms/{}/events", room.id()),
             room,
             context.start_timestamp(),
         );
@@ -1881,7 +1881,7 @@ mod tests {
 
             // Assert notification.
             let (room, evp, topic) = find_event::<Room>(messages.as_slice());
-            assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
+            assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
             assert_eq!(evp.label(), "room.update");
             assert_eq!(og_room.id(), room.id());
             assert_eq!(room.locked_types().len(), 1);
@@ -1958,7 +1958,7 @@ mod tests {
 
             // Assert notification.
             let (room, evp, topic) = find_event::<Room>(messages.as_slice());
-            assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
+            assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
             assert_eq!(evp.label(), "room.update");
             assert_eq!(og_room.id(), room.id());
             assert_eq!(room.locked_types().len(), 1);
@@ -2054,7 +2054,7 @@ mod tests {
 
             // Assert notification.
             let (room, evp, topic) = find_event::<Room>(messages.as_slice());
-            assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
+            assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
             assert_eq!(evp.label(), "room.update");
             assert_eq!(og_room.id(), room.id());
             assert_eq!(room.whiteboard_access().len(), 1);
@@ -2150,7 +2150,7 @@ mod tests {
 
             // Assert notification.
             let (room, evp, topic) = find_event::<Room>(messages.as_slice());
-            assert!(topic.ends_with(&format!("/audiences/{}/events", USR_AUDIENCE)));
+            assert!(topic.ends_with(&format!("/rooms/{}/events", room.id())));
             assert_eq!(evp.label(), "room.update");
             assert_eq!(og_room.id(), room.id());
             assert_eq!(room.whiteboard_access().len(), 1);
