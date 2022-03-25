@@ -1,0 +1,25 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Chart.Name }}-headless
+spec:
+  selector:
+    {{- include "event.selectorLabels" . | nindent 4 }}
+  clusterIP: None
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "event.serviceName" . }}
+  labels:
+    {{- include "event.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    {{- range $name, $port := .Values.service.ports }}
+    - port: {{ $port }}
+      protocol: TCP
+      name: {{ $name }}
+    {{- end }}
+  selector:
+    {{- include "event.selectorLabels" . | nindent 4 }}
