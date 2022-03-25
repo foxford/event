@@ -1,0 +1,76 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    {{- include "event.labels" . | nindent 4 }}
+  name: {{ include "event.name" . }}-config
+data:
+  App.toml: |
+    {{- $id := list (include "event.name" . ) (include "event.shortNamespace" .) "svc.netology-group.services" | compact | join "." }}
+    id = {{ $id | quote }}
+
+    {{- $broker_id := list "mqtt-gateway" (include "event.shortNamespace" .) "svc.netology-group.services" | compact | join "." }}
+    broker_id = {{ $broker_id | quote }}
+
+    http_addr = "0.0.0.0:{{ get .Values.service.ports "http" }}"
+
+    [mqtt]
+    uri = "tcp://mqtt-gateway-loadbalancer:51883"
+    clean_session = false
+    reconnect_interval = 3
+    keep_alive = 15
+    max_message_size = 5000000
+
+    [sentry]
+    dsn = "https://390aa49ccd314bd5ac3e41db8e286f4d@sentry.io/1915189"
+    environment = {{ .Release.Namespace | quote }}
+
+    [telemetry]
+    {{- $telemetry_id := list "telemetry" (include "event.shortNamespace" .) "svc.netology-group.services" | compact | join "." }}
+    id = {{ $telemetry_id | quote }}
+
+    [kruonis]
+    {{- $kruonis_id := list "kruonis" (include "event.shortNamespace" .) "svc.netology-group.services" | compact | join "." }}
+    id = {{ $kruonis_id | quote }}
+
+    [metrics.http]
+    bind_address = "0.0.0.0:{{ get .Values.service.ports "metrics" }}"
+
+    ##
+    ## ULMS
+    ##
+    [id_token]
+    algorithm = "ES256"
+    key = "data/keys/svc.private_key.p8.der"
+
+    {{- println "" }}
+
+    {{- range $audience, $opts := .Values.audiences }}
+    ##
+    ## {{ $audience }}
+    ##
+    {{- $svc_audience := list (include "event.shortNamespace" $) "svc" $audience | compact | join "." }}
+    {{- $usr_audience := list (include "event.shortNamespace" $) "usr" $audience | compact | join "." }}
+    {{- with "authn" | get $opts }}
+    [authn.{{ list "iam" $svc_audience | join "." | quote }}]
+    audience = [{{ $svc_audience | quote }}, {{ $usr_audience | quote }}]
+    algorithm = "ES256"
+    key = {{ "key" | get . | quote }}
+    {{- end }}
+
+    {{- $ns_audience := list (include "event.shortNamespace" $) $audience | compact | join "."  }}
+    {{- println "" }}
+
+    {{- with "authz" | get $opts }}
+    [authz.{{ $ns_audience | quote }}]
+    type = {{ .type | quote }}
+    {{- if eq "http" .type }}
+    uri = {{ $ns_audience | list "http://dispatcher-service:8080/api/v1/authz/" | join "" | default .uri | quote }}
+    algorithm = {{ default "ES256" .algorithm | quote }}
+    key = {{ default "data/keys/svc.private_key.p8.der" .key | quote }}
+    user_agent = {{ default $id .user_agent | quote }}
+    max_retries = {{ default 3 .max_retries }}
+    {{- end}}
+    {{- end }}
+    {{- println "" }}
+    {{- end }}
