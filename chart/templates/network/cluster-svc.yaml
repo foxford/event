@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "event.fullname" . }}-cluster
+  labels:
+    {{- include "event.labels" . | nindent 4 }}
+  annotations:
+    {{- with .Values.clusterService.annotations }}
+      {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  ports:
+    {{- if .Values.clusterService.ports.http }}
+    - name: http
+      port: {{ .Values.clusterService.ports.http }}
+      targetPort: 8080
+      protocol: TCP
+    {{- end }}
+    {{- if .Values.clusterService.ports.metrics }}
+    - name: metrics
+      port: {{ .Values.clusterService.ports.metrics }}
+      targetPort: 8888
+      protocol: TCP
+    {{- end }}
+  selector:
+    {{- include "event.selectorLabels" . | nindent 4 }}
