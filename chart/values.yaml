@@ -9,28 +9,6 @@ container:
     repository: foxford/event
     tag: ""
 
-  volumes:
-    - name: config
-      configMap:
-        name: event-config
-    - name: svc
-      secret:
-        secretName: svc-secret
-    - name: tenant
-      secret:
-        secretName: tenant-secret
-
-  volumeMounts:
-    - name: config
-      mountPath: /app/App.toml
-      subPath: App.toml
-    - name: tenant
-      mountPath: /path/to/key
-      subPath: tenant.public_key
-    - mountPath: /path/to/key
-      name: svc
-      subPath: svc.private_key
-
   resources:
     limits:
       cpu: 0.5
@@ -42,17 +20,24 @@ container:
 sentry:
   dsn: "https://foobar.example.org/"
 
+svc:
+  audience: svc.services
+  credentials:
+    # svc-secret:
+    #   - subPath: private-key
+    #     mountPath: /path/to/svc/private/key
+
 audiences:
-  tenant:
+  - audience: foo.bar
+    credentials:
+      foobar-der-credentials:
+        - subPath: foobar-public-key
+          mountPath: /path/to/foobar/public/key
     authn:
-      key: /path/to/key
+      key: path/to/public_key.p8.der
     authz:
       type: http
-  tenantless:
-    authn:
-      key: /path/to/key
-    authz:
-      type: none
+      url: "https://authz.example.org/api/v1/authz"
 
 env:
   RUST_LOG: warn,event=info,svc_utils=info,svc_utils::metrics=warn
