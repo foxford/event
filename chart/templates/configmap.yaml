@@ -45,23 +45,23 @@ data:
 
     {{- println "" }}
 
-    {{- range $audience, $opts := .Values.audiences }}
+        {{- range .Values.audiences }}
     ##
-    ## {{ $audience }}
+    ## {{ .audience }}
     ##
-    {{- $svc_audience := list (include "event.shortNamespace" $) "svc" $audience | compact | join "." }}
-    {{- $usr_audience := list (include "event.shortNamespace" $) "usr" $audience | compact | join "." }}
-    {{- with "authn" | get $opts }}
+    {{- $svc_audience := list (include "event.shortNamespace" $) "svc" .audience | compact | join "." }}
+    {{- $usr_audience := list (include "event.shortNamespace" $) "usr" .audience | compact | join "." }}
+    {{- with "authn" | get . }}
     [authn.{{ list "iam" $svc_audience | join "." | quote }}]
     audience = [{{ $svc_audience | quote }}, {{ $usr_audience | quote }}]
     algorithm = "ES256"
     key = {{ "key" | get . | quote }}
     {{- end }}
 
-    {{- $ns_audience := list (include "event.shortNamespace" $) $audience | compact | join "."  }}
+    {{- $ns_audience := list (include "event.shortNamespace" $) .audience | compact | join "."  }}
     {{- println "" }}
 
-    {{- with "authz" | get $opts }}
+    {{- with "authz" | get . }}
     [authz.{{ $ns_audience | quote }}]
     type = {{ .type | quote }}
     {{- if eq "http" .type }}
@@ -70,7 +70,26 @@ data:
     key = {{ default "data/keys/svc.private_key.p8.der" .key | quote }}
     user_agent = {{ default $id .user_agent | quote }}
     max_retries = {{ default 3 .max_retries }}
-    {{- end}}
+    {{- end }}
+    {{- if eq "local" .type }}
+    trusted = [
+      {{- range $account_label := .trusted }}
+        {{ $ns_audience | list $account_label | join "." | quote }},
+      {{- end }}
+    ]
+    {{- end }}
+    {{- if eq "localwhitelist" .type }}
+    [[authz.{{ $ns_audience | quote }}.records]]
+    {{- range $record := .records }}
+    subject_account_id = {{ get $record "subject_account_id" | quote }}
+    object = [
+      {{- range $o := get $record "object" }}
+      {{ $o | quote }},
+      {{- end}}
+    ]
+    action = {{ get $record "action" | quote }}
+    {{- end }}
+    {{- end }}
     {{- end }}
     {{- println "" }}
     {{- end }}
