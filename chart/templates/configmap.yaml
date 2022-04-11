@@ -45,7 +45,7 @@ data:
 
     {{- println "" }}
 
-        {{- range .Values.audiences }}
+    {{- range .Values.audiences }}
     ##
     ## {{ .audience }}
     ##
