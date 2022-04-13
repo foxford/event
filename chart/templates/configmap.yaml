@@ -12,7 +12,7 @@ data:
     {{- $broker_id := list "mqtt-gateway" (include "event.shortNamespace" .) .Values.svc.audience | compact | join "." }}
     broker_id = {{ $broker_id | quote }}
 
-    http_addr = "0.0.0.0:{{ get .Values.service.ports "http" }}"
+    http_addr = "0.0.0.0:{{ .Values.service.ports.http }}"
 
     [mqtt]
     uri = "tcp://mqtt-gateway-loadbalancer:51883"
@@ -34,7 +34,7 @@ data:
     id = {{ $kruonis_id | quote }}
 
     [metrics.http]
-    bind_address = "0.0.0.0:{{ get .Values.service.ports "metrics" }}"
+    bind_address = "0.0.0.0:{{ .Values.service.ports.metrics }}"
 
     ##
     ## ULMS
@@ -51,17 +51,17 @@ data:
     ##
     {{- $svc_audience := list (include "event.shortNamespace" $) "svc" .audience | compact | join "." }}
     {{- $usr_audience := list (include "event.shortNamespace" $) "usr" .audience | compact | join "." }}
-    {{- with "authn" | get . }}
+    {{- with .authn }}
     [authn.{{ list "iam" $svc_audience | join "." | quote }}]
     audience = [{{ $svc_audience | quote }}, {{ $usr_audience | quote }}]
     algorithm = "ES256"
-    key = {{ "key" | get . | quote }}
+    key = {{ .key | quote }}
     {{- end }}
 
     {{- $ns_audience := list (include "event.shortNamespace" $) .audience | compact | join "."  }}
     {{- println "" }}
 
-    {{- with "authz" | get . }}
+    {{- with .authz }}
     [authz.{{ $ns_audience | quote }}]
     type = {{ .type | quote }}
     {{- if eq "http" .type }}
