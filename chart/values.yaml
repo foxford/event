@@ -9,6 +9,10 @@ container:
     repository: foxford/event
     tag: ""
 
+  migrations:
+    repository: foxford/event-migration
+    tag: ""
+
   resources:
     limits:
       cpu: 0.5

@@ -4,6 +4,7 @@ if [[ ! ${GITHUB_TOKEN} ]]; then echo "GITHUB_TOKEN is required" 1>&2; exit 1; f
 
 PROJECT="${PROJECT:-event}"
 SOURCE=${SOURCE:-"https://api.github.com/repos/foxford/ulms-env/contents/k8s"}
+APPS_SOURCE="https://api.github.com/repos/foxford/ulms-env/contents/apps"
 BRANCH="${BRANCH:-master}"
 FLAGS="-sSL"
 
@@ -89,6 +90,9 @@ if [[ -n ${NAMESPACE} ]]; then
 
     DIR_FROM_GITHUB_RECURSIVELY "base" "base"
     DIR_FROM_GITHUB_RECURSIVELY "overlays/${NAMESPACE}" "overlays/ns"
+
+    SHORT_NS=$(echo $NAMESPACE | sed s/-ng/-foxford/ | sed -E "s/^(.)([[:alpha:]]*)(.*)$/\1\3/")
+    FILE_FROM_GITHUB "deploy" "${APPS_SOURCE}/${SHORT_NS}/${PROJECT}/values.yaml"
 
     echo "In order to enable deployment NAMESPACE is required."
 fi
