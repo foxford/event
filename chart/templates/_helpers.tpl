@@ -115,5 +115,5 @@ Create volumeMount name from audience and secret name
 {{- define "event.volumeMountName" -}}
 {{- $audience := index . 0 -}}
 {{- $secret := index . 1 -}}
-{{- printf "%s-%s-secret" $audience $secret | replace "." "-" }}
+{{- printf "%s-%s-secret" $audience $secret | replace "." "-" | trunc 63 }}
 {{- end }}
