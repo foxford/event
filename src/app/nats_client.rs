@@ -21,8 +21,8 @@ fn nats_loop(js: JetStream, rx: Receiver<Cmd>) {
     while let Ok(cmd) = rx.recv() {
         match cmd {
             Cmd::Publish { msg, resp_chan } => {
-                let payload = serde_json::to_string(msg.payload()).unwrap();
-                let nats_msg = Message::new(msg.topic(), None, &payload, Some(msg.headers()));
+                let payload = serde_json::to_string(&msg).unwrap();
+                let nats_msg = Message::new(msg.topic(), None, &payload, None);
 
                 let resp = js.publish_message(&nats_msg).map(|ack| {
                     info!(topic = %msg.topic(), seq = ack.sequence, stream = %ack.stream, "Published message through nats");
