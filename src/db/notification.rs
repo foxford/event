@@ -1,15 +1,16 @@
-use serde::Serialize;
+use serde::ser::{Serialize, SerializeStruct, Serializer};
 use serde_json::Value as JsonValue;
 use sqlx::PgConnection;
 use uuid::Uuid;
 
 use crate::app::topic::Topic;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug)]
 pub struct Object {
     id: Uuid,
     label: String,
     topic: String,
+    #[allow(dead_code)]
     namespace: String,
     payload: JsonValue,
 }
@@ -17,10 +18,6 @@ pub struct Object {
 impl Object {
     pub fn id(&self) -> Uuid {
         self.id
-    }
-
-    pub fn payload(&self) -> &JsonValue {
-        &self.payload
     }
 
     pub fn topic(&self) -> &str {
@@ -31,9 +28,18 @@ impl Object {
     pub fn namespace(&self) -> &str {
         &self.namespace
     }
+}
 
-    pub fn headers(&self) -> nats::header::HeaderMap {
-        IntoIterator::into_iter([("label".to_string(), self.label.clone())]).collect()
+impl Serialize for Object {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut state = serializer.serialize_struct("Object", 3)?;
+        state.serialize_field("payload", &self.payload)?;
+        state.serialize_field("label", &self.label)?;
+        state.serialize_field("type", "event")?;
+        state.end()
     }
 }
 
