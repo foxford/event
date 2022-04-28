@@ -15,6 +15,8 @@ pub(crate) enum Status {
     InProgress,
     #[sqlx(rename = "ready")]
     Ready,
+    #[sqlx(rename = "offline")]
+    Offline,
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
@@ -29,6 +31,12 @@ pub(crate) struct Object {
     status: Status,
     #[serde(with = "ts_seconds")]
     created_at: DateTime<Utc>,
+}
+
+impl Object {
+    pub fn status(&self) -> Status {
+        self.status
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
