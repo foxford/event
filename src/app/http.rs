@@ -9,21 +9,26 @@ use axum::{
     AddExtensionLayer, Router,
 };
 
-use futures::{future::BoxFuture, StreamExt};
-use futures_util::pin_mut;
+use futures::{future::BoxFuture, TryFutureExt};
 use http::{Request, Response};
 use hyper::Body;
 use svc_agent::mqtt::Agent;
 use tower::{layer::layer_fn, Service};
 use tracing::error;
 
-use crate::app::message_handler::MessageStream;
-use crate::app::{message_handler::publish_message, service_utils};
+use crate::app::message_handler::publish_message;
+use crate::app::service_utils;
 
-use super::{context::AppContext, endpoint, error::Error as AppError};
+use super::{
+    context::{AppContext, GlobalContext},
+    endpoint,
+    error::Error as AppError,
+    notification_puller::NatsIds,
+    service_utils::AsyncTasks,
+};
 
 pub fn build_router(
-    context: Arc<AppContext>,
+    context: AppContext,
     agent: Agent,
     authn: svc_authn::jose::ConfigMap,
 ) -> Router {
@@ -156,6 +161,7 @@ where
         let mut inner = std::mem::replace(&mut self.inner, clone);
 
         Box::pin(async move {
+            let ctx = req.extensions().get::<AppContext>().cloned().unwrap();
             let mut agent = req.extensions().get::<Agent>().cloned().unwrap();
             let mut res: Response<ResBody> = inner.call(req).await?;
 
@@ -164,21 +170,36 @@ where
                 .remove::<service_utils::Notifications>()
             {
                 for notification in notifications {
-                    if let Err(err) = publish_message(&mut agent, notification) {
-                        error!("Failed to publish message, err = {:?}", err);
+                    if let Err(err) = publish_message(&mut agent, notification.clone().into()) {
+                        error!("Failed to publish message to mqtt broker, err = {:?}", err);
                     }
                 }
             }
 
-            if let Some(notifications_stream) = res.extensions_mut().remove::<MessageStream>() {
+            if let Some(async_tasks) = res.extensions_mut().remove::<AsyncTasks>() {
                 tokio::task::spawn(async move {
-                    pin_mut!(notifications_stream);
-                    while let Some(message) = notifications_stream.next().await {
-                        if let Err(err) = publish_message(&mut agent, message) {
-                            error!("Failed to publish message, err = {:?}", err);
-                        }
-                    }
+                    let iter = async_tasks.into_iter().map(|f| {
+                        let mut agent = agent.clone();
+
+                        f.inspect_err(|e| {
+                            error!(err = ?e, "Failed to await async task, join handle error");
+                        })
+                        .map_ok(move |n| async move {
+                            if let Err(err) = publish_message(&mut agent, n.clone().into()) {
+                                error!("Failed to publish message to mqtt broker, err = {:?}", err);
+                            }
+                        })
+                    });
+                    futures::future::join_all(iter).await;
                 });
+            }
+
+            if let Some(nats_ids) = res.extensions_mut().remove::<NatsIds>() {
+                if let Some(h) = ctx.puller_handle() {
+                    for id in nats_ids {
+                        h.notification(id)
+                    }
+                }
             }
 
             Ok(res)

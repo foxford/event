@@ -22,7 +22,7 @@ use crate::db;
 pub(crate) struct CreateHandler;
 
 pub async fn create(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(edition_id): Path<Uuid>,
     Json(changeset): Json<Changeset>,
@@ -171,7 +171,7 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(id): Path<Uuid>,
     Query(payload): Query<ListPayload>,
@@ -272,7 +272,7 @@ pub(crate) struct DeleteRequest {
 }
 
 pub async fn delete(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(id): Path<Uuid>,
 ) -> RequestResult {

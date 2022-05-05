@@ -30,6 +30,7 @@ use crate::{
 };
 use context::AppContextBuilder;
 use message_handler::MessageHandler;
+use nats_client::NatsClient;
 
 pub(crate) const API_VERSION: &str = "v1";
 
@@ -95,7 +96,7 @@ pub(crate) async fn run(
     let queue_counter = agent.get_queue_counter();
     let dispatcher = Arc::new(Dispatcher::new(&agent));
     let broker_client = build_broker_client(&config, &token, dispatcher.clone());
-    let context_builder = AppContextBuilder::new(config.clone(), authz, db, broker_client);
+    let context_builder = AppContextBuilder::new(config.clone(), authz, db.clone(), broker_client);
 
     let context_builder = match ro_db {
         Some(db) => context_builder.ro_db(db),
@@ -105,6 +106,30 @@ pub(crate) async fn run(
     let context_builder = match redis_pool {
         Some(pool) => context_builder.redis_pool(pool),
         None => context_builder,
+    };
+
+    let (context_builder, nats_puller) = match &config.nats.url {
+        Some(url) => {
+            info!("Connecting to NATS");
+            match NatsClient::new(url) {
+                Ok(nats_client) => {
+                    let puller =
+                        notification_puller::Puller::new(db, nats_client, config.nats.namespace);
+
+                    info!("Connected to NATS");
+
+                    (context_builder.puller_handle(puller.handle()), Some(puller))
+                }
+                Err(e) => {
+                    error!(error = ?e, "Failed to connect to NATS");
+                    (context_builder, None)
+                }
+            }
+        }
+        None => {
+            info!("Not connecting to NATS");
+            (context_builder, None)
+        }
     };
 
     let context = context_builder.queue_counter(queue_counter).build(metrics);
@@ -119,12 +144,8 @@ pub(crate) async fn run(
     let http_task = tokio::spawn(
         axum::Server::bind(&config.http_addr)
             .serve(
-                build_router(
-                    Arc::new(context.clone()),
-                    agent.clone(),
-                    config.authn.clone(),
-                )
-                .into_make_service(),
+                build_router(context.clone(), agent.clone(), config.authn.clone())
+                    .into_make_service(),
             )
             .with_graceful_shutdown(async move {
                 let _ = graceful_rx.await;
@@ -150,6 +171,15 @@ pub(crate) async fn run(
 
     if let Err(e) = http_task.await {
         error!("Failed to await http server completion, err = {:?}", e);
+    }
+
+    if let Some(puller) = nats_puller {
+        if let Err(e) = puller.shutdown().await {
+            error!(
+                "Failed to await nats notifications puller completion, err = {:?}",
+                e
+            );
+        }
     }
 
     tokio::time::sleep(Duration::from_secs(3)).await;
@@ -311,6 +341,9 @@ pub(crate) mod endpoint;
 pub(crate) mod error;
 pub(crate) mod http;
 pub(crate) mod message_handler;
+pub mod nats_client;
+pub mod notification_puller;
 pub(crate) mod operations;
 pub(crate) mod s3_client;
 pub(crate) mod service_utils;
+pub mod topic;

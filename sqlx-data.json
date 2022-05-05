@@ -767,6 +767,50 @@
       ]
     }
   },
+  "2fdd6a64c5eaa58bcdc1b26c6af08ca3a7866dec4cf91ac20b1b94004109cecb": {
+    "query": "\n            SELECT\n                id,\n                label,\n                topic,\n                namespace,\n                payload\n            FROM notification\n            WHERE id = $1\n            FOR UPDATE SKIP LOCKED\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "label",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "topic",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 3,
+          "name": "namespace",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 4,
+          "name": "payload",
+          "type_info": "Jsonb"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "30648a371672f6987fc07841a62926a649cd5ad562fb040828ca30be8b362258": {
     "query": "\n            SELECT\n                agent.id,\n                agent_id AS \"agent_id!: AgentId\",\n                agent.room_id,\n                status AS \"status!: Status\",\n                agent.created_at,\n                (rban.created_at IS NOT NULL)::boolean AS banned,\n                rban.reason\n            FROM agent\n            LEFT OUTER JOIN room_ban rban\n            ON rban.room_id = agent.room_id AND rban.account_id = (agent.agent_id).account_id\n            WHERE agent.room_id = $1 AND agent.status = $2\n            ORDER BY created_at DESC\n            LIMIT $3\n            OFFSET $4\n            ",
     "describe": {
@@ -1310,6 +1354,53 @@
         false,
         false,
         true,
+        false,
+        false,
+        false
+      ]
+    }
+  },
+  "7ca67d2b8025377280cdf61b92f486be43bd58bd193eae2c924ffa71a0ad4443": {
+    "query": "\n            INSERT INTO notification (label, topic, payload, namespace)\n            VALUES ($1, $2, $3, $4)\n            RETURNING\n                id,\n                label,\n                topic,\n                namespace,\n                payload\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "label",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "topic",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 3,
+          "name": "namespace",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 4,
+          "name": "payload",
+          "type_info": "Jsonb"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Text",
+          "Text",
+          "Jsonb",
+          "Text"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
         false,
         false,
         false
@@ -1968,6 +2059,50 @@
       ]
     }
   },
+  "aacdb9904eae193d08b1d52180c4b627a4f09546aa1d8a0b9c415d356c9cbd65": {
+    "query": "\n            SELECT id, label, topic, namespace, payload\n            FROM notification\n            WHERE namespace = $1 AND created_at < NOW() - INTERVAL '5 seconds'\n            FOR UPDATE SKIP LOCKED\n            LIMIT 3\n            ",
+    "describe": {
+      "columns": [
+        {
+          "ordinal": 0,
+          "name": "id",
+          "type_info": "Uuid"
+        },
+        {
+          "ordinal": 1,
+          "name": "label",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 2,
+          "name": "topic",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 3,
+          "name": "namespace",
+          "type_info": "Text"
+        },
+        {
+          "ordinal": 4,
+          "name": "payload",
+          "type_info": "Jsonb"
+        }
+      ],
+      "parameters": {
+        "Left": [
+          "Text"
+        ]
+      },
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ]
+    }
+  },
   "ac9057b29aa15bfce1867dca3324e3c3b27a6bb4184588bc6cca99ccc9e6cfca": {
     "query": "\n                SELECT\n                    c.id                 AS change_id,\n                    c.edition_id         AS change_edition_id,\n                    c.kind               AS \"change_kind!: ChangeType\",\n                    c.event_id           AS change_event_id,\n                    c.event_kind         AS change_event_kind,\n                    c.event_set          AS change_event_set,\n                    c.event_label        AS change_event_label,\n                    c.event_data         AS change_event_data,\n                    c.event_occurred_at  AS change_event_occurred_at,\n                    c.event_created_by   AS \"change_event_created_by?: AgentId\",\n                    c.created_at         AS change_created_at,\n                    r.id                 AS room_id,\n                    r.audience           AS room_audience,\n                    r.source_room_id     AS room_source_room_id,\n                    r.time               AS \"room_time!: RoomTime\",\n                    r.tags               AS room_tags,\n                    r.created_at         AS room_created_at,\n                    r.preserve_history   AS room_preserve_history,\n                    r.classroom_id       AS room_classroom_id\n                FROM change AS c\n                INNER JOIN edition AS e\n                ON e.id = c.edition_id\n                INNER JOIN room AS r\n                ON r.id = e.source_room_id\n                WHERE c.id = $1\n                ",
     "describe": {
@@ -2209,6 +2344,18 @@
           "Int8Array",
           "Uuid",
           "Numeric",
+          "Uuid"
+        ]
+      },
+      "nullable": []
+    }
+  },
+  "c906dffa50fae1054a72bf099b8bb026f3a18a99999e06557c3a0187e30615f3": {
+    "query": "\n            DELETE FROM notification WHERE id = $1\n            ",
+    "describe": {
+      "columns": [],
+      "parameters": {
+        "Left": [
           "Uuid"
         ]
       },

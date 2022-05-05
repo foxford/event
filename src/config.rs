@@ -31,6 +31,7 @@ pub struct Config {
     pub vacuum: VacuumConfig,
     #[serde(default)]
     pub http_broker_client: Option<HttpBrokerClientConfig>,
+    pub nats: NatsConfig,
 }
 
 impl Config {
@@ -98,4 +99,10 @@ pub struct HttpBrokerClientConfig {
     pub host: String,
     #[serde(default, with = "humantime_serde")]
     pub timeout: Option<StdDuration>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct NatsConfig {
+    pub url: Option<String>,
+    pub namespace: String,
 }

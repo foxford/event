@@ -8,6 +8,7 @@ use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 
 use crate::app::broker_client::{BrokerClient, MockBrokerClient};
+use crate::app::notification_puller::PullerHandle;
 use crate::config::Config;
 use crate::{
     app::context::{Context, GlobalContext, MessageContext},
@@ -39,6 +40,9 @@ fn build_config() -> Config {
         "mqtt": {
             "uri": "mqtt://0.0.0.0:1883",
             "clean_session": false,
+        },
+        "nats": {
+            "namespace": "unittest"
         }
     });
 
@@ -141,6 +145,10 @@ impl GlobalContext for TestContext {
 
     fn broker_client(&self) -> &dyn BrokerClient {
         self.broker_client.as_ref()
+    }
+
+    fn puller_handle(&self) -> Option<&PullerHandle> {
+        None
     }
 }
 
