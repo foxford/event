@@ -1,14 +1,12 @@
-use anyhow::Context;
-use sqlx::postgres::PgPool as Db;
-use sqlx::Acquire;
+use super::nats_client::NatsClient;
+use anyhow::{Context, Result};
+use sqlx::{postgres::PgPool as Db, Acquire};
 use tokio::{
     sync::mpsc,
     time::{Duration as TokioDuration, MissedTickBehavior},
 };
 use tracing::{error, warn};
 use uuid::Uuid;
-
-use super::nats_client::NatsClient;
 
 const DELAYED_PULL_PERIOD: TokioDuration = TokioDuration::from_secs(3);
 
@@ -107,19 +105,19 @@ async fn pull_loop(
             },
             _ = interval.tick() => {
                 if let Err(e) = process_delayed_notifications(&db, &nats_client, &namespace).await {
-                    error!(error = ?e, "Failed to proccess delayed notifications");
+                    error!(error = ?e, "Failed to process delayed notifications");
                 }
             }
             Some(id) = rx.recv() => {
                 if let Err(e) = process_id(&db, &nats_client, id).await {
-                    error!(id = %id, error = ?e, "Failed to proccess nats notification");
+                    error!(id = %id, error = ?e, "Failed to process nats notification");
                 }
             }
         }
     }
 }
 
-async fn process_id(db: &Db, nats_client: &NatsClient, id: Uuid) -> anyhow::Result<()> {
+async fn process_id(db: &Db, nats_client: &NatsClient, id: Uuid) -> Result<()> {
     let mut conn = db
         .acquire()
         .await
@@ -159,7 +157,7 @@ async fn process_delayed_notifications(
     db: &Db,
     nats_client: &NatsClient,
     namespace: &str,
-) -> anyhow::Result<()> {
+) -> Result<()> {
     let mut conn = db
         .acquire()
         .await

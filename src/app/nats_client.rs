@@ -1,12 +1,10 @@
-use std::thread;
-
-use anyhow::Context;
+use crate::db::notification::Object as Notification;
+use anyhow::{Context, Result};
 use crossbeam_channel::{unbounded, Receiver, Sender};
 use nats::{jetstream::JetStream, Message};
+use std::thread;
 use tokio::sync::oneshot;
 use tracing::{error, info, warn};
-
-use crate::db::notification::Object as Notification;
 
 #[derive(Debug)]
 enum Cmd {
@@ -52,7 +50,7 @@ pub struct NatsClient {
 }
 
 impl NatsClient {
-    pub fn new(nats_url: &str) -> anyhow::Result<Self> {
+    pub fn new(nats_url: &str) -> Result<Self> {
         let connection = nats::Options::with_credentials("nats.creds")
             .error_callback(|e| {
                 error!(error = ?e, "Nats server error");
@@ -67,7 +65,7 @@ impl NatsClient {
         Ok(Self { tx, join_handle })
     }
 
-    pub async fn publish(&self, msg: Notification) -> Result<(), anyhow::Error> {
+    pub async fn publish(&self, msg: Notification) -> Result<()> {
         let (resp_chan, resp_rx) = oneshot::channel();
         self.tx
             .try_send(Cmd::Publish { msg, resp_chan })
