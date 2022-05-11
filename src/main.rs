@@ -14,6 +14,9 @@ const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    #[cfg(feature = "dotenv")]
+    dotenv::dotenv()?;
+
     tracing_log::LogTracer::init()?;
 
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
