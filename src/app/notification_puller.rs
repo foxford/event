@@ -177,10 +177,18 @@ async fn process_delayed_notifications(
     for notification in notifications {
         let id = notification.id();
 
-        if nats_client.publish(notification).await.is_err() {
-            // even if we erred we could've sent some notifications to nats before
-            // and should commit their deletions to db
-            break;
+        if let Err(e) = nats_client.publish(notification).await {
+            if let Ok(err) = e.downcast::<std::io::Error>() {
+                // Even if we erred we could have sent some notifications to nats before
+                // and should commit their deletions to db
+                // Exception: no responders - we should delete such notifications
+                // TODO: Maybe add a counter of attempts to the notification table
+                // and delete them if attempts > 10 for example?
+                if err.kind() != std::io::ErrorKind::NotFound || err.to_string() != "no responders"
+                {
+                    break;
+                }
+            }
         }
 
         crate::db::notification::DeleteQuery::new(id)

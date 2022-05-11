@@ -53,7 +53,11 @@ pub struct NatsClient {
 
 impl NatsClient {
     pub fn new(nats_url: &str) -> anyhow::Result<Self> {
-        let connection = nats::Options::with_credentials("nats.creds").connect(nats_url)?;
+        let connection = nats::Options::with_credentials("nats.creds")
+            .error_callback(|e| {
+                error!(error = ?e, "Nats server error");
+            })
+            .connect(nats_url)?;
 
         let jetstream = nats::jetstream::new(connection);
 
