@@ -2,9 +2,16 @@ id = "event.dev.svc.example.org"
 agent_label = "alpha"
 broker_id = "mqtt-gateway.dev.svc.example.org"
 
+http_addr = "0.0.0.0:8080"
+
 [id_token]
 algorithm = "ES256"
 key = "data/keys/svc.private_key.p8.der.sample"
+
+[authn."svc.example.org"]
+audience = ["svc.example.org"]
+algorithm = "ES256"
+key = "data/keys/svc.public_key.p8.der.sample"
 
 [authz."svc.example.org"]
 type = "local"
@@ -31,3 +38,7 @@ id = "kruonis.dev.svc.example.org"
 max_history_size = 10
 max_history_lifetime = 86400
 max_deleted_lifetime = 86400
+
+[nats]
+namespace = "ns01"
+url = "nats://0.0.0.0:4222"
