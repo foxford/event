@@ -57,6 +57,9 @@ env:
   DATABASE_POOL_TIMEOUT: 5
   DATABASE_POOL_MAX_LIFETIME: 43200
 
+event:
+  data_max_size: 102400 # 100KB
+
 service:
   type: ClusterIP
   ports:

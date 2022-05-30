@@ -32,6 +32,7 @@ pub struct Config {
     #[serde(default)]
     pub http_broker_client: Option<HttpBrokerClientConfig>,
     pub nats: NatsConfig,
+    pub event_data_max_size: usize,
 }
 
 impl Config {

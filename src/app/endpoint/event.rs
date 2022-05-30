@@ -194,6 +194,11 @@ impl RequestHandler for CreateHandler {
             ..
         } = payload;
 
+        if data.to_string().len() >= context.config().event_data_max_size {
+            return Err(anyhow!("Event data size exceeded"))
+                .error(AppErrorKind::EventDataSizeExceeded);
+        }
+
         let mut conn = context.get_conn().await?;
 
         let mut txn = conn
@@ -577,6 +582,57 @@ mod tests {
 
         assert_eq!(notifications.len(), 1);
         assert_eq!(notifications[0].namespace(), "unittest");
+    }
+
+    #[tokio::test]
+    async fn exceed_event_data_max_size() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let room = {
+            // Create room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room_with_classroom_id(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
+
+        // Allow agent to create events of type `message` in the room.
+        let mut authz = TestAuthz::new();
+        let cid = room.classroom_id().unwrap().to_string();
+        let account_id = agent.account_id().to_string();
+
+        let object = vec![
+            "classrooms",
+            &cid,
+            "pinned",
+            "message",
+            "authors",
+            &account_id,
+        ];
+
+        authz.allow(agent.account_id(), object, "create");
+
+        // Make event.create request.
+        let mut context = TestContext::new_with_data_size(db, authz, 10);
+
+        let payload = CreateRequest {
+            room_id: room.id(),
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: Some(String::from("pinned")),
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+                removed: false,
+            },
+        };
+
+        handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Event creation succeeded");
     }
 
     #[tokio::test]

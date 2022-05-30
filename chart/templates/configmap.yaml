@@ -14,6 +14,8 @@ data:
 
     http_addr = "0.0.0.0:{{ .Values.service.ports.http }}"
 
+    event_data_max_size = {{ .Values.event.data_max_size }}
+
     [mqtt]
     uri = "tcp://mqtt-gateway-loadbalancer-internal:51883"
     clean_session = false
