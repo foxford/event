@@ -4,7 +4,8 @@ broker_id = "mqtt-gateway.dev.svc.example.org"
 
 http_addr = "0.0.0.0:8080"
 
-event_data_max_size = 102400 # 100KB
+[constraint]
+payload_size = 102400 # 100KB
 
 [id_token]
 algorithm = "ES256"

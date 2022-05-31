@@ -194,9 +194,8 @@ impl RequestHandler for CreateHandler {
             ..
         } = payload;
 
-        if data.to_string().len() >= context.config().event_data_max_size {
-            return Err(anyhow!("Event data size exceeded"))
-                .error(AppErrorKind::EventDataSizeExceeded);
+        if data.to_string().len() >= context.config().constraint.payload_size {
+            return Err(anyhow!("Payload size exceeded")).error(AppErrorKind::PayloadSizeExceeded);
         }
 
         let mut conn = context.get_conn().await?;
@@ -585,7 +584,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn exceed_event_data_max_size() {
+    async fn exceed_payload_size() {
         let db = TestDb::new().await;
         let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
 

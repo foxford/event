@@ -22,7 +22,7 @@ use super::SVC_AUDIENCE;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-fn build_config(data_size: Option<usize>) -> Config {
+fn build_config(payload_size: Option<usize>) -> Config {
     let id = format!("event.{}", SVC_AUDIENCE);
     let broker_id = format!("mqtt-gateway.{}", SVC_AUDIENCE);
 
@@ -35,7 +35,9 @@ fn build_config(data_size: Option<usize>) -> Config {
             "key": "data/keys/svc.private_key.p8.der.sample",
         },
         "http_addr": "0.0.0.0:8080",
-        "event_data_max_size": data_size.unwrap_or(102400),
+        "constraint": {
+            "payload_size": payload_size.unwrap_or(102400),
+        },
         "authn": {},
         "authz": {},
         "mqtt": {
@@ -81,8 +83,8 @@ impl TestContext {
         }
     }
 
-    pub(crate) fn new_with_data_size(db: TestDb, authz: TestAuthz, data_size: usize) -> Self {
-        let config = build_config(Some(data_size));
+    pub(crate) fn new_with_data_size(db: TestDb, authz: TestAuthz, payload_size: usize) -> Self {
+        let config = build_config(Some(payload_size));
         let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 
         let metrics = Arc::new(Metrics::new(&Registry::new()).unwrap());

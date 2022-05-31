@@ -43,7 +43,7 @@ pub enum ErrorKind {
     TransientEventCreationFailed,
     UnknownMethod,
     WhiteboardAccessUpdateNotChecked,
-    EventDataSizeExceeded,
+    PayloadSizeExceeded,
 }
 
 impl ErrorKind {
@@ -235,11 +235,11 @@ impl From<ErrorKind> for ErrorKindProperties {
                 title: "Whiteboard access change in room with universal whiteboard access (which doesnt make sense)",
                 is_notify_sentry: false,
             },
-            ErrorKind::EventDataSizeExceeded => ErrorKindProperties {
+            ErrorKind::PayloadSizeExceeded => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
-                kind: "event_data_size_exceeded",
-                title: "Event data size exceeded",
-                is_notify_sentry: true,
+                kind: "payload_size_exceeded",
+                title: "Payload size exceeded",
+                is_notify_sentry: false,
             },
         }
     }
