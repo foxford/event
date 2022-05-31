@@ -1,6 +1,8 @@
+use std::sync::Arc;
+
 use axum::response::IntoResponse;
 use chrono::{DateTime, Duration, Utc};
-use futures::{future, stream, StreamExt};
+use futures::{future, stream, Stream, StreamExt};
 use http::StatusCode;
 use serde::Serialize;
 use serde_json::Value;
@@ -14,26 +16,80 @@ use svc_agent::{
 use tokio::task::JoinHandle;
 
 use crate::app::endpoint::helpers;
-use crate::app::message_handler::{Message, MessageStream, MessageStreamTrait};
+use crate::app::message_handler::{Message, MessageStream};
 
-use super::error;
+use super::{error, notification_puller::NatsIds, topic::Topic};
 
-#[derive(Default)]
-pub struct Notifications(Vec<Message>);
+#[derive(Clone)]
+pub struct Notification {
+    inner: Arc<NotificationInner>,
+}
 
-impl Notifications {
-    fn into_stream(self) -> impl MessageStreamTrait {
-        stream::iter(self.0)
+impl Notification {
+    pub fn new(
+        label: &'static str,
+        topic: Topic,
+        payload: impl Serialize + Send + Sync + 'static,
+        start_timestamp: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(NotificationInner {
+                label,
+                topic,
+                start_timestamp,
+                payload: serde_json::to_value(&payload).unwrap(),
+            }),
+        }
     }
 
-    fn push(&mut self, msg: Message) {
+    pub fn mqtt_path(&self) -> String {
+        self.inner.topic.to_string()
+    }
+
+    pub fn payload(&self) -> &Value {
+        &self.inner.payload
+    }
+
+    pub fn label(&self) -> &'static str {
+        self.inner.label
+    }
+}
+
+struct NotificationInner {
+    start_timestamp: DateTime<Utc>,
+    label: &'static str,
+    topic: Topic,
+    payload: Value,
+}
+
+impl From<Notification> for Message {
+    fn from(n: Notification) -> Self {
+        let timing = ShortTermTimingProperties::until_now(n.inner.start_timestamp);
+        let props = OutgoingEventProperties::new(n.inner.label, timing);
+        Box::new(OutgoingEvent::broadcast(
+            n.inner.payload.clone(),
+            props,
+            &n.mqtt_path(),
+        )) as Self
+    }
+}
+
+#[derive(Default)]
+pub struct Notifications(Vec<Notification>);
+
+impl Notifications {
+    fn into_stream(self) -> impl Stream<Item = Notification> {
+        stream::iter(self.into_iter())
+    }
+
+    fn push(&mut self, msg: Notification) {
         self.0.push(msg);
     }
 }
 
 impl IntoIterator for Notifications {
-    type Item = <Vec<Message> as IntoIterator>::Item;
-    type IntoIter = <Vec<Message> as IntoIterator>::IntoIter;
+    type Item = <Vec<Notification> as IntoIterator>::Item;
+    type IntoIter = <Vec<Notification> as IntoIterator>::IntoIter;
 
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -41,23 +97,31 @@ impl IntoIterator for Notifications {
 }
 
 #[derive(Default)]
-pub struct AsyncTasks(Vec<JoinHandle<Message>>);
+pub struct AsyncTasks(Vec<JoinHandle<Notification>>);
 
 impl AsyncTasks {
-    fn into_stream(self) -> impl MessageStreamTrait {
+    fn into_stream(self) -> impl Stream<Item = Notification> {
         stream::iter(self.0)
             .flat_map(stream::once)
-            .filter(|jh_output| {
-                if let Err(e) = jh_output {
+            .filter_map(|jh_output| {
+                if let Err(e) = &jh_output {
                     error!(err = ?e, "Failed to await async task, join handle error");
                 }
-                future::ready(jh_output.is_ok())
+                future::ready(jh_output.ok())
             })
-            .map(|jh_output| jh_output.unwrap())
     }
 
-    fn push(&mut self, msg: JoinHandle<Message>) {
+    fn push(&mut self, msg: JoinHandle<Notification>) {
         self.0.push(msg);
+    }
+}
+
+impl IntoIterator for AsyncTasks {
+    type Item = <Vec<JoinHandle<Notification>> as IntoIterator>::Item;
+    type IntoIter = <Vec<JoinHandle<Notification>> as IntoIterator>::IntoIter;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
     }
 }
 
@@ -68,6 +132,7 @@ pub struct Response {
     authz_time: Option<Duration>,
     payload: Value,
     async_tasks: AsyncTasks,
+    nats_ids: NatsIds,
 }
 
 impl Response {
@@ -84,6 +149,7 @@ impl Response {
             authz_time: maybe_authz_time,
             payload: serde_json::to_value(&payload).unwrap(),
             async_tasks: Default::default(),
+            nats_ids: NatsIds::new(),
         }
     }
 
@@ -91,8 +157,11 @@ impl Response {
         self,
         reqp: &IncomingRequestProperties,
     ) -> Result<MessageStream, error::Error> {
-        let mut notifications = self.notifications;
-        if self.status != StatusCode::NO_CONTENT {
+        let notifications_stream = self.notifications.into_stream().map(move |n| n.into());
+
+        let async_tasks_stream = self.async_tasks.into_stream().map(move |n| n.into());
+
+        let stream = if self.status != StatusCode::NO_CONTENT {
             let response = helpers::build_response(
                 self.status,
                 self.payload,
@@ -100,32 +169,38 @@ impl Response {
                 self.start_timestamp,
                 self.authz_time,
             );
-            notifications.push(response);
-        }
 
-        let stream = notifications
-            .into_stream()
-            .chain(self.async_tasks.into_stream());
+            let stream = stream::once(futures::future::ready(response))
+                .chain(notifications_stream)
+                .chain(async_tasks_stream);
 
-        Ok(Box::new(stream))
+            Box::new(stream) as MessageStream
+        } else {
+            let stream = notifications_stream.chain(async_tasks_stream);
+
+            Box::new(stream) as MessageStream
+        };
+
+        Ok(stream)
     }
 
     pub fn add_notification(
         &mut self,
         label: &'static str,
-        path: &str,
+        topic: Topic,
         payload: impl Serialize + Send + Sync + 'static,
         start_timestamp: DateTime<Utc>,
     ) {
-        let timing = ShortTermTimingProperties::until_now(start_timestamp);
-        let props = OutgoingEventProperties::new(label, timing);
         self.notifications
-            .0
-            .push(Box::new(OutgoingEvent::broadcast(payload, props, path)))
+            .push(Notification::new(label, topic, payload, start_timestamp));
     }
 
-    pub fn add_async_task(&mut self, task: JoinHandle<Message>) {
+    pub fn add_async_task(&mut self, task: JoinHandle<Notification>) {
         self.async_tasks.push(task);
+    }
+
+    pub fn set_nats_ids(&mut self, ids: NatsIds) {
+        self.nats_ids = ids;
     }
 }
 
@@ -135,14 +210,13 @@ impl IntoResponse for Response {
     type BodyError = <Self::Body as axum::body::HttpBody>::Error;
 
     fn into_response(self) -> hyper::Response<Self::Body> {
-        let tasks_stream = Box::new(self.async_tasks.into_stream()) as MessageStream;
-
         http::Response::builder()
             .status(self.status)
             .extension(self.notifications)
-            .extension(tasks_stream)
+            .extension(self.async_tasks)
+            .extension(self.nats_ids)
             .body(axum::body::Body::from(
-                serde_json::to_string(&self.payload).expect("todo"),
+                serde_json::to_string(&self.payload).unwrap(),
             ))
             .expect("Must be valid response")
     }

@@ -9,10 +9,14 @@ use tracing::warn;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::EnvFilter;
 
+const APP: &str = env!("CARGO_PKG_NAME");
 const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    #[cfg(feature = "dotenv")]
+    dotenv::dotenv()?;
+
     tracing_log::LogTracer::init()?;
 
     let (non_blocking, _guard) = tracing_appender::non_blocking(std::io::stdout());
@@ -25,7 +29,7 @@ async fn main() -> Result<()> {
         .with(subscriber);
 
     tracing::subscriber::set_global_default(subscriber)?;
-    warn!(version = %APP_VERSION, "Launching event");
+    warn!(app = %APP, version = %APP_VERSION, "Launching");
 
     let (db, maybe_ro_db) = {
         let url = var("DATABASE_URL").expect("DATABASE_URL must be specified");

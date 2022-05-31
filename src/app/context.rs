@@ -16,6 +16,7 @@ use crate::{
 use crate::{app::s3_client::S3Client, authz::Authz};
 
 use super::broker_client::BrokerClient;
+use super::notification_puller::PullerHandle;
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -33,6 +34,7 @@ pub trait GlobalContext: Sync {
     fn metrics(&self) -> Arc<Metrics>;
     fn s3_client(&self) -> Option<S3Client>;
     fn broker_client(&self) -> &dyn BrokerClient;
+    fn puller_handle(&self) -> Option<&PullerHandle>;
 
     async fn get_conn(&self) -> Result<PoolConnection<Postgres>, AppError> {
         self.db()
@@ -59,6 +61,10 @@ pub trait MessageContext: Send {
 
 #[derive(Clone)]
 pub struct AppContext {
+    inner: Arc<AppContextInner>,
+}
+
+struct AppContextInner {
     config: Arc<Config>,
     authz: Authz,
     db: Db,
@@ -69,6 +75,7 @@ pub struct AppContext {
     metrics: Arc<Metrics>,
     s3_client: Option<S3Client>,
     broker_client: Arc<dyn BrokerClient>,
+    puller_handle: Option<PullerHandle>,
 }
 
 impl AppContext {
@@ -79,43 +86,47 @@ impl AppContext {
 
 impl GlobalContext for AppContext {
     fn authz(&self) -> &Authz {
-        &self.authz
+        &self.inner.authz
     }
 
     fn config(&self) -> &Config {
-        &self.config
+        &self.inner.config
     }
 
     fn db(&self) -> &Db {
-        &self.db
+        &self.inner.db
     }
 
     fn ro_db(&self) -> &Db {
-        self.ro_db.as_ref().unwrap_or(&self.db)
+        self.inner.ro_db.as_ref().unwrap_or(&self.inner.db)
     }
 
     fn agent_id(&self) -> &AgentId {
-        &self.agent_id
+        &self.inner.agent_id
     }
 
     fn queue_counter(&self) -> &Option<QueueCounterHandle> {
-        &self.queue_counter
+        &self.inner.queue_counter
     }
 
     fn redis_pool(&self) -> &Option<RedisConnectionPool> {
-        &self.redis_pool
+        &self.inner.redis_pool
     }
 
     fn metrics(&self) -> Arc<Metrics> {
-        self.metrics.clone()
+        self.inner.metrics.clone()
     }
 
     fn s3_client(&self) -> Option<S3Client> {
-        self.s3_client.clone()
+        self.inner.s3_client.clone()
     }
 
     fn broker_client(&self) -> &dyn BrokerClient {
-        self.broker_client.as_ref()
+        self.inner.broker_client.as_ref()
+    }
+
+    fn puller_handle(&self) -> Option<&PullerHandle> {
+        self.inner.puller_handle.as_ref()
     }
 }
 
@@ -175,6 +186,10 @@ impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
     fn broker_client(&self) -> &dyn BrokerClient {
         self.global_context.broker_client()
     }
+
+    fn puller_handle(&self) -> Option<&PullerHandle> {
+        self.global_context.puller_handle()
+    }
 }
 
 impl<'a, C: GlobalContext> MessageContext for AppMessageContext<'a, C> {
@@ -196,6 +211,7 @@ pub(crate) struct AppContextBuilder {
     agent_id: AgentId,
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
+    puller_handle: Option<PullerHandle>,
 }
 
 impl AppContextBuilder {
@@ -216,6 +232,7 @@ impl AppContextBuilder {
             agent_id,
             queue_counter: None,
             redis_pool: None,
+            puller_handle: None,
         }
     }
 
@@ -240,8 +257,15 @@ impl AppContextBuilder {
         }
     }
 
+    pub(crate) fn puller_handle(self, puller_handle: PullerHandle) -> Self {
+        Self {
+            puller_handle: Some(puller_handle),
+            ..self
+        }
+    }
+
     pub(crate) fn build(self, metrics: Arc<Metrics>) -> AppContext {
-        AppContext {
+        let inner = AppContextInner {
             config: Arc::new(self.config),
             authz: self.authz,
             db: self.db,
@@ -252,6 +276,11 @@ impl AppContextBuilder {
             redis_pool: self.redis_pool,
             metrics,
             s3_client: S3Client::new(),
+            puller_handle: self.puller_handle,
+        };
+
+        AppContext {
+            inner: Arc::new(inner),
         }
     }
 }

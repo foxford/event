@@ -4,19 +4,16 @@ use axum::extract::{Extension, Json, Path, Query};
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
-use svc_agent::{
-    mqtt::{OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties},
-    Addressable,
-};
+use svc_agent::{mqtt::ResponseStatus, Addressable};
 use svc_authn::Authenticable;
 use svc_error::Error as SvcError;
 use svc_utils::extractors::AuthnExtractor;
 use tracing::{error, field::display, instrument, Span};
 use uuid::Uuid;
 
-use crate::app::endpoint::prelude::*;
+use crate::app::context::Context;
 use crate::app::operations::commit_edition;
-use crate::app::{context::Context, message_handler::Message};
+use crate::app::{endpoint::prelude::*, service_utils::Notification};
 use crate::db;
 use crate::db::adjustment::Segments;
 
@@ -30,7 +27,7 @@ pub(crate) struct CreateRequest {
 }
 
 pub async fn create(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {
@@ -94,18 +91,11 @@ impl RequestHandler for CreateHandler {
 
         Span::current().record("edition_id", &display(edition.id()));
 
-        let mut response = AppResponse::new(
+        let response = AppResponse::new(
             ResponseStatus::CREATED,
-            edition.clone(),
-            context.start_timestamp(),
-            Some(authz_time),
-        );
-
-        response.add_notification(
-            "edition.create",
-            &format!("rooms/{}/editions", payload.room_id),
             edition,
             context.start_timestamp(),
+            Some(authz_time),
         );
 
         Ok(response)
@@ -130,7 +120,7 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     Query(payload): Query<ListPayload>,
@@ -211,7 +201,7 @@ pub(crate) struct DeleteRequest {
 }
 
 pub async fn delete(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(id): Path<Uuid>,
 ) -> RequestResult {
@@ -314,7 +304,7 @@ pub(crate) struct CommitRequest {
 }
 
 pub async fn commit(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(id): Path<Uuid>,
     Json(payload): Json<CommitPayload>,
@@ -411,12 +401,12 @@ impl RequestHandler for CommitHandler {
                 result,
             };
 
-            let timing = ShortTermTimingProperties::new(Utc::now());
-            let props = OutgoingEventProperties::new("edition.commit", timing);
-            let path = format!("audiences/{}/events", room.audience());
-            let event = OutgoingEvent::broadcast(notification, props, &path);
-
-            Box::new(event) as Message
+            Notification::new(
+                "edition.commit",
+                room.audience_topic(),
+                notification,
+                Utc::now(),
+            )
         });
 
         // Respond with 202.

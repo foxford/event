@@ -99,3 +99,7 @@ data:
     {{- end }}
     {{- println "" }}
     {{- end }}
+
+    [nats]
+    namespace = {{ .Release.Namespace | quote }}
+    url = "nats://nats-back-front-internal-lb:4222"

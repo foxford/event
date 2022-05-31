@@ -2,17 +2,15 @@ use async_trait::async_trait;
 use chrono::Utc;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
-use svc_agent::mqtt::{
-    OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties,
-};
+use svc_agent::mqtt::ResponseStatus;
 use svc_error::Error as SvcError;
 use tracing::error;
 use uuid::Uuid;
 
 use super::*;
 use crate::app::context::Context;
-use crate::app::message_handler::Message;
 use crate::app::operations::dump_events_to_s3;
+use crate::app::service_utils::Notification;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct EventsDumpRequest {
@@ -44,7 +42,7 @@ impl EventsDumpResult {
 }
 
 pub async fn dump_events(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {
@@ -123,12 +121,12 @@ impl RequestHandler for EventsDumpHandler {
                 result,
             };
 
-            let timing = ShortTermTimingProperties::new(Utc::now());
-            let props = OutgoingEventProperties::new("room.dump_events", timing);
-            let path = format!("audiences/{}/events", room.audience());
-            let event = OutgoingEvent::broadcast(notification, props, &path);
-
-            Box::new(event) as Message
+            Notification::new(
+                "room.dump_events",
+                room.audience_topic(),
+                notification,
+                Utc::now(),
+            )
         });
 
         let mut response = AppResponse::new(

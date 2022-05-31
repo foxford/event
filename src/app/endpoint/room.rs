@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::ops::Bound;
-use std::sync::Arc;
 
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
@@ -12,25 +11,19 @@ use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
 use sqlx::Acquire;
-use svc_agent::{
-    mqtt::{OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties},
-    AccountId, Addressable, AgentId,
-};
+use svc_agent::{mqtt::ResponseStatus, AccountId, Addressable, AgentId};
 use svc_error::Error as SvcError;
 use svc_utils::extractors::AuthnExtractor;
 use tracing::{error, instrument};
 use uuid::Uuid;
 
-use crate::app::broker_client::CreateDeleteResponse;
-use crate::app::endpoint::prelude::*;
-use crate::app::{
-    context::{AppContext, Context},
-    message_handler::Message,
-};
+use crate::app::context::{AppContext, Context};
+use crate::app::{broker_client::CreateDeleteResponse, notification_puller::NatsIds};
+use crate::app::{endpoint::prelude::*, service_utils::Notification};
 use crate::db::adjustment::Segments;
-use crate::db::agent;
 use crate::db::room::{InsertQuery, UpdateQuery};
 use crate::db::room_time::{BoundedDateTimeTuple, RoomTime};
+use crate::db::{self, agent};
 use crate::{
     app::operations::{adjust_room, AdjustOutput},
     db::event::{
@@ -51,7 +44,7 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Json(request): Json<CreateRequest>,
 ) -> RequestResult {
@@ -115,6 +108,8 @@ impl RequestHandler for CreateHandler {
             )
             .await?;
 
+        let mut nats_ids = NatsIds::with_capacity(1);
+
         // Insert room.
         let room = {
             let mut query = InsertQuery::new(&payload.audience, payload.time.into());
@@ -136,13 +131,37 @@ impl RequestHandler for CreateHandler {
             }
 
             let mut conn = context.get_conn().await?;
-
-            context
+            let mut txn = conn
+                .begin()
+                .await
+                .context("Failed to acquire transaction")
+                .error(AppErrorKind::DbQueryFailed)?;
+            let room = context
                 .metrics()
-                .measure_query(QueryKey::RoomInsertQuery, query.execute(&mut conn))
+                .measure_query(QueryKey::RoomInsertQuery, query.execute(&mut txn))
                 .await
                 .context("Failed to insert room")
-                .error(AppErrorKind::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            if let Some(q) = db::notification::InsertQuery::new(
+                "room.create",
+                room.audience_topic(),
+                &context.config().nats.namespace,
+                &room,
+            ) {
+                let n = q
+                    .execute(&mut txn)
+                    .await
+                    .error(AppErrorKind::DbQueryFailed)?;
+
+                nats_ids.push(n.id());
+            }
+
+            txn.commit()
+                .await
+                .context("Failed to commit transaction")
+                .error(AppErrorKind::DbQueryFailed)?;
+            room
         };
 
         helpers::add_room_logger_tags(&room);
@@ -157,10 +176,12 @@ impl RequestHandler for CreateHandler {
 
         response.add_notification(
             "room.create",
-            &format!("audiences/{}/events", payload.audience),
+            room.audience_topic(),
             room,
             context.start_timestamp(),
         );
+
+        response.set_nats_ids(nats_ids);
 
         Ok(response)
     }
@@ -174,7 +195,7 @@ pub(crate) struct ReadRequest {
 }
 
 pub async fn read(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {
@@ -249,7 +270,7 @@ pub(crate) struct UpdateRequest {
 }
 
 pub async fn update(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<UpdatePayload>,
@@ -320,6 +341,8 @@ impl RequestHandler for UpdateHandler {
 
         let room_was_open = !room.is_closed();
 
+        let mut nats_ids = NatsIds::with_capacity(2);
+
         // Update room.
         let room = {
             let query = UpdateQuery::new(room.id())
@@ -328,13 +351,72 @@ impl RequestHandler for UpdateHandler {
                 .classroom_id(payload.classroom_id);
 
             let mut conn = context.get_conn().await?;
+            let mut txn = conn
+                .begin()
+                .await
+                .context("Failed to acquire transaction")
+                .error(AppErrorKind::DbQueryFailed)?;
 
-            context
+            let room = context
                 .metrics()
-                .measure_query(QueryKey::RoomUpdateQuery, query.execute(&mut conn))
+                .measure_query(QueryKey::RoomUpdateQuery, query.execute(&mut txn))
                 .await
                 .context("Failed to update room")
-                .error(AppErrorKind::DbQueryFailed)?
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            if let Some(q) = db::notification::InsertQuery::new(
+                "room.update",
+                room.audience_topic(),
+                &context.config().nats.namespace,
+                &room,
+            ) {
+                let n = q
+                    .execute(&mut txn)
+                    .await
+                    .error(AppErrorKind::DbQueryFailed)?;
+
+                nats_ids.push(n.id());
+            }
+
+            let q = db::notification::InsertQuery::new(
+                "room.close",
+                room.audience_topic(),
+                &context.config().nats.namespace,
+                &room,
+            );
+
+            if room_was_open {
+                if let Some(time) = payload.time {
+                    if let Some(q) = q {
+                        match time.1 {
+                            Bound::Included(t) if Utc::now() > t => {
+                                let n = q
+                                    .execute(&mut txn)
+                                    .await
+                                    .error(AppErrorKind::DbQueryFailed)?;
+
+                                nats_ids.push(n.id());
+                            }
+                            Bound::Excluded(t) if Utc::now() >= t => {
+                                let n = q
+                                    .execute(&mut txn)
+                                    .await
+                                    .error(AppErrorKind::DbQueryFailed)?;
+
+                                nats_ids.push(n.id());
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            txn.commit()
+                .await
+                .context("Failed to commit transaction")
+                .error(AppErrorKind::DbQueryFailed)?;
+
+            room
         };
 
         // Respond and broadcast to the audience topic.
@@ -347,7 +429,7 @@ impl RequestHandler for UpdateHandler {
 
         response.add_notification(
             "room.update",
-            &format!("audiences/{}/events", room.audience()),
+            room.audience_topic(),
             room.clone(),
             context.start_timestamp(),
         );
@@ -355,7 +437,7 @@ impl RequestHandler for UpdateHandler {
         let append_closed_notification = || {
             response.add_notification(
                 "room.close",
-                &format!("rooms/{}/events", room.id()),
+                room.room_topic(),
                 room,
                 context.start_timestamp(),
             );
@@ -375,6 +457,8 @@ impl RequestHandler for UpdateHandler {
                 }
             }
         }
+
+        response.set_nats_ids(nats_ids);
 
         Ok(response)
     }
@@ -404,7 +488,7 @@ pub(crate) struct RoomEnterEvent {
 pub(crate) struct EnterHandler;
 
 pub async fn enter(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<EnterPayload>,
@@ -542,7 +626,7 @@ impl RequestHandler for EnterHandler {
 
         response.add_notification(
             "room.enter",
-            &format!("rooms/{}/events", room.id()),
+            room.room_topic(),
             RoomEnterEvent {
                 id: room.id(),
                 agent_id: reqp.as_agent_id().to_owned(),
@@ -571,7 +655,7 @@ pub struct LockedTypesRequest {
 }
 
 pub async fn locked_types(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<LockedTypesPayload>,
@@ -618,6 +702,8 @@ impl RequestHandler for LockedTypesHandler {
             )
             .await?;
 
+        let mut nats_ids = NatsIds::with_capacity(1);
+
         let room = {
             let locked_types = room
                 .locked_types()
@@ -655,6 +741,20 @@ impl RequestHandler for LockedTypesHandler {
                 .context("Failed to update room")
                 .error(AppErrorKind::DbQueryFailed)?;
 
+            if let Some(q) = db::notification::InsertQuery::new(
+                "room.update",
+                room.audience_topic(),
+                &context.config().nats.namespace,
+                &room,
+            ) {
+                let n = q
+                    .execute(&mut txn)
+                    .await
+                    .error(AppErrorKind::DbQueryFailed)?;
+
+                nats_ids.push(n.id());
+            }
+
             txn.commit()
                 .await
                 .context("Failed to commit transaction")
@@ -673,10 +773,12 @@ impl RequestHandler for LockedTypesHandler {
 
         response.add_notification(
             "room.update",
-            &format!("rooms/{}/events", room.id()),
+            room.room_topic(),
             room,
             context.start_timestamp(),
         );
+
+        response.set_nats_ids(nats_ids);
 
         Ok(response)
     }
@@ -697,7 +799,7 @@ pub struct WhiteboardAccessRequest {
 }
 
 pub async fn whiteboard_access(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<WhiteboardAccessPayload>,
@@ -751,6 +853,8 @@ impl RequestHandler for WhiteboardAccessHandler {
             )
             .await?;
 
+        let mut nats_ids = NatsIds::with_capacity(1);
+
         let room = {
             let whiteboard_access = room
                 .whiteboard_access()
@@ -789,6 +893,20 @@ impl RequestHandler for WhiteboardAccessHandler {
                 .context("Failed to update room")
                 .error(AppErrorKind::DbQueryFailed)?;
 
+            if let Some(q) = db::notification::InsertQuery::new(
+                "room.update",
+                room.audience_topic(),
+                &context.config().nats.namespace,
+                &room,
+            ) {
+                let n = q
+                    .execute(&mut txn)
+                    .await
+                    .error(AppErrorKind::DbQueryFailed)?;
+
+                nats_ids.push(n.id());
+            }
+
             txn.commit()
                 .await
                 .context("Failed to commit transaction")
@@ -807,10 +925,12 @@ impl RequestHandler for WhiteboardAccessHandler {
 
         response.add_notification(
             "room.update",
-            &format!("rooms/{}/events", room.id()),
+            room.room_topic(),
             room,
             context.start_timestamp(),
         );
+
+        response.set_nats_ids(nats_ids);
 
         Ok(response)
     }
@@ -835,7 +955,7 @@ pub struct AdjustRequest {
 }
 
 pub async fn adjust(
-    Extension(ctx): Extension<Arc<AppContext>>,
+    Extension(ctx): Extension<AppContext>,
     AuthnExtractor(agent_id): AuthnExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<AdjustPayload>,
@@ -928,12 +1048,12 @@ impl RequestHandler for AdjustHandler {
                 result,
             };
 
-            let timing = ShortTermTimingProperties::new(Utc::now());
-            let props = OutgoingEventProperties::new("room.adjust", timing);
-            let path = format!("audiences/{}/events", room.audience());
-            let event = OutgoingEvent::broadcast(notification, props, &path);
-
-            Box::new(event) as Message
+            Notification::new(
+                "room.adjust",
+                room.audience_topic(),
+                notification,
+                Utc::now(),
+            )
         });
 
         // Respond with 202.

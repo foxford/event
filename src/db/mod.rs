@@ -24,6 +24,7 @@ pub(crate) mod agent;
 pub(crate) mod change;
 pub(crate) mod edition;
 pub(crate) mod event;
+pub mod notification;
 pub(crate) mod room;
 pub(crate) mod room_ban;
 pub(crate) mod room_time;
