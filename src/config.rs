@@ -31,12 +31,18 @@ pub struct Config {
     pub vacuum: VacuumConfig,
     #[serde(default)]
     pub http_broker_client: Option<HttpBrokerClientConfig>,
+    pub constraint: Constraint,
 }
 
 impl Config {
     pub fn ban_duration(&self) -> u64 {
         self.ban_duration_s.unwrap_or(DEFAULT_BAN_DUR_SECS)
     }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct Constraint {
+    pub payload_size: usize,
 }
 
 #[derive(Clone, Debug, Deserialize)]

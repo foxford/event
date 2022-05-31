@@ -194,6 +194,11 @@ impl RequestHandler for CreateHandler {
             removed,
             ..
         } = payload;
+
+        if data.to_string().len() >= context.config().constraint.payload_size {
+            return Err(anyhow!("Payload size exceeded")).error(AppErrorKind::PayloadSizeExceeded);
+        }
+
         let event = if payload.is_persistent {
             // Insert event into the DB.
             let mut query = db::event::InsertQuery::new(
@@ -518,6 +523,57 @@ mod tests {
         assert_eq!(event.label(), Some("message-1"));
         assert_eq!(event.attribute(), Some("pinned"));
         assert_eq!(event.data(), &json!({ "text": "hello" }));
+    }
+
+    #[tokio::test]
+    async fn exceed_payload_size() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let room = {
+            // Create room and put the agent online.
+            let mut conn = db.get_conn().await;
+            let room = shared_helpers::insert_room(&mut conn).await;
+            shared_helpers::insert_agent(&mut conn, agent.agent_id(), room.id()).await;
+            room
+        };
+
+        // Allow agent to create events of type `message` in the room.
+        let mut authz = TestAuthz::new();
+        let room_id = room.id().to_string();
+        let account_id = agent.account_id().to_string();
+
+        let object = vec![
+            "rooms",
+            &room_id,
+            "pinned",
+            "message",
+            "authors",
+            &account_id,
+        ];
+
+        authz.allow(agent.account_id(), object, "create");
+
+        // Make event.create request.
+        let mut context = TestContext::new_with_payload_size(db, authz, 10);
+
+        let payload = CreateRequest {
+            room_id: room.id(),
+            payload: CreatePayload {
+                kind: String::from("message"),
+                set: Some(String::from("messages")),
+                label: Some(String::from("message-1")),
+                attribute: Some(String::from("pinned")),
+                data: json!({ "text": "hello" }),
+                is_claim: false,
+                is_persistent: true,
+                removed: false,
+            },
+        };
+
+        handle_request::<CreateHandler>(&mut context, &agent, payload)
+            .await
+            .expect_err("Event creation succeeded");
     }
 
     #[tokio::test]

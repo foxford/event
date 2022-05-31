@@ -1,8 +1,8 @@
 [package]
 authors = ["Timofey Martynov <t.martinov@netology-group.ru>"]
-edition = "2018"
+edition = "2021"
 name = "event"
-version = "0.2.52"
+version = "0.2.53"
 
 [dependencies]
 anyhow = "1"

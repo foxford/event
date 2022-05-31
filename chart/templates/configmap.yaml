@@ -14,6 +14,9 @@ data:
 
     http_addr = "0.0.0.0:{{ .Values.service.ports.http }}"
 
+    [constraint]
+    payload_size = {{ .Values.constraint.payload_size }}
+
     [mqtt]
     uri = "tcp://mqtt-gateway-loadbalancer-internal:51883"
     clean_session = false
