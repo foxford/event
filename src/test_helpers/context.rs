@@ -21,7 +21,7 @@ use super::SVC_AUDIENCE;
 
 ///////////////////////////////////////////////////////////////////////////////
 
-fn build_config() -> Config {
+fn build_config(payload_size: Option<usize>) -> Config {
     let id = format!("event.{}", SVC_AUDIENCE);
     let broker_id = format!("mqtt-gateway.{}", SVC_AUDIENCE);
 
@@ -34,6 +34,9 @@ fn build_config() -> Config {
             "key": "data/keys/svc.private_key.p8.der.sample",
         },
         "http_addr": "0.0.0.0:8080",
+        "constraint": {
+            "payload_size": payload_size.unwrap_or(102400),
+        },
         "authn": {},
         "authz": {},
         "mqtt": {
@@ -60,7 +63,24 @@ pub(crate) struct TestContext {
 
 impl TestContext {
     pub(crate) fn new(db: TestDb, authz: TestAuthz) -> Self {
-        let config = build_config();
+        let config = build_config(None);
+        let agent_id = AgentId::new(&config.agent_label, config.id.clone());
+
+        let metrics = Arc::new(Metrics::new(&Registry::new()).unwrap());
+        Self {
+            config,
+            authz: Authz::new(authz.into(), metrics.clone()),
+            db,
+            agent_id,
+            metrics,
+            start_timestamp: Utc::now(),
+            s3_client: None,
+            broker_client: Arc::new(MockBrokerClient::new()),
+        }
+    }
+
+    pub(crate) fn new_with_payload_size(db: TestDb, authz: TestAuthz, payload_size: usize) -> Self {
+        let config = build_config(Some(payload_size));
         let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 
         let metrics = Arc::new(Metrics::new(&Registry::new()).unwrap());
@@ -77,7 +97,7 @@ impl TestContext {
     }
 
     pub(crate) fn new_with_ban(db: TestDb, authz: DbBanTestAuthz) -> Self {
-        let config = build_config();
+        let config = build_config(None);
         let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 
         let metrics = Arc::new(Metrics::new(&Registry::new()).unwrap());
