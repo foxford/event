@@ -1,20 +1,12 @@
-use std::sync::Arc;
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context as AnyhowContext, Result};
-use chrono::Utc;
 use futures::StreamExt;
 use prometheus::Registry;
-use serde_json::json;
 use signal_hook::consts::TERM_SIGNALS;
 use sqlx::postgres::PgPool as Db;
-use svc_agent::mqtt::{
-    Agent, AgentBuilder, AgentNotification, ConnectionMode, OutgoingRequest,
-    OutgoingRequestProperties, QoS, ShortTermTimingProperties, SubscriptionTopic,
-};
-use svc_agent::{
-    request::Dispatcher, AccountId, AgentId, Authenticable, SharedGroup, Subscription,
-};
+use svc_agent::mqtt::{Agent, AgentBuilder, AgentNotification, ConnectionMode, QoS};
+use svc_agent::{request::Dispatcher, AgentId, Authenticable, SharedGroup, Subscription};
 use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::extension::sentry as svc_sentry;
@@ -26,7 +18,7 @@ use crate::app::http::build_router;
 use crate::{app::context::GlobalContext, metrics::Metrics};
 use crate::{
     authz::Authz,
-    config::{self, Config, KruonisConfig},
+    config::{self, Config},
 };
 use context::AppContextBuilder;
 use message_handler::MessageHandler;
@@ -85,7 +77,7 @@ pub(crate) async fn run(
     };
 
     // Subscribe to topics
-    subscribe(&mut agent, &agent_id, &config)?;
+    subscribe(&mut agent, &agent_id)?;
 
     let registry = Registry::new();
     let metrics = Arc::new(Metrics::new(&registry)?);
@@ -188,7 +180,6 @@ async fn main_loop(
                         resubscribe(
                             &mut message_handler.agent().to_owned(),
                             message_handler.global_context().agent_id(),
-                            message_handler.global_context().config(),
                         );
                     }
                     AgentNotification::Puback(_) => (),
@@ -211,7 +202,7 @@ async fn main_loop(
     }
 }
 
-fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<()> {
+fn subscribe(agent: &mut Agent, agent_id: &AgentId) -> Result<()> {
     let group = SharedGroup::new("loadbalancer", agent_id.as_account_id().clone());
 
     // Multicast requests
@@ -227,14 +218,6 @@ fn subscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) -> Result<(
     agent
         .subscribe(&Subscription::unicast_requests(), QoS::AtMostOnce, None)
         .context("Error subscribing to unicast requests")?;
-
-    // Kruonis
-    if let KruonisConfig {
-        id: Some(ref kruonis_id),
-    } = config.kruonis
-    {
-        subscribe_to_kruonis(kruonis_id, agent)?;
-    }
 
     Ok(())
 }
@@ -258,22 +241,8 @@ fn unsubscribe(agent: &mut Agent, agent_id: &AgentId) -> Result<()> {
     Ok(())
 }
 
-fn subscribe_to_kruonis(kruonis_id: &AccountId, agent: &mut Agent) -> Result<()> {
-    let timing = ShortTermTimingProperties::new(Utc::now());
-
-    let topic = Subscription::unicast_requests_from(kruonis_id)
-        .subscription_topic(agent.id(), API_VERSION)
-        .context("Failed to build subscription topic")?;
-
-    let props = OutgoingRequestProperties::new("kruonis.subscribe", &topic, "", timing);
-    let event = OutgoingRequest::multicast(json!({}), props, kruonis_id, API_VERSION);
-
-    agent.publish(event).context("Failed to publish message")?;
-    Ok(())
-}
-
-fn resubscribe(agent: &mut Agent, agent_id: &AgentId, config: &Config) {
-    if let Err(err) = subscribe(agent, agent_id, config) {
+fn resubscribe(agent: &mut Agent, agent_id: &AgentId) {
+    if let Err(err) = subscribe(agent, agent_id) {
         let err = err.context("Failed to resubscribe after reconnection");
         error!("{:?}", err);
 
