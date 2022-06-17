@@ -23,8 +23,6 @@ pub struct Config {
     pub sentry: Option<SentryConfig>,
     #[serde(default)]
     pub telemetry: TelemetryConfig,
-    #[serde(default)]
-    pub kruonis: KruonisConfig,
     pub metrics: Option<MetricsConfig>,
     ban_duration_s: Option<u64>,
     #[serde(default)]
@@ -72,11 +70,6 @@ pub(crate) fn load() -> Result<Config, config::ConfigError> {
 
 #[derive(Clone, Debug, Deserialize, Default)]
 pub struct TelemetryConfig {
-    pub id: Option<AccountId>,
-}
-
-#[derive(Clone, Debug, Deserialize, Default)]
-pub struct KruonisConfig {
     pub id: Option<AccountId>,
 }
 
