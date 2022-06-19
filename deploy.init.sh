@@ -60,7 +60,7 @@ function DIR_FROM_GITHUB_RECURSIVELY() {
     if [[ ! "${DEST_SUBDIR}" ]]; then echo "${FUNCNAME[0]}:DEST_SUBDIR is required" 1>&2; exit 1; fi
 
     mkdir -p "deploy/k8s/$DEST_SUBDIR"
-    CONTENT=$(LIST_GITHUB_DIR "${SOURCE}/apps/deploy/${PROJECT}/${SRC_SUBDIR}/?ref=${BRANCH}")
+    CONTENT=$(LIST_GITHUB_DIR "${SOURCE}/apps/deploy/${PROJECT}/${SRC_SUBDIR}?ref=${BRANCH}")
 
     FILES=$(echo $CONTENT | jq '.[] | select(.type == "file") | .download_url' -r)
     DIR_FROM_GITHUB "${FILES}" "deploy/k8s/${DEST_SUBDIR}"
@@ -71,7 +71,7 @@ function DIR_FROM_GITHUB_RECURSIVELY() {
     do
         DIR=$(echo $DIR | sed -e "s/?.*//")
 
-        DIR_CONTENT=$(LIST_GITHUB_DIR "${DIR}")
+        DIR_CONTENT=$(LIST_GITHUB_DIR "${DIR}?ref=${BRANCH}")
 
         mkdir -p "deploy/k8s/${DEST_SUBDIR}/$(basename $DIR)"
 
