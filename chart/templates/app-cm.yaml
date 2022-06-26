@@ -18,7 +18,7 @@ data:
     payload_size = {{ .Values.constraint.payload_size }}
 
     [mqtt]
-    uri = "tcp://mqtt-gateway-loadbalancer-internal:51883"
+    uri = "tcp://mqtt-gateway-cluster:51883"
     clean_session = false
     reconnect_interval = 3
     keep_alive = 15
@@ -68,7 +68,7 @@ data:
     [authz.{{ $ns_audience | quote }}]
     type = {{ .type | quote }}
     {{- if eq "http" .type }}
-    {{- $default_authz_url := $ns_audience | list "http://dispatcher-service:8080/api/v1/authz/" | join "" }}
+    {{- $default_authz_url := $ns_audience | list "http://dispatcher-cluster:8080/api/v1/authz/" | join "" }}
     uri = {{ default $default_authz_url .uri | quote }}
     algorithm = {{ default "ES256" .algorithm | quote }}
     key = {{ default "data/keys/svc.private_key.p8.der" .key | quote }}
