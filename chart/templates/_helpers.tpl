@@ -35,13 +35,11 @@ Common labels
 */}}
 {{- define "event.labels" -}}
 helm.sh/chart: {{ include "event.chart" . }}
-app.kubernetes.io/name: {{ include "event.name" . }}
-app.kubernetes.io/instance: {{ .Release.Name }}
+{{ include "event.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
-k8s-app: {{ include "event.name" . }}
 {{- end }}
 
 {{/*
