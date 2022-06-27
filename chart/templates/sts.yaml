@@ -72,22 +72,22 @@ spec:
             - name: "AWS_ACCESS_KEY_ID"
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.app.s3.credentials }}
+                  name: {{ .Values.app.s3.secretName }}
                   key: key
             - name: "AWS_SECRET_ACCESS_KEY"
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.app.s3.credentials }}
+                  name: {{ .Values.app.s3.secretName }}
                   key: secret
             - name: "AWS_ENDPOINT"
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.app.s3.credentials }}
+                  name: {{ .Values.app.s3.secretName }}
                   key: endpoint
             - name: "AWS_REGION"
               valueFrom:
                 secretKeyRef:
-                  name: {{ .Values.app.s3.credentials }}
+                  name: {{ .Values.app.s3.secretName }}
                   key: region
           volumeMounts:
             - name: config

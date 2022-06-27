@@ -32,10 +32,6 @@ data:
     {{- $telemetry_id := list "telemetry" (include "event.shortNamespace" .) .Values.app.svc.audience | compact | join "." }}
     id = {{ $telemetry_id | quote }}
 
-    [kruonis]
-    {{- $kruonis_id := list "kruonis" (include "event.shortNamespace" .) .Values.app.svc.audience | compact | join "." }}
-    id = {{ $kruonis_id | quote }}
-
     [metrics.http]
     bind_address = "0.0.0.0:8888"
 
