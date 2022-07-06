@@ -1,0 +1,100 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  labels:
+    {{- include "event.labels" . | nindent 4 }}
+  name: {{ include "event.name" . }}-config
+data:
+  App.toml: |
+    {{- $id := list (include "event.name" . ) (include "event.shortNamespace" .) .Values.svc.audience | compact | join "." }}
+    id = {{ $id | quote }}
+
+    {{- $broker_id := list "mqtt-gateway" (include "event.shortNamespace" .) .Values.svc.audience | compact | join "." }}
+    broker_id = {{ $broker_id | quote }}
+
+    http_addr = "0.0.0.0:{{ .Values.service.ports.http }}"
+
+    [mqtt]
+    uri = "tcp://mqtt-gateway-loadbalancer-internal:51883"
+    clean_session = false
+    reconnect_interval = 3
+    keep_alive = 15
+    max_message_size = 5000000
+
+    [sentry]
+    dsn = {{ .Values.sentry.dsn | quote }}
+    environment = {{ .Release.Namespace | quote }}
+
+    [telemetry]
+    {{- $telemetry_id := list "telemetry" (include "event.shortNamespace" .) .Values.svc.audience | compact | join "." }}
+    id = {{ $telemetry_id | quote }}
+
+    [kruonis]
+    {{- $kruonis_id := list "kruonis" (include "event.shortNamespace" .) .Values.svc.audience | compact | join "." }}
+    id = {{ $kruonis_id | quote }}
+
+    [metrics.http]
+    bind_address = "0.0.0.0:{{ .Values.service.ports.metrics }}"
+
+    ##
+    ## ULMS
+    ##
+    [id_token]
+    algorithm = "ES256"
+    key = "data/keys/svc.private_key.p8.der"
+
+    {{- println "" }}
+
+    {{- range .Values.audiences }}
+    ##
+    ## {{ .audience }}
+    ##
+    {{- $svc_audience := list (include "event.shortNamespace" $) "svc" .audience | compact | join "." }}
+    {{- $usr_audience := list (include "event.shortNamespace" $) "usr" .audience | compact | join "." }}
+    {{- with .authn }}
+    [authn.{{ list "iam" $svc_audience | join "." | quote }}]
+    audience = [{{ $svc_audience | quote }}, {{ $usr_audience | quote }}]
+    algorithm = "ES256"
+    key = {{ .key | quote }}
+    {{- end }}
+
+    {{- $ns_audience := list (include "event.shortNamespace" $) .audience | compact | join "."  }}
+    {{- println "" }}
+
+    {{- with .authz }}
+    [authz.{{ $ns_audience | quote }}]
+    type = {{ .type | quote }}
+    {{- if eq "http" .type }}
+    uri = {{ default "http://dispatcher-service:8080/api/v1/authz/" .uri | quote }}
+    algorithm = {{ default "ES256" .algorithm | quote }}
+    key = {{ default "data/keys/svc.private_key.p8.der" .key | quote }}
+    user_agent = {{ default $id .user_agent | quote }}
+    max_retries = {{ default 3 .max_retries }}
+    trusted = [
+      {{- range $account_label := .trusted }}
+        {{ (list $account_label (include "event.shortNamespace" $) $.Values.svc.audience) | compact | join "." | quote }},
+      {{- end }}
+    ]
+    {{- end }}
+    {{- if eq "local" .type }}
+    trusted = [
+      {{- range $account_label := .trusted }}
+        {{ $ns_audience | list $account_label | join "." | quote }},
+      {{- end }}
+    ]
+    {{- end }}
+    {{- if eq "localwhitelist" .type }}
+    [[authz.{{ $ns_audience | quote }}.records]]
+    {{- range $record := .records }}
+    subject_account_id = {{ get $record "subject_account_id" | quote }}
+    object = [
+      {{- range $o := get $record "object" }}
+      {{ $o | quote }},
+      {{- end}}
+    ]
+    action = {{ get $record "action" | quote }}
+    {{- end }}
+    {{- end }}
+    {{- end }}
+    {{- println "" }}
+    {{- end }}

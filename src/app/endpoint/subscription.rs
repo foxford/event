@@ -76,26 +76,22 @@ impl EventHandler for DeleteEventHandler {
         // Delete agent from the DB.
         let room_id = try_room_id(&payload.object)?;
         Span::current().record("room_id", &display(room_id));
+        let mut conn = context.get_conn().await?;
 
-        let row_count = {
-            let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
-            let mut conn = context.get_conn().await?;
-
-            let row_count = context
-                .metrics()
-                .measure_query(QueryKey::AgentDeleteQuery, query.execute(&mut conn))
-                .await
-                .context("Failed to delete agent")
-                .error(AppErrorKind::DbQueryFailed)?;
-
-            row_count
-        };
+        let query =
+            agent::UpdateQuery::new(payload.subject.clone(), room_id).status(agent::Status::Offline);
+        let object = context
+            .metrics()
+            .measure_query(QueryKey::AgentUpdateQuery, query.execute(&mut conn))
+            .await
+            .context("Failed to put agent into 'offline' status")
+            .error(AppErrorKind::DbQueryFailed)?;
 
         // Ignore missing agent.
-        if row_count != 1 {
+        if object.is_none() {
             return Ok(Box::new(stream::empty()));
         }
-        let mut conn = context.get_conn().await?;
+
         let room = room::FindQuery::new(room_id)
             .execute(&mut conn)
             .await
@@ -183,7 +179,7 @@ fn try_room_id(object: &[String]) -> StdResult<Uuid, AppError> {
 #[cfg(test)]
 mod tests {
     mod delete_event {
-        use crate::db::agent::ListQuery as AgentListQuery;
+        use crate::db::agent::{ListQuery as AgentListQuery, Status};
         use crate::test_helpers::prelude::*;
 
         use super::super::*;
@@ -237,7 +233,10 @@ mod tests {
                 .await
                 .expect("Failed to execute agent list query");
 
-            assert_eq!(db_agents.len(), 0);
+            match db_agents.first() {
+                None => assert!(false),
+                Some(agent) => assert_eq!(agent.status(), Status::Offline)
+            };
         }
 
         #[tokio::test]
