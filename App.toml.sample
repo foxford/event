@@ -24,9 +24,6 @@ bind_address = "0.0.0.0:8087"
 uri = "mqtt://0.0.0.0:1883"
 clean_session = false
 
-[telemetry]
-id = "telemetry.dev.svc.example.org"
-
 [vacuum]
 max_history_size = 10
 max_history_lifetime = 86400

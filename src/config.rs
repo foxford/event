@@ -21,8 +21,6 @@ pub struct Config {
     pub http_addr: SocketAddr,
     pub mqtt: AgentConfig,
     pub sentry: Option<SentryConfig>,
-    #[serde(default)]
-    pub telemetry: TelemetryConfig,
     pub metrics: Option<MetricsConfig>,
     ban_duration_s: Option<u64>,
     #[serde(default)]
@@ -66,11 +64,6 @@ pub(crate) fn load() -> Result<Config, config::ConfigError> {
     parser.merge(config::File::with_name("App"))?;
     parser.merge(config::Environment::with_prefix("APP").separator("__"))?;
     parser.try_into::<Config>()
-}
-
-#[derive(Clone, Debug, Deserialize, Default)]
-pub struct TelemetryConfig {
-    pub id: Option<AccountId>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
