@@ -2,10 +2,10 @@ apiVersion: skaffold/v2beta11
 kind: Config
 build:
   artifacts:
-    - image: foxford/event-migration
+    - image: cr.yandex/crp1of6bddata8ain3q5/event-migration
       docker:
         dockerfile: docker/migration.dockerfile
-    - image: foxford/event
+    - image: cr.yandex/crp1of6bddata8ain3q5/event
       docker:
         dockerfile: docker/Dockerfile
   tagPolicy:
@@ -20,8 +20,8 @@ deploy:
     - name: event
       chartPath: chart
       artifactOverrides:
-        app.image: foxford/event
-        migrations.image: foxford/event-migration
+        app.image: cr.yandex/crp1of6bddata8ain3q5/event
+        migrations.image: cr.yandex/crp1of6bddata8ain3q5/event-migration
       imageStrategy:
         helm: {}
       valuesFiles:
