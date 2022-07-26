@@ -45,7 +45,7 @@ pub struct CreateRequest {
     time: BoundedDateTimeTuple,
     tags: Option<JsonValue>,
     preserve_history: Option<bool>,
-    classroom_id: Option<Uuid>,
+    classroom_id: Uuid,
     #[serde(default)]
     validate_whiteboard_access: Option<bool>,
 }
@@ -117,7 +117,8 @@ impl RequestHandler for CreateHandler {
 
         // Insert room.
         let room = {
-            let mut query = InsertQuery::new(&payload.audience, payload.time.into());
+            let mut query =
+                InsertQuery::new(&payload.audience, payload.time.into(), payload.classroom_id);
 
             if let Some(tags) = payload.tags {
                 query = query.tags(tags);
@@ -125,10 +126,6 @@ impl RequestHandler for CreateHandler {
 
             if let Some(preserve_history) = payload.preserve_history {
                 query = query.preserve_history(preserve_history);
-            }
-
-            if let Some(cid) = payload.classroom_id {
-                query = query.classroom_id(cid);
             }
 
             if let Some(flag) = payload.validate_whiteboard_access {
@@ -1028,7 +1025,7 @@ mod tests {
                 audience: USR_AUDIENCE.to_owned(),
                 tags: Some(tags.clone()),
                 preserve_history: Some(false),
-                classroom_id: None,
+                classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
             };
 
@@ -1073,7 +1070,7 @@ mod tests {
                 audience: USR_AUDIENCE.to_owned(),
                 tags: Some(tags.clone()),
                 preserve_history: Some(false),
-                classroom_id: None,
+                classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
             };
 
@@ -1119,7 +1116,7 @@ mod tests {
                 audience: USR_AUDIENCE.to_owned(),
                 tags: Some(tags.clone()),
                 preserve_history: Some(false),
-                classroom_id: Some(cid),
+                classroom_id: cid,
                 validate_whiteboard_access: None,
             };
 
@@ -1133,7 +1130,7 @@ mod tests {
             assert_eq!(room.audience(), USR_AUDIENCE);
             assert_eq!(room.time().map(|t| t.into()), Ok(time));
             assert_eq!(room.tags(), Some(&tags));
-            assert_eq!(room.classroom_id(), Some(cid));
+            assert_eq!(room.classroom_id(), cid);
 
             // Assert notification.
             let (room, evp, topic) = find_event::<Room>(messages.as_slice());
@@ -1143,7 +1140,7 @@ mod tests {
             assert_eq!(room.time().map(|t| t.into()), Ok(time));
             assert_eq!(room.tags(), Some(&tags));
             assert_eq!(room.preserve_history(), false);
-            assert_eq!(room.classroom_id(), Some(cid));
+            assert_eq!(room.classroom_id(), cid);
         }
 
         #[tokio::test]
@@ -1164,7 +1161,7 @@ mod tests {
                 audience: USR_AUDIENCE.to_owned(),
                 tags: None,
                 preserve_history: None,
-                classroom_id: None,
+                classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
             };
 
@@ -1190,7 +1187,7 @@ mod tests {
                 audience: USR_AUDIENCE.to_owned(),
                 tags: None,
                 preserve_history: None,
-                classroom_id: None,
+                classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
             };
 
@@ -1222,8 +1219,11 @@ mod tests {
             // Allow agent to read the room.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
+            authz.allow(
+                agent.account_id(),
+                vec!["classrooms", &room.classroom_id().to_string()],
+                "read",
+            );
 
             // Make room.read request.
             let mut context = TestContext::new(db, authz);
@@ -1299,7 +1299,7 @@ mod tests {
                 let mut conn = db.get_conn().await;
 
                 // Create room.
-                factory::Room::new()
+                factory::Room::new(uuid::Uuid::new_v4())
                     .audience(USR_AUDIENCE)
                     .time((
                         Bound::Included(now + Duration::hours(1)),
@@ -1313,8 +1313,12 @@ mod tests {
             // Allow agent to update the room.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+            let classroom_id = room.classroom_id().to_string();
+            authz.allow(
+                agent.account_id(),
+                vec!["classrooms", &classroom_id],
+                "update",
+            );
 
             // Make room.update request.
             let mut context = TestContext::new(db, authz);
@@ -1357,7 +1361,7 @@ mod tests {
                 let mut conn = db.get_conn().await;
 
                 // Create room.
-                factory::Room::new()
+                factory::Room::new(Uuid::new_v4())
                     .audience(USR_AUDIENCE)
                     .time((
                         Bound::Included(now - Duration::hours(1)),
@@ -1370,8 +1374,12 @@ mod tests {
             // Allow agent to update the room.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+            let classroom_id = room.classroom_id().to_string();
+            authz.allow(
+                agent.account_id(),
+                vec!["classrooms", &classroom_id],
+                "update",
+            );
 
             // Make room.update request.
             let mut context = TestContext::new(db, authz);
@@ -1416,7 +1424,7 @@ mod tests {
                 let mut conn = db.get_conn().await;
 
                 // Create room.
-                factory::Room::new()
+                factory::Room::new(Uuid::new_v4())
                     .audience(USR_AUDIENCE)
                     .time((
                         Bound::Included(now - Duration::hours(2)),
@@ -1429,8 +1437,12 @@ mod tests {
             // Allow agent to update the room.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+            let classroom_id = room.classroom_id().to_string();
+            authz.allow(
+                agent.account_id(),
+                vec!["classrooms", &classroom_id],
+                "update",
+            );
 
             // Make room.update request.
             let mut context = TestContext::new(db, authz);
@@ -1493,7 +1505,7 @@ mod tests {
                 let mut conn = db.get_conn().await;
 
                 // Create room.
-                factory::Room::new()
+                factory::Room::new(Uuid::new_v4())
                     .audience(USR_AUDIENCE)
                     .time((
                         Bound::Included(now + Duration::hours(1)),
@@ -1506,8 +1518,12 @@ mod tests {
             // Allow agent to update the room.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+            let classroom_id = room.classroom_id().to_string();
+            authz.allow(
+                agent.account_id(),
+                vec!["classrooms", &classroom_id],
+                "update",
+            );
 
             // Make room.update request.
             let mut context = TestContext::new(db, authz);
@@ -1853,7 +1869,7 @@ mod tests {
             let mut authz = TestAuthz::new();
             authz.allow(
                 agent.account_id(),
-                vec!["rooms", &room.id().to_string()],
+                vec!["classrooms", &room.classroom_id().to_string()],
                 "update",
             );
 
@@ -1905,7 +1921,7 @@ mod tests {
             let mut authz = TestAuthz::new();
             authz.allow(
                 agent.account_id(),
-                vec!["rooms", &room.id().to_string()],
+                vec!["classrooms", &room.classroom_id().to_string()],
                 "update",
             );
 
@@ -2020,7 +2036,7 @@ mod tests {
             let mut authz = TestAuthz::new();
             authz.allow(
                 agent.account_id(),
-                vec!["rooms", &room.id().to_string()],
+                vec!["classrooms", &room.classroom_id().to_string()],
                 "update",
             );
 
@@ -2084,7 +2100,7 @@ mod tests {
             let mut authz = TestAuthz::new();
             authz.allow(
                 teacher.account_id(),
-                vec!["rooms", &room.id().to_string()],
+                vec!["classrooms", &room.classroom_id().to_string()],
                 "update",
             );
 

@@ -230,8 +230,7 @@ mod tests {
             // Create room with classroom id and ban agent in the room
             let mut conn = db.get_conn().await;
 
-            let room = factory::Room::new()
-                .classroom_id(classroom_id)
+            let room = factory::Room::new(classroom_id)
                 .audience("foo.bar")
                 .time((Bound::Unbounded, Bound::Unbounded))
                 .insert(&mut conn)

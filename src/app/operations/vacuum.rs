@@ -176,7 +176,7 @@ mod tests {
             Bound::Excluded(now + Duration::hours(1)),
         );
 
-        factory::Room::new()
+        factory::Room::new(Uuid::new_v4())
             .audience(USR_AUDIENCE)
             .time(time)
             .preserve_history(preserve_history)

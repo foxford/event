@@ -18,7 +18,7 @@ use super::{factory, USR_AUDIENCE};
 pub(crate) async fn insert_room(conn: &mut PgConnection) -> Room {
     let now = Utc::now().trunc_subsecs(0);
 
-    factory::Room::new()
+    factory::Room::new(Uuid::new_v4())
         .audience(USR_AUDIENCE)
         .time((
             Bound::Included(now),
@@ -29,10 +29,21 @@ pub(crate) async fn insert_room(conn: &mut PgConnection) -> Room {
         .await
 }
 
+pub(crate) async fn insert_unbounded_room(conn: &mut PgConnection) -> Room {
+    let now = Utc::now().trunc_subsecs(0);
+
+    factory::Room::new(Uuid::new_v4())
+        .audience(USR_AUDIENCE)
+        .time((Bound::Included(now), Bound::Unbounded))
+        .tags(&json!({ "webinar_id": "123" }))
+        .insert(conn)
+        .await
+}
+
 pub(crate) async fn insert_closed_room(conn: &mut PgConnection) -> Room {
     let now = Utc::now().trunc_subsecs(0);
 
-    factory::Room::new()
+    factory::Room::new(Uuid::new_v4())
         .audience(USR_AUDIENCE)
         .time((
             Bound::Included(now - Duration::hours(10)),
@@ -46,7 +57,7 @@ pub(crate) async fn insert_closed_room(conn: &mut PgConnection) -> Room {
 pub(crate) async fn insert_validating_whiteboard_access_room(conn: &mut PgConnection) -> Room {
     let now = Utc::now().trunc_subsecs(0);
 
-    factory::Room::new()
+    factory::Room::new(Uuid::new_v4())
         .audience(USR_AUDIENCE)
         .time((
             Bound::Included(now),

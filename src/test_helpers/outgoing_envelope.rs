@@ -51,6 +51,7 @@ impl OutgoingEventProperties {
 #[derive(Debug, Deserialize)]
 pub(crate) struct OutgoingResponseProperties {
     status: String,
+    #[allow(dead_code)]
     correlation_data: String,
 }
 
@@ -62,5 +63,6 @@ impl OutgoingResponseProperties {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct OutgoingRequestProperties {
+    #[allow(dead_code)]
     method: String,
 }

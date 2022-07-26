@@ -146,8 +146,7 @@ pub(crate) struct TenantBanNotification {
     banned: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     reason: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    classroom_id: Option<Uuid>,
+    classroom_id: Uuid,
 }
 
 pub async fn update(
@@ -362,9 +361,11 @@ mod tests {
 
         // Allow agent to list agents in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
-
-        authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
+        authz.allow(
+            agent.account_id(),
+            vec!["classrooms", &room.classroom_id().to_string()],
+            "read",
+        );
 
         // Make agent.list request.
         let mut context = TestContext::new(db, authz);
@@ -487,7 +488,7 @@ mod tests {
         let room = {
             // Create room and put the agent online.
             let mut conn = db.get_conn().await;
-            let room = shared_helpers::insert_room(&mut conn).await;
+            let room = shared_helpers::insert_unbounded_room(&mut conn).await;
             shared_helpers::insert_agent(&mut conn, user.agent_id(), room.id()).await;
             shared_helpers::insert_agent(&mut conn, admin.agent_id(), room.id()).await;
             room
@@ -497,13 +498,13 @@ mod tests {
 
         // Allow agent to list agents in the room.
         let mut authz = DbBanTestAuthz::new(is_banned_f);
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
 
         authz.allow(
             admin.account_id(),
             vec![
-                "rooms",
-                &room_id,
+                "classrooms",
+                &classroom_id,
                 "claims",
                 "role",
                 "authors",
@@ -515,8 +516,8 @@ mod tests {
         authz.allow(
             user.account_id(),
             vec![
-                "rooms",
-                &room_id,
+                "classrooms",
+                &classroom_id,
                 "events",
                 "message",
                 "authors",
@@ -553,7 +554,7 @@ mod tests {
         assert_eq!(messages.len(), 2);
 
         // Assert response.
-        let (_, respp, _) = find_response::<crate::db::event::Object>(messages.as_slice());
+        let (_, respp, _) = find_response::<db::event::Object>(messages.as_slice());
         assert_eq!(respp.status(), ResponseStatus::CREATED);
 
         // Admin bans user
@@ -581,7 +582,7 @@ mod tests {
             .expect("Failed to find agent.update event");
         assert_eq!(evp.label(), "agent.update");
         assert_eq!(ev_body.account_id, *user.account_id());
-        assert_eq!(ev_body.banned, true);
+        assert!(ev_body.banned);
 
         let (ev_body, evp, _) =
             find_event_by_predicate::<TenantBanNotification, _>(messages.as_slice(), |evp| {
@@ -591,7 +592,7 @@ mod tests {
         assert_eq!(evp.label(), "agent.ban");
         assert_eq!(ev_body.account_id, *user.account_id());
         assert_eq!(ev_body.room_id, room.id());
-        assert_eq!(ev_body.banned, true);
+        assert!(ev_body.banned);
         assert_eq!(ev_body.banned_by, *admin.account_id());
 
         let mut conn = context.db().acquire().await.expect("Failed conn checkout");

@@ -487,9 +487,11 @@ mod tests {
 
             // Allow agent to create editions
             let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id];
-            authz.allow(agent.account_id(), object, "update");
+            authz.allow(
+                agent.account_id(),
+                vec!["classrooms", &room.classroom_id().to_string()],
+                "update",
+            );
 
             // Make edition.create request
             let mut context = TestContext::new(db, authz);
@@ -565,9 +567,11 @@ mod tests {
             };
 
             let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id];
-            authz.allow(agent.account_id(), object, "update");
+            authz.allow(
+                agent.account_id(),
+                vec!["classrooms", &room.classroom_id().to_string()],
+                "update",
+            );
 
             let mut context = TestContext::new(db, authz);
 
@@ -671,9 +675,11 @@ mod tests {
             };
 
             let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-            let object = vec!["rooms", &room_id];
-            authz.allow(agent.account_id(), object, "update");
+            authz.allow(
+                agent.account_id(),
+                vec!["classrooms", &room.classroom_id().to_string()],
+                "update",
+            );
 
             let mut context = TestContext::new(db, authz);
 

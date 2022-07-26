@@ -128,15 +128,11 @@ async fn clone_room(conn: &mut PgConnection, metrics: &Metrics, source: &Room) -
         Ok(t) => t.into(),
         Err(_e) => bail!("invalid time for room = '{}'", source.id()),
     };
-    let mut query = RoomInsertQuery::new(source.audience(), time);
+    let mut query = RoomInsertQuery::new(source.audience(), time, source.classroom_id());
     query = query.source_room_id(source.id());
 
     if let Some(tags) = source.tags() {
         query = query.tags(tags.to_owned());
-    }
-
-    if let Some(classroom_id) = source.classroom_id() {
-        query = query.classroom_id(classroom_id);
     }
 
     metrics
@@ -523,14 +519,13 @@ mod tests {
         let classroom_id = uuid::Uuid::new_v4();
         let mut conn = db.get_conn().await;
         let now = Utc::now().trunc_subsecs(0);
-        let room = factory::Room::new()
+        let room = factory::Room::new(classroom_id)
             .audience(USR_AUDIENCE)
             .time((
                 Bound::Included(now),
                 Bound::Excluded(now + Duration::hours(1)),
             ))
             .tags(&json!({ "webinar_id": "123" }))
-            .classroom_id(classroom_id)
             .insert(&mut conn)
             .await;
 
@@ -612,7 +607,7 @@ mod tests {
         assert_eq!(destination.source_room_id().unwrap(), room.id());
         assert_eq!(room.audience(), destination.audience());
         assert_eq!(room.tags(), destination.tags());
-        assert_eq!(Some(classroom_id), destination.classroom_id());
+        assert_eq!(classroom_id, destination.classroom_id());
         let segments: Vec<(Bound<i64>, Bound<i64>)> = segments.into();
         assert_eq!(segments.len(), 3);
 
