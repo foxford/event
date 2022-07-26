@@ -299,14 +299,15 @@ async fn create_room(
         Bound::Included(started_at),
         Bound::Excluded(started_at + room_duration),
     );
-    let mut query = RoomInsertQuery::new(source_room.audience(), time.into());
+    let mut query = RoomInsertQuery::new(
+        source_room.audience(),
+        time.into(),
+        source_room.classroom_id(),
+    );
     query = query.source_room_id(source_room.id());
 
     if let Some(tags) = source_room.tags() {
         query = query.tags(tags.to_owned());
-    }
-    if let Some(classroom_id) = source_room.classroom_id() {
-        query = query.classroom_id(classroom_id);
     }
 
     metrics
@@ -643,8 +644,7 @@ mod tests {
             let opened_at = DateTime::from_utc(NaiveDateTime::from_timestamp(1582002673, 0), Utc);
             let time = RoomTime::from((Bound::Included(opened_at), Bound::Unbounded));
 
-            let room = RoomInsertQuery::new(AUDIENCE, time)
-                .classroom_id(uuid::Uuid::new_v4())
+            let room = RoomInsertQuery::new(AUDIENCE, time, uuid::Uuid::new_v4())
                 .execute(&mut conn)
                 .await
                 .expect("Failed to insert room");

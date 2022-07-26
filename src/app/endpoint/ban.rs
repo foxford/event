@@ -129,9 +129,11 @@ mod tests {
         };
 
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
-
-        authz.allow(agent.account_id(), vec!["rooms", &room_id], "update");
+        authz.allow(
+            agent.account_id(),
+            vec!["classrooms", &room.classroom_id().to_string()],
+            "update",
+        );
 
         let mut context = TestContext::new(db, authz);
 

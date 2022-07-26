@@ -77,8 +77,7 @@ pub(crate) struct CreateHandler;
 pub(crate) struct TenantClaimNotification {
     #[serde(flatten)]
     event: Event,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    classroom_id: Option<Uuid>,
+    classroom_id: Uuid,
 }
 
 #[async_trait]
@@ -466,12 +465,12 @@ mod tests {
 
         // Allow agent to create events of type `message` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
         let account_id = agent.account_id().to_string();
 
         let object = vec![
-            "rooms",
-            &room_id,
+            "classrooms",
+            &classroom_id,
             "pinned",
             "message",
             "authors",
@@ -591,12 +590,12 @@ mod tests {
 
         // Allow agent to create events of type `message` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
         let account_id = agent.account_id().to_string();
 
         let object = vec![
-            "rooms",
-            &room_id,
+            "classrooms",
+            &classroom_id,
             "events",
             "message",
             "authors",
@@ -670,12 +669,12 @@ mod tests {
 
         // Allow agent to create events of type `message` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
         let account_id = agent.account_id().to_string();
 
         let object = vec![
-            "rooms",
-            &room_id,
+            "classrooms",
+            &classroom_id,
             "events",
             "message",
             "authors",
@@ -684,7 +683,7 @@ mod tests {
 
         authz.allow(agent.account_id(), object, "create");
 
-        let object = vec!["rooms", &room_id];
+        let object = vec!["classrooms", &classroom_id];
         authz.allow(agent.account_id(), object, "update");
 
         // Make event.create request.
@@ -766,14 +765,14 @@ mod tests {
 
         // Allow agent to create events of type `message` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
 
         // Should authorize with the author of the original event.
         let account_id = original_author.agent_id().as_account_id().to_string();
 
         let object = vec![
-            "rooms",
-            &room_id,
+            "classrooms",
+            &classroom_id,
             "events",
             "message",
             "authors",
@@ -824,9 +823,16 @@ mod tests {
 
         // Allow agent to create claims of type `block` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
         let account_id = agent.account_id().to_string();
-        let object = vec!["rooms", &room_id, "claims", "block", "authors", &account_id];
+        let object = vec![
+            "classrooms",
+            &classroom_id,
+            "claims",
+            "block",
+            "authors",
+            &account_id,
+        ];
         authz.allow(agent.account_id(), object, "create");
 
         // Make event.create request.
@@ -907,12 +913,12 @@ mod tests {
 
         // Allow agent to create events of type `message` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
         let account_id = agent.account_id().to_string();
 
         let object = vec![
-            "rooms",
-            &room_id,
+            "classrooms",
+            &classroom_id,
             "events",
             "cursor",
             "authors",
@@ -1020,12 +1026,12 @@ mod tests {
 
         // Allow agent to create events of type `message` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
         let account_id = agent.account_id().to_string();
 
         let object = vec![
-            "rooms",
-            &room_id,
+            "classrooms",
+            &classroom_id,
             "events",
             "message",
             "authors",
@@ -1154,10 +1160,17 @@ mod tests {
 
         // Allow agent to create events of type `draw` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
         let account_id = agent.account_id().to_string();
+        let classroom_id = room.classroom_id().to_string();
 
-        let object = vec!["rooms", &room_id, "events", "draw", "authors", &account_id];
+        let object = vec![
+            "classrooms",
+            &classroom_id,
+            "events",
+            "draw",
+            "authors",
+            &account_id,
+        ];
 
         authz.allow(agent.account_id(), object, "create");
 
@@ -1228,10 +1241,17 @@ mod tests {
 
         // Allow agent to create events of type `draw` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
         let account_id = agent.account_id().to_string();
 
-        let object = vec!["rooms", &room_id, "events", "draw", "authors", &account_id];
+        let object = vec![
+            "classrooms",
+            &classroom_id,
+            "events",
+            "draw",
+            "authors",
+            &account_id,
+        ];
 
         authz.allow(agent.account_id(), object, "create");
 
@@ -1256,7 +1276,7 @@ mod tests {
             .await
             .expect_err("Event creation succeeded");
 
-        let object = vec!["rooms", &room_id];
+        let object = vec!["classrooms", &classroom_id];
         authz.allow(agent.account_id(), object, "update");
         let mut context = TestContext::new(db.clone(), authz);
 

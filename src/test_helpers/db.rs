@@ -15,6 +15,9 @@ pub(crate) struct TestDb {
 
 impl TestDb {
     pub(crate) async fn new() -> Self {
+        #[cfg(feature = "dotenv")]
+        dotenv::dotenv().ok();
+
         let url = var("DATABASE_URL").expect("DATABASE_URL must be specified");
 
         Self {
@@ -45,13 +48,15 @@ pub(crate) fn test_db_ban_callback(db: TestDb) -> BanCallback {
             let db_ = db.clone();
             Box::pin(async move {
                 if intent.to_ban_key().is_some() {
-                    if let Some(room_id) = intent.to_vec().get(1) {
-                        if let Ok(room_id) = Uuid::parse_str(&room_id) {
+                    if let Some(classroom_id) = intent.to_vec().get(1) {
+                        if let Ok(classroom_id) = Uuid::parse_str(classroom_id) {
                             let mut conn = db_.get_conn().await;
-                            if let Ok(maybe_ban) =
-                                crate::db::room_ban::FindQuery::new(account_id.to_owned(), room_id)
-                                    .execute(&mut conn)
-                                    .await
+                            if let Ok(maybe_ban) = crate::db::room_ban::ClassroomFindQuery::new(
+                                account_id.to_owned(),
+                                classroom_id,
+                            )
+                            .execute(&mut conn)
+                            .await
                             {
                                 return maybe_ban.is_some();
                             }

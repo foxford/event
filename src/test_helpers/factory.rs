@@ -17,13 +17,16 @@ pub(crate) struct Room {
     time: Option<db::room::Time>,
     tags: Option<JsonValue>,
     preserve_history: Option<bool>,
-    classroom_id: Option<Uuid>,
+    classroom_id: Uuid,
     validate_whiteboard_access: Option<bool>,
 }
 
 impl Room {
-    pub(crate) fn new() -> Self {
-        Default::default()
+    pub(crate) fn new(classroom_id: Uuid) -> Self {
+        Self {
+            classroom_id,
+            ..Default::default()
+        }
     }
 
     pub(crate) fn audience(self, audience: &str) -> Self {
@@ -54,13 +57,6 @@ impl Room {
         }
     }
 
-    pub(crate) fn classroom_id(self, classroom_id: Uuid) -> Self {
-        Self {
-            classroom_id: Some(classroom_id),
-            ..self
-        }
-    }
-
     pub(crate) fn validate_whiteboard_access(self, validate_whiteboard_access: bool) -> Self {
         Self {
             validate_whiteboard_access: Some(validate_whiteboard_access),
@@ -72,7 +68,7 @@ impl Room {
         let audience = self.audience.expect("Audience not set");
         let time = self.time.expect("Time not set");
 
-        let mut query = db::room::InsertQuery::new(&audience, time);
+        let mut query = db::room::InsertQuery::new(&audience, time, self.classroom_id);
 
         if let Some(tags) = self.tags {
             query = query.tags(tags)
@@ -80,10 +76,6 @@ impl Room {
 
         if let Some(preserve_history) = self.preserve_history {
             query = query.preserve_history(preserve_history)
-        }
-
-        if let Some(classroom_id) = self.classroom_id {
-            query = query.classroom_id(classroom_id)
         }
 
         if let Some(validate_whiteboard_access) = self.validate_whiteboard_access {

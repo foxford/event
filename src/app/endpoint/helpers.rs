@@ -87,14 +87,11 @@ pub(crate) async fn find_room<C: Context>(
 pub(crate) fn add_room_logger_tags(room: &db::room::Object) {
     let span = tracing::Span::current();
     span.record("room_id", &display(room.id()));
+    span.record("classroom_id", &display(room.classroom_id()));
 
     if let Some(tags) = room.tags() {
         if let Some(scope) = tags.get("scope") {
             span.record("scope", &display(scope));
         }
-    }
-
-    if let Some(classroom_id) = room.classroom_id() {
-        span.record("classroom_id", &display(classroom_id));
     }
 }

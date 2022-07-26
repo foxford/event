@@ -25,8 +25,7 @@ pub(crate) struct Object {
     #[serde(with = "ts_seconds")]
     created_at: DateTime<Utc>,
     preserve_history: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    classroom_id: Option<Uuid>,
+    classroom_id: Uuid,
     #[serde(default)]
     locked_types: HashMap<String, bool>,
     #[serde(default)]
@@ -44,7 +43,7 @@ struct DbObject {
     tags: Option<JsonValue>,
     created_at: DateTime<Utc>,
     preserve_history: bool,
-    classroom_id: Option<Uuid>,
+    classroom_id: Uuid,
     locked_types: JsonValue,
     validate_whiteboard_access: bool,
     whiteboard_access: JsonValue,
@@ -205,7 +204,7 @@ impl Object {
         self.preserve_history
     }
 
-    pub(crate) fn classroom_id(&self) -> Option<Uuid> {
+    pub(crate) fn classroom_id(&self) -> Uuid {
         self.classroom_id
     }
 
@@ -222,10 +221,7 @@ impl Object {
     }
 
     pub fn authz_object(&self) -> Vec<String> {
-        match self.classroom_id {
-            Some(cid) => vec!["classrooms".into(), cid.to_string()],
-            None => vec!["rooms".into(), self.id.to_string()],
-        }
+        vec!["classrooms".into(), self.classroom_id.to_string()]
     }
 
     fn account_has_whiteboard_access(&self, account: &AccountId) -> bool {
@@ -274,7 +270,7 @@ pub(crate) struct Builder {
     tags: Option<JsonValue>,
     created_at: Option<DateTime<Utc>>,
     preserve_history: Option<bool>,
-    classroom_id: Option<Uuid>,
+    classroom_id: Uuid,
 }
 
 impl Builder {
@@ -328,7 +324,7 @@ impl Builder {
         }
     }
 
-    pub(crate) fn classroom_id(self, classroom_id: Option<Uuid>) -> Self {
+    pub(crate) fn classroom_id(self, classroom_id: Uuid) -> Self {
         Self {
             classroom_id,
             ..self
@@ -410,21 +406,21 @@ pub(crate) struct InsertQuery {
     time: Time,
     tags: Option<JsonValue>,
     preserve_history: bool,
-    classroom_id: Option<Uuid>,
+    classroom_id: Uuid,
     locked_types: HashMap<String, bool>,
     validate_whiteboard_access: Option<bool>,
     whiteboard_access: HashMap<AccountId, bool>,
 }
 
 impl InsertQuery {
-    pub(crate) fn new(audience: &str, time: Time) -> Self {
+    pub(crate) fn new(audience: &str, time: Time, classroom_id: Uuid) -> Self {
         Self {
             audience: audience.to_owned(),
             source_room_id: None,
             time,
             tags: None,
             preserve_history: true,
-            classroom_id: None,
+            classroom_id,
             locked_types: Default::default(),
             validate_whiteboard_access: Default::default(),
             whiteboard_access: Default::default(),
@@ -448,13 +444,6 @@ impl InsertQuery {
     pub(crate) fn preserve_history(self, preserve_history: bool) -> Self {
         Self {
             preserve_history,
-            ..self
-        }
-    }
-
-    pub(crate) fn classroom_id(self, classroom_id: Uuid) -> Self {
-        Self {
-            classroom_id: Some(classroom_id),
             ..self
         }
     }
