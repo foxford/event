@@ -1,8 +1,4 @@
-{{- if semverCompare "<1.22" .Capabilities.KubeVersion.Version }}
 apiVersion: extensions/v1beta1
-{{- else }}
-apiVersion: networking.k8s.io/v1
-{{- end }}
 kind: Ingress
 metadata:
   name: {{ include "event.fullname" . }}
@@ -21,12 +17,5 @@ spec:
           - path: {{ include "event.ingressPath" . }}(/|$)(.*)
             pathType: Prefix
             backend:
-              {{- if semverCompare "<1.22" .Capabilities.KubeVersion.Version }}
               serviceName: {{ include "event.fullname" . }}-cluster
               servicePort: {{ .Values.clusterService.ports.http }}
-              {{- else }}
-              service:
-                name: {{ include "event.fullname" . }}-cluster
-                port:
-                  number: {{ .Values.clusterService.ports.http }}
-              {{- end }}
