@@ -6,7 +6,7 @@ use std::{
 use axum::{
     response::IntoResponse,
     routing::{delete, get, post},
-    AddExtensionLayer, Router,
+    Extension, Json, Router,
 };
 
 use futures::{future::BoxFuture, StreamExt};
@@ -95,9 +95,9 @@ pub fn build_router(
         )
         .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
         .layer(svc_utils::middleware::CorsLayer)
-        .layer(AddExtensionLayer::new(context))
-        .layer(AddExtensionLayer::new(agent))
-        .layer(AddExtensionLayer::new(Arc::new(authn)));
+        .layer(Extension(context))
+        .layer(Extension(agent))
+        .layer(Extension(Arc::new(authn)));
 
     let routes = Router::new().nest("/api/v1", router);
 
@@ -112,20 +112,12 @@ pub fn build_router(
 }
 
 impl IntoResponse for AppError {
-    type Body = axum::body::Body;
-
-    type BodyError = <Self::Body as axum::body::HttpBody>::Error;
-
-    fn into_response(self) -> hyper::Response<Self::Body> {
+    fn into_response(self) -> axum::response::Response {
         self.notify_sentry();
 
         let err = self.to_svc_error();
-        let error =
-            serde_json::to_string(&err).unwrap_or_else(|_| "Failed to serialize error".to_string());
-        http::Response::builder()
-            .status(self.status())
-            .body(axum::body::Body::from(error))
-            .expect("This is a valid response")
+
+        (self.status(), Json(err)).into_response()
     }
 }
 

@@ -1,4 +1,4 @@
-use axum::response::IntoResponse;
+use axum::{response::IntoResponse, Json};
 use chrono::{DateTime, Duration, Utc};
 use futures::{future, stream, StreamExt};
 use http::StatusCode;
@@ -130,21 +130,15 @@ impl Response {
 }
 
 impl IntoResponse for Response {
-    type Body = axum::body::Body;
-
-    type BodyError = <Self::Body as axum::body::HttpBody>::Error;
-
-    fn into_response(self) -> hyper::Response<Self::Body> {
+    fn into_response(self) -> axum::response::Response {
         let tasks_stream = Box::new(self.async_tasks.into_stream()) as MessageStream;
 
-        http::Response::builder()
-            .status(self.status)
-            .extension(self.notifications)
-            .extension(tasks_stream)
-            .body(axum::body::Body::from(
-                serde_json::to_string(&self.payload).expect("todo"),
-            ))
-            .expect("Must be valid response")
+        let mut resp = (self.status, Json(self.payload)).into_response();
+
+        resp.extensions_mut().insert(self.notifications);
+        resp.extensions_mut().insert(tasks_stream);
+
+        resp
     }
 }
 
