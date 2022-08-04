@@ -32,9 +32,7 @@ use crate::db::room::{InsertQuery, UpdateQuery};
 use crate::db::room_time::{BoundedDateTimeTuple, RoomTime};
 use crate::{
     app::operations::{adjust_room, AdjustOutput},
-    db::event::{
-        insert_agent_action, insert_chat_lock_event, insert_whiteboard_access_event, AgentAction,
-    },
+    db::event::{insert_agent_action, AgentAction},
 };
 
 #[derive(Debug, Deserialize)]
@@ -621,18 +619,6 @@ impl RequestHandler for LockedTypesHandler {
                 .context("Failed to acquire transaction")
                 .error(AppErrorKind::DbQueryFailed)?;
 
-            if let Some(chat_lock) = locked_types.get("message") {
-                context
-                    .metrics()
-                    .measure_query(
-                        QueryKey::EventInsertQuery,
-                        insert_chat_lock_event(&room, *chat_lock, reqp.as_agent_id(), &mut txn),
-                    )
-                    .await
-                    .context("Failed to insert event")
-                    .error(AppErrorKind::DbQueryFailed)?;
-            }
-
             let query = UpdateQuery::new(room.id()).locked_types(locked_types);
 
             let room = context
@@ -750,21 +736,6 @@ impl RequestHandler for WhiteboardAccessHandler {
                 .begin()
                 .await
                 .context("Failed to acquire transaction")
-                .error(AppErrorKind::DbQueryFailed)?;
-
-            context
-                .metrics()
-                .measure_query(
-                    QueryKey::EventInsertQuery,
-                    insert_whiteboard_access_event(
-                        &room,
-                        &whiteboard_access,
-                        reqp.as_agent_id(),
-                        &mut txn,
-                    ),
-                )
-                .await
-                .context("Failed to insert event")
                 .error(AppErrorKind::DbQueryFailed)?;
 
             let query = UpdateQuery::new(room.id()).whiteboard_access(whiteboard_access);
