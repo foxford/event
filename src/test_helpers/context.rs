@@ -42,6 +42,10 @@ fn build_config(payload_size: Option<usize>) -> Config {
         "mqtt": {
             "uri": "mqtt://0.0.0.0:1883",
             "clean_session": false,
+        },
+        "http_broker_client": {
+            "host": "http://mqtt-gateway-cluster:8081",
+            "timeout": "1 minute",
         }
     });
 
