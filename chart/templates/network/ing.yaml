@@ -1,4 +1,4 @@
-apiVersion: extensions/v1beta1
+apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ include "event.fullname" . }}
@@ -17,5 +17,7 @@ spec:
           - path: {{ include "event.ingressPath" . }}(/|$)(.*)
             pathType: Prefix
             backend:
-              serviceName: {{ include "event.fullname" . }}-cluster
-              servicePort: {{ .Values.clusterService.ports.http }}
+              service:
+                name: {{ include "event.fullname" . }}-cluster
+                port:
+                  number: {{ .Values.clusterService.ports.http }}
