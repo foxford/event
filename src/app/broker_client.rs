@@ -1,23 +1,11 @@
 use std::convert::TryInto;
-use std::sync::Arc;
-use std::time::Duration;
 
-use anyhow::Result;
 use async_trait::async_trait;
-use chrono::Utc;
 #[cfg(test)]
 use mockall::automock;
 use reqwest::{header, Url};
 use serde::{Deserialize, Serialize};
-use svc_agent::{
-    error::Error as AgentError,
-    mqtt::{
-        OutgoingMessage, OutgoingRequest, OutgoingRequestProperties, ShortTermTimingProperties,
-        SubscriptionTopic,
-    },
-    request::Dispatcher,
-    AccountId, AgentId, Subscription,
-};
+use svc_agent::AgentId;
 use uuid::Uuid;
 
 #[derive(Debug, Serialize)]
@@ -49,7 +37,6 @@ impl SubscriptionRequest {
 #[derive(Debug)]
 pub enum CreateDeleteResponse {
     Ok,
-    ClientDisconnected,
 }
 
 #[derive(Debug, Deserialize, PartialEq, Eq)]
@@ -90,130 +77,6 @@ pub trait BrokerClient: Sync + Send {
         id: Uuid,
         subject: &AgentId,
     ) -> anyhow::Result<CreateDeleteResponse>;
-}
-
-pub struct MqttBrokerClient {
-    me: AgentId,
-    broker_account_id: AccountId,
-    dispatcher: Arc<Dispatcher>,
-    timeout: Option<Duration>,
-    api_version: String,
-}
-
-#[async_trait]
-impl BrokerClient for MqttBrokerClient {
-    async fn enter_room(
-        &self,
-        id: Uuid,
-        subject: &AgentId,
-    ) -> anyhow::Result<CreateDeleteResponse> {
-        self.subscription_request(id, subject, "subscription.create")
-            .await
-    }
-
-    async fn enter_broadcast_room(
-        &self,
-        id: Uuid,
-        subject: &AgentId,
-    ) -> anyhow::Result<CreateDeleteResponse> {
-        self.subscription_request(id, subject, "broadcast_subscription.create")
-            .await
-    }
-}
-
-impl MqttBrokerClient {
-    pub fn new(
-        me: AgentId,
-        broker_account_id: AccountId,
-        dispatcher: Arc<Dispatcher>,
-        timeout: Option<Duration>,
-        api_version: &str,
-    ) -> Self {
-        Self {
-            me,
-            broker_account_id,
-            dispatcher,
-            timeout,
-            api_version: api_version.to_string(),
-        }
-    }
-
-    async fn subscription_request(
-        &self,
-        id: Uuid,
-        subject: &AgentId,
-        method: &str,
-    ) -> anyhow::Result<CreateDeleteResponse> {
-        let reqp = self.build_reqp(method)?;
-
-        let payload = SubscriptionRequest::room_events(subject, id);
-
-        let msg = if let OutgoingMessage::Request(msg) =
-            OutgoingRequest::multicast(payload, reqp, &self.broker_account_id, &self.api_version)
-        {
-            msg
-        } else {
-            unreachable!()
-        };
-
-        let request = self.dispatcher.request::<_, BrokerResponsePayload>(msg);
-        let response = if let Some(dur) = self.timeout {
-            tokio::time::timeout(dur, request)
-                .await
-                .map_err(|_e| anyhow!("Mqtt request timed out"))?
-        } else {
-            request.await
-        };
-
-        let response = response.map_err(|e| anyhow!("Mqtt request failed, err = {:?}", e))?;
-        match response.properties().status() {
-            svc_agent::mqtt::ResponseStatus::OK => Ok(CreateDeleteResponse::Ok),
-            status => match response.extract_payload() {
-                BrokerResponsePayload::Err { reason }
-                    if reason == "Subject was not in vmq_subscriber_db" =>
-                {
-                    // Client has already disconnected from broker
-                    // We will return him an error but he probably already cancelled the http request too
-                    Ok(CreateDeleteResponse::ClientDisconnected)
-                }
-                payload => Err(anyhow!(
-                    "Mqtt request failed with status code = {:?}, payload = {:?}",
-                    status,
-                    payload
-                )),
-            },
-        }
-    }
-
-    fn response_topic(&self) -> Result<String, anyhow::Error> {
-        let me = self.me.clone();
-
-        Subscription::unicast_responses_from(&self.broker_account_id)
-            .subscription_topic(&me, &self.api_version)
-            .map_err(|e| AgentError::new(&e.to_string()).into())
-    }
-
-    fn build_reqp(&self, method: &str) -> Result<OutgoingRequestProperties, anyhow::Error> {
-        let reqp = OutgoingRequestProperties::new(
-            method,
-            &self.response_topic()?,
-            &generate_correlation_data(),
-            ShortTermTimingProperties::new(Utc::now()),
-        );
-
-        Ok(reqp)
-    }
-}
-
-const CORRELATION_DATA_LENGTH: usize = 16;
-use rand::{distributions::Alphanumeric, thread_rng, Rng};
-
-fn generate_correlation_data() -> String {
-    thread_rng()
-        .sample_iter(&Alphanumeric)
-        .take(CORRELATION_DATA_LENGTH)
-        .map(char::from)
-        .collect()
 }
 
 #[derive(Debug, Clone)]

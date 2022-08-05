@@ -25,8 +25,7 @@ pub struct Config {
     ban_duration_s: Option<u64>,
     #[serde(default)]
     pub vacuum: VacuumConfig,
-    #[serde(default)]
-    pub http_broker_client: Option<HttpBrokerClientConfig>,
+    pub http_broker_client: HttpBrokerClientConfig,
     pub constraint: Constraint,
 }
 
