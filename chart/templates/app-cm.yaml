@@ -17,6 +17,10 @@ data:
     [constraint]
     payload_size = {{ .Values.constraint.payload_size }}
 
+    [http_broker_client]
+    host = "http://mqtt-gateway-cluster:8081"
+    timeout = "1 minute"
+
     [mqtt]
     uri = "tcp://mqtt-gateway-cluster:51883"
     clean_session = false
