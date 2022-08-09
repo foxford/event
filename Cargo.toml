@@ -7,10 +7,10 @@ version = "0.2.60"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
-axum = "0.3"
+axum = "0.5"
 chrono = { version = "0.4", features = ["serde"] }
 config = "0.11"
-crossbeam-channel = "0.4"
+crossbeam-channel = "0.5"
 enum-iterator = "0.7"
 futures = "0.3"
 futures-channel = "0.3"
@@ -37,11 +37,11 @@ sqlx = { version = "0.5", features = ["offline", "postgres", "macros", "uuid", "
 svc-agent = { version = "0.19", features = ["sqlx", "queue-counter"] }
 svc-authn = { version = "0.7", features = ["jose", "sqlx"] }
 svc-authz = "0.11"
-svc-error = { version = "0.3", features = ["sqlx", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
-svc-utils = { version = "0.1.5", features = ["authn-extractor", "cors-middleware", "log-middleware"] }
+svc-error = { version = "0.4", features = ["sqlx", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
+svc-utils = { version = "0.4", features = ["authn-extractor", "cors-middleware", "log-middleware"] }
 tokio = { version = "1.14", features = ["full"] }
 tower = "0.4"
-tower-http = { version = "0.1", features = ["trace"] }
+tower-http = { version = "0.2", features = ["trace"] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-attributes  = "0.1"
@@ -60,7 +60,7 @@ optional = true
 humantime = "2.1.0"
 mockall = "0.10"
 rusoto_mock = "0.47"
-serial_test = "0.5"
+serial_test = "0.8"
 
 [profile.release]
 debug = true
