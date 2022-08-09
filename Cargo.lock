@@ -647,7 +647,7 @@ dependencies = [
  "svc-utils",
  "tokio",
  "tower",
- "tower-http 0.2.5",
+ "tower-http 0.3.3",
  "tracing",
  "tracing-appender",
  "tracing-attributes",
@@ -3095,6 +3095,7 @@ dependencies = [
  "tower",
  "tower-layer",
  "tower-service",
+ "tracing",
 ]
 
 [[package]]
