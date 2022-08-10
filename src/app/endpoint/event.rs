@@ -362,8 +362,8 @@ impl RequestHandler for ListHandler {
         let room = helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Any).await?;
 
         // Authorize room events listing.
-        let room_id = room.id().to_string();
-        let object = AuthzObject::new(&["rooms", &room_id]).into();
+        let classroom_id = room.classroom_id().to_string();
+        let object = AuthzObject::new(&["classrooms", &classroom_id]).into();
 
         let authz_time = context
             .authz()
@@ -539,12 +539,12 @@ mod tests {
 
         // Allow agent to create events of type `message` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
         let account_id = agent.account_id().to_string();
 
         let object = vec![
-            "rooms",
-            &room_id,
+            "classrooms",
+            &classroom_id,
             "pinned",
             "message",
             "authors",
@@ -1079,12 +1079,12 @@ mod tests {
 
         // Allow agent to create events of type `message` in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
+        let classroom_id = room.classroom_id().to_string();
         let account_id = agent.account_id().to_string();
 
         let object = vec![
-            "rooms",
-            &room_id,
+            "classrooms",
+            &classroom_id,
             "events",
             "message",
             "authors",
@@ -1319,8 +1319,8 @@ mod tests {
 
         // Allow agent to list events in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id];
+        let classroom_id = room.classroom_id().to_string();
+        let object = vec!["classrooms", &classroom_id];
         authz.allow(agent.account_id(), object, "read");
 
         // Make event.list request.
@@ -1402,8 +1402,8 @@ mod tests {
 
         // Allow agent to list events in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id];
+        let classroom_id = room.classroom_id().to_string();
+        let object = vec!["classrooms", &classroom_id];
         authz.allow(agent.account_id(), object, "read");
 
         // Make event.list request.
@@ -1488,8 +1488,8 @@ mod tests {
 
         // Allow agent to list events in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
-        let object = vec!["rooms", &room_id];
+        let classroom_id = room.classroom_id().to_string();
+        let object = vec!["classrooms", &classroom_id];
         authz.allow(agent.account_id(), object, "read");
 
         // Make event.list request.

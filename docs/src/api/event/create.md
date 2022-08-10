@@ -7,10 +7,10 @@ The _room_ must be opened.
 ## Authorization
 
 The tenant authorizes the current _agent_ for `create` action on
-`["rooms", room_id, "events", type, "authors", current_account_id]`.
+`["classrooms", classroom_id, "events", type, "authors", current_account_id]`.
 
 In case `is_claim` parameter is `true` the object is
-`["rooms", room_id, "claims", type, "authors", current_account_id]`.
+`["classrooms", classroom_id, "claims", type, "authors", current_account_id]`.
 
 ## Multicast request
 

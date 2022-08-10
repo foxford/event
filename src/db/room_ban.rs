@@ -80,38 +80,6 @@ impl InsertQuery {
 }
 
 #[derive(Debug)]
-pub(crate) struct FindQuery {
-    account_id: AccountId,
-    room_id: Uuid,
-}
-
-impl FindQuery {
-    pub(crate) fn new(account_id: AccountId, room_id: Uuid) -> Self {
-        Self {
-            account_id,
-            room_id,
-        }
-    }
-
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
-        sqlx::query_as!(
-            Object,
-            r#"
-            SELECT
-                id, account_id AS "account_id!: AccountId",
-                room_id, reason, created_at
-            FROM room_ban
-            WHERE account_id = $1 AND room_id = $2
-            "#,
-            self.account_id as AccountId,
-            self.room_id,
-        )
-        .fetch_optional(conn)
-        .await
-    }
-}
-
-#[derive(Debug)]
 pub(crate) struct ClassroomFindQuery {
     account_id: AccountId,
     classroom_id: Uuid,

@@ -73,7 +73,7 @@ impl RequestHandler for EventsDumpHandler {
         let room =
             helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Any).await?;
 
-        let object = AuthzObject::new(&["rooms"]).into();
+        let object = AuthzObject::new(&["classrooms"]).into();
 
         // Authorize room.
         let authz_time = context
@@ -190,7 +190,7 @@ mod tests {
         let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
         let db = TestDb::new().await;
         let mut authz = TestAuthz::new();
-        authz.allow(agent.account_id(), vec!["rooms"], "dump_events");
+        authz.allow(agent.account_id(), vec!["classrooms"], "dump_events");
 
         let room = {
             let mut conn = db.get_conn().await;
@@ -214,7 +214,7 @@ mod tests {
         let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
         let db = TestDb::new().await;
         let mut authz = TestAuthz::new();
-        authz.allow(agent.account_id(), vec!["rooms"], "dump_events");
+        authz.allow(agent.account_id(), vec!["classrooms"], "dump_events");
 
         let room = {
             let mut conn = db.get_conn().await;

@@ -4,7 +4,7 @@ Create a [room](../room.md#room).
 
 ## Authorization
 
-The tenant authorizes the current _agent_ for `create` action on `["rooms"]` object.
+The tenant authorizes the current _agent_ for `create` action on `["classrooms"]` object.
 
 ## Multicast request
 

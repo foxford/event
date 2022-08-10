@@ -56,7 +56,7 @@ pub(crate) async fn run(
         .start(&agent_config)
         .context("Failed to create an agent")?;
 
-    let is_banned_f = crate::app::endpoint::authz::db_ban_callback(db.clone());
+    let is_banned_f = endpoint::authz::db_ban_callback(db.clone());
 
     // Authz
     let authz = svc_authz::ClientMap::new(

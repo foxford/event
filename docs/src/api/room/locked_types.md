@@ -4,7 +4,7 @@ Its possible to restrict events creation only to those allowed to update room.
 
 ## Authorization
 
-The tenant authorizes the current _agent_ for `update` action on `["rooms", room_id]` object.
+The tenant authorizes the current _agent_ for `update` action on `["classrooms", classroom_id]` object.
 
 ## Multicast request
 

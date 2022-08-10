@@ -435,9 +435,11 @@ mod tests {
 
         // Allow agent to list agents in the room.
         let mut authz = TestAuthz::new();
-        let room_id = room.id().to_string();
-
-        authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
+        authz.allow(
+            agent.account_id(),
+            vec!["classrooms", &room.classroom_id().to_string()],
+            "read",
+        );
 
         // Make agent.list request.
         let mut context = TestContext::new(db, authz);
@@ -596,7 +598,8 @@ mod tests {
         assert_eq!(ev_body.banned_by, *admin.account_id());
 
         let mut conn = context.db().acquire().await.expect("Failed conn checkout");
-        let db_ban = db::room_ban::FindQuery::new(ev_body.account_id, room.id())
+
+        let db_ban = db::room_ban::ClassroomFindQuery::new(ev_body.account_id, room.classroom_id())
             .execute(&mut conn)
             .await
             .expect("Failed to query ban in db")
@@ -673,7 +676,7 @@ mod tests {
             .expect("Failed to find agent.update event");
         assert_eq!(evp.label(), "agent.update");
         assert_eq!(ev_body.account_id, *user.account_id());
-        assert_eq!(ev_body.banned, false);
+        assert!(!ev_body.banned);
 
         let (ev_body, evp, _) =
             find_event_by_predicate::<TenantBanNotification, _>(messages.as_slice(), |evp| {
@@ -683,12 +686,12 @@ mod tests {
         assert_eq!(evp.label(), "agent.ban");
         assert_eq!(ev_body.account_id, *user.account_id());
         assert_eq!(ev_body.room_id, room.id());
-        assert_eq!(ev_body.banned, false);
+        assert!(!ev_body.banned);
         assert_eq!(ev_body.banned_by, *admin.account_id());
         assert_eq!(ev_body.reason, None);
 
         let mut conn = context.db().acquire().await.expect("Failed conn checkout");
-        let db_ban = db::room_ban::FindQuery::new(ev_body.account_id, room.id())
+        let db_ban = db::room_ban::ClassroomFindQuery::new(ev_body.account_id, room.classroom_id())
             .execute(&mut conn)
             .await
             .expect("Failed to query ban in db");

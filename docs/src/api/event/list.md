@@ -4,7 +4,7 @@ List [events](../event.md#event) in a [room](../room#room).
 
 ## Authorization
 
-The tenant authorizes the current _agent_ for `read` action on `["rooms", room_id]` object.
+The tenant authorizes the current _agent_ for `read` action on `["classrooms", classroom_id]` object.
 
 ## Multicast request
 
