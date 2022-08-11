@@ -60,7 +60,7 @@ optional = true
 humantime = "2.1.0"
 mockall = "0.10"
 rusoto_mock = "0.47"
-serial_test = "0.8"
+serial_test = "0.9"
 
 [profile.release]
 debug = true
