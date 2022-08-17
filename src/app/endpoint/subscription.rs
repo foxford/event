@@ -81,14 +81,12 @@ impl EventHandler for DeleteEventHandler {
             let query = agent::DeleteQuery::new(payload.subject.clone(), room_id);
             let mut conn = context.get_conn().await?;
 
-            let row_count = context
+            context
                 .metrics()
                 .measure_query(QueryKey::AgentDeleteQuery, query.execute(&mut conn))
                 .await
                 .context("Failed to delete agent")
-                .error(AppErrorKind::DbQueryFailed)?;
-
-            row_count
+                .error(AppErrorKind::DbQueryFailed)?
         };
 
         // Ignore missing agent.
