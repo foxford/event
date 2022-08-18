@@ -4,7 +4,7 @@ Used to update whiteboard access in a room (if the room has `validate_whiteboard
 
 ## Authorization
 
-The tenant authorizes the current _agent_ for `update` action on `["rooms", room_id]` object.
+The tenant authorizes the current _agent_ for `update` action on `["classrooms", classroom_id]` object.
 
 ## Multicast request
 

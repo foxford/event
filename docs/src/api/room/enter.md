@@ -14,7 +14,7 @@ For implementation details see the [room entrance](../../impl/room_entrance.md).
 ## Authorization
 
 The tenant authorizes the current _agent_ for `read` action on
-`["rooms", room_id]` object.
+`["classrooms", classroom_id]` object.
 
 ## Multicast request
 

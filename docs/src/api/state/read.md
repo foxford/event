@@ -4,7 +4,7 @@ Read a [state](../state.md#state) of _sets_ at a [room](../room.md#room).
 
 ## Authorization
 
-The tenant authorizes the current _agent_ for a `list` action on `["rooms", room_id, "list"]` object.
+The tenant authorizes the current _agent_ for a `list` action on `["classrooms", classroom_id, "list"]` object.
 
 ## Multicast request
 

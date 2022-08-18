@@ -6,7 +6,7 @@ Performs events shifting as described in [`room.adjust`](../room/adjust.md).
 
 ## Authorization
 
-The tenant authorizes the current _agent_ for `update` action on `["rooms", room_id]` object.
+The tenant authorizes the current _agent_ for `update` action on `["classrooms", classroom_id]` object.
 
 ## Multicast request
 

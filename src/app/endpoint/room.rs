@@ -99,7 +99,7 @@ impl RequestHandler for CreateHandler {
             }
         }
 
-        let object = AuthzObject::new(&["rooms"]).into();
+        let object = AuthzObject::new(&["classrooms"]).into();
 
         // Authorize room creation on the tenant.
         let authz_time = context
@@ -440,7 +440,7 @@ impl RequestHandler for EnterHandler {
 
         // Authorize subscribing to the room's events.
         let object: Box<dyn svc_authz::IntentObject> =
-            AuthzObject::new(&["rooms", &room.id().to_string()]).into();
+            AuthzObject::new(&["classrooms", &room.classroom_id().to_string()]).into();
 
         let authz_time = context
             .authz()
@@ -968,7 +968,7 @@ mod tests {
             // Allow agent to create rooms.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            authz.allow(agent.account_id(), vec!["rooms"], "create");
+            authz.allow(agent.account_id(), vec!["classrooms"], "create");
 
             // Make room.create request.
             let mut context = TestContext::new(TestDb::new().await, authz);
@@ -1016,7 +1016,7 @@ mod tests {
             // Allow agent to create rooms.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            authz.allow(agent.account_id(), vec!["rooms"], "create");
+            authz.allow(agent.account_id(), vec!["classrooms"], "create");
 
             // Make room.create request.
             let mut context = TestContext::new(TestDb::new().await, authz);
@@ -1061,7 +1061,7 @@ mod tests {
             // Allow agent to create rooms.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            authz.allow(agent.account_id(), vec!["rooms"], "create");
+            authz.allow(agent.account_id(), vec!["classrooms"], "create");
 
             // Make room.create request.
             let mut context = TestContext::new(TestDb::new().await, authz);
@@ -1138,7 +1138,7 @@ mod tests {
             // Allow agent to create rooms.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            authz.allow(agent.account_id(), vec!["rooms"], "create");
+            authz.allow(agent.account_id(), vec!["classrooms"], "create");
 
             // Make room.create request.
             let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
@@ -1643,9 +1643,12 @@ mod tests {
             // Allow agent to subscribe to the rooms' events.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-
-            authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
+            let classroom_id = room.classroom_id().to_string();
+            authz.allow(
+                agent.account_id(),
+                vec!["classrooms", &classroom_id],
+                "read",
+            );
 
             // Make room.enter request.
             let mut context = TestContext::new(db, authz);
@@ -1730,9 +1733,12 @@ mod tests {
             // Allow agent to subscribe to the rooms' events.
             let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
             let mut authz = TestAuthz::new();
-            let room_id = room.id().to_string();
-
-            authz.allow(agent.account_id(), vec!["rooms", &room_id], "read");
+            let classroom_id = room.classroom_id().to_string();
+            authz.allow(
+                agent.account_id(),
+                vec!["classrooms", &classroom_id],
+                "read",
+            );
 
             // Make room.enter request.
             let mut context = TestContext::new(db, TestAuthz::new());

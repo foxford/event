@@ -4,7 +4,7 @@ Read bans in [room](../room.md#room).
 
 ## Authorization
 
-The tenant authorizes the current _agent_ for a `update` action on `["rooms", room_id]` object.
+The tenant authorizes the current _agent_ for a `update` action on `["classrooms", classroom_id]` object.
 
 ## Multicast request
 

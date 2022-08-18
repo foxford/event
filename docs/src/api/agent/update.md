@@ -4,7 +4,7 @@ Bans or unbans provided [account](../agent.md#agent) in a [room](../room.md#room
 
 ## Authorization
 
-The tenant authorizes the current _agent_ for `create` action on `["rooms", room_id, "claims", "role", "authors", current_account_id]`.
+The tenant authorizes the current _agent_ for `create` action on `["classrooms", classroom_id, "claims", "role", "authors", current_account_id]`.
 
 ## Multicast request
 
