@@ -1,0 +1,32 @@
+name: Deploy via Flux
+
+on:
+  workflow_dispatch:
+    inputs:
+      kubernetes:
+        type: choice
+        description: 'Select kube cluster'
+        options:
+        - dev
+      namespace:
+        type: choice
+        description: 'Select namespace'
+        options:
+        - s01-classroom-foxford
+        - 
+      version:
+        description: 'Commit/tag/branch'
+        required: false
+        default: 'master'
+
+jobs:
+  deploy:
+    if: inputs.kubernetes == 'dev'
+    uses: foxford/temp-reusable/.github/workflows/deploy.yml@main
+    with:
+      namespace: ${{ inputs.namespace }}
+      version: ${{ inputs.version }}
+    secrets:
+      kube_config_base64: ${{ secrets.KUBE_CONFIG_DEV_BASE64 }} 
+      gh_token: ${{ secrets._GITHUB_TOKEN }}
+
