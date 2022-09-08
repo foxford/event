@@ -1,3 +1,5 @@
+use std::convert::TryFrom;
+
 use chrono::serde::{ts_milliseconds, ts_milliseconds_option};
 use chrono::{DateTime, Duration, Utc};
 use serde_derive::{Deserialize, Serialize};
@@ -85,6 +87,67 @@ impl Object {
     #[cfg(test)]
     pub(crate) fn removed(&self) -> bool {
         self.removed
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
+pub(crate) struct RawObject {
+    id: Uuid,
+    room_id: Uuid,
+    #[serde(rename = "type")]
+    kind: String,
+    set: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    label: Option<String>,
+    attribute: Option<String>,
+    data: Option<JsonValue>,
+    binary_data: Option<PostcardBin<CompactEvent>>,
+    occurred_at: i64,
+    created_by: AgentId,
+    #[serde(with = "ts_milliseconds")]
+    created_at: DateTime<Utc>,
+    #[serde(
+        with = "ts_milliseconds_option",
+        skip_serializing_if = "Option::is_none",
+        skip_deserializing,
+        default
+    )]
+    deleted_at: Option<DateTime<Utc>>,
+    original_occurred_at: i64,
+    original_created_by: AgentId,
+    removed: bool,
+}
+
+impl TryFrom<RawObject> for Object {
+    type Error = sqlx::Error;
+
+    fn try_from(raw: RawObject) -> Result<Object, Self::Error> {
+        let data = match raw.binary_data {
+            Some(binary) => binary
+                .into_inner()
+                .to_json()
+                .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
+            None => raw.data.ok_or(sqlx::Error::Decode(
+                "data should be specified if binary_data is missing".into(),
+            ))?,
+        };
+
+        Ok(Object {
+            id: raw.id,
+            room_id: raw.room_id,
+            kind: raw.kind,
+            set: raw.set,
+            label: raw.label,
+            attribute: raw.attribute,
+            data,
+            occurred_at: raw.occurred_at,
+            created_by: raw.created_by,
+            created_at: raw.created_at,
+            deleted_at: raw.deleted_at,
+            original_occurred_at: raw.original_occurred_at,
+            original_created_by: raw.original_created_by,
+            removed: raw.removed,
+        })
     }
 }
 
@@ -367,7 +430,8 @@ pub(crate) struct InsertQuery {
     kind: String,
     set: String,
     label: Option<String>,
-    data: JsonValue,
+    data: Option<JsonValue>,
+    binary_data: Option<PostcardBin<CompactEvent>>,
     attribute: Option<String>,
     occurred_at: i64,
     created_by: AgentId,
@@ -382,19 +446,25 @@ impl InsertQuery {
         data: JsonValue,
         occurred_at: i64,
         created_by: AgentId,
-    ) -> Self {
-        Self {
+    ) -> Result<Self, anyhow::Error> {
+        let (data, binary_data) = match kind.as_str() {
+            "draw" => (None, Some(PostcardBin::new(CompactEvent::from_json(data)?))),
+            _ => (Some(data), None),
+        };
+
+        Ok(Self {
             room_id,
             set: kind.clone(),
             kind,
             label: None,
             attribute: None,
             data,
+            binary_data,
             occurred_at,
             created_by,
             created_at: None,
             removed: false,
-        }
+        })
     }
 
     pub(crate) fn set(self, set: String) -> Self {
@@ -428,8 +498,8 @@ impl InsertQuery {
     }
 
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
-        sqlx::query_as!(
-            Object,
+        let raw = sqlx::query_as!(
+            RawObject,
             r#"
             INSERT INTO event (
                 room_id,
@@ -441,9 +511,10 @@ impl InsertQuery {
                 occurred_at,
                 created_by,
                 created_at,
-                removed
+                removed,
+                binary_data
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
             RETURNING
                 id,
                 room_id,
@@ -452,6 +523,7 @@ impl InsertQuery {
                 label,
                 attribute,
                 data,
+                binary_data AS "binary_data: PostcardBin<CompactEvent>",
                 occurred_at,
                 created_by AS "created_by!: AgentId",
                 created_at,
@@ -469,10 +541,13 @@ impl InsertQuery {
             self.occurred_at,
             self.created_by as AgentId,
             self.created_at.unwrap_or_else(|| Utc::now()),
-            self.removed
+            self.removed,
+            self.binary_data as Option<PostcardBin<CompactEvent>>,
         )
         .fetch_one(conn)
-        .await
+        .await?;
+
+        Object::try_from(raw)
     }
 }
 
@@ -525,8 +600,8 @@ impl OriginalEventQuery {
     }
 
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
-        sqlx::query_as!(
-            Object,
+        let raw = sqlx::query_as!(
+            RawObject,
             r#"
             SELECT
                 id,
@@ -536,6 +611,7 @@ impl OriginalEventQuery {
                 label,
                 attribute,
                 data,
+                binary_data as "binary_data: PostcardBin<CompactEvent>",
                 occurred_at,
                 created_by as "created_by!: AgentId",
                 created_at,
@@ -556,7 +632,12 @@ impl OriginalEventQuery {
             self.label,
         )
         .fetch_optional(conn)
-        .await
+        .await?;
+
+        match raw {
+            Some(raw) => Ok(Some(Object::try_from(raw)?)),
+            None => Ok(None),
+        }
     }
 }
 
@@ -675,7 +756,7 @@ pub(crate) async fn insert_agent_action(
         JsonValue::Null,
         occurred_at,
         agent_id.to_owned(),
-    )
+    )?
     .execute(conn)
     .await?;
     Ok(())
@@ -704,11 +785,16 @@ pub(crate) async fn insert_account_ban_event(
         serde_json::json!({ "account_id": banned_user.to_owned(), "value": value, "reason": reason }),
         occurred_at,
         agent_id.to_owned(),
-    )
+    )?
     .execute(conn)
     .await?;
     Ok(())
 }
 
+mod binary_encoding;
+mod schema;
 mod set_state;
+
+pub use self::binary_encoding::PostcardBin;
+pub use schema::CompactEvent;
 pub use set_state::Query as SetStateQuery;

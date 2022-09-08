@@ -2,7 +2,9 @@ use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
 use uuid::Uuid;
 
-use super::Object;
+use crate::db::event::RawObject;
+
+use super::{CompactEvent, Object, PostcardBin};
 
 #[derive(Clone)]
 pub struct Query<'a> {
@@ -41,9 +43,9 @@ impl<'a> Query<'a> {
     }
 
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
-        if let Some(attribute) = self.attribute {
+        let raw_objects = if let Some(attribute) = self.attribute {
             sqlx::query_as!(
-                Object,
+                RawObject,
                 r#"
                 SELECT
                     id,
@@ -53,6 +55,7 @@ impl<'a> Query<'a> {
                     label,
                     attribute,
                     data,
+                    binary_data as "binary_data: PostcardBin<CompactEvent>",
                     occurred_at,
                     created_by as "created_by!: AgentId",
                     created_at,
@@ -88,10 +91,10 @@ impl<'a> Query<'a> {
                 self.limit,
             )
             .fetch_all(conn)
-            .await
+            .await?
         } else {
             sqlx::query_as!(
-                Object,
+                RawObject,
                 r#"
                 SELECT
                     id,
@@ -101,6 +104,7 @@ impl<'a> Query<'a> {
                     label,
                     attribute,
                     data,
+                    binary_data as "binary_data: PostcardBin<CompactEvent>",
                     occurred_at,
                     created_by as "created_by!: AgentId",
                     created_at,
@@ -128,8 +132,16 @@ impl<'a> Query<'a> {
                 self.limit,
             )
             .fetch_all(conn)
-            .await
+            .await?
+        };
+
+        let mut objects = Vec::with_capacity(raw_objects.len());
+
+        for raw in raw_objects {
+            objects.push(Object::try_from(raw)?);
         }
+
+        Ok(objects)
     }
 
     pub(crate) async fn total_count(&self, conn: &mut PgConnection) -> sqlx::Result<i64> {

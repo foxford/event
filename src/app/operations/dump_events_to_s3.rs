@@ -214,6 +214,7 @@ mod tests {
             occurred_at,
             created_by,
         )
+        .expect("Failed to create insert query")
         .created_at(opened_at + chrono::Duration::nanoseconds(occurred_at))
         .execute(conn)
         .await

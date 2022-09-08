@@ -51,6 +51,8 @@ tracing-log = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = "2"
 uuid = { version = "0.8", features = ["v4", "serde"] }
+postcard = { version = "1.0.2", features = ["alloc"] }
+csscolorparser = { version = "0.6.2", features = ["serde"] }
 
 [dependencies.dotenv]
 version = "0.15"

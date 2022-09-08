@@ -206,7 +206,8 @@ impl RequestHandler for CreateHandler {
                 data,
                 occurred_at,
                 reqp.as_agent_id().to_owned(),
-            );
+            )
+            .error(AppErrorKind::InvalidEvent)?;
 
             if let Some(set) = set {
                 query = query.set(set);
@@ -423,6 +424,8 @@ impl RequestHandler for ListHandler {
                 .context("Failed to list events")
                 .error(AppErrorKind::DbQueryFailed)?
         };
+
+        // TODO: decode
 
         // Respond with events list.
         Ok(AppResponse::new(
