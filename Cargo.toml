@@ -11,6 +11,7 @@ axum = "0.5"
 chrono = { version = "0.4", features = ["serde"] }
 config = "0.11"
 crossbeam-channel = "0.5"
+csscolorparser = { version = "0.6.2", features = ["serde"] }
 enum-iterator = "0.7"
 futures = "0.3"
 futures-channel = "0.3"
@@ -19,6 +20,7 @@ http = "0.2"
 humantime-serde = "1"
 hyper = { version = "0.14.15", features = [ "server" ] }
 parking_lot = "0.11"
+postcard = { version = "1.0.2", features = ["alloc"] }
 prometheus = "0.13"
 quaint = { version = "0.1", features = ["uuid-0_8", "chrono-0_4"] }
 rand = "0.8"
@@ -51,8 +53,6 @@ tracing-log = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = "2"
 uuid = { version = "0.8", features = ["v4", "serde"] }
-postcard = { version = "1.0.2", features = ["alloc"] }
-csscolorparser = { version = "0.6.2", features = ["serde"] }
 
 [dependencies.dotenv]
 version = "0.15"
