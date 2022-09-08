@@ -425,8 +425,6 @@ impl RequestHandler for ListHandler {
                 .error(AppErrorKind::DbQueryFailed)?
         };
 
-        // TODO: decode
-
         // Respond with events list.
         Ok(AppResponse::new(
             ResponseStatus::OK,
