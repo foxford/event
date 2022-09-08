@@ -20,6 +20,7 @@ impl Event {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[allow(clippy::large_enum_variant)]
 pub enum CompactEvent {
     Path(CompactPathEvent),
     Other(EventSchema),
@@ -33,7 +34,7 @@ impl CompactEvent {
         Ok(compacted)
     }
 
-    pub fn to_json(self) -> Result<serde_json::Value, serde_json::Error> {
+    pub fn into_json(self) -> Result<serde_json::Value, serde_json::Error> {
         let evt = match self {
             CompactEvent::Path(evt) => Event::Path(evt.into_event()),
             CompactEvent::Other(evt) => Event::Other(evt),
@@ -517,7 +518,7 @@ pub struct CompactPathEvent {
 fn decode_path(path: Vec<serde_json::Value>) -> Option<Path> {
     let mut decoded_path = Vec::with_capacity(path.len());
 
-    fn as_f64(arr: &Vec<serde_json::Value>, idx: usize) -> Option<f64> {
+    fn as_f64(arr: &[serde_json::Value], idx: usize) -> Option<f64> {
         arr.get(idx)?.as_f64()
     }
 

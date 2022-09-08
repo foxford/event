@@ -125,9 +125,9 @@ impl TryFrom<RawObject> for Object {
         let data = match raw.binary_data {
             Some(binary) => binary
                 .into_inner()
-                .to_json()
+                .into_json()
                 .map_err(|err| sqlx::Error::Decode(Box::new(err)))?,
-            None => raw.data.ok_or(sqlx::Error::Decode(
+            None => raw.data.ok_or_else(|| sqlx::Error::Decode(
                 "data should be specified if binary_data is missing".into(),
             ))?,
         };
