@@ -1249,7 +1249,7 @@ mod tests {
             "classrooms",
             &classroom_id,
             "events",
-            "test-draw",
+            "draw",
             "authors",
             &account_id,
         ];
@@ -1261,7 +1261,7 @@ mod tests {
         let payload = CreateRequest {
             room_id: room.id(),
             payload: CreatePayload {
-                kind: String::from("test-draw"),
+                kind: String::from("draw"),
                 set: Some(String::from("set")),
                 label: Some(String::from("label-2")),
                 attribute: None,
