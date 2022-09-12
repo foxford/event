@@ -200,90 +200,6 @@ enum Kind {
     Triangle,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_float() {
-        let f = 1333848207744524300000000000000000000000000.0;
-        println!("{f}");
-    }
-
-    #[test]
-    fn test_font_weight() {
-        #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-        struct Test {
-            #[serde(skip_serializing_if = "Option::is_none")]
-            t: Option<FontWeight>,
-        }
-
-        let de_cases = [
-            (
-                "{\"t\": \"bold\"}",
-                Test {
-                    t: Some(FontWeight::Bold),
-                },
-            ),
-            (
-                "{\"t\": \"normal\"}",
-                Test {
-                    t: Some(FontWeight::Normal),
-                },
-            ),
-            ("{}", Test { t: None }),
-        ];
-
-        for (input, should_be) in de_cases {
-            assert_eq!(
-                serde_json::from_str::<Test>(input).expect(input),
-                should_be,
-                "failed on input {}",
-                input
-            );
-        }
-
-        let ser_cases = [
-            (
-                Test {
-                    t: Some(FontWeight::Bold),
-                },
-                "{\"t\":\"bold\"}",
-            ),
-            (
-                Test {
-                    t: Some(FontWeight::Normal),
-                },
-                "{\"t\":\"normal\"}",
-            ),
-            (Test { t: None }, "{}"),
-        ];
-
-        for (input, should_be) in ser_cases {
-            assert_eq!(
-                serde_json::to_string(&input).expect(should_be),
-                should_be,
-                "failed on {}",
-                should_be
-            );
-        }
-    }
-
-    #[test]
-    fn test_color_size() {
-        let color_as_str = "rgba(235,20,76,1)";
-        let color_as_string = color_as_str.to_owned();
-        let color: Color = color_as_str.parse().unwrap();
-        let color_encoded = postcard::to_allocvec(&color).unwrap();
-        println!(
-            "{} {} {}",
-            color_as_str.len(),
-            color_as_string.len(),
-            color_encoded.len()
-        );
-    }
-}
-
 /// This is the schema for each event type.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -869,6 +785,71 @@ impl CompactPathEvent {
             x2: None,
             y1: None,
             y2: None,
+        }
+    }
+}
+
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_font_weight() {
+        #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
+        struct Test {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            t: Option<FontWeight>,
+        }
+
+        let de_cases = [
+            (
+                "{\"t\": \"bold\"}",
+                Test {
+                    t: Some(FontWeight::Bold),
+                },
+            ),
+            (
+                "{\"t\": \"normal\"}",
+                Test {
+                    t: Some(FontWeight::Normal),
+                },
+            ),
+            ("{}", Test { t: None }),
+        ];
+
+        for (input, should_be) in de_cases {
+            assert_eq!(
+                serde_json::from_str::<Test>(input).expect(input),
+                should_be,
+                "failed on input {}",
+                input
+            );
+        }
+
+        let ser_cases = [
+            (
+                Test {
+                    t: Some(FontWeight::Bold),
+                },
+                "{\"t\":\"bold\"}",
+            ),
+            (
+                Test {
+                    t: Some(FontWeight::Normal),
+                },
+                "{\"t\":\"normal\"}",
+            ),
+            (Test { t: None }, "{}"),
+        ];
+
+        for (input, should_be) in ser_cases {
+            assert_eq!(
+                serde_json::to_string(&input).expect(should_be),
+                should_be,
+                "failed on {}",
+                should_be
+            );
         }
     }
 }

@@ -200,7 +200,7 @@ mod tests {
 
         factory::Event::new()
             .room_id(room.id())
-            .kind("draw")
+            .kind("test-draw")
             .set("page1")
             .label("drawing1")
             .occurred_at(10_000_000_000_000 - minutes_ago * 60_000_000_000)
