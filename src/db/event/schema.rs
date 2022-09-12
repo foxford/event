@@ -789,7 +789,6 @@ impl CompactPathEvent {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
