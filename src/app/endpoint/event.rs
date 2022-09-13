@@ -1215,7 +1215,9 @@ mod tests {
                 set: Some(String::from("set")),
                 label: Some(String::from("label-2")),
                 attribute: None,
-                data: json!({ "foo": "baz" }),
+                data: crate::db::event::CompactEvent::test_event()
+                    .into_json()
+                    .unwrap(),
                 is_claim: false,
                 is_persistent: true,
                 removed: false,
@@ -1265,7 +1267,9 @@ mod tests {
                 set: Some(String::from("set")),
                 label: Some(String::from("label-2")),
                 attribute: None,
-                data: json!({ "foo": "bar" }),
+                data: crate::db::event::CompactEvent::test_event()
+                    .into_json()
+                    .unwrap(),
                 is_claim: false,
                 is_persistent: true,
                 removed: false,
@@ -1284,7 +1288,7 @@ mod tests {
         // This must succeed cause even though whiteboard access map is empty user is allowed to update the room
         handle_request::<CreateHandler>(&mut context, &agent, payload)
             .await
-            .expect("Event creation faield");
+            .expect("Event creation failed");
     }
 
     ///////////////////////////////////////////////////////////////////////////
