@@ -1,7 +1,7 @@
 -- add column for event binary repr
 ALTER TABLE event ADD COLUMN binary_data bytea;
 -- allow data to be null w/o default but only
--- iff binary_data is present and vice versa
+-- if binary_data is present and vice versa
 ALTER TABLE event ALTER COLUMN data DROP NOT NULL;
 ALTER TABLE event ALTER COLUMN data DROP DEFAULT;
 ALTER TABLE event ADD CONSTRAINT data_or_binary_data_not_null
