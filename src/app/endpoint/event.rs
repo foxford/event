@@ -1215,7 +1215,7 @@ mod tests {
                 set: Some(String::from("set")),
                 label: Some(String::from("label-2")),
                 attribute: None,
-                data: crate::db::event::CompactEvent::test_event()
+                data: crate::db::event::CompactEvent::test_rect_event()
                     .into_json()
                     .unwrap(),
                 is_claim: false,
@@ -1267,7 +1267,7 @@ mod tests {
                 set: Some(String::from("set")),
                 label: Some(String::from("label-2")),
                 attribute: None,
-                data: crate::db::event::CompactEvent::test_event()
+                data: crate::db::event::CompactEvent::test_rect_event()
                     .into_json()
                     .unwrap(),
                 is_claim: false,

@@ -44,78 +44,135 @@ impl CompactEvent {
     }
 
     #[cfg(test)]
-    pub fn test_event() -> Self {
+    pub fn test_rect_event() -> Self {
         Self::Other(EventSchema {
-            _id: Uuid::new_v4(),
-            origin_x: Origin::Left,
-            origin_y: Origin::Top,
             top: 1.0,
             left: 1.0,
-            height: 100.0,
-            width: 100.0,
-            angle: 0.0,
-            flip_x: false,
-            flip_y: false,
-            skew_x: 0.0,
-            skew_y: 0.0,
-            scale_x: 0.0,
-            scale_y: 0.0,
-            fill: None,
-            fill_rule: FillRule::NonZero,
-            stroke: None,
-            opacity: 1,
-            visible: true,
-            paint_first: PaintFirst::Fill,
-            global_composite_operation: GlobalCompositeOperation::SourceOver,
-            background_color: None,
-            no_scale_cache: Some(true),
-            stroke_dash_array: None,
-            stroke_dash_offset: 0.0,
-            stroke_line_cap: StrokeLineCap::Butt,
-            stroke_line_join: StrokeLineJoin::Round,
-            stroke_miter_limit: 10,
-            stroke_uniform: Some(true),
-            stroke_width: 1,
-            cross_origin: None,
-            version: "v0.4.6".to_owned(),
+            height: 10.0,
+            width: 10.0,
             kind: Kind::Rect,
-            _removed: None,
-            _rev: None,
-            _restored: None,
-            _locked_by_user: None,
-            _only_state: None,
-            _invalidate: None,
-            path: None,
-            src: None,
-            crop_x: None,
-            crop_y: None,
-            filters: None,
-            rx: None,
-            ry: None,
-            radius: None,
-            start_angle: None,
-            end_angle: None,
-            text: None,
-            font_size: None,
-            min_width: None,
-            overline: None,
-            path_side: None,
-            direction: None,
-            font_style: None,
-            text_align: None,
-            underline: None,
-            font_family: None,
-            font_weight: None,
-            line_height: None,
-            char_spacing: None,
-            linethrough: None,
-            path_start_offset: None,
-            split_by_grapheme: None,
-            text_background_color: None,
             x1: Some(1.0),
             x2: Some(10.0),
             y1: Some(1.0),
             y2: Some(10.0),
+            ..EventSchema::placeholder()
+        })
+    }
+
+    #[cfg(test)]
+    pub fn test_line_event() -> Self {
+        Self::Other(EventSchema {
+            top: 1.0,
+            left: 1.0,
+            height: 10.0,
+            width: 10.0,
+            kind: Kind::WhiteboardLine,
+            x1: Some(1.0),
+            x2: Some(10.0),
+            y1: Some(1.0),
+            y2: Some(10.0),
+            ..EventSchema::placeholder()
+        })
+    }
+
+    #[cfg(test)]
+    pub fn test_circle_event() -> Self {
+        Self::Other(EventSchema {
+            top: 1.0,
+            left: 1.0,
+            height: 10.0,
+            width: 10.0,
+            kind: Kind::Circle,
+            radius: Some(10.0),
+            start_angle: Some(0.0),
+            end_angle: Some(6.283185307179586),
+            ..EventSchema::placeholder()
+        })
+    }
+
+    #[cfg(test)]
+    pub fn test_image_event() -> Self {
+        Self::Other(EventSchema {
+            top: 1.0,
+            left: 1.0,
+            height: 10.0,
+            width: 10.0,
+            kind: Kind::Image,
+            src: Some("storage://00000000-0000-0000-0000-000000000000.png".to_owned()),
+            ..EventSchema::placeholder()
+        })
+    }
+
+    #[cfg(test)]
+    pub fn test_path_event() -> Self {
+        let evt = EventSchema {
+            top: 1.0,
+            left: 1.0,
+            height: 10.0,
+            width: 10.0,
+            kind: Kind::Path,
+            path: Some(vec![
+                serde_json::json!(["M", -6.54, 5614.2]),
+                serde_json::json!(["Q", -6.54, 5614.19, -6.54, 5613.08]),
+                serde_json::json!(["Q", -6.54, 5611.98, -6.54, 5610.87]),
+                serde_json::json!(["Q", -6.54, 5609.76, -6.54, 5608.65]),
+                serde_json::json!(["Q", -6.54, 5607.54, -5.43, 5605.87]),
+                serde_json::json!(["Q", -4.32, 5604.21, -3.77, 5603.1]),
+                serde_json::json!(["Q", -3.21, 5601.99, -2.1, 5600.32]),
+                serde_json::json!(["Q", -0.99, 5598.66, -0.43, 5597.55]),
+                serde_json::json!(["Q", 0.12, 5596.44, 1.23, 5595.33]),
+                serde_json::json!(["Q", 2.34, 5594.22, 3.45, 5593.11]),
+                serde_json::json!(["Q", 4.57, 5592, 6.23, 5590.89]),
+                serde_json::json!(["Q", 7.9, 5589.78, 9.01, 5589.23]),
+                serde_json::json!(["Q", 10.12, 5588.67, 11.23, 5588.12]),
+                serde_json::json!(["Q", 12.34, 5587.56, 13.45, 5587.56]),
+                serde_json::json!(["Q", 14.56, 5587.56, 16.23, 5586.45]),
+                serde_json::json!(["L", 17.9, 5585.34]),
+            ]),
+            ..EventSchema::placeholder()
+        };
+
+        Self::Path(CompactPathEvent::try_from_event(evt).unwrap())
+    }
+
+    #[cfg(test)]
+    pub fn test_textbox_event() -> Self {
+        Self::Other(EventSchema {
+            top: 1.0,
+            left: 1.0,
+            height: 10.0,
+            width: 10.0,
+            kind: Kind::Textbox,
+            text: Some("text".to_owned()),
+            font_size: Some(40),
+            min_width: Some(20.0),
+            overline: Some(false),
+            path_side: Some("left".to_owned()),
+            direction: Some(Direction::Ltr),
+            font_style: Some(FontStyle::Normal),
+            text_align: Some(TextAlign::Left),
+            underline: Some(false),
+            font_family: Some("-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Roboto\", \"Oxygen\", \"Ubuntu\", \"Cantarell\", \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif".to_owned()),
+            font_weight: Some(FontWeight::Normal),
+            line_height: Some(1.16),
+            char_spacing: Some(0.0),
+            linethrough: Some(true),
+            path_start_offset: Some(0.0),
+            split_by_grapheme: Some(false),
+            text_background_color: Some("".to_owned()),
+            ..EventSchema::placeholder()
+        })
+    }
+
+    #[cfg(test)]
+    pub fn test_triangle_event() -> Self {
+        Self::Other(EventSchema {
+            top: 1.0,
+            left: 1.0,
+            height: 10.0,
+            width: 10.0,
+            kind: Kind::Triangle,
+            ..EventSchema::placeholder()
         })
     }
 }
@@ -348,7 +405,8 @@ pub struct EventSchema {
     src: Option<String>,
     crop_x: Option<f32>,
     crop_y: Option<f32>,
-    filters: Option<Vec<()>>,
+    // Do not support filters
+    // filters: Option<Vec<serde_json::Value>>,
 
     // Rect
     rx: Option<f32>,
@@ -386,6 +444,85 @@ pub struct EventSchema {
     x2: Option<f32>,
     y1: Option<f32>,
     y2: Option<f32>,
+}
+
+impl EventSchema {
+    // Intended for event generation. Generates incorrect
+    // event with sane default values.
+    #[cfg(test)]
+    fn placeholder() -> Self {
+        Self {
+            _id: Uuid::new_v4(),
+            origin_x: Origin::Left,
+            origin_y: Origin::Top,
+            top: Default::default(),
+            left: Default::default(),
+            height: Default::default(),
+            width: Default::default(),
+            angle: Default::default(),
+            flip_x: Default::default(),
+            flip_y: Default::default(),
+            skew_x: Default::default(),
+            skew_y: Default::default(),
+            scale_x: Default::default(),
+            scale_y: Default::default(),
+            fill: Default::default(),
+            fill_rule: Default::default(),
+            stroke: Default::default(),
+            opacity: 1,
+            visible: true,
+            paint_first: Default::default(),
+            global_composite_operation: Default::default(),
+            background_color: Default::default(),
+            no_scale_cache: Some(true),
+            stroke_dash_array: Default::default(),
+            stroke_dash_offset: Default::default(),
+            stroke_line_cap: Default::default(),
+            stroke_line_join: Default::default(),
+            stroke_miter_limit: 10,
+            stroke_uniform: Default::default(),
+            stroke_width: Default::default(),
+            cross_origin: Default::default(),
+            version: "4.6.0".to_owned(),
+            kind: Kind::WhiteboardLine,
+            _removed: Default::default(),
+            _rev: Default::default(),
+            _restored: Default::default(),
+            _locked_by_user: Default::default(),
+            _only_state: Default::default(),
+            _invalidate: Default::default(),
+            path: Default::default(),
+            src: Default::default(),
+            crop_x: Default::default(),
+            crop_y: Default::default(),
+            rx: Default::default(),
+            ry: Default::default(),
+            radius: Default::default(),
+            start_angle: Default::default(),
+            end_angle: Default::default(),
+            text: Default::default(),
+            font_size: Default::default(),
+            min_width: Default::default(),
+            overline: Default::default(),
+            path_side: Default::default(),
+            direction: Default::default(),
+            font_style: Default::default(),
+            text_align: Default::default(),
+            underline: Default::default(),
+            font_family: Default::default(),
+            font_weight: Default::default(),
+            line_height: Default::default(),
+            char_spacing: Default::default(),
+            linethrough: Default::default(),
+            path_start_offset: Default::default(),
+            split_by_grapheme: Default::default(),
+            text_background_color: Default::default(),
+            x1: Default::default(),
+            x2: Default::default(),
+            y1: Default::default(),
+            y2: Default::default(),
+        }
+    }
 }
 
 impl<'de> Deserialize<'de> for Event {
@@ -834,7 +971,6 @@ impl CompactPathEvent {
             src: None,
             crop_x: None,
             crop_y: None,
-            filters: None,
             rx: None,
             ry: None,
             radius: None,
@@ -926,5 +1062,54 @@ mod tests {
                 should_be
             );
         }
+    }
+
+    #[test]
+    fn test_roundtrip() {
+        let evts = [
+            CompactEvent::test_rect_event(),
+            CompactEvent::test_line_event(),
+            CompactEvent::test_circle_event(),
+            CompactEvent::test_image_event(),
+            CompactEvent::test_path_event(),
+            CompactEvent::test_triangle_event(),
+            CompactEvent::test_textbox_event(),
+        ];
+
+        for evt in evts {
+            let json_value = evt.into_json().unwrap();
+            let evt = CompactEvent::from_json(json_value).unwrap();
+
+            let postcard_binary = postcard::to_allocvec(&evt).unwrap();
+            let _evt: CompactEvent = postcard::from_bytes(&postcard_binary).unwrap();
+        }
+    }
+
+    #[test]
+    fn test_path_encode_decode() {
+        let original = vec![
+            serde_json::json!(["M", -6.54, 5614.2]),
+            serde_json::json!(["Q", -6.54, 5614.19, -6.54, 5613.08]),
+            serde_json::json!(["Q", -6.54, 5611.98, -6.54, 5610.87]),
+            serde_json::json!(["Q", -6.54, 5609.76, -6.54, 5608.65]),
+            serde_json::json!(["Q", -6.54, 5607.54, -5.43, 5605.87]),
+            serde_json::json!(["Q", -4.32, 5604.21, -3.77, 5603.1]),
+            serde_json::json!(["Q", -3.21, 5601.99, -2.1, 5600.32]),
+            serde_json::json!(["Q", -0.99, 5598.66, -0.43, 5597.55]),
+            serde_json::json!(["Q", 0.12, 5596.44, 1.23, 5595.33]),
+            serde_json::json!(["Q", 2.34, 5594.22, 3.45, 5593.11]),
+            serde_json::json!(["Q", 4.57, 5592.0, 6.23, 5590.89]),
+            serde_json::json!(["Q", 7.9, 5589.78, 9.01, 5589.23]),
+            serde_json::json!(["Q", 10.12, 5588.67, 11.23, 5588.12]),
+            serde_json::json!(["Q", 12.34, 5587.56, 13.45, 5587.56]),
+            serde_json::json!(["Q", 14.56, 5587.56, 16.23, 5586.45]),
+            serde_json::json!(["L", 17.9, 5585.34]),
+        ];
+
+        let compacted = compress_path(original.clone()).unwrap();
+        let decompressed = decompress_path(compacted);
+        let after_roundtrip = path_to_json(decompressed);
+
+        assert_eq!(original, after_roundtrip);
     }
 }
