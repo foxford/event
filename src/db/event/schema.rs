@@ -342,9 +342,7 @@ where
     let color = match color {
         Some(color) if color.is_empty() => None,
         Some(color) => {
-            let color = color
-                .parse::<Color>()
-                .map_err(|err| serde::de::Error::custom(err))?;
+            let color = color.parse::<Color>().map_err(serde::de::Error::custom)?;
 
             Some(color)
         }
