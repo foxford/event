@@ -1,4 +1,3 @@
-use csscolorparser::Color;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -180,7 +179,6 @@ impl CompactEvent {
 #[derive(Debug)]
 pub enum Error {
     LosingPrecision,
-    InvalidColor,
     MissingPath,
 }
 
@@ -188,7 +186,6 @@ impl std::fmt::Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let disp = match self {
             Error::LosingPrecision => "compaction would loose precision",
-            Error::InvalidColor => "event has invalid color",
             Error::MissingPath => "missing path for path event",
         };
 
@@ -333,27 +330,6 @@ enum Kind {
     Triangle,
 }
 
-fn opt_color_as_rgba_string<'de, D>(d: D) -> Result<Option<String>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    let color = Option::<String>::deserialize(d)?;
-
-    let color = match color {
-        Some(color) if color.is_empty() => None,
-        Some(color) => {
-            let color = color.parse::<Color>().map_err(serde::de::Error::custom)?;
-
-            Some(color)
-        }
-        None => None,
-    };
-
-    let color = color.map(|c| c.to_rgb_string());
-
-    Ok(color)
-}
-
 /// This is the schema for each event type.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -382,7 +358,6 @@ pub struct EventSchema {
     fill_rule: FillRule,
     // Do not support shadows.
     // shadow: Option<serde_json::Value>,
-    #[serde(deserialize_with = "opt_color_as_rgba_string")]
     stroke: Option<String>,
     opacity: u8,
     visible: bool,
@@ -625,14 +600,14 @@ pub struct CompactPathEvent {
     scale_x: f64,
     scale_y: f64,
 
-    fill: Option<Color>,
+    fill: Option<String>,
     fill_rule: FillRule,
-    stroke: Option<Color>,
+    stroke: Option<String>,
     opacity: u8,
     visible: bool,
     paint_first: PaintFirst,
     global_composite_operation: GlobalCompositeOperation,
-    background_color: Option<Color>,
+    background_color: Option<String>,
     no_scale_cache: bool,
     stroke_dash_array: Option<Vec<f32>>,
     stroke_dash_offset: u8,
@@ -892,18 +867,6 @@ fn f32ti16(f: f32) -> Option<i16> {
 
 impl CompactPathEvent {
     fn try_from_event(e: EventSchema) -> Result<Self, Error> {
-        fn opt_color(c: Option<String>) -> Result<Option<Color>, Error> {
-            match c {
-                Some(s) if s.is_empty() => Ok(None),
-                Some(s) => Ok(Some(s.parse().map_err(|_err| Error::InvalidColor)?)),
-                None => Ok(None),
-            }
-        }
-
-        let fill = opt_color(e.fill)?;
-        let background_color = opt_color(e.background_color)?;
-        let stroke = opt_color(e.stroke)?;
-
         Ok(Self {
             _id: e._id,
             origin_x: e.origin_x,
@@ -919,14 +882,14 @@ impl CompactPathEvent {
             skew_y: f32ti16(e.skew_y).ok_or(Error::LosingPrecision)?,
             scale_x: e.scale_x,
             scale_y: e.scale_y,
-            fill,
+            fill: e.fill,
             fill_rule: e.fill_rule,
-            stroke,
+            stroke: e.stroke,
             opacity: e.opacity as u8,
             visible: e.visible,
             paint_first: e.paint_first,
             global_composite_operation: e.global_composite_operation,
-            background_color,
+            background_color: e.background_color,
             no_scale_cache: e.no_scale_cache.unwrap_or(true),
             stroke_dash_array: e.stroke_dash_array,
             stroke_dash_offset: f32tu8(e.stroke_dash_offset).ok_or(Error::LosingPrecision)?,
@@ -963,14 +926,14 @@ impl CompactPathEvent {
             skew_y: two_decimal_places(self.skew_y as f64 / 100.0) as f32,
             scale_x: self.scale_x,
             scale_y: self.scale_y,
-            fill: self.fill.map(|c| c.to_rgb_string()),
+            fill: self.fill,
             fill_rule: self.fill_rule,
-            stroke: self.stroke.map(|c| c.to_rgb_string()),
+            stroke: self.stroke,
             opacity: self.opacity,
             visible: self.visible,
             paint_first: self.paint_first,
             global_composite_operation: self.global_composite_operation,
-            background_color: self.background_color.map(|c| c.to_rgb_string()),
+            background_color: self.background_color,
             no_scale_cache: Some(self.no_scale_cache),
             stroke_dash_array: self.stroke_dash_array,
             stroke_dash_offset: self.stroke_dash_offset as f32,
