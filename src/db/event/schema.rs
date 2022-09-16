@@ -328,6 +328,10 @@ enum Kind {
     #[serde(rename = "WhiteboardLine")]
     WhiteboardLine,
     Triangle,
+    #[serde(rename = "WhiteboardArrowLine")]
+    WhiteboardArrowLine,
+    #[serde(rename = "WhiteboardCircle")]
+    WhiteboardCircle,
 }
 
 /// This is the schema for each event type.
