@@ -333,6 +333,29 @@ enum Kind {
     Triangle,
 }
 
+fn opt_color_as_rgba_string<'de, D>(d: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let color = Option::<String>::deserialize(d)?;
+
+    let color = match color {
+        Some(color) if color.is_empty() => None,
+        Some(color) => {
+            let color = color
+                .parse::<Color>()
+                .map_err(|err| serde::de::Error::custom(err))?;
+
+            Some(color)
+        }
+        None => None,
+    };
+
+    let color = color.map(|c| c.to_rgb_string());
+
+    Ok(color)
+}
+
 /// This is the schema for each event type.
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -361,7 +384,8 @@ pub struct EventSchema {
     fill_rule: FillRule,
     // Do not support shadows.
     // shadow: Option<serde_json::Value>,
-    stroke: Option<Color>,
+    #[serde(deserialize_with = "opt_color_as_rgba_string")]
+    stroke: Option<String>,
     opacity: u8,
     visible: bool,
     paint_first: PaintFirst,
@@ -880,6 +904,7 @@ impl CompactPathEvent {
 
         let fill = opt_color(e.fill)?;
         let background_color = opt_color(e.background_color)?;
+        let stroke = opt_color(e.stroke)?;
 
         Ok(Self {
             _id: e._id,
@@ -898,7 +923,7 @@ impl CompactPathEvent {
             scale_y: e.scale_y,
             fill,
             fill_rule: e.fill_rule,
-            stroke: e.stroke,
+            stroke,
             opacity: e.opacity as u8,
             visible: e.visible,
             paint_first: e.paint_first,
@@ -940,9 +965,9 @@ impl CompactPathEvent {
             skew_y: two_decimal_places(self.skew_y as f64 / 100.0) as f32,
             scale_x: self.scale_x,
             scale_y: self.scale_y,
-            fill: self.fill.map(|f| f.to_rgb_string()),
+            fill: self.fill.map(|c| c.to_rgb_string()),
             fill_rule: self.fill_rule,
-            stroke: self.stroke,
+            stroke: self.stroke.map(|c| c.to_rgb_string()),
             opacity: self.opacity,
             visible: self.visible,
             paint_first: self.paint_first,
