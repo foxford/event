@@ -332,6 +332,9 @@ enum Kind {
     WhiteboardArrowLine,
     #[serde(rename = "WhiteboardCircle")]
     WhiteboardCircle,
+    #[serde(rename = "activeSelection")]
+    ActiveSelection,
+    Line,
 }
 
 /// This is the schema for each event type.
