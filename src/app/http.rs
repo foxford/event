@@ -20,7 +20,11 @@ use tracing::error;
 use crate::app::message_handler::MessageStream;
 use crate::app::{message_handler::publish_message, service_utils};
 
-use super::{context::AppContext, endpoint, error::Error as AppError};
+use super::{
+    context::{AppContext, GlobalContext},
+    endpoint,
+    error::{Error as AppError, ErrorKind},
+};
 
 pub fn build_router(
     context: Arc<AppContext>,
@@ -94,6 +98,7 @@ pub fn build_router(
             delete(endpoint::change::delete).options(endpoint::read_options),
         )
         .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
+        .layer(layer_fn(|inner| MetricsMiddleware { inner }))
         .layer(svc_utils::middleware::CorsLayer)
         .layer(Extension(context))
         .layer(Extension(agent))
@@ -117,7 +122,10 @@ impl IntoResponse for AppError {
 
         let err = self.to_svc_error();
 
-        (self.status(), Json(err)).into_response()
+        let mut r = (self.status(), Json(err)).into_response();
+        r.extensions_mut().insert(self.error_kind());
+
+        r
     }
 }
 
@@ -171,6 +179,47 @@ where
                         }
                     }
                 });
+            }
+
+            Ok(res)
+        })
+    }
+}
+
+#[derive(Clone)]
+struct MetricsMiddleware<S> {
+    inner: S,
+}
+
+impl<S, ReqBody, ResBody> Service<Request<ReqBody>> for MetricsMiddleware<S>
+where
+    S: Service<Request<ReqBody>, Response = Response<ResBody>> + Clone + Send + 'static,
+    S::Future: Send + 'static,
+    ReqBody: Send + 'static,
+    ResBody: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
+        // best practice is to clone the inner service like this
+        // see https://github.com/tower-rs/tower/issues/547 for details
+        let clone = self.inner.clone();
+        let mut inner = std::mem::replace(&mut self.inner, clone);
+
+        Box::pin(async move {
+            let ctx = req.extensions().get::<Arc<AppContext>>().cloned().unwrap();
+            let res: Response<ResBody> = inner.call(req).await?;
+
+            if res.status().is_success() {
+                ctx.metrics().observe_app_ok();
+            } else if let Some(error_kind) = res.extensions().get::<ErrorKind>() {
+                ctx.metrics().observe_app_error(error_kind);
             }
 
             Ok(res)
