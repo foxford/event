@@ -801,8 +801,7 @@ impl CompactEventSchema {
             _invalidate: self._invalidate,
             path: self.path.map(|p| {
                 p.into_iter()
-                    .map(|p| serde_json::from_str(&p))
-                    .flatten()
+                    .flat_map(|p| serde_json::from_str(&p))
                     .collect::<Vec<_>>()
             }),
             src: self.src,
@@ -1177,7 +1176,7 @@ impl CompactPathEvent {
             scale_y: e.scale_y,
             fill: e.fill,
             fill_rule: e.fill_rule,
-            shadow: e.shadow.map(|s| s.to_string()),
+            shadow: e.shadow,
             stroke: e.stroke,
             opacity: e.opacity as u8,
             visible: e.visible,
