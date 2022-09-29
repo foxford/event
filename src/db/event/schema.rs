@@ -11,7 +11,7 @@ impl Event {
     pub fn compact(self) -> Result<CompactEvent, Error> {
         let evt = match self {
             Event::Path(evt) => CompactEvent::Path(CompactPathEvent::try_from_event(evt)?),
-            Event::Other(evt) => CompactEvent::Other(evt),
+            Event::Other(evt) => CompactEvent::Other(CompactEventSchema::from_event(evt)),
         };
 
         Ok(evt)
@@ -22,7 +22,7 @@ impl Event {
 #[allow(clippy::large_enum_variant)]
 pub enum CompactEvent {
     Path(CompactPathEvent),
-    Other(EventSchema),
+    Other(CompactEventSchema),
 }
 
 impl CompactEvent {
@@ -36,7 +36,7 @@ impl CompactEvent {
     pub fn into_json(self) -> Result<serde_json::Value, serde_json::Error> {
         let evt = match self {
             CompactEvent::Path(evt) => Event::Path(evt.into_event()),
-            CompactEvent::Other(evt) => Event::Other(evt),
+            CompactEvent::Other(evt) => Event::Other(evt.into_event()),
         };
 
         serde_json::to_value(evt)
@@ -44,7 +44,7 @@ impl CompactEvent {
 
     #[cfg(test)]
     pub fn test_rect_event() -> Self {
-        Self::Other(EventSchema {
+        Self::Other(CompactEventSchema {
             top: 1.0,
             left: 1.0,
             height: 10.0,
@@ -54,13 +54,13 @@ impl CompactEvent {
             x2: Some(10.0),
             y1: Some(1.0),
             y2: Some(10.0),
-            ..EventSchema::placeholder()
+            ..CompactEventSchema::from_event(EventSchema::placeholder())
         })
     }
 
     #[cfg(test)]
     pub fn test_line_event() -> Self {
-        Self::Other(EventSchema {
+        Self::Other(CompactEventSchema {
             top: 1.0,
             left: 1.0,
             height: 10.0,
@@ -70,13 +70,13 @@ impl CompactEvent {
             x2: Some(10.0),
             y1: Some(1.0),
             y2: Some(10.0),
-            ..EventSchema::placeholder()
+            ..CompactEventSchema::from_event(EventSchema::placeholder())
         })
     }
 
     #[cfg(test)]
     pub fn test_circle_event() -> Self {
-        Self::Other(EventSchema {
+        Self::Other(CompactEventSchema {
             top: 1.0,
             left: 1.0,
             height: 10.0,
@@ -85,20 +85,20 @@ impl CompactEvent {
             radius: Some(10.0),
             start_angle: Some(0.0),
             end_angle: Some(6.283185307179586),
-            ..EventSchema::placeholder()
+            ..CompactEventSchema::from_event(EventSchema::placeholder())
         })
     }
 
     #[cfg(test)]
     pub fn test_image_event() -> Self {
-        Self::Other(EventSchema {
+        Self::Other(CompactEventSchema {
             top: 1.0,
             left: 1.0,
             height: 10.0,
             width: 10.0,
             kind: Kind::Image,
             src: Some("storage://00000000-0000-0000-0000-000000000000.png".to_owned()),
-            ..EventSchema::placeholder()
+            ..CompactEventSchema::from_event(EventSchema::placeholder())
         })
     }
 
@@ -136,7 +136,7 @@ impl CompactEvent {
 
     #[cfg(test)]
     pub fn test_textbox_event() -> Self {
-        Self::Other(EventSchema {
+        Self::Other(CompactEventSchema {
             top: 1.0,
             left: 1.0,
             height: 10.0,
@@ -152,26 +152,26 @@ impl CompactEvent {
             text_align: Some(TextAlign::Left),
             underline: Some(false),
             font_family: Some("-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"Roboto\", \"Oxygen\", \"Ubuntu\", \"Cantarell\", \"Fira Sans\", \"Droid Sans\", \"Helvetica Neue\", sans-serif".to_owned()),
-            font_weight: Some(FontWeight::Normal),
+            font_weight: Some(serde_json::json!("normal").to_string()),
             line_height: Some(1.16),
             char_spacing: Some(0.0),
             linethrough: Some(true),
             path_start_offset: Some(0.0),
             split_by_grapheme: Some(false),
             text_background_color: Some("".to_owned()),
-            ..EventSchema::placeholder()
+            ..CompactEventSchema::from_event(EventSchema::placeholder())
         })
     }
 
     #[cfg(test)]
     pub fn test_triangle_event() -> Self {
-        Self::Other(EventSchema {
+        Self::Other(CompactEventSchema {
             top: 1.0,
             left: 1.0,
             height: 10.0,
             width: 10.0,
             kind: Kind::Triangle,
-            ..EventSchema::placeholder()
+            ..CompactEventSchema::from_event(EventSchema::placeholder())
         })
     }
 }
@@ -308,15 +308,6 @@ enum TextAlign {
     JustifyRight,
 }
 
-/// Do not support numbers (400, 600, 800).
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum FontWeight {
-    #[default]
-    Normal,
-    Bold,
-}
-
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 #[serde(rename_all = "lowercase")]
 enum Kind {
@@ -363,8 +354,8 @@ pub struct EventSchema {
 
     fill: Option<String>,
     fill_rule: FillRule,
-    // Do not support shadows.
-    // shadow: Option<serde_json::Value>,
+    #[serde(with = "json_as_str", default)]
+    shadow: Option<String>,
     stroke: Option<String>,
     opacity: u8,
     visible: bool,
@@ -409,8 +400,8 @@ pub struct EventSchema {
     src: Option<String>,
     crop_x: Option<f32>,
     crop_y: Option<f32>,
-    // Do not support filters
-    // filters: Option<Vec<serde_json::Value>>,
+    #[serde(with = "json_as_str", default)]
+    filters: Option<String>,
 
     // Rect
     rx: Option<f32>,
@@ -423,8 +414,8 @@ pub struct EventSchema {
 
     // Text
     text: Option<String>,
-    // Do not support styles.
-    // styles: Option<serde_json::Value>,
+    #[serde(with = "json_as_str", default)]
+    styles: Option<String>,
     font_size: Option<u8>,
     min_width: Option<f32>,
     overline: Option<bool>,
@@ -435,7 +426,8 @@ pub struct EventSchema {
     text_align: Option<TextAlign>,
     underline: Option<bool>,
     font_family: Option<String>,
-    font_weight: Option<FontWeight>,
+    #[serde(with = "json_as_str", default)]
+    font_weight: Option<String>,
     line_height: Option<f32>,
     char_spacing: Option<f32>,
     linethrough: Option<bool>,
@@ -479,6 +471,8 @@ impl EventSchema {
             global_composite_operation: Default::default(),
             background_color: Default::default(),
             no_scale_cache: Some(true),
+            shadow: None,
+            filters: None,
             stroke_dash_array: Default::default(),
             stroke_dash_offset: Default::default(),
             stroke_line_cap: Default::default(),
@@ -525,6 +519,7 @@ impl EventSchema {
             x2: Default::default(),
             y1: Default::default(),
             y2: Default::default(),
+            styles: None,
         }
     }
 }
@@ -551,6 +546,296 @@ impl Serialize for Event {
         match self {
             Event::Path(evt) => evt.serialize(serializer),
             Event::Other(evt) => evt.serialize(serializer),
+        }
+    }
+}
+
+mod json_as_str {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn deserialize<'de, D>(d: D) -> Result<Option<String>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = Option::<serde_json::Value>::deserialize(d)?;
+        Ok(value.map(|v| v.to_string()))
+    }
+
+    pub fn serialize<S>(v: &Option<String>, s: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let value: Option<serde_json::Value> = match v {
+            Some(v) => {
+                let v = serde_json::from_str(v).map_err(serde::ser::Error::custom)?;
+                Some(v)
+            }
+            None => None,
+        };
+        value.serialize(s)
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct CompactEventSchema {
+    _id: Uuid,
+
+    origin_x: Origin,
+    origin_y: Origin,
+    top: f32,
+    left: f32,
+    height: f32,
+    width: f32,
+
+    angle: f32,
+    flip_x: bool,
+    flip_y: bool,
+    skew_x: f32,
+    skew_y: f32,
+    // scale_x can be too large
+    scale_x: f64,
+    // scale_y too
+    scale_y: f64,
+
+    fill: Option<String>,
+    fill_rule: FillRule,
+    shadow: Option<String>,
+    stroke: Option<String>,
+    opacity: u8,
+    visible: bool,
+    paint_first: PaintFirst,
+    global_composite_operation: GlobalCompositeOperation,
+    background_color: Option<String>,
+    no_scale_cache: Option<bool>,
+    stroke_dash_array: Option<Vec<f32>>,
+    stroke_dash_offset: f32,
+    stroke_line_cap: StrokeLineCap,
+    stroke_line_join: StrokeLineJoin,
+    stroke_miter_limit: u8,
+    stroke_uniform: Option<bool>,
+    stroke_width: u8,
+    cross_origin: Option<CrossOrigin>,
+
+    version: String,
+
+    #[serde(rename = "type")]
+    kind: Kind,
+
+    // our custom fields
+    _removed: Option<bool>,
+    _rev: Option<Uuid>,
+    _restored: Option<bool>,
+    _locked_by_user: Option<bool>,
+    _only_state: Option<bool>,
+    _invalidate: Option<bool>,
+
+    // fields specific for some events
+
+    // Path
+    path: Option<Vec<String>>,
+
+    // Image
+    src: Option<String>,
+    crop_x: Option<f32>,
+    crop_y: Option<f32>,
+    filters: Option<String>,
+
+    // Rect
+    rx: Option<f32>,
+    ry: Option<f32>,
+
+    // Circle
+    radius: Option<f32>,
+    start_angle: Option<f32>,
+    end_angle: Option<f32>,
+
+    // Text
+    text: Option<String>,
+    styles: Option<String>,
+    font_size: Option<u8>,
+    min_width: Option<f32>,
+    overline: Option<bool>,
+    // missing spec on values (only 'left' is known)
+    path_side: Option<String>,
+    direction: Option<Direction>,
+    font_style: Option<FontStyle>,
+    text_align: Option<TextAlign>,
+    underline: Option<bool>,
+    font_family: Option<String>,
+    font_weight: Option<String>,
+    line_height: Option<f32>,
+    char_spacing: Option<f32>,
+    linethrough: Option<bool>,
+    path_start_offset: Option<f32>,
+    split_by_grapheme: Option<bool>,
+    text_background_color: Option<String>,
+
+    // Whiteboard Line
+    x1: Option<f32>,
+    x2: Option<f32>,
+    y1: Option<f32>,
+    y2: Option<f32>,
+}
+
+impl CompactEventSchema {
+    fn from_event(e: EventSchema) -> Self {
+        Self {
+            _id: e._id,
+            origin_x: e.origin_x,
+            origin_y: e.origin_y,
+            top: e.top,
+            left: e.left,
+            height: e.height,
+            width: e.width,
+            angle: e.angle,
+            flip_x: e.flip_x,
+            flip_y: e.flip_y,
+            skew_x: e.skew_x,
+            skew_y: e.skew_y,
+            scale_x: e.scale_x,
+            scale_y: e.scale_y,
+            fill: e.fill,
+            fill_rule: e.fill_rule,
+            shadow: e.shadow,
+            stroke: e.stroke,
+            opacity: e.opacity,
+            visible: e.visible,
+            paint_first: e.paint_first,
+            global_composite_operation: e.global_composite_operation,
+            background_color: e.background_color,
+            no_scale_cache: e.no_scale_cache,
+            stroke_dash_array: e.stroke_dash_array,
+            stroke_dash_offset: e.stroke_dash_offset,
+            stroke_line_cap: e.stroke_line_cap,
+            stroke_line_join: e.stroke_line_join,
+            stroke_miter_limit: e.stroke_miter_limit,
+            stroke_uniform: e.stroke_uniform,
+            stroke_width: e.stroke_width,
+            cross_origin: e.cross_origin,
+            version: e.version,
+            kind: e.kind,
+            _removed: e._removed,
+            _rev: e._rev,
+            _restored: e._restored,
+            _locked_by_user: e._locked_by_user,
+            _only_state: e._only_state,
+            _invalidate: e._invalidate,
+            path: e
+                .path
+                .map(|p| p.into_iter().map(|p| p.to_string()).collect::<Vec<_>>()),
+            src: e.src,
+            crop_x: e.crop_x,
+            crop_y: e.crop_y,
+            filters: e.filters,
+            rx: e.rx,
+            ry: e.ry,
+            radius: e.radius,
+            start_angle: e.start_angle,
+            end_angle: e.end_angle,
+            text: e.text,
+            styles: e.styles,
+            font_size: e.font_size,
+            min_width: e.min_width,
+            overline: e.overline,
+            path_side: e.path_side,
+            direction: e.direction,
+            font_style: e.font_style,
+            text_align: e.text_align,
+            underline: e.underline,
+            font_family: e.font_family,
+            font_weight: e.font_weight,
+            line_height: e.line_height,
+            char_spacing: e.char_spacing,
+            linethrough: e.linethrough,
+            path_start_offset: e.path_start_offset,
+            split_by_grapheme: e.split_by_grapheme,
+            text_background_color: e.text_background_color,
+            x1: e.x1,
+            x2: e.x2,
+            y1: e.y1,
+            y2: e.y2,
+        }
+    }
+
+    fn into_event(self) -> EventSchema {
+        EventSchema {
+            _id: self._id,
+            origin_x: self.origin_x,
+            origin_y: self.origin_y,
+            top: self.top,
+            left: self.left,
+            height: self.height,
+            width: self.width,
+            angle: self.angle,
+            flip_x: self.flip_x,
+            flip_y: self.flip_y,
+            skew_x: self.skew_x,
+            skew_y: self.skew_y,
+            scale_x: self.scale_x,
+            scale_y: self.scale_y,
+            fill: self.fill,
+            fill_rule: self.fill_rule,
+            shadow: self.shadow,
+            stroke: self.stroke,
+            opacity: self.opacity,
+            visible: self.visible,
+            paint_first: self.paint_first,
+            global_composite_operation: self.global_composite_operation,
+            background_color: self.background_color,
+            no_scale_cache: self.no_scale_cache,
+            stroke_dash_array: self.stroke_dash_array,
+            stroke_dash_offset: self.stroke_dash_offset,
+            stroke_line_cap: self.stroke_line_cap,
+            stroke_line_join: self.stroke_line_join,
+            stroke_miter_limit: self.stroke_miter_limit,
+            stroke_uniform: self.stroke_uniform,
+            stroke_width: self.stroke_width,
+            cross_origin: self.cross_origin,
+            version: self.version,
+            kind: self.kind,
+            _removed: self._removed,
+            _rev: self._rev,
+            _restored: self._restored,
+            _locked_by_user: self._locked_by_user,
+            _only_state: self._only_state,
+            _invalidate: self._invalidate,
+            path: self.path.map(|p| {
+                p.into_iter()
+                    .map(|p| serde_json::from_str(&p))
+                    .flatten()
+                    .collect::<Vec<_>>()
+            }),
+            src: self.src,
+            crop_x: self.crop_x,
+            crop_y: self.crop_y,
+            filters: self.filters,
+            rx: self.rx,
+            ry: self.ry,
+            radius: self.radius,
+            start_angle: self.start_angle,
+            end_angle: self.end_angle,
+            text: self.text,
+            styles: self.styles,
+            font_size: self.font_size,
+            min_width: self.min_width,
+            overline: self.overline,
+            path_side: self.path_side,
+            direction: self.direction,
+            font_style: self.font_style,
+            text_align: self.text_align,
+            underline: self.underline,
+            font_family: self.font_family,
+            font_weight: self.font_weight,
+            line_height: self.line_height,
+            char_spacing: self.char_spacing,
+            linethrough: self.linethrough,
+            path_start_offset: self.path_start_offset,
+            split_by_grapheme: self.split_by_grapheme,
+            text_background_color: self.text_background_color,
+            x1: self.x1,
+            x2: self.x2,
+            y1: self.y1,
+            y2: self.y2,
         }
     }
 }
@@ -609,6 +894,7 @@ pub struct CompactPathEvent {
 
     fill: Option<String>,
     fill_rule: FillRule,
+    shadow: Option<String>,
     stroke: Option<String>,
     opacity: u8,
     visible: bool,
@@ -891,6 +1177,7 @@ impl CompactPathEvent {
             scale_y: e.scale_y,
             fill: e.fill,
             fill_rule: e.fill_rule,
+            shadow: e.shadow.map(|s| s.to_string()),
             stroke: e.stroke,
             opacity: e.opacity as u8,
             visible: e.visible,
@@ -935,6 +1222,7 @@ impl CompactPathEvent {
             scale_y: self.scale_y,
             fill: self.fill,
             fill_rule: self.fill_rule,
+            shadow: self.shadow,
             stroke: self.stroke,
             opacity: self.opacity,
             visible: self.visible,
@@ -990,6 +1278,8 @@ impl CompactPathEvent {
             x2: None,
             y1: None,
             y2: None,
+            filters: None,
+            styles: None,
         }
     }
 }
@@ -997,65 +1287,6 @@ impl CompactPathEvent {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_font_weight() {
-        #[derive(Serialize, Deserialize, PartialEq, Eq, Debug)]
-        struct Test {
-            #[serde(skip_serializing_if = "Option::is_none")]
-            t: Option<FontWeight>,
-        }
-
-        let de_cases = [
-            (
-                "{\"t\": \"bold\"}",
-                Test {
-                    t: Some(FontWeight::Bold),
-                },
-            ),
-            (
-                "{\"t\": \"normal\"}",
-                Test {
-                    t: Some(FontWeight::Normal),
-                },
-            ),
-            ("{}", Test { t: None }),
-        ];
-
-        for (input, should_be) in de_cases {
-            assert_eq!(
-                serde_json::from_str::<Test>(input).expect(input),
-                should_be,
-                "failed on input {}",
-                input
-            );
-        }
-
-        let ser_cases = [
-            (
-                Test {
-                    t: Some(FontWeight::Bold),
-                },
-                "{\"t\":\"bold\"}",
-            ),
-            (
-                Test {
-                    t: Some(FontWeight::Normal),
-                },
-                "{\"t\":\"normal\"}",
-            ),
-            (Test { t: None }, "{}"),
-        ];
-
-        for (input, should_be) in ser_cases {
-            assert_eq!(
-                serde_json::to_string(&input).expect(should_be),
-                should_be,
-                "failed on {}",
-                should_be
-            );
-        }
-    }
 
     #[test]
     fn test_roundtrip() {
