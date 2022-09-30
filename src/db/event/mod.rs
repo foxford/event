@@ -448,7 +448,10 @@ impl InsertQuery {
         created_by: AgentId,
     ) -> Result<Self, anyhow::Error> {
         let (data, binary_data) = match kind.as_str() {
-            "draw" => (None, Some(PostcardBin::new(CompactEvent::from_json(data)?))),
+            "draw" => (
+                Some(data.clone()),
+                Some(PostcardBin::new(CompactEvent::from_json(data)?)),
+            ),
             _ => (Some(data), None),
         };
 
