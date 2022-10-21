@@ -111,7 +111,10 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
-    app::run(db, maybe_ro_db, redis_pool, authz_cache).await
+    match var("EVENT_MIGRATE_TO_BINARY") {
+        Ok(_) => migration_to_binary_format::run_migration(db).await,
+        Err(_) => app::run(db, maybe_ro_db, redis_pool, authz_cache).await,
+    }
 }
 
 mod app;
@@ -119,6 +122,7 @@ mod authz;
 mod config;
 mod db;
 mod metrics;
+mod migration_to_binary_format;
 #[allow(unused_imports)]
 mod serde;
 #[cfg(test)]

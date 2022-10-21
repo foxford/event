@@ -118,6 +118,16 @@ pub(crate) struct RawObject {
     removed: bool,
 }
 
+impl RawObject {
+    pub fn encode_to_binary(&mut self) -> Result<(), anyhow::Error> {
+        if let Some(data) = self.data.take() {
+            self.binary_data = Some(PostcardBin::new(CompactEvent::from_json(data)?));
+        }
+
+        Ok(())
+    }
+}
+
 impl TryFrom<RawObject> for Object {
     type Error = sqlx::Error;
 
@@ -799,6 +809,57 @@ pub(crate) async fn insert_account_ban_event(
     .execute(conn)
     .await?;
     Ok(())
+}
+
+pub(crate) async fn select_not_encoded_events(
+    conn: &mut PgConnection,
+) -> sqlx::Result<Vec<RawObject>> {
+    sqlx::query_as!(
+        RawObject,
+        r#"
+        SELECT
+            id,
+            room_id,
+            kind,
+            set,
+            label,
+            attribute,
+            data,
+            binary_data AS "binary_data: PostcardBin<CompactEvent>",
+            occurred_at,
+            created_by AS "created_by!: AgentId",
+            created_at,
+            deleted_at,
+            original_occurred_at,
+            original_created_by as "original_created_by: AgentId",
+            removed
+        FROM event
+        WHERE binary_data IS NULL
+        AND kind = 'draw'
+        LIMIT 500000
+        "#
+    )
+    .fetch_all(conn)
+    .await
+}
+
+pub(crate) async fn update_event_data(evt: RawObject, conn: &mut PgConnection) -> sqlx::Result<()> {
+    sqlx::query_as!(
+        RawObject,
+        r#"
+        UPDATE event
+        SET
+            data = $2,
+            binary_data = $3
+        WHERE id = $1
+        "#,
+        evt.id,
+        evt.data,
+        evt.binary_data as Option<PostcardBin<CompactEvent>>,
+    )
+    .execute(conn)
+    .await
+    .map(|_| ())
 }
 
 mod binary_encoding;
