@@ -418,7 +418,14 @@ impl<'a> ListQuery<'a> {
             }
         }
 
-        query.fetch_all(conn).await
+        let raw_objects: Vec<RawObject> = query.fetch_all(conn).await?;
+        let mut objects = Vec::with_capacity(raw_objects.len());
+
+        for raw in raw_objects {
+            objects.push(Object::try_from(raw)?);
+        }
+
+        Ok(objects)
     }
 }
 
