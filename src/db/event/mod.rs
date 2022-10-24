@@ -5,6 +5,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::postgres::PgConnection;
+use sqlx::Transaction;
 use svc_agent::{AccountId, AgentId};
 use uuid::Uuid;
 
@@ -119,12 +120,18 @@ pub(crate) struct RawObject {
 }
 
 impl RawObject {
-    pub fn encode_to_binary(&mut self) -> Result<(), anyhow::Error> {
-        if let Some(data) = self.data.take() {
-            self.binary_data = Some(PostcardBin::new(CompactEvent::from_json(data)?));
-        }
+    pub fn encode_to_binary(
+        &self,
+    ) -> Result<(Uuid, Option<PostcardBin<CompactEvent>>), anyhow::Error> {
+        let r = match self.data.as_ref() {
+            Some(data) => (
+                self.id,
+                Some(PostcardBin::new(CompactEvent::from_json(data.clone())?)),
+            ),
+            None => (self.id, None),
+        };
 
-        Ok(())
+        Ok(r)
     }
 }
 
@@ -836,30 +843,70 @@ pub(crate) async fn select_not_encoded_events(
         FROM event
         WHERE binary_data IS NULL
         AND kind = 'draw'
-        LIMIT 500000
+        LIMIT 50000
         "#
     )
     .fetch_all(conn)
     .await
 }
 
-pub(crate) async fn update_event_data(evt: RawObject, conn: &mut PgConnection) -> sqlx::Result<()> {
-    sqlx::query_as!(
-        RawObject,
+pub async fn create_temp_table(conn: &mut PgConnection) -> sqlx::Result<()> {
+    sqlx::query!(
         r#"
-        UPDATE event
-        SET
-            data = $2,
-            binary_data = $3
-        WHERE id = $1
-        "#,
-        evt.id,
-        evt.data,
-        evt.binary_data as Option<PostcardBin<CompactEvent>>,
+        CREATE TEMP TABLE updates_table (
+            id uuid NOT NULL PRIMARY KEY,
+            binary_data bytea NOT NULL
+        )
+    "#
     )
     .execute(conn)
-    .await
-    .map(|_| ())
+    .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn update_event_data(
+    event_ids: Vec<Uuid>,
+    event_binary_data: Vec<PostcardBin<CompactEvent>>,
+    tx: &mut Transaction<'_, sqlx::Postgres>,
+) -> sqlx::Result<()> {
+    let event_binary_data = event_binary_data
+        .into_iter()
+        .map(|e| e.to_bytes())
+        .flatten()
+        .collect::<Vec<_>>();
+
+    sqlx::query(
+        r#"
+        INSERT INTO updates_table (id, binary_data)
+        SELECT * FROM UNNEST ($1, $2)"#,
+    )
+    .bind(event_ids)
+    .bind(event_binary_data)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE event AS e
+        SET data = NULL,
+            binary_data = u.binary_data
+        FROM updates_table AS u
+        WHERE e.id = u.id
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM updates_table
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    Ok(())
 }
 
 mod binary_encoding;
