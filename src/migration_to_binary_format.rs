@@ -13,6 +13,7 @@ pub(crate) async fn run_migration(db: Db) -> Result<()> {
         let events = select_not_encoded_events(&mut conn).await?;
 
         if events.is_empty() {
+            tracing::info!("DONE");
             break;
         }
 
