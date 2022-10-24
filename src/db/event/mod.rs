@@ -876,8 +876,7 @@ pub(crate) async fn update_event_data(
 ) -> sqlx::Result<()> {
     let event_binary_data = event_binary_data
         .into_iter()
-        .map(|e| e.to_bytes())
-        .flatten()
+        .flat_map(|e| e.to_bytes())
         .collect::<Vec<_>>();
 
     sqlx::query(

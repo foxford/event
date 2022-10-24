@@ -30,12 +30,9 @@ pub(crate) async fn run_migration(db: Db) -> Result<()> {
 
         for evt in events {
             let (id, binary_data) = evt.encode_to_binary()?;
-            match binary_data {
-                Some(binary_data) => {
-                    event_ids.push(id);
-                    event_binary_data.push(binary_data);
-                }
-                None => {}
+            if let Some(binary_data) = binary_data {
+                event_ids.push(id);
+                event_binary_data.push(binary_data);
             }
         }
 
