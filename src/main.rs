@@ -112,7 +112,7 @@ async fn main() -> Result<()> {
     };
 
     match var("EVENT_MIGRATE_TO_BINARY") {
-        Ok(_) => migration_to_binary_format::run_migration(db).await,
+        Ok(_) => migration_to_binary_format::migrate_to_binary(db).await,
         Err(_) => app::run(db, maybe_ro_db, redis_pool, authz_cache).await,
     }
 }

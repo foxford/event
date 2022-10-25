@@ -822,6 +822,7 @@ pub(crate) async fn insert_account_ban_event(
 }
 
 pub(crate) async fn select_not_encoded_events(
+    limit: i64,
     conn: &mut PgConnection,
 ) -> sqlx::Result<Vec<RawObject>> {
     sqlx::query_as!(
@@ -846,8 +847,9 @@ pub(crate) async fn select_not_encoded_events(
         FROM event
         WHERE binary_data IS NULL
         AND kind = 'draw'
-        LIMIT 50000
-        "#
+        LIMIT $1
+        "#,
+        limit
     )
     .fetch_all(conn)
     .await
