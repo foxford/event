@@ -1,8 +1,5 @@
 use anyhow::Result;
-use sqlx::{
-    postgres::{PgConnection, PgPool as Db, PgQueryResult},
-    Connection, Transaction,
-};
+use sqlx::postgres::{PgConnection, PgPool as Db, PgQueryResult};
 
 use crate::db::event::select_not_encoded_events;
 
@@ -25,10 +22,10 @@ async fn create_temp_table(conn: &mut PgConnection) -> sqlx::Result<()> {
     Ok(())
 }
 
-async fn update_event_data(
+async fn insert_data_into_temp_table(
     event_ids: Vec<uuid::Uuid>,
     event_binary_data: Vec<Vec<u8>>,
-    tx: &mut Transaction<'_, sqlx::Postgres>,
+    conn: &mut PgConnection,
 ) -> sqlx::Result<()> {
     sqlx::query(
         r#"
@@ -37,9 +34,13 @@ async fn update_event_data(
     )
     .bind(event_ids)
     .bind(event_binary_data)
-    .execute(&mut *tx)
+    .execute(conn)
     .await?;
 
+    Ok(())
+}
+
+async fn update_event_data(conn: &mut PgConnection) -> sqlx::Result<()> {
     sqlx::query(
         r#"
         UPDATE event AS e
@@ -49,15 +50,19 @@ async fn update_event_data(
         WHERE e.id = u.id
         "#,
     )
-    .execute(&mut *tx)
+    .execute(conn)
     .await?;
 
+    Ok(())
+}
+
+async fn cleanup_temp_table(conn: &mut PgConnection) -> sqlx::Result<()> {
     sqlx::query(
         r#"
         DELETE FROM updates_table
         "#,
     )
-    .execute(&mut *tx)
+    .execute(conn)
     .await?;
 
     Ok(())
@@ -105,9 +110,9 @@ pub(crate) async fn run_migration(db: Db) -> Result<()> {
             break;
         }
 
-        let mut tx = conn.begin().await?;
-        update_event_data(event_ids, event_binary_data, &mut tx).await?;
-        tx.commit().await?;
+        insert_data_into_temp_table(event_ids, event_binary_data, &mut conn).await?;
+        update_event_data(&mut conn).await?;
+        cleanup_temp_table(&mut conn).await?;
 
         vacuum(&mut conn).await?;
     }
