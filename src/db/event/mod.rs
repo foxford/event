@@ -871,14 +871,9 @@ pub async fn create_temp_table(conn: &mut PgConnection) -> sqlx::Result<()> {
 
 pub(crate) async fn update_event_data(
     event_ids: Vec<Uuid>,
-    event_binary_data: Vec<PostcardBin<CompactEvent>>,
+    event_binary_data: Vec<Vec<u8>>,
     tx: &mut Transaction<'_, sqlx::Postgres>,
 ) -> sqlx::Result<()> {
-    let event_binary_data = event_binary_data
-        .into_iter()
-        .flat_map(|e| e.to_bytes())
-        .collect::<Vec<_>>();
-
     sqlx::query(
         r#"
         INSERT INTO updates_table (id, binary_data)

@@ -26,16 +26,22 @@ pub(crate) async fn run_migration(db: Db) -> Result<()> {
         let mut event_binary_data = Vec::with_capacity(events.len());
 
         for evt in events {
+            let data = evt.data();
+
             match evt.encode_to_binary() {
-                Ok((id, Some(binary_data))) => {
-                    event_ids.push(id);
-                    event_binary_data.push(binary_data);
-                }
+                Ok((id, Some(binary_data))) => match binary_data.to_bytes() {
+                    Ok(binary_data) => {
+                        event_ids.push(id);
+                        event_binary_data.push(binary_data);
+                    }
+                    Err(err) => {
+                        tracing::error!(%err, ?data, "failed to encode binary data");
+                    }
+                },
                 Ok(_) => {
                     // no data?
                 }
                 Err(err) => {
-                    let data = evt.data();
                     tracing::error!(%err, ?data, "failed to encode event");
                 }
             }
