@@ -1,13 +1,66 @@
 use anyhow::Result;
 use sqlx::{
     postgres::{PgConnection, PgPool as Db, PgQueryResult},
-    Connection,
+    Connection, Transaction,
 };
 
-use crate::db::event::{create_temp_table, select_not_encoded_events, update_event_data};
+use crate::db::event::select_not_encoded_events;
 
 async fn vacuum(conn: &mut PgConnection) -> sqlx::Result<PgQueryResult> {
     sqlx::query!("VACUUM ANALYZE event").execute(conn).await
+}
+
+async fn create_temp_table(conn: &mut PgConnection) -> sqlx::Result<()> {
+    sqlx::query!(
+        r#"
+        CREATE TEMP TABLE updates_table (
+            id uuid NOT NULL PRIMARY KEY,
+            binary_data bytea NOT NULL
+        )
+    "#
+    )
+    .execute(conn)
+    .await?;
+
+    Ok(())
+}
+
+async fn update_event_data(
+    event_ids: Vec<uuid::Uuid>,
+    event_binary_data: Vec<Vec<u8>>,
+    tx: &mut Transaction<'_, sqlx::Postgres>,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO updates_table (id, binary_data)
+        SELECT * FROM UNNEST ($1, $2)"#,
+    )
+    .bind(event_ids)
+    .bind(event_binary_data)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        UPDATE event AS e
+        SET data = NULL,
+            binary_data = u.binary_data
+        FROM updates_table AS u
+        WHERE e.id = u.id
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        r#"
+        DELETE FROM updates_table
+        "#,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    Ok(())
 }
 
 pub(crate) async fn run_migration(db: Db) -> Result<()> {

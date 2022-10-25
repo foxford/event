@@ -5,7 +5,6 @@ use chrono::{DateTime, Duration, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sqlx::postgres::PgConnection;
-use sqlx::Transaction;
 use svc_agent::{AccountId, AgentId};
 use uuid::Uuid;
 
@@ -852,59 +851,6 @@ pub(crate) async fn select_not_encoded_events(
     )
     .fetch_all(conn)
     .await
-}
-
-pub async fn create_temp_table(conn: &mut PgConnection) -> sqlx::Result<()> {
-    sqlx::query!(
-        r#"
-        CREATE TEMP TABLE updates_table (
-            id uuid NOT NULL PRIMARY KEY,
-            binary_data bytea NOT NULL
-        )
-    "#
-    )
-    .execute(conn)
-    .await?;
-
-    Ok(())
-}
-
-pub(crate) async fn update_event_data(
-    event_ids: Vec<Uuid>,
-    event_binary_data: Vec<Vec<u8>>,
-    tx: &mut Transaction<'_, sqlx::Postgres>,
-) -> sqlx::Result<()> {
-    sqlx::query(
-        r#"
-        INSERT INTO updates_table (id, binary_data)
-        SELECT * FROM UNNEST ($1, $2)"#,
-    )
-    .bind(event_ids)
-    .bind(event_binary_data)
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        UPDATE event AS e
-        SET data = NULL,
-            binary_data = u.binary_data
-        FROM updates_table AS u
-        WHERE e.id = u.id
-        "#,
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    sqlx::query(
-        r#"
-        DELETE FROM updates_table
-        "#,
-    )
-    .execute(&mut *tx)
-    .await?;
-
-    Ok(())
 }
 
 mod binary_encoding;
