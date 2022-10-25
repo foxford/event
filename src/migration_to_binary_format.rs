@@ -11,13 +11,10 @@ async fn vacuum(conn: &mut PgConnection) -> sqlx::Result<PgQueryResult> {
 }
 
 pub(crate) async fn run_migration(db: Db) -> Result<()> {
-    {
-        let mut conn = db.acquire().await?;
-        create_temp_table(&mut conn).await?;
-    }
+    let mut conn = db.acquire().await?;
+    create_temp_table(&mut conn).await?;
 
     loop {
-        let mut conn = db.acquire().await?;
         let events = select_not_encoded_events(&mut conn).await?;
 
         if events.is_empty() {
@@ -29,11 +26,24 @@ pub(crate) async fn run_migration(db: Db) -> Result<()> {
         let mut event_binary_data = Vec::with_capacity(events.len());
 
         for evt in events {
-            let (id, binary_data) = evt.encode_to_binary()?;
-            if let Some(binary_data) = binary_data {
-                event_ids.push(id);
-                event_binary_data.push(binary_data);
+            match evt.encode_to_binary() {
+                Ok((id, Some(binary_data))) => {
+                    event_ids.push(id);
+                    event_binary_data.push(binary_data);
+                }
+                Ok(_) => {
+                    // no data?
+                }
+                Err(err) => {
+                    let data = evt.data();
+                    tracing::error!(%err, ?data, "failed to encode event");
+                }
             }
+        }
+
+        if event_ids.is_empty() {
+            tracing::info!("failed to encode all events");
+            break;
         }
 
         let mut tx = conn.begin().await?;

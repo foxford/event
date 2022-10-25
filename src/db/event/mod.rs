@@ -124,18 +124,18 @@ impl RawObject {
         &self,
     ) -> Result<(Uuid, Option<PostcardBin<CompactEvent>>), anyhow::Error> {
         let r = match self.data.as_ref() {
-            Some(data) => {
-                tracing::info!(%data);
-
-                (
-                    self.id,
-                    Some(PostcardBin::new(CompactEvent::from_json(data.clone())?)),
-                )
-            }
+            Some(data) => (
+                self.id,
+                Some(PostcardBin::new(CompactEvent::from_json(data.clone())?)),
+            ),
             None => (self.id, None),
         };
 
         Ok(r)
+    }
+
+    pub fn data(&self) -> Option<&JsonValue> {
+        self.data.as_ref()
     }
 }
 
