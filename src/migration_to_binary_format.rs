@@ -2,17 +2,30 @@ use std::sync::{atomic::AtomicBool, Arc};
 
 use anyhow::Result;
 use sqlx::postgres::{PgConnection, PgPool as Db};
+use tokio::io::AsyncWriteExt;
 
-use crate::db::event::select_not_encoded_events;
+use crate::db::event::{select_not_decoded_events, select_not_encoded_events};
 
-async fn toggle_autovacuum(enable: bool, conn: &mut PgConnection) -> sqlx::Result<()> {
-    sqlx::query(
+async fn disable_autovacuum(conn: &mut PgConnection) -> sqlx::Result<()> {
+    sqlx::query!(
         r#"
-        ALTER TABLE table_name
-        SET (autovacuum_enabled = $1, toast.autovacuum_enabled = $1);
+        ALTER TABLE event
+        SET (autovacuum_enabled = false, toast.autovacuum_enabled = false)
         "#,
     )
-    .bind(enable)
+    .execute(conn)
+    .await?;
+
+    Ok(())
+}
+
+async fn enable_autovacuum(conn: &mut PgConnection) -> sqlx::Result<()> {
+    sqlx::query!(
+        r#"
+        ALTER TABLE event
+        SET (autovacuum_enabled = true, toast.autovacuum_enabled = true)
+        "#,
+    )
     .execute(conn)
     .await?;
 
@@ -24,7 +37,7 @@ async fn vacuum(conn: &mut PgConnection) -> sqlx::Result<()> {
     Ok(())
 }
 
-async fn create_temp_table(conn: &mut PgConnection) -> sqlx::Result<()> {
+async fn create_temp_table_binary(conn: &mut PgConnection) -> sqlx::Result<()> {
     sqlx::query!(
         r#"
         CREATE TEMP TABLE updates_table (
@@ -39,7 +52,7 @@ async fn create_temp_table(conn: &mut PgConnection) -> sqlx::Result<()> {
     Ok(())
 }
 
-async fn insert_data_into_temp_table(
+async fn insert_data_into_temp_table_binary(
     event_ids: Vec<uuid::Uuid>,
     event_binary_data: Vec<Vec<u8>>,
     conn: &mut PgConnection,
@@ -57,7 +70,7 @@ async fn insert_data_into_temp_table(
     Ok(())
 }
 
-async fn update_event_data(conn: &mut PgConnection) -> sqlx::Result<()> {
+async fn update_event_data_binary(conn: &mut PgConnection) -> sqlx::Result<()> {
     sqlx::query(
         r#"
         UPDATE event AS e
@@ -88,7 +101,7 @@ async fn cleanup_temp_table(conn: &mut PgConnection) -> sqlx::Result<()> {
 pub(crate) async fn migrate_to_binary(db: Db) -> Result<()> {
     {
         let mut conn = db.acquire().await?;
-        toggle_autovacuum(false, &mut conn).await?;
+        disable_autovacuum(&mut conn).await?;
     }
 
     let stop = Arc::new(AtomicBool::new(false));
@@ -106,7 +119,7 @@ pub(crate) async fn migrate_to_binary(db: Db) -> Result<()> {
 
     {
         let mut conn = db.acquire().await?;
-        toggle_autovacuum(true, &mut conn).await?;
+        enable_autovacuum(&mut conn).await?;
     }
 
     Ok(())
@@ -114,7 +127,7 @@ pub(crate) async fn migrate_to_binary(db: Db) -> Result<()> {
 
 async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
     let mut conn = db.acquire().await?;
-    create_temp_table(&mut conn).await?;
+    create_temp_table_binary(&mut conn).await?;
 
     loop {
         let events = select_not_encoded_events(100_000, &mut conn).await?;
@@ -124,6 +137,14 @@ async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
             break;
         }
 
+        // all events have the same room id
+        let filename = format!("{}.json", events[0].room_id());
+        let mut file = tokio::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open(filename)
+            .await?;
+
         let mut event_ids = Vec::with_capacity(events.len());
         let mut event_binary_data = Vec::with_capacity(events.len());
 
@@ -131,8 +152,12 @@ async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
             let data = evt.data();
 
             match evt.encode_to_binary() {
-                Ok((id, Some(binary_data))) => match binary_data.to_bytes() {
+                Ok((id, Some(data), Some(binary_data))) => match binary_data.to_bytes() {
                     Ok(binary_data) => {
+                        let evt_data = serde_json::to_vec(&data)?;
+                        file.write_all(&evt_data).await?;
+                        file.write(b"\n").await?;
+
                         event_ids.push(id);
                         event_binary_data.push(binary_data);
                     }
@@ -149,15 +174,135 @@ async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
             }
         }
 
-        // TODO: store everything to files
-
         if event_ids.is_empty() {
             tracing::info!("failed to encode all events");
             break;
         }
 
-        insert_data_into_temp_table(event_ids, event_binary_data, &mut conn).await?;
-        update_event_data(&mut conn).await?;
+        insert_data_into_temp_table_binary(event_ids, event_binary_data, &mut conn).await?;
+        update_event_data_binary(&mut conn).await?;
+        cleanup_temp_table(&mut conn).await?;
+
+        vacuum(&mut conn).await?;
+
+        if stop.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+async fn create_temp_table_json(conn: &mut PgConnection) -> sqlx::Result<()> {
+    sqlx::query!(
+        r#"
+        CREATE TEMP TABLE updates_table (
+            id uuid NOT NULL PRIMARY KEY,
+            data jsonb NOT NULL
+        )
+    "#
+    )
+    .execute(conn)
+    .await?;
+
+    Ok(())
+}
+
+async fn insert_data_into_temp_table_json(
+    event_ids: Vec<uuid::Uuid>,
+    event_data: Vec<serde_json::Value>,
+    conn: &mut PgConnection,
+) -> sqlx::Result<()> {
+    sqlx::query(
+        r#"
+        INSERT INTO updates_table (id, data)
+        SELECT * FROM UNNEST ($1, $2)"#,
+    )
+    .bind(event_ids)
+    .bind(event_data)
+    .execute(conn)
+    .await?;
+
+    Ok(())
+}
+
+async fn update_event_data_json(conn: &mut PgConnection) -> sqlx::Result<()> {
+    sqlx::query(
+        r#"
+        UPDATE event AS e
+        SET data = u.data,
+            binary_data = NULL
+        FROM updates_table AS u
+        WHERE e.id = u.id
+        "#,
+    )
+    .execute(conn)
+    .await?;
+
+    Ok(())
+}
+
+pub(crate) async fn migrate_to_json(db: Db) -> Result<()> {
+    {
+        let mut conn = db.acquire().await?;
+        disable_autovacuum(&mut conn).await?;
+    }
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let handle = tokio::spawn(do_migrate_to_json(db.clone(), stop.clone()));
+    tokio::spawn(async move {
+        if let Err(err) = tokio::signal::ctrl_c().await {
+            tracing::error!(%err, "error on signal");
+        }
+        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+    });
+
+    if let Err(err) = handle.await {
+        tracing::error!(%err, "migration failed");
+    }
+
+    {
+        let mut conn = db.acquire().await?;
+        enable_autovacuum(&mut conn).await?;
+    }
+
+    Ok(())
+}
+
+async fn do_migrate_to_json(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
+    let mut conn = db.acquire().await?;
+    create_temp_table_json(&mut conn).await?;
+
+    loop {
+        let events = select_not_decoded_events(100_000, &mut conn).await?;
+        if events.is_empty() {
+            tracing::info!("DONE");
+            break;
+        }
+
+        let mut event_ids = Vec::with_capacity(events.len());
+        let mut event_data = Vec::with_capacity(events.len());
+
+        for evt in events {
+            match evt.decode_from_binary() {
+                Ok((id, Some(data))) => {
+                    event_ids.push(id);
+                    event_data.push(data);
+                }
+                Ok(_) => {}
+                Err(err) => {
+                    tracing::error!(%err, "failed to decode event");
+                }
+            }
+        }
+
+        if event_ids.is_empty() {
+            tracing::info!("failed to decode all events");
+            break;
+        }
+// TODO: load from files
+        insert_data_into_temp_table_json(event_ids, event_data, &mut conn).await?;
+        update_event_data_json(&mut conn).await?;
         cleanup_temp_table(&mut conn).await?;
 
         vacuum(&mut conn).await?;

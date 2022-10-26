@@ -121,12 +121,22 @@ pub(crate) struct RawObject {
 impl RawObject {
     pub fn encode_to_binary(
         &self,
-    ) -> Result<(Uuid, Option<PostcardBin<CompactEvent>>), anyhow::Error> {
+    ) -> Result<(Uuid, Option<JsonValue>, Option<PostcardBin<CompactEvent>>), anyhow::Error> {
         let r = match self.data.as_ref() {
             Some(data) => (
                 self.id,
+                Some(data.clone()),
                 Some(PostcardBin::new(CompactEvent::from_json(data.clone())?)),
             ),
+            None => (self.id, None, None),
+        };
+
+        Ok(r)
+    }
+
+    pub fn decode_from_binary(&self) -> Result<(Uuid, Option<JsonValue>), anyhow::Error> {
+        let r = match self.binary_data.as_ref() {
+            Some(binary) => (self.id, Some(binary.clone().into_inner().into_json()?)),
             None => (self.id, None),
         };
 
@@ -135,6 +145,10 @@ impl RawObject {
 
     pub fn data(&self) -> Option<&JsonValue> {
         self.data.as_ref()
+    }
+
+    pub fn room_id(&self) -> Uuid {
+        self.room_id
     }
 }
 
@@ -845,7 +859,59 @@ pub(crate) async fn select_not_encoded_events(
             original_created_by as "original_created_by: AgentId",
             removed
         FROM event
-        WHERE binary_data IS NULL
+        WHERE room_id = (
+            SELECT r.id FROM room AS r
+            INNER JOIN event AS e
+            ON r.id = e.room_id
+            WHERE e.binary_data IS NULL
+            AND   e.kind = 'draw'
+            GROUP BY r.id
+            LIMIT 1
+        )
+        AND binary_data IS NULL
+        AND   kind = 'draw'
+        LIMIT $1
+        "#,
+        limit
+    )
+    .fetch_all(conn)
+    .await
+}
+
+pub(crate) async fn select_not_decoded_events(
+    limit: i64,
+    conn: &mut PgConnection,
+) -> sqlx::Result<Vec<RawObject>> {
+    sqlx::query_as!(
+        RawObject,
+        r#"
+        SELECT
+            id,
+            room_id,
+            kind,
+            set,
+            label,
+            attribute,
+            data,
+            binary_data AS "binary_data: PostcardBin<CompactEvent>",
+            occurred_at,
+            created_by AS "created_by!: AgentId",
+            created_at,
+            deleted_at,
+            original_occurred_at,
+            original_created_by as "original_created_by: AgentId",
+            removed
+        FROM event
+        WHERE room_id = (
+            SELECT r.id FROM room AS r
+            INNER JOIN event AS e
+            ON r.id = e.room_id
+            WHERE e.data IS NULL
+            AND   e.kind = 'draw'
+            GROUP BY r.id
+            LIMIT 1
+        )
+        AND data IS NULL
         AND kind = 'draw'
         LIMIT $1
         "#,
