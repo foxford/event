@@ -828,6 +828,7 @@ pub(crate) async fn insert_account_ban_event(
 
 pub(crate) async fn select_not_encoded_events(
     limit: i64,
+    skip_rooms: &[Uuid],
     conn: &mut PgConnection,
 ) -> sqlx::Result<Vec<RawObject>> {
     sqlx::query_as!(
@@ -856,14 +857,16 @@ pub(crate) async fn select_not_encoded_events(
             ON r.id = e.room_id
             WHERE e.binary_data IS NULL
             AND   e.kind = 'draw'
+            AND   e.room_id <> ALL($1)
             GROUP BY r.id
             LIMIT 1
         )
         AND binary_data IS NULL
-        AND   kind = 'draw'
-        LIMIT $1
+        AND kind = 'draw'
+        LIMIT $2
         "#,
-        limit
+        skip_rooms,
+        limit,
     )
     .fetch_all(conn)
     .await

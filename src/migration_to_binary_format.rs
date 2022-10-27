@@ -140,8 +140,10 @@ async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
     let mut conn = db.acquire().await?;
     create_temp_table_binary(&mut conn).await?;
 
+    let mut skip_rooms = Vec::new();
+
     loop {
-        let events = select_not_encoded_events(100_000, &mut conn).await?;
+        let events = select_not_encoded_events(100_000, &skip_rooms, &mut conn).await?;
 
         if events.is_empty() {
             tracing::info!("DONE");
@@ -149,7 +151,8 @@ async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
         }
 
         // all events have the same room id
-        let filename = format!("{}.json", events[0].room_id());
+        let room_id = events[0].room_id();
+        let filename = format!("{room_id}.json");
         let mut file = tokio::fs::OpenOptions::new()
             .append(true)
             .create(true)
@@ -185,16 +188,16 @@ async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
             }
         }
 
-        if event_ids.is_empty() {
-            tracing::info!("failed to encode all events");
-            break;
+        if !event_ids.is_empty() {
+            insert_data_into_temp_table_binary(event_ids, event_binary_data, &mut conn).await?;
+            update_event_data_binary(&mut conn).await?;
+            cleanup_temp_table(&mut conn).await?;
+
+            vacuum(&mut conn).await?;
+        } else {
+            tracing::info!(%room_id, "failed to encode whole room");
+            skip_rooms.push(room_id);
         }
-
-        insert_data_into_temp_table_binary(event_ids, event_binary_data, &mut conn).await?;
-        update_event_data_binary(&mut conn).await?;
-        cleanup_temp_table(&mut conn).await?;
-
-        vacuum(&mut conn).await?;
 
         if stop.load(std::sync::atomic::Ordering::SeqCst) {
             break;
@@ -286,6 +289,10 @@ async fn do_migrate_to_json(db: Db, dir: String, stop: Arc<AtomicBool>) -> Resul
 
     let mut files = tokio::fs::read_dir(dir).await?;
     while let Some(entry) = files.next_entry().await? {
+        if stop.load(std::sync::atomic::Ordering::SeqCst) {
+            break;
+        }
+
         if entry.path().extension() != Some(OsStr::new("json")) {
             continue;
         }
@@ -317,10 +324,6 @@ async fn do_migrate_to_json(db: Db, dir: String, stop: Arc<AtomicBool>) -> Resul
         cleanup_temp_table(&mut conn).await?;
 
         vacuum(&mut conn).await?;
-
-        if stop.load(std::sync::atomic::Ordering::SeqCst) {
-            break;
-        }
     }
 
     Ok(())
