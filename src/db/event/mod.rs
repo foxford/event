@@ -878,49 +878,6 @@ pub(crate) async fn select_not_encoded_events(
     .await
 }
 
-pub(crate) async fn select_not_decoded_events(
-    limit: i64,
-    conn: &mut PgConnection,
-) -> sqlx::Result<Vec<RawObject>> {
-    sqlx::query_as!(
-        RawObject,
-        r#"
-        SELECT
-            id,
-            room_id,
-            kind,
-            set,
-            label,
-            attribute,
-            data,
-            binary_data AS "binary_data: PostcardBin<CompactEvent>",
-            occurred_at,
-            created_by AS "created_by!: AgentId",
-            created_at,
-            deleted_at,
-            original_occurred_at,
-            original_created_by as "original_created_by: AgentId",
-            removed
-        FROM event
-        WHERE room_id = (
-            SELECT r.id FROM room AS r
-            INNER JOIN event AS e
-            ON r.id = e.room_id
-            WHERE e.data IS NULL
-            AND   e.kind = 'draw'
-            GROUP BY r.id
-            LIMIT 1
-        )
-        AND data IS NULL
-        AND kind = 'draw'
-        LIMIT $1
-        "#,
-        limit
-    )
-    .fetch_all(conn)
-    .await
-}
-
 mod binary_encoding;
 mod schema;
 mod set_state;

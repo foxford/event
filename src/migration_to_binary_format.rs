@@ -1,10 +1,15 @@
-use std::sync::{atomic::AtomicBool, Arc};
+use std::{
+    ffi::OsStr,
+    str::FromStr,
+    sync::{atomic::AtomicBool, Arc},
+};
 
 use anyhow::Result;
 use sqlx::postgres::{PgConnection, PgPool as Db};
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt};
+use uuid::Uuid;
 
-use crate::db::event::{select_not_decoded_events, select_not_encoded_events};
+use crate::db::event::select_not_encoded_events;
 
 async fn disable_autovacuum(conn: &mut PgConnection) -> sqlx::Result<()> {
     sqlx::query!(
@@ -125,6 +130,12 @@ pub(crate) async fn migrate_to_binary(db: Db) -> Result<()> {
     Ok(())
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct Event {
+    data: serde_json::Value,
+    id: Uuid,
+}
+
 async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
     let mut conn = db.acquire().await?;
     create_temp_table_binary(&mut conn).await?;
@@ -154,7 +165,7 @@ async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
             match evt.encode_to_binary() {
                 Ok((id, Some(data), Some(binary_data))) => match binary_data.to_bytes() {
                     Ok(binary_data) => {
-                        let evt_data = serde_json::to_vec(&data)?;
+                        let evt_data = serde_json::to_vec(&Event { data, id })?;
                         file.write_all(&evt_data).await?;
                         file.write(b"\n").await?;
 
@@ -242,14 +253,14 @@ async fn update_event_data_json(conn: &mut PgConnection) -> sqlx::Result<()> {
     Ok(())
 }
 
-pub(crate) async fn migrate_to_json(db: Db) -> Result<()> {
+pub(crate) async fn migrate_to_json(db: Db, dir: String) -> Result<()> {
     {
         let mut conn = db.acquire().await?;
         disable_autovacuum(&mut conn).await?;
     }
 
     let stop = Arc::new(AtomicBool::new(false));
-    let handle = tokio::spawn(do_migrate_to_json(db.clone(), stop.clone()));
+    let handle = tokio::spawn(do_migrate_to_json(db.clone(), dir, stop.clone()));
     tokio::spawn(async move {
         if let Err(err) = tokio::signal::ctrl_c().await {
             tracing::error!(%err, "error on signal");
@@ -269,38 +280,38 @@ pub(crate) async fn migrate_to_json(db: Db) -> Result<()> {
     Ok(())
 }
 
-async fn do_migrate_to_json(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
+async fn do_migrate_to_json(db: Db, dir: String, stop: Arc<AtomicBool>) -> Result<()> {
     let mut conn = db.acquire().await?;
     create_temp_table_json(&mut conn).await?;
 
-    loop {
-        let events = select_not_decoded_events(100_000, &mut conn).await?;
-        if events.is_empty() {
-            tracing::info!("DONE");
-            break;
+    let mut files = tokio::fs::read_dir(dir).await?;
+    while let Some(entry) = files.next_entry().await? {
+        if entry.path().extension() != Some(OsStr::new("json")) {
+            continue;
         }
 
-        let mut event_ids = Vec::with_capacity(events.len());
-        let mut event_data = Vec::with_capacity(events.len());
-
-        for evt in events {
-            match evt.decode_from_binary() {
-                Ok((id, Some(data))) => {
-                    event_ids.push(id);
-                    event_data.push(data);
-                }
-                Ok(_) => {}
-                Err(err) => {
-                    tracing::error!(%err, "failed to decode event");
-                }
-            }
+        let path = entry.path();
+        let room_id = match path.file_stem().and_then(|s| s.to_str()) {
+            Some(room_id) => room_id,
+            None => continue,
+        };
+        if let Err(_) = Uuid::from_str(room_id) {
+            continue;
         }
 
-        if event_ids.is_empty() {
-            tracing::info!("failed to decode all events");
-            break;
+        let f = tokio::fs::File::open(path).await?;
+        let f = tokio::io::BufReader::new(f);
+        let mut lines = f.lines();
+
+        let mut event_ids = Vec::new();
+        let mut event_data = Vec::new();
+
+        while let Some(line) = lines.next_line().await? {
+            let event: Event = serde_json::from_str(&line)?;
+            event_ids.push(event.id);
+            event_data.push(event.data);
         }
-// TODO: load from files
+
         insert_data_into_temp_table_json(event_ids, event_data, &mut conn).await?;
         update_event_data_json(&mut conn).await?;
         cleanup_temp_table(&mut conn).await?;
