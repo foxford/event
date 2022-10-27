@@ -167,7 +167,7 @@ async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
                     Ok(binary_data) => {
                         let evt_data = serde_json::to_vec(&Event { data, id })?;
                         file.write_all(&evt_data).await?;
-                        file.write(b"\n").await?;
+                        file.write_all(b"\n").await?;
 
                         event_ids.push(id);
                         event_binary_data.push(binary_data);
@@ -295,7 +295,7 @@ async fn do_migrate_to_json(db: Db, dir: String, stop: Arc<AtomicBool>) -> Resul
             Some(room_id) => room_id,
             None => continue,
         };
-        if let Err(_) = Uuid::from_str(room_id) {
+        if Uuid::from_str(room_id).is_err() {
             continue;
         }
 

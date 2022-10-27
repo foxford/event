@@ -118,10 +118,10 @@ pub(crate) struct RawObject {
     removed: bool,
 }
 
+pub type EventData = (Uuid, Option<JsonValue>, Option<PostcardBin<CompactEvent>>);
+
 impl RawObject {
-    pub fn encode_to_binary(
-        &self,
-    ) -> Result<(Uuid, Option<JsonValue>, Option<PostcardBin<CompactEvent>>), anyhow::Error> {
+    pub fn encode_to_binary(&self) -> Result<EventData, anyhow::Error> {
         let r = match self.data.as_ref() {
             Some(data) => (
                 self.id,
@@ -129,15 +129,6 @@ impl RawObject {
                 Some(PostcardBin::new(CompactEvent::from_json(data.clone())?)),
             ),
             None => (self.id, None, None),
-        };
-
-        Ok(r)
-    }
-
-    pub fn decode_from_binary(&self) -> Result<(Uuid, Option<JsonValue>), anyhow::Error> {
-        let r = match self.binary_data.as_ref() {
-            Some(binary) => (self.id, Some(binary.clone().into_inner().into_json()?)),
-            None => (self.id, None),
         };
 
         Ok(r)
