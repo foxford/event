@@ -4,6 +4,7 @@ ALTER TABLE event ADD COLUMN IF NOT EXISTS binary_data bytea;
 -- if binary_data is present and vice versa
 ALTER TABLE event ALTER COLUMN data DROP NOT NULL;
 ALTER TABLE event ALTER COLUMN data DROP DEFAULT;
+ALTER TABLE event DROP CONSTRAINT IF EXISTS data_or_binary_data_not_null;
 ALTER TABLE event ADD CONSTRAINT data_or_binary_data_not_null
     CHECK ((binary_data IS NOT NULL) OR (data IS NOT NULL)) NOT VALID;
 -- check data size for both data fields
