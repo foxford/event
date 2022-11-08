@@ -390,6 +390,12 @@ pub struct EventSchema {
     _only_state: Option<bool>,
     #[serde(rename = "_invalidate")]
     _invalidate: Option<bool>,
+    #[serde(rename = "_order")]
+    _order: Option<i64>,
+    #[serde(rename = "_noHistory")]
+    _no_history: Option<bool>,
+    #[serde(rename = "_drawByStretch")]
+    _draw_by_stretch: Option<bool>,
 
     // fields specific for some events
 
@@ -489,6 +495,9 @@ impl EventSchema {
             _locked_by_user: Default::default(),
             _only_state: Default::default(),
             _invalidate: Default::default(),
+            _order: Option::Some(0),
+            _no_history: Default::default(),
+            _draw_by_stretch: Default::default(),
             path: Default::default(),
             src: Default::default(),
             crop_x: Default::default(),
@@ -628,6 +637,9 @@ pub struct CompactEventSchema {
     _locked_by_user: Option<bool>,
     _only_state: Option<bool>,
     _invalidate: Option<bool>,
+    _order: Option<i64>,
+    _no_history: Option<bool>,
+    _draw_by_stretch: Option<bool>,
 
     // fields specific for some events
 
@@ -720,6 +732,9 @@ impl CompactEventSchema {
             _locked_by_user: e._locked_by_user,
             _only_state: e._only_state,
             _invalidate: e._invalidate,
+            _order: e._order,
+            _no_history: e._no_history,
+            _draw_by_stretch: e._draw_by_stretch,
             path: e
                 .path
                 .map(|p| p.into_iter().map(|p| p.to_string()).collect::<Vec<_>>()),
@@ -799,6 +814,9 @@ impl CompactEventSchema {
             _locked_by_user: self._locked_by_user,
             _only_state: self._only_state,
             _invalidate: self._invalidate,
+            _order: self._order,
+            _no_history: self._no_history,
+            _draw_by_stretch: self._draw_by_stretch,
             path: self.path.map(|p| {
                 p.into_iter()
                     .flat_map(|p| serde_json::from_str(&p))
@@ -873,7 +891,6 @@ pub struct CompactPath {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompactPathEvent {
-    #[serde(rename = "_id")]
     _id: Uuid,
 
     origin_x: Origin,
@@ -919,18 +936,15 @@ pub struct CompactPathEvent {
     path: CompactPath,
 
     // our fields
-    #[serde(rename = "_removed")]
     _removed: Option<bool>,
-    #[serde(rename = "_rev")]
     _rev: Option<Uuid>,
-    #[serde(rename = "_restored")]
     _restored: Option<bool>,
-    #[serde(rename = "_lockedbyuser")]
     _locked_by_user: Option<bool>,
-    #[serde(rename = "_onlyState")]
     _only_state: Option<bool>,
-    #[serde(rename = "_invalidate")]
     _invalidate: Option<bool>,
+    _order: Option<i64>,
+    _no_history: Option<bool>,
+    _draw_by_stretch: Option<bool>,
 }
 
 fn decode_path(path: Vec<serde_json::Value>) -> Option<Path> {
@@ -1200,6 +1214,9 @@ impl CompactPathEvent {
             _locked_by_user: e._locked_by_user,
             _only_state: e._only_state,
             _invalidate: e._invalidate,
+            _order: e._order,
+            _no_history: e._no_history,
+            _draw_by_stretch: e._draw_by_stretch,
         })
     }
 
@@ -1246,6 +1263,9 @@ impl CompactPathEvent {
             _locked_by_user: self._locked_by_user,
             _only_state: self._only_state,
             _invalidate: self._invalidate,
+            _order: self._order,
+            _no_history: self._no_history,
+            _draw_by_stretch: self._draw_by_stretch,
 
             cross_origin: None,
             src: None,
