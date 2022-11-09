@@ -308,7 +308,7 @@ enum TextAlign {
     JustifyRight,
 }
 
-#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+#[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 enum Kind {
     Path,
@@ -1354,5 +1354,55 @@ mod tests {
         let after_roundtrip = path_to_json(decompressed);
 
         assert_eq!(original, after_roundtrip);
+    }
+
+    #[test]
+    fn test_encode_decode_event() {
+        let evt = r#"{"rx": 0, "ry": 0, "_id": "c900cf81-8af6-4eb2-82fe-4be2b2eab5b9", "top": 265.76, "fill": "rgba(255,255,255,1)", "left": 440.13, "type": "rect", "angle": 0, "flipX": false, "flipY": false, "skewX": 0, "skewY": 0, "width": 398.96, "_order": -1, "height": 133.43, "scaleX": 1, "scaleY": 1, "shadow": null, "stroke": "rgba(255,255,255,1)", "opacity": 1, "originX": "left", "originY": "top", "version": "4.6.0", "visible": true, "fillRule": "nonzero", "_noHistory": null, "paintFirst": "fill", "strokeWidth": 2, "noScaleCache": false, "_lockedbyuser": null, "strokeLineCap": "butt", "strokeUniform": true, "_drawByStretch": true, "strokeLineJoin": "miter", "backgroundColor": "", "strokeDashArray": null, "strokeDashOffset": 0, "strokeMiterLimit": 4, "globalCompositeOperation": "source-over"}"#;
+        let evt = serde_json::from_str(evt).unwrap();
+        let evt = CompactEvent::from_json(evt).unwrap();
+        println!("{evt:#?}");
+        match &evt {
+            CompactEvent::Other(schema) => {
+                assert_eq!(schema.kind, Kind::Rect);
+                assert_eq!(schema._order, Some(-1));
+            }
+            CompactEvent::Path(_) => unreachable!("should be rect"),
+        }
+
+        let postcard_binary = postcard::to_allocvec(&evt).unwrap();
+        let evt: CompactEvent = postcard::from_bytes(&postcard_binary).unwrap();
+        println!("{evt:#?}");
+        match &evt {
+            CompactEvent::Other(schema) => {
+                assert_eq!(schema.kind, Kind::Rect);
+                assert_eq!(schema._order, Some(-1));
+            }
+            CompactEvent::Path(_) => unreachable!("should be rect"),
+        }
+
+        let evt = "0110c900cf818af64eb282fe4be2b2eab5b90002cd4c85438f02e243146e0543e17ac7430000000000000000000000000000000000000000f03f000000000000f03f011372676261283235352c3235352c3235352c31290000011372676261283235352c3235352c3235352c3129010100000100010000000000000101040101020005342e362e3002000000000000010000010100000000000100000000010000000000000000000000000000000000000000000000000000000000";
+        let evt = hex::decode(evt).unwrap();
+        let evt: CompactEvent = postcard::from_bytes(&evt).unwrap();
+        println!("{evt:#?}");
+        match &evt {
+            CompactEvent::Other(schema) => {
+                assert_eq!(schema.kind, Kind::Rect);
+                assert_eq!(schema._order, Some(0));
+            }
+            CompactEvent::Path(_) => unreachable!("should be rect"),
+        }
+
+        let evt = "0110c900cf818af64eb282fe4be2b2eab5b90002cd4c85438f02e243146e0543e17ac7430000000000000000000000000000000000000000f03f000000000000f03f011372676261283235352c3235352c3235352c31290000011372676261283235352c3235352c3235352c3129010100000100010000000000000101040101020005342e362e3002000000000000010100010100000000000100000000010000000000000000000000000000000000000000000000000000000000";
+        let evt = hex::decode(evt).unwrap();
+        let evt: CompactEvent = postcard::from_bytes(&evt).unwrap();
+        println!("{evt:#?}");
+        match &evt {
+            CompactEvent::Other(schema) => {
+                assert_eq!(schema.kind, Kind::Rect);
+                assert_eq!(schema._order, Some(-1));
+            }
+            CompactEvent::Path(_) => unreachable!("should be rect"),
+        }
     }
 }

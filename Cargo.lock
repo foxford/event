@@ -693,6 +693,7 @@ dependencies = [
  "futures",
  "futures-channel",
  "futures-util",
+ "hex",
  "http",
  "humantime",
  "humantime-serde",

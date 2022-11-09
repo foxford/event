@@ -58,6 +58,7 @@ version = "0.15"
 optional = true
 
 [dev-dependencies]
+hex = "0.4.3"
 humantime = "2.1.0"
 mockall = "0.10"
 rusoto_mock = "0.47"
