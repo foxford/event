@@ -889,6 +889,13 @@ pub struct CompactPath {
     height: f32,
 }
 
+impl CompactPath {
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.parts.len()
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct CompactPathEvent {
     _id: Uuid,
@@ -1003,6 +1010,7 @@ fn decode_path(path: Vec<serde_json::Value>) -> Option<Path> {
 
                 PathPart::Q(x1, y1, x2, y2)
             }
+            "z" => break,
             _ => return None,
         };
 
@@ -1403,6 +1411,17 @@ mod tests {
                 assert_eq!(schema._order, Some(-1));
             }
             CompactEvent::Path(_) => unreachable!("should be rect"),
+        }
+    }
+
+    #[test]
+    fn test_losing_precision_error() {
+        let evt = r#"{"type":"path","version":"4.6.0","originX":"left","originY":"top","left":541.18,"top":61.47,"width":97.2,"height":97.2,"fill":"rgba(255,255,255,1)","stroke":"rgba(255,255,255,1)","strokeWidth":2,"strokeDashArray":null,"strokeLineCap":"butt","strokeDashOffset":0,"strokeLineJoin":"miter","strokeUniform":true,"strokeMiterLimit":40,"scaleX":0.07,"scaleY":0.11,"angle":0,"flipX":false,"flipY":false,"opacity":1,"shadow":null,"visible":true,"backgroundColor":"","fillRule":"nonzero","paintFirst":"fill","globalCompositeOperation":"source-over","skewX":0,"skewY":0,"_id":"a52b6755-2c6e-452b-a1b8-2cc108da7f34","noScaleCache":false,"_order":171,"_noHistory":true,"_drawByStretch":true,"path":[["M",0,0],["L",97.2,0],["L",0,97.2],["z"]]}"#;
+        let evt = serde_json::from_str(evt).unwrap();
+        let evt = CompactEvent::from_json(evt).unwrap();
+        match &evt {
+            CompactEvent::Path(p) => assert_eq!(p.path.len(), 3),
+            CompactEvent::Other(_) => unreachable!(),
         }
     }
 }
