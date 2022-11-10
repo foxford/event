@@ -1333,7 +1333,35 @@ mod tests {
             let evt = CompactEvent::from_json(json_value).unwrap();
 
             let postcard_binary = postcard::to_allocvec(&evt).unwrap();
-            let _evt: CompactEvent = postcard::from_bytes(&postcard_binary).unwrap();
+            let evt: CompactEvent = postcard::from_bytes(&postcard_binary).unwrap();
+
+            evt.into_json().unwrap();
+        }
+
+        let raw_evts = [
+            r#"{"type":"path","version":"4.6.0","originX":"left","originY":"bottom","left":692.24,"top":307.87,"width":97.2,"height":97.2,"fill":"rgba(0,0,0,0.009)","stroke":"rgba(0,0,0,1)","strokeWidth":2,"strokeDashArray":null,"strokeLineCap":"butt","strokeDashOffset":0,"strokeLineJoin":"miter","strokeUniform":true,"strokeMiterLimit":40,"scaleX":1.81,"scaleY":0.98,"angle":0,"flipX":false,"flipY":true,"opacity":1,"shadow":null,"visible":true,"backgroundColor":"","fillRule":"nonzero","paintFirst":"fill","globalCompositeOperation":"source-over","skewX":0,"skewY":0,"_id":"8a565154-8155-433a-a77c-81dc7168394c","noScaleCache":false,"_order":11,"_drawByStretch":true,"path":[["M",0,0],["L",97.2,0],["L",0,97.2],["z"]]}"#,
+            r#"{"rx": 0, "ry": 0, "_id": "c900cf81-8af6-4eb2-82fe-4be2b2eab5b9", "top": 265.76, "fill": "rgba(255,255,255,1)", "left": 440.13, "type": "rect", "angle": 0, "flipX": false, "flipY": false, "skewX": 0, "skewY": 0, "width": 398.96, "_order": -1, "height": 133.43, "scaleX": 1, "scaleY": 1, "shadow": null, "stroke": "rgba(255,255,255,1)", "opacity": 1, "originX": "left", "originY": "top", "version": "4.6.0", "visible": true, "fillRule": "nonzero", "_noHistory": null, "paintFirst": "fill", "strokeWidth": 2, "noScaleCache": false, "_lockedbyuser": null, "strokeLineCap": "butt", "strokeUniform": true, "_drawByStretch": true, "strokeLineJoin": "miter", "backgroundColor": "", "strokeDashArray": null, "strokeDashOffset": 0, "strokeMiterLimit": 4, "globalCompositeOperation": "source-over"}"#,
+        ];
+
+        for raw in raw_evts {
+            let evt = serde_json::from_str(raw).unwrap();
+            let evt = CompactEvent::from_json(evt).unwrap();
+
+            let postcard_binary = postcard::to_allocvec(&evt).unwrap();
+            let evt: CompactEvent = postcard::from_bytes(&postcard_binary).unwrap();
+
+            evt.into_json().unwrap();
+        }
+
+        let hex_evts = [
+            "0110c900cf818af64eb282fe4be2b2eab5b90002cd4c85438f02e243146e0543e17ac7430000000000000000000000000000000000000000f03f000000000000f03f011372676261283235352c3235352c3235352c31290000011372676261283235352c3235352c3235352c3129010100000100010000000000000101040101020005342e362e3002000000000000010000010100000000000100000000010000000000000000000000000000000000000000000000000000000000",
+            "0110c900cf818af64eb282fe4be2b2eab5b90002cd4c85438f02e243146e0543e17ac7430000000000000000000000000000000000000000f03f000000000000f03f011372676261283235352c3235352c3235352c31290000011372676261283235352c3235352c3235352c3129010100000100010000000000000101040101020005342e362e3002000000000000010100010100000000000100000000010000000000000000000000000000000000000000000000000000000000"
+        ];
+        for raw in hex_evts {
+            let evt = hex::decode(raw).unwrap();
+            let evt: CompactEvent = postcard::from_bytes(&evt).unwrap();
+
+            evt.into_json().unwrap();
         }
     }
 
