@@ -242,6 +242,7 @@ enum Origin {
     Right,
     Top,
     Center,
+    Bottom,
 }
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone, Copy, Default)]
