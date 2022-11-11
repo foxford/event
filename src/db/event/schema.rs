@@ -863,6 +863,7 @@ pub enum PathPart {
     M(f64, f64),
     Q(f64, f64, f64, f64),
     L(f64, f64),
+    Z,
 }
 
 #[derive(Debug)]
@@ -879,6 +880,7 @@ pub enum CompactPathPart {
     M(u16, u16),
     Q(u16, u16, u16, u16),
     L(u16, u16),
+    Z,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -1011,7 +1013,7 @@ fn decode_path(path: Vec<serde_json::Value>) -> Option<Path> {
 
                 PathPart::Q(x1, y1, x2, y2)
             }
-            "z" => break,
+            "z" => PathPart::Z,
             _ => return None,
         };
 
@@ -1059,6 +1061,7 @@ fn compress_path(path: Vec<serde_json::Value>) -> Option<CompactPath> {
                 norm(x, decoded.min_x, decoded.width)?,
                 norm(y, decoded.min_y, decoded.height)?,
             ),
+            PathPart::Z => CompactPathPart::Z,
         };
 
         comp_path.push(part);
@@ -1099,6 +1102,7 @@ fn decompress_path(path: CompactPath) -> Path {
             CompactPathPart::L(x, y) => {
                 PathPart::L(denorm(x, min_x, width), denorm(y, min_y, height))
             }
+            CompactPathPart::Z => PathPart::Z,
         };
 
         parts.push(decompressed_part);
@@ -1139,6 +1143,7 @@ fn path_to_json(path: Path) -> Vec<serde_json::Value> {
                 two_decimal_places(x),
                 two_decimal_places(y)
             ])),
+            PathPart::Z => value.push(serde_json::json!(["z"])),
         }
     }
 
@@ -1441,6 +1446,11 @@ mod tests {
             }
             CompactEvent::Path(_) => unreachable!("should be rect"),
         }
+
+        let evt = "00102889ae3bd4f6445cae9ae64d5b06ac1500029ab30398a604f84bf84b0000000000c3f5285c8fc20540d7a3703d0ad7014001117267626128302c302c302c302e303039290000010d7267626128302c302c302c312901010000010000000001012801010205342e362e30000300000002904e000200904e000000006666c242000000006666c2420000000000000100000101";
+        let evt = hex::decode(evt).unwrap();
+        let evt: CompactEvent = postcard::from_bytes(&evt).unwrap();
+        println!("{evt:#?}");
     }
 
     #[test]
@@ -1449,7 +1459,7 @@ mod tests {
         let evt = serde_json::from_str(evt).unwrap();
         let evt = CompactEvent::from_json(evt).unwrap();
         match &evt {
-            CompactEvent::Path(p) => assert_eq!(p.path.len(), 3),
+            CompactEvent::Path(p) => assert_eq!(p.path.len(), 4),
             CompactEvent::Other(_) => unreachable!(),
         }
     }
