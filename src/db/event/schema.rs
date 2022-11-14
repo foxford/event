@@ -363,7 +363,6 @@ pub struct EventSchema {
     paint_first: PaintFirst,
     global_composite_operation: GlobalCompositeOperation,
     background_color: Option<String>,
-    no_scale_cache: Option<bool>,
     stroke_dash_array: Option<Vec<f32>>,
     stroke_dash_offset: f32,
     stroke_line_cap: StrokeLineCap,
@@ -379,73 +378,103 @@ pub struct EventSchema {
     kind: Kind,
 
     // our custom fields
-    #[serde(rename = "_removed")]
+    no_scale_cache: Option<bool>,
+    #[serde(rename = "_removed", skip_serializing_if = "Option::is_none")]
     _removed: Option<bool>,
-    #[serde(rename = "_rev")]
+    #[serde(rename = "_rev", skip_serializing_if = "Option::is_none")]
     _rev: Option<Uuid>,
-    #[serde(rename = "_restored")]
+    #[serde(rename = "_restored", skip_serializing_if = "Option::is_none")]
     _restored: Option<bool>,
-    #[serde(rename = "_lockedbyuser")]
+    #[serde(rename = "_lockedbyuser", skip_serializing_if = "Option::is_none")]
     _locked_by_user: Option<bool>,
-    #[serde(rename = "_onlyState")]
+    #[serde(rename = "_onlyState", skip_serializing_if = "Option::is_none")]
     _only_state: Option<bool>,
-    #[serde(rename = "_invalidate")]
+    #[serde(rename = "_invalidate", skip_serializing_if = "Option::is_none")]
     _invalidate: Option<bool>,
-    #[serde(rename = "_order")]
+    #[serde(rename = "_order", skip_serializing_if = "Option::is_none")]
     _order: Option<i64>,
-    #[serde(rename = "_noHistory")]
+    #[serde(rename = "_noHistory", skip_serializing_if = "Option::is_none")]
     _no_history: Option<bool>,
-    #[serde(rename = "_drawByStretch")]
+    #[serde(rename = "_drawByStretch", skip_serializing_if = "Option::is_none")]
     _draw_by_stretch: Option<bool>,
 
     // fields specific for some events
 
     // Path
+    #[serde(skip_serializing_if = "Option::is_none")]
     path: Option<Vec<serde_json::Value>>,
 
     // Image
+    #[serde(skip_serializing_if = "Option::is_none")]
     src: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     crop_x: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     crop_y: Option<f32>,
     #[serde(with = "json_as_str", default)]
     filters: Option<String>,
 
     // Rect
+    #[serde(skip_serializing_if = "Option::is_none")]
     rx: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     ry: Option<f32>,
 
     // Circle
+    #[serde(skip_serializing_if = "Option::is_none")]
     radius: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     start_angle: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     end_angle: Option<f32>,
 
     // Text
+    #[serde(skip_serializing_if = "Option::is_none")]
     text: Option<String>,
     #[serde(with = "json_as_str", default)]
     styles: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     font_size: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     min_width: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     overline: Option<bool>,
     // missing spec on values (only 'left' is known)
+    #[serde(skip_serializing_if = "Option::is_none")]
     path_side: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     direction: Option<Direction>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     font_style: Option<FontStyle>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     text_align: Option<TextAlign>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     underline: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     font_family: Option<String>,
     #[serde(with = "json_as_str", default)]
     font_weight: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     line_height: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     char_spacing: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     linethrough: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     path_start_offset: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     split_by_grapheme: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     text_background_color: Option<String>,
 
     // Whiteboard Line
+    #[serde(skip_serializing_if = "Option::is_none")]
     x1: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     x2: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     y1: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     y2: Option<f32>,
 }
 
@@ -1403,7 +1432,6 @@ mod tests {
         let evt = r#"{"rx": 0, "ry": 0, "_id": "c900cf81-8af6-4eb2-82fe-4be2b2eab5b9", "top": 265.76, "fill": "rgba(255,255,255,1)", "left": 440.13, "type": "rect", "angle": 0, "flipX": false, "flipY": false, "skewX": 0, "skewY": 0, "width": 398.96, "_order": -1, "height": 133.43, "scaleX": 1, "scaleY": 1, "shadow": null, "stroke": "rgba(255,255,255,1)", "opacity": 1, "originX": "left", "originY": "top", "version": "4.6.0", "visible": true, "fillRule": "nonzero", "_noHistory": null, "paintFirst": "fill", "strokeWidth": 2, "noScaleCache": false, "_lockedbyuser": null, "strokeLineCap": "butt", "strokeUniform": true, "_drawByStretch": true, "strokeLineJoin": "miter", "backgroundColor": "", "strokeDashArray": null, "strokeDashOffset": 0, "strokeMiterLimit": 4, "globalCompositeOperation": "source-over"}"#;
         let evt = serde_json::from_str(evt).unwrap();
         let evt = CompactEvent::from_json(evt).unwrap();
-        println!("{evt:#?}");
         match &evt {
             CompactEvent::Other(schema) => {
                 assert_eq!(schema.kind, Kind::Rect);
@@ -1414,7 +1442,6 @@ mod tests {
 
         let postcard_binary = postcard::to_allocvec(&evt).unwrap();
         let evt: CompactEvent = postcard::from_bytes(&postcard_binary).unwrap();
-        println!("{evt:#?}");
         match &evt {
             CompactEvent::Other(schema) => {
                 assert_eq!(schema.kind, Kind::Rect);
@@ -1426,7 +1453,6 @@ mod tests {
         let evt = "0110c900cf818af64eb282fe4be2b2eab5b90002cd4c85438f02e243146e0543e17ac7430000000000000000000000000000000000000000f03f000000000000f03f011372676261283235352c3235352c3235352c31290000011372676261283235352c3235352c3235352c3129010100000100010000000000000101040101020005342e362e3002000000000000010000010100000000000100000000010000000000000000000000000000000000000000000000000000000000";
         let evt = hex::decode(evt).unwrap();
         let evt: CompactEvent = postcard::from_bytes(&evt).unwrap();
-        println!("{evt:#?}");
         match &evt {
             CompactEvent::Other(schema) => {
                 assert_eq!(schema.kind, Kind::Rect);
@@ -1438,7 +1464,6 @@ mod tests {
         let evt = "0110c900cf818af64eb282fe4be2b2eab5b90002cd4c85438f02e243146e0543e17ac7430000000000000000000000000000000000000000f03f000000000000f03f011372676261283235352c3235352c3235352c31290000011372676261283235352c3235352c3235352c3129010100000100010000000000000101040101020005342e362e3002000000000000010100010100000000000100000000010000000000000000000000000000000000000000000000000000000000";
         let evt = hex::decode(evt).unwrap();
         let evt: CompactEvent = postcard::from_bytes(&evt).unwrap();
-        println!("{evt:#?}");
         match &evt {
             CompactEvent::Other(schema) => {
                 assert_eq!(schema.kind, Kind::Rect);
@@ -1447,9 +1472,11 @@ mod tests {
             CompactEvent::Path(_) => unreachable!("should be rect"),
         }
 
-        let evt = "00102889ae3bd4f6445cae9ae64d5b06ac1500029ab30398a604f84bf84b0000000000c3f5285c8fc20540d7a3703d0ad7014001117267626128302c302c302c302e303039290000010d7267626128302c302c302c312901010000010000000001012801010205342e362e30000300000002904e000200904e000000006666c242000000006666c2420000000000000100000101";
+        let evt = "0110a92b43303a5c4a9c9f98ad968837f0fe0002a470414385eb9e4300000243000002430000000000000000000000000000000000000000f03f000000000000f03f010d7267626128302c302c302c31290000010d7267626128302c302c302c3129010100000100010000000000000101040101020005342e362e300800000001010000010c0000000000000000000100008242010000000001db0fc94000000000000000000000000000000000000000000000";
         let evt = hex::decode(evt).unwrap();
         let evt: CompactEvent = postcard::from_bytes(&evt).unwrap();
+        println!("{evt:#?}");
+        let evt = evt.into_json().unwrap();
         println!("{evt:#?}");
     }
 
