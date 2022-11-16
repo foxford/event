@@ -2,7 +2,7 @@
 authors = ["Timofey Martynov <t.martinov@netology-group.ru>"]
 edition = "2021"
 name = "event"
-version = "0.2.63"
+version = "0.2.64"
 
 [dependencies]
 anyhow = "1"
@@ -19,6 +19,7 @@ http = "0.2"
 humantime-serde = "1"
 hyper = { version = "0.14.15", features = [ "server" ] }
 parking_lot = "0.11"
+postcard = { version = "1.0.2", features = ["alloc"] }
 prometheus = "0.13"
 quaint = { version = "0.1", features = ["uuid-0_8", "chrono-0_4"] }
 rand = "0.8"
@@ -57,6 +58,7 @@ version = "0.15"
 optional = true
 
 [dev-dependencies]
+hex = "0.4.3"
 humantime = "2.1.0"
 mockall = "0.10"
 rusoto_mock = "0.47"

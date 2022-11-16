@@ -44,6 +44,7 @@ pub enum ErrorKind {
     UnknownMethod,
     WhiteboardAccessUpdateNotChecked,
     PayloadSizeExceeded,
+    InvalidEvent,
 }
 
 impl ErrorKind {
@@ -240,6 +241,12 @@ impl From<ErrorKind> for ErrorKindProperties {
                 kind: "payload_size_exceeded",
                 title: "Payload size exceeded",
                 is_notify_sentry: false,
+            },
+            ErrorKind::InvalidEvent => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "invalid_event",
+                title: "Invalid event",
+                is_notify_sentry: false
             },
         }
     }

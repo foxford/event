@@ -234,6 +234,7 @@ impl Event {
         let created_by = self.created_by.expect("Creator not set");
 
         let mut query = db::event::InsertQuery::new(room_id, kind, data, occurred_at, created_by)
+            .unwrap()
             .removed(self.removed);
 
         if let Some(set) = self.set {

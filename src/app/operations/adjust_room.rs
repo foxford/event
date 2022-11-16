@@ -604,6 +604,7 @@ mod tests {
                 occurred_at,
                 created_by,
             )
+            .expect("Failed to create insert query")
             .created_at(opened_at + Duration::nanoseconds(occurred_at));
 
             if let Some(f) = f {

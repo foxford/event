@@ -512,173 +512,6 @@
     },
     "query": "\n            DELETE FROM agent\n            WHERE agent_id = $1\n            AND   room_id  = $2\n            "
   },
-  "260c34f4b90b6a38513969e9b757e94919dcddca664f20e6e81a06a62799b790": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "room_id",
-          "ordinal": 1,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "kind",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "set",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "label",
-          "ordinal": 4,
-          "type_info": "Text"
-        },
-        {
-          "name": "attribute",
-          "ordinal": 5,
-          "type_info": "Text"
-        },
-        {
-          "name": "data",
-          "ordinal": 6,
-          "type_info": "Jsonb"
-        },
-        {
-          "name": "occurred_at",
-          "ordinal": 7,
-          "type_info": "Int8"
-        },
-        {
-          "name": "created_by!: AgentId",
-          "ordinal": 8,
-          "type_info": {
-            "Custom": {
-              "kind": {
-                "Composite": [
-                  [
-                    "account_id",
-                    {
-                      "Custom": {
-                        "kind": {
-                          "Composite": [
-                            [
-                              "label",
-                              "Text"
-                            ],
-                            [
-                              "audience",
-                              "Text"
-                            ]
-                          ]
-                        },
-                        "name": "account_id"
-                      }
-                    }
-                  ],
-                  [
-                    "label",
-                    "Text"
-                  ]
-                ]
-              },
-              "name": "agent_id"
-            }
-          }
-        },
-        {
-          "name": "created_at",
-          "ordinal": 9,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "deleted_at",
-          "ordinal": 10,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "original_occurred_at",
-          "ordinal": 11,
-          "type_info": "Int8"
-        },
-        {
-          "name": "original_created_by: AgentId",
-          "ordinal": 12,
-          "type_info": {
-            "Custom": {
-              "kind": {
-                "Composite": [
-                  [
-                    "account_id",
-                    {
-                      "Custom": {
-                        "kind": {
-                          "Composite": [
-                            [
-                              "label",
-                              "Text"
-                            ],
-                            [
-                              "audience",
-                              "Text"
-                            ]
-                          ]
-                        },
-                        "name": "account_id"
-                      }
-                    }
-                  ],
-                  [
-                    "label",
-                    "Text"
-                  ]
-                ]
-              },
-              "name": "agent_id"
-            }
-          }
-        },
-        {
-          "name": "removed",
-          "ordinal": 13,
-          "type_info": "Bool"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        true,
-        true,
-        false,
-        false,
-        false,
-        false,
-        true,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "Text",
-          "Text",
-          "Int8",
-          "Int8",
-          "Int8"
-        ]
-      }
-    },
-    "query": "\n                SELECT\n                    id,\n                    room_id,\n                    kind,\n                    set,\n                    label,\n                    attribute,\n                    data,\n                    occurred_at,\n                    created_by as \"created_by!: AgentId\",\n                    created_at,\n                    deleted_at,\n                    original_occurred_at,\n                    original_created_by as \"original_created_by: AgentId\",\n                    removed\n                FROM (\n                    SELECT DISTINCT ON(original_occurred_at, label)\n                        *,\n                        ROW_NUMBER() OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS reverse_ordinal\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $4\n                    AND   occurred_at < COALESCE($5, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) AS q\n                WHERE reverse_ordinal = 1\n                AND   attribute = $3\n                AND   removed = 'f'\n                LIMIT $6\n                "
-  },
   "281c4f58e41fd5ac304028de84507b381470182dd2ded08bd1c496c08ad8f544": {
     "describe": {
       "columns": [
@@ -981,7 +814,54 @@
     },
     "query": "\n            INSERT INTO edition (source_room_id, created_by)\n            VALUES ($1, $2)\n            RETURNING id, source_room_id, created_by AS \"created_by!: AgentId\", created_at\n            "
   },
-  "3fb6f544ba53b0f4f1e6243e13bed634aa0d3935a05ec3bffa8a5423ecc5cd7c": {
+  "42e17be7c2e6d4f3f5117aaa2a22874738774994d671853f29648f83d27276ee": {
+    "describe": {
+      "columns": [
+        {
+          "name": "room_id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "started_at",
+          "ordinal": 1,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "segments!: Segments",
+          "ordinal": 2,
+          "type_info": "Int8RangeArray"
+        },
+        {
+          "name": "offset",
+          "ordinal": 3,
+          "type_info": "Int8"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 4,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Timestamptz",
+          "Int8RangeArray",
+          "Int8"
+        ]
+      }
+    },
+    "query": "\n            INSERT INTO adjustment (room_id, started_at, segments, \"offset\")\n            VALUES ($1, $2, $3, $4)\n            RETURNING\n                room_id,\n                started_at,\n                segments AS \"segments!: Segments\",\n                \"offset\",\n                created_at\n            "
+  },
+  "4a87a1e898694e6a8a2438aafa215cd36eab7aeecf4b3fab2c0b3d00a9cc695b": {
     "describe": {
       "columns": [
         {
@@ -1020,13 +900,18 @@
           "type_info": "Jsonb"
         },
         {
-          "name": "occurred_at",
+          "name": "binary_data: PostcardBin<CompactEvent>",
           "ordinal": 7,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "occurred_at",
+          "ordinal": 8,
           "type_info": "Int8"
         },
         {
           "name": "created_by!: AgentId",
-          "ordinal": 8,
+          "ordinal": 9,
           "type_info": {
             "Custom": {
               "kind": {
@@ -1063,22 +948,22 @@
         },
         {
           "name": "created_at",
-          "ordinal": 9,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "deleted_at",
           "ordinal": 10,
           "type_info": "Timestamptz"
         },
         {
-          "name": "original_occurred_at",
+          "name": "deleted_at",
           "ordinal": 11,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "original_occurred_at",
+          "ordinal": 12,
           "type_info": "Int8"
         },
         {
           "name": "original_created_by: AgentId",
-          "ordinal": 12,
+          "ordinal": 13,
           "type_info": {
             "Custom": {
               "kind": {
@@ -1115,7 +1000,7 @@
         },
         {
           "name": "removed",
-          "ordinal": 13,
+          "ordinal": 14,
           "type_info": "Bool"
         }
       ],
@@ -1126,7 +1011,8 @@
         false,
         true,
         true,
-        false,
+        true,
+        true,
         false,
         false,
         false,
@@ -1178,58 +1064,12 @@
             }
           },
           "Timestamptz",
-          "Bool"
+          "Bool",
+          "Bytea"
         ]
       }
     },
-    "query": "\n            INSERT INTO event (\n                room_id,\n                set,\n                kind,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by,\n                created_at,\n                removed\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n            RETURNING\n                id,\n                room_id,\n                kind,\n                set,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by AS \"created_by!: AgentId\",\n                created_at,\n                deleted_at,\n                original_occurred_at,\n                original_created_by as \"original_created_by: AgentId\",\n                removed\n            "
-  },
-  "42e17be7c2e6d4f3f5117aaa2a22874738774994d671853f29648f83d27276ee": {
-    "describe": {
-      "columns": [
-        {
-          "name": "room_id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "started_at",
-          "ordinal": 1,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "segments!: Segments",
-          "ordinal": 2,
-          "type_info": "Int8RangeArray"
-        },
-        {
-          "name": "offset",
-          "ordinal": 3,
-          "type_info": "Int8"
-        },
-        {
-          "name": "created_at",
-          "ordinal": 4,
-          "type_info": "Timestamptz"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "Timestamptz",
-          "Int8RangeArray",
-          "Int8"
-        ]
-      }
-    },
-    "query": "\n            INSERT INTO adjustment (room_id, started_at, segments, \"offset\")\n            VALUES ($1, $2, $3, $4)\n            RETURNING\n                room_id,\n                started_at,\n                segments AS \"segments!: Segments\",\n                \"offset\",\n                created_at\n            "
+    "query": "\n            INSERT INTO event (\n                room_id,\n                set,\n                kind,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by,\n                created_at,\n                removed,\n                binary_data\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)\n            RETURNING\n                id,\n                room_id,\n                kind,\n                set,\n                label,\n                attribute,\n                data,\n                binary_data AS \"binary_data: PostcardBin<CompactEvent>\",\n                occurred_at,\n                created_by AS \"created_by!: AgentId\",\n                created_at,\n                deleted_at,\n                original_occurred_at,\n                original_created_by as \"original_created_by: AgentId\",\n                removed\n            "
   },
   "6039c8fc3c3a35e4104b47ef5d3763a5dabb4e7e8a42ddc8f8f5fe787919b28e": {
     "describe": {
@@ -1315,6 +1155,176 @@
       }
     },
     "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags),\n                classroom_id = COALESCE($4, classroom_id),\n                locked_types = COALESCE($5, locked_types),\n                whiteboard_access = COALESCE($6, whiteboard_access)\n            WHERE id = $1\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                validate_whiteboard_access,\n                whiteboard_access\n            "
+  },
+  "68c823e1918e06b0b6607c02f59fd4fd33ff885c4bb72f84beae8db06078576b": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "room_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "kind",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "set",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "label",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "attribute",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "data",
+          "ordinal": 6,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "binary_data: PostcardBin<CompactEvent>",
+          "ordinal": 7,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "occurred_at",
+          "ordinal": 8,
+          "type_info": "Int8"
+        },
+        {
+          "name": "created_by!: AgentId",
+          "ordinal": 9,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "created_at",
+          "ordinal": 10,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "deleted_at",
+          "ordinal": 11,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "original_occurred_at",
+          "ordinal": 12,
+          "type_info": "Int8"
+        },
+        {
+          "name": "original_created_by: AgentId",
+          "ordinal": 13,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "removed",
+          "ordinal": 14,
+          "type_info": "Bool"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Text"
+        ]
+      }
+    },
+    "query": "\n            SELECT\n                id,\n                room_id,\n                kind,\n                set,\n                label,\n                attribute,\n                data,\n                binary_data as \"binary_data: PostcardBin<CompactEvent>\",\n                occurred_at,\n                created_by as \"created_by!: AgentId\",\n                created_at,\n                deleted_at,\n                original_occurred_at,\n                original_created_by as \"original_created_by: AgentId\",\n                removed\n            FROM event\n            WHERE deleted_at IS NULL\n            AND   room_id = $1\n            AND   set = $2\n            AND   label = $3\n            ORDER BY occurred_at\n            LIMIT 1\n            "
   },
   "7ceae51be9df68b6cc8b84ab1a3ad496654cc378148aed37349ffe7ab4e4a982": {
     "describe": {
@@ -1414,67 +1424,6 @@
       }
     },
     "query": "\n            SELECT\n                agent.id,\n                agent_id AS \"agent_id!: AgentId\",\n                agent.room_id,\n                status AS \"status!: Status\",\n                agent.created_at,\n                (rban.created_at IS NOT NULL)::boolean AS banned,\n                rban.reason\n            FROM agent\n            LEFT OUTER JOIN room_ban rban\n            ON rban.room_id = agent.room_id AND rban.account_id = (agent.agent_id).account_id\n            WHERE agent_id = $1 AND agent.room_id = $2\n            LIMIT 1\n            "
-  },
-  "82ef68387ec1cfa2230670e75186894dd1ee736485f85c812c827aa568f700ee": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "account_id!: AccountId",
-          "ordinal": 1,
-          "type_info": {
-            "Custom": {
-              "kind": {
-                "Composite": [
-                  [
-                    "label",
-                    "Text"
-                  ],
-                  [
-                    "audience",
-                    "Text"
-                  ]
-                ]
-              },
-              "name": "account_id"
-            }
-          }
-        },
-        {
-          "name": "room_id",
-          "ordinal": 2,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "reason",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "created_at",
-          "ordinal": 4,
-          "type_info": "Timestamptz"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false,
-        true,
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Record",
-          "Uuid"
-        ]
-      }
-    },
-    "query": "\n            SELECT\n                id, account_id AS \"account_id!: AccountId\",\n                room_id, reason, created_at\n            FROM room_ban\n            WHERE account_id = $1 AND room_id = $2\n            "
   },
   "8968bd8bf4e0ed732656caabd871b81f7f7cef3054501b8401634bca7bf2fc91": {
     "describe": {
@@ -1802,172 +1751,6 @@
     },
     "query": "DELETE FROM edition WHERE id = $1"
   },
-  "a7a4feff9503edfeba65294deaea421d972a5416ccc01a486b85ae6fccfe66d9": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "room_id",
-          "ordinal": 1,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "kind",
-          "ordinal": 2,
-          "type_info": "Text"
-        },
-        {
-          "name": "set",
-          "ordinal": 3,
-          "type_info": "Text"
-        },
-        {
-          "name": "label",
-          "ordinal": 4,
-          "type_info": "Text"
-        },
-        {
-          "name": "attribute",
-          "ordinal": 5,
-          "type_info": "Text"
-        },
-        {
-          "name": "data",
-          "ordinal": 6,
-          "type_info": "Jsonb"
-        },
-        {
-          "name": "occurred_at",
-          "ordinal": 7,
-          "type_info": "Int8"
-        },
-        {
-          "name": "created_by!: AgentId",
-          "ordinal": 8,
-          "type_info": {
-            "Custom": {
-              "kind": {
-                "Composite": [
-                  [
-                    "account_id",
-                    {
-                      "Custom": {
-                        "kind": {
-                          "Composite": [
-                            [
-                              "label",
-                              "Text"
-                            ],
-                            [
-                              "audience",
-                              "Text"
-                            ]
-                          ]
-                        },
-                        "name": "account_id"
-                      }
-                    }
-                  ],
-                  [
-                    "label",
-                    "Text"
-                  ]
-                ]
-              },
-              "name": "agent_id"
-            }
-          }
-        },
-        {
-          "name": "created_at",
-          "ordinal": 9,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "deleted_at",
-          "ordinal": 10,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "original_occurred_at",
-          "ordinal": 11,
-          "type_info": "Int8"
-        },
-        {
-          "name": "original_created_by: AgentId",
-          "ordinal": 12,
-          "type_info": {
-            "Custom": {
-              "kind": {
-                "Composite": [
-                  [
-                    "account_id",
-                    {
-                      "Custom": {
-                        "kind": {
-                          "Composite": [
-                            [
-                              "label",
-                              "Text"
-                            ],
-                            [
-                              "audience",
-                              "Text"
-                            ]
-                          ]
-                        },
-                        "name": "account_id"
-                      }
-                    }
-                  ],
-                  [
-                    "label",
-                    "Text"
-                  ]
-                ]
-              },
-              "name": "agent_id"
-            }
-          }
-        },
-        {
-          "name": "removed",
-          "ordinal": 13,
-          "type_info": "Bool"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        false,
-        false,
-        true,
-        true,
-        false,
-        false,
-        false,
-        false,
-        true,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "Text",
-          "Int8",
-          "Int8",
-          "Int8"
-        ]
-      }
-    },
-    "query": "\n                SELECT\n                    id,\n                    room_id,\n                    kind,\n                    set,\n                    label,\n                    attribute,\n                    data,\n                    occurred_at,\n                    created_by as \"created_by!: AgentId\",\n                    created_at,\n                    deleted_at,\n                    original_occurred_at,\n                    original_created_by as \"original_created_by: AgentId\",\n                    removed\n                FROM (\n                    SELECT DISTINCT ON(original_occurred_at, label) *\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) AS subq\n                WHERE removed = 'f'\n                LIMIT $5\n                "
-  },
   "ac9057b29aa15bfce1867dca3324e3c3b27a6bb4184588bc6cca99ccc9e6cfca": {
     "describe": {
       "columns": [
@@ -2215,6 +1998,179 @@
     },
     "query": "\n        WITH\n            gap_starts AS (\n                SELECT start, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($1::BIGINT[]) AS start\n            ),\n            gap_stops AS (\n                SELECT stop, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($2::BIGINT[]) AS stop\n            ),\n            gaps AS (\n                SELECT start, stop\n                FROM gap_starts, gap_stops\n                WHERE gap_stops.row_number = gap_starts.row_number\n            )\n        INSERT INTO event (id, room_id, kind, set, label, data, attribute, removed, occurred_at, created_by, created_at)\n        SELECT\n            id,\n            room_id,\n            kind,\n            set,\n            label,\n            data,\n            attribute,\n            removed,\n            -- Monotonization\n            -- cutstarts and cutstops are left as is to avoid skew\n            (\n                CASE kind\n                WHEN 'stream' THEN occurred_at\n                ELSE occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at, kind = 'stream' ORDER BY created_at) - 1\n                END\n            ),\n            created_by,\n            created_at\n        FROM (\n            SELECT\n                gen_random_uuid() AS id,\n                $3::UUID AS room_id,\n                kind,\n                set,\n                label,\n                data,\n                attribute,\n                removed,\n                (\n                    CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)\n                    WHEN TRUE THEN 0\n                    ELSE occurred_at - (\n                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)\n                        FROM gaps\n                        WHERE start < occurred_at\n                        AND   start >= 0\n                    )\n                    END\n                ) + $4 AS occurred_at,\n                created_by,\n                created_at\n            FROM event\n            WHERE room_id = $5\n            AND   deleted_at IS NULL\n        ) AS sub\n        "
   },
+  "d5627598d3da1032cb1e21ea6235eea133cf69fa53234fcbbe62ad9b1e801eb5": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "room_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "kind",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "set",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "label",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "attribute",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "data",
+          "ordinal": 6,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "binary_data: PostcardBin<CompactEvent>",
+          "ordinal": 7,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "occurred_at",
+          "ordinal": 8,
+          "type_info": "Int8"
+        },
+        {
+          "name": "created_by!: AgentId",
+          "ordinal": 9,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "created_at",
+          "ordinal": 10,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "deleted_at",
+          "ordinal": 11,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "original_occurred_at",
+          "ordinal": 12,
+          "type_info": "Int8"
+        },
+        {
+          "name": "original_created_by: AgentId",
+          "ordinal": 13,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "removed",
+          "ordinal": 14,
+          "type_info": "Bool"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Text",
+          "Int8",
+          "Int8",
+          "Int8"
+        ]
+      }
+    },
+    "query": "\n                SELECT\n                    id,\n                    room_id,\n                    kind,\n                    set,\n                    label,\n                    attribute,\n                    data,\n                    binary_data as \"binary_data: PostcardBin<CompactEvent>\",\n                    occurred_at,\n                    created_by as \"created_by!: AgentId\",\n                    created_at,\n                    deleted_at,\n                    original_occurred_at,\n                    original_created_by as \"original_created_by: AgentId\",\n                    removed\n                FROM (\n                    SELECT DISTINCT ON(original_occurred_at, label)\n                        *,\n                        ROW_NUMBER() OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS reverse_ordinal\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $4\n                    AND   occurred_at < COALESCE($5, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) AS q\n                WHERE reverse_ordinal = 1\n                AND   attribute = $3\n                AND   removed = 'f'\n                LIMIT $6\n                "
+  },
   "da66580c20d184c7d43c67ec5ccf490283c56ae79795a8df439c3481d2e6b83a": {
     "describe": {
       "columns": [
@@ -2307,30 +2263,7 @@
     },
     "query": "\n            DELETE FROM event\n            WHERE id IN (\n                -- Exclude preserved rooms and calculate reverse ordinal (history depth).\n                WITH sub AS (\n                    SELECT\n                        e.*,\n                        ROW_NUMBER() OVER (\n                            PARTITION BY e.room_id, e.set, e.label\n                            ORDER BY e.occurred_at DESC\n                        ) AS reverse_ordinal\n                    FROM event AS e\n                    INNER JOIN room AS r\n                    ON r.id = e.room_id\n                    WHERE r.preserve_history = 'f'\n                )\n\n                -- Too deep history.\n                SELECT id\n                FROM sub\n                WHERE reverse_ordinal > $1\n\n                UNION ALL\n\n                -- Too old history.\n                SELECT id\n                FROM sub\n                WHERE reverse_ordinal > 1\n                AND created_at < NOW() - INTERVAL '1 second' * $2\n\n                UNION ALL\n\n                -- Too old deleted labels.\n                SELECT e.id\n                FROM sub\n                INNER JOIN event AS e\n                ON  e.room_id = sub.room_id\n                AND e.set = sub.set\n                AND e.label = sub.label\n                WHERE e.deleted_at IS NULL\n                AND   sub.attribute = 'deleted'\n                AND   sub.reverse_ordinal = 1\n                AND   sub.created_at < NOW() - INTERVAL '1 second' * $3\n            )\n            "
   },
-  "fe946b20b9bfce6afbdae07e7d99583b1e75de74c7b688b01098532d38165eaa": {
-    "describe": {
-      "columns": [
-        {
-          "name": "total",
-          "ordinal": 0,
-          "type_info": "Int8"
-        }
-      ],
-      "nullable": [
-        null
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "Text",
-          "Int8",
-          "Int8"
-        ]
-      }
-    },
-    "query": "\n                SELECT COUNT(DISTINCT label) as total FROM (\n                    SELECT\n                        *,\n                        bool_or(removed) OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS removed_windowed\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) subq\n                WHERE removed_windowed = 'f'\n                "
-  },
-  "ffe3cc678d2cc1ccdf4a381f7f095a398804cd7003ea695c5a49455f2e82cc86": {
+  "fd67957108c3de500ecac33e0a3c498d74378a1cfa6ab94bcb314ed96d34ebcb": {
     "describe": {
       "columns": [
         {
@@ -2369,13 +2302,18 @@
           "type_info": "Jsonb"
         },
         {
-          "name": "occurred_at",
+          "name": "binary_data: PostcardBin<CompactEvent>",
           "ordinal": 7,
+          "type_info": "Bytea"
+        },
+        {
+          "name": "occurred_at",
+          "ordinal": 8,
           "type_info": "Int8"
         },
         {
           "name": "created_by!: AgentId",
-          "ordinal": 8,
+          "ordinal": 9,
           "type_info": {
             "Custom": {
               "kind": {
@@ -2412,22 +2350,22 @@
         },
         {
           "name": "created_at",
-          "ordinal": 9,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "deleted_at",
           "ordinal": 10,
           "type_info": "Timestamptz"
         },
         {
-          "name": "original_occurred_at",
+          "name": "deleted_at",
           "ordinal": 11,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "original_occurred_at",
+          "ordinal": 12,
           "type_info": "Int8"
         },
         {
           "name": "original_created_by: AgentId",
-          "ordinal": 12,
+          "ordinal": 13,
           "type_info": {
             "Custom": {
               "kind": {
@@ -2464,7 +2402,7 @@
         },
         {
           "name": "removed",
-          "ordinal": 13,
+          "ordinal": 14,
           "type_info": "Bool"
         }
       ],
@@ -2475,7 +2413,8 @@
         false,
         true,
         true,
-        false,
+        true,
+        true,
         false,
         false,
         false,
@@ -2488,10 +2427,35 @@
         "Left": [
           "Uuid",
           "Text",
-          "Text"
+          "Int8",
+          "Int8",
+          "Int8"
         ]
       }
     },
-    "query": "\n            SELECT\n                id,\n                room_id,\n                kind,\n                set,\n                label,\n                attribute,\n                data,\n                occurred_at,\n                created_by as \"created_by!: AgentId\",\n                created_at,\n                deleted_at,\n                original_occurred_at,\n                original_created_by as \"original_created_by: AgentId\",\n                removed\n            FROM event\n            WHERE deleted_at IS NULL\n            AND   room_id = $1\n            AND   set = $2\n            AND   label = $3\n            ORDER BY occurred_at\n            LIMIT 1\n            "
+    "query": "\n                SELECT\n                    id,\n                    room_id,\n                    kind,\n                    set,\n                    label,\n                    attribute,\n                    data,\n                    binary_data as \"binary_data: PostcardBin<CompactEvent>\",\n                    occurred_at,\n                    created_by as \"created_by!: AgentId\",\n                    created_at,\n                    deleted_at,\n                    original_occurred_at,\n                    original_created_by as \"original_created_by: AgentId\",\n                    removed\n                FROM (\n                    SELECT DISTINCT ON(original_occurred_at, label) *\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) AS subq\n                WHERE removed = 'f'\n                LIMIT $5\n                "
+  },
+  "fe946b20b9bfce6afbdae07e7d99583b1e75de74c7b688b01098532d38165eaa": {
+    "describe": {
+      "columns": [
+        {
+          "name": "total",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Int8",
+          "Int8"
+        ]
+      }
+    },
+    "query": "\n                SELECT COUNT(DISTINCT label) as total FROM (\n                    SELECT\n                        *,\n                        bool_or(removed) OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS removed_windowed\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) subq\n                WHERE removed_windowed = 'f'\n                "
   }
 }
