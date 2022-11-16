@@ -529,6 +529,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "diesel"
+version = "1.4.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b28135ecf6b7d446b43e27e225622a038cc4e2930a1022f51cdb97ada19b8e4d"
+dependencies = [
+ "bitflags",
+ "byteorder",
+ "diesel_derives",
+ "pq-sys",
+]
+
+[[package]]
+name = "diesel_derives"
+version = "1.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "45f5098f628d02a7a0f68ddba586fb61e80edec3bdc1be3b921f4ceec60858d3"
+dependencies = [
+ "proc-macro2",
+ "quote 1.0.21",
+ "syn 1.0.99",
+]
+
+[[package]]
 name = "difference"
 version = "2.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -551,6 +574,7 @@ checksum = "f2fb860ca6fafa5552fb6d0e816a69c8e49f0908bf524e30a90d97c85892d506"
 dependencies = [
  "block-buffer 0.10.2",
  "crypto-common",
+ "subtle",
 ]
 
 [[package]]
@@ -1028,6 +1052,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 
 [[package]]
+name = "hkdf"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "791a029f6b9fc27657f6f188ec6e5e43f6911f6f878e0dc5501396e09809d437"
+dependencies = [
+ "hmac 0.12.1",
+]
+
+[[package]]
 name = "hmac"
 version = "0.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1045,6 +1078,15 @@ checksum = "2a2a2320eb7ec0ebe8da8f744d7812d9fc4cb4d09344ac01898dbcb6a20ae69b"
 dependencies = [
  "crypto-mac 0.11.1",
  "digest 0.9.0",
+]
+
+[[package]]
+name = "hmac"
+version = "0.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6c49c37c09c17a53d937dfbb742eb3a961d65a994e6bcdcf37e7399d0cc8ab5e"
+dependencies = [
+ "digest 0.10.3",
 ]
 
 [[package]]
@@ -1328,6 +1370,15 @@ dependencies = [
  "block-buffer 0.9.0",
  "digest 0.9.0",
  "opaque-debug",
+]
+
+[[package]]
+name = "md-5"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66b48670c893079d3c2ed79114e3644b7004df1c361a4e0ad52e2e6940d07c3d"
+dependencies = [
+ "digest 0.10.3",
 ]
 
 [[package]]
@@ -1732,6 +1783,15 @@ name = "ppv-lite86"
 version = "0.2.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac74c624d6b2d21f425f752262f42188365d7b8ff1aff74c82e45136510a4857"
+
+[[package]]
+name = "pq-sys"
+version = "0.4.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3b845d6d8ec554f972a2c5298aad68953fd64e7441e846075450b44656a016d1"
+dependencies = [
+ "vcpkg",
+]
 
 [[package]]
 name = "predicates"
@@ -2147,7 +2207,7 @@ dependencies = [
  "http",
  "hyper",
  "log",
- "md-5",
+ "md-5 0.9.1",
  "percent-encoding 2.1.0",
  "pin-project-lite",
  "rusoto_credential",
@@ -2487,12 +2547,12 @@ dependencies = [
 
 [[package]]
 name = "serde_json"
-version = "1.0.66"
+version = "1.0.87"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "336b10da19a12ad094b59d870ebde26a45402e5b470add4b5fd03c5048a32127"
+checksum = "6ce777b7b150d76b9cf60d28b55f5847135a003f7d7350c6be7a773508ce7d45"
 dependencies = [
  "indexmap",
- "itoa 0.4.7",
+ "itoa 1.0.3",
  "ryu",
  "serde 1.0.144",
 ]
@@ -2557,6 +2617,17 @@ dependencies = [
  "cpufeatures 0.1.5",
  "digest 0.9.0",
  "opaque-debug",
+]
+
+[[package]]
+name = "sha-1"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "028f48d513f9678cda28f6e4064755b3fbb2af6acd672f2c209b62323f7aea0f"
+dependencies = [
+ "cfg-if",
+ "cpufeatures 0.2.2",
+ "digest 0.10.3",
 ]
 
 [[package]]
@@ -2744,7 +2815,7 @@ dependencies = [
  "itoa 0.4.7",
  "libc",
  "log",
- "md-5",
+ "md-5 0.9.1",
  "memchr",
  "num-bigint 0.3.2",
  "once_cell",
@@ -2753,7 +2824,7 @@ dependencies = [
  "rand",
  "serde 1.0.144",
  "serde_json",
- "sha-1",
+ "sha-1 0.9.7",
  "sha2 0.9.5",
  "smallvec",
  "sqlformat",
@@ -2774,11 +2845,13 @@ checksum = "8c21d3b5e7cadfe9ba7cdc1295f72cc556c750b4419c27c219c0693198901f8e"
 dependencies = [
  "ahash",
  "atoi 1.0.0",
+ "base64 0.13.0",
  "bitflags",
  "byteorder",
  "bytes",
  "crc 3.0.0",
  "crossbeam-queue",
+ "dirs 4.0.0",
  "dotenvy",
  "either",
  "event-listener",
@@ -2788,14 +2861,21 @@ dependencies = [
  "futures-util",
  "hashlink 0.8.0",
  "hex",
+ "hkdf",
+ "hmac 0.12.1",
  "indexmap",
  "itoa 1.0.3",
  "libc",
  "log",
+ "md-5 0.10.4",
  "memchr",
  "once_cell",
  "paste",
  "percent-encoding 2.1.0",
+ "rand",
+ "serde 1.0.144",
+ "serde_json",
+ "sha-1 0.10.0",
  "sha2 0.10.2",
  "smallvec",
  "sqlformat",
@@ -2804,6 +2884,7 @@ dependencies = [
  "thiserror",
  "tokio-stream",
  "url 2.2.2",
+ "whoami",
 ]
 
 [[package]]
@@ -2902,9 +2983,9 @@ checksum = "6bdef32e8150c2a081110b42772ffe7d7c9032b606bc226c8260fd97e0976601"
 
 [[package]]
 name = "svc-agent"
-version = "0.19.4"
+version = "0.19.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bece78bf40f66ba111ff076c7aeadcd0d439e7dac0e5f764a4ee1430a9b89fd9"
+checksum = "b6bdbdb9dc4d6a1c06c675da7ac5a69ed3dbb9789bf0e33bb5641a1011cda5da"
 dependencies = [
  "async-channel",
  "base64 0.13.0",
@@ -2914,10 +2995,10 @@ dependencies = [
  "rumqttc",
  "serde 1.0.144",
  "serde_json",
- "sqlx 0.5.7",
+ "sqlx 0.6.1",
  "svc-authn",
  "tokio",
- "uuid 0.8.2",
+ "uuid 1.1.2",
 ]
 
 [[package]]
@@ -2927,6 +3008,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f6c85277226df5df79f6e0bee5d98520423b722277b7c4aaa9fc617a2919bfc"
 dependencies = [
  "chrono",
+ "diesel",
  "http",
  "jsonwebtoken",
  "serde 1.0.144",
@@ -3660,10 +3742,11 @@ dependencies = [
 
 [[package]]
 name = "whoami"
-version = "1.1.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4abacf325c958dfeaf1046931d37f2a901b6dfe0968ee965a29e94c6766b2af6"
+checksum = "d6631b6a2fd59b1841b622e8f1a7ad241ef0a46f2d580464ce8140ac94cbd571"
 dependencies = [
+ "bumpalo",
  "wasm-bindgen",
  "web-sys",
 ]
