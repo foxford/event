@@ -51,7 +51,7 @@ tracing-futures = "0.2"
 tracing-log = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = "2"
-uuid = { version = "0.8", features = ["v4", "serde"] }
+uuid = { version = "1.1", features = ["v4", "serde"] }
 
 [dependencies.dotenv]
 version = "0.15"
