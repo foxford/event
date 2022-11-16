@@ -17,7 +17,7 @@ futures-channel = "0.3"
 futures-util = "0.3"
 http = "0.2"
 humantime-serde = "1"
-hyper = { version = "0.14.15", features = [ "server" ] }
+hyper = { version = "0.14.23", features = [ "server" ] }
 parking_lot = "0.11"
 postcard = { version = "1.0.2", features = ["alloc"] }
 prometheus = "0.13"
