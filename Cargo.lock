@@ -733,7 +733,7 @@ dependencies = [
  "tracing-futures",
  "tracing-log",
  "tracing-subscriber",
- "url 2.2.2",
+ "url 2.3.0",
  "uuid 0.8.2",
 ]
 
@@ -1914,7 +1914,7 @@ dependencies = [
  "itoa 0.4.7",
  "percent-encoding 2.1.0",
  "sha1",
- "url 2.2.2",
+ "url 2.3.0",
 ]
 
 [[package]]
@@ -1999,7 +1999,7 @@ dependencies = [
  "serde_urlencoded",
  "tokio",
  "tokio-native-tls",
- "url 2.2.2",
+ "url 2.3.0",
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
@@ -2426,7 +2426,7 @@ dependencies = [
  "serde 1.0.144",
  "serde_json",
  "thiserror",
- "url 2.2.2",
+ "url 2.3.0",
  "uuid 0.8.2",
 ]
 
@@ -2443,7 +2443,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "time 0.3.5",
- "url 2.2.2",
+ "url 2.3.0",
  "uuid 1.1.2",
 ]
 
@@ -2761,7 +2761,7 @@ dependencies = [
  "stringprep",
  "thiserror",
  "tokio-stream",
- "url 2.2.2",
+ "url 2.3.0",
  "uuid 0.8.2",
  "whoami",
 ]
@@ -2803,7 +2803,7 @@ dependencies = [
  "stringprep",
  "thiserror",
  "tokio-stream",
- "url 2.2.2",
+ "url 2.3.0",
 ]
 
 [[package]]
@@ -2826,7 +2826,7 @@ dependencies = [
  "sqlx-core 0.5.7",
  "sqlx-rt 0.5.7",
  "syn 1.0.99",
- "url 2.2.2",
+ "url 2.3.0",
 ]
 
 [[package]]
@@ -2845,7 +2845,7 @@ dependencies = [
  "sqlx-core 0.6.1",
  "sqlx-rt 0.6.1",
  "syn 1.0.99",
- "url 2.2.2",
+ "url 2.3.0",
 ]
 
 [[package]]
@@ -3484,13 +3484,12 @@ dependencies = [
 
 [[package]]
 name = "url"
-version = "2.2.2"
+version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a507c383b2d33b5fc35d1861e77e6b383d158b2da5e14fe51b83dfedf6fd578c"
+checksum = "22fe195a4f217c25b25cb5058ced57059824a678474874038dc88d211bf508d3"
 dependencies = [
  "form_urlencoded",
  "idna 0.2.3",
- "matches",
  "percent-encoding 2.1.0",
  "serde 1.0.144",
 ]
