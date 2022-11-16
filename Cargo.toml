@@ -24,7 +24,7 @@ prometheus = "0.13"
 quaint = { version = "0.1", features = ["uuid-0_8", "chrono-0_4"] }
 rand = "0.8"
 reqwest = "0.11"
-rusoto_core = "0.47"
+rusoto_core = "0.48"
 rusoto_credential = "0.47"
 rusoto_s3 = "0.47"
 sentry = { version = "0.23", default-features = true }
