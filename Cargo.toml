@@ -61,7 +61,7 @@ optional = true
 hex = "0.4.3"
 humantime = "2.1.0"
 mockall = "0.10"
-rusoto_mock = "0.47"
+rusoto_mock = "0.48"
 serial_test = "0.8"
 
 [profile.release]
