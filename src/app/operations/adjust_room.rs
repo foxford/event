@@ -354,7 +354,7 @@ async fn clone_events(
                 FROM gap_starts, gap_stops
                 WHERE gap_stops.row_number = gap_starts.row_number
             )
-        INSERT INTO event (id, room_id, kind, set, label, data, attribute, removed, occurred_at, created_by, created_at)
+        INSERT INTO event (id, room_id, kind, set, label, data, binary_data, attribute, removed, occurred_at, created_by, created_at)
         SELECT
             id,
             room_id,
@@ -362,6 +362,7 @@ async fn clone_events(
             set,
             label,
             data,
+            binary_data,
             attribute,
             removed,
             -- Monotonization
@@ -382,6 +383,7 @@ async fn clone_events(
                 set,
                 label,
                 data,
+                binary_data,
                 attribute,
                 removed,
                 (
