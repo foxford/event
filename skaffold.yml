@@ -20,8 +20,8 @@ deploy:
     - name: event
       chartPath: chart
       artifactOverrides:
-        app.image.repository: cr.yandex/crp1of6bddata8ain3q5/event
-        migrations.image.repository: cr.yandex/crp1of6bddata8ain3q5/event-migration
+        app.image: cr.yandex/crp1of6bddata8ain3q5/event
+        migrations.image: cr.yandex/crp1of6bddata8ain3q5/event-migration
       imageStrategy:
         helm: {}
       valuesFiles:
