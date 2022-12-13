@@ -1490,4 +1490,22 @@ mod tests {
             CompactEvent::Other(_) => unreachable!(),
         }
     }
+
+    #[test]
+    fn test_image_src() {
+        let evt = "011099e50c94a7f144dba1085650ca0cdf2900020000000000000000008082440000f0440000000000000000000000000000000000000000f03f000000000000f03f010a72676228302c302c302900000001010000010001010000000000010104010000010005342e362e300100000000000001d001000000013273746f726167653a2f2f31393566613635632d663039632d343130612d623234382d3338616462663063303532662e706e670100000000010000000001025b5d000000000000000000000000000000000000000000000000000000";
+        let evt = hex::decode(evt).unwrap();
+        let evt: CompactEvent = postcard::from_bytes(&evt).unwrap();
+        match &evt {
+            CompactEvent::Other(schema) => {
+                assert_eq!(schema.kind, Kind::Image);
+                assert_eq!(
+                    schema.src,
+                    Some("storage://195fa65c-f09c-410a-b248-38adbf0c052f.png".to_owned())
+                );
+            }
+            CompactEvent::Path(_) => unreachable!("should be image"),
+        }
+        println!("{evt:#?}");
+    }
 }
