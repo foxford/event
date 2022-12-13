@@ -112,7 +112,13 @@ async fn main() -> Result<()> {
     };
 
     match var("EVENT_MIGRATE_TO_BINARY") {
-        Ok(_) => migration_to_binary_format::migrate_to_binary(db).await,
+        Ok(_) => {
+            let room_id = var("EVENT_MIGRATE_ROOM_ID")
+                .ok()
+                .and_then(|s| uuid::Uuid::parse_str(s.as_str()).ok());
+
+            migration_to_binary_format::migrate_to_binary(db, room_id).await
+        }
         Err(_) => match var("EVENT_MIGRATE_TO_JSON") {
             Ok(dir) => migration_to_binary_format::migrate_to_json(db, dir).await,
             Err(_) => app::run(db, maybe_ro_db, redis_pool, authz_cache).await,

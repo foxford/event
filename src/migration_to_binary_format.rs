@@ -103,19 +103,19 @@ async fn cleanup_temp_table(conn: &mut PgConnection) -> sqlx::Result<()> {
     Ok(())
 }
 
-pub(crate) async fn migrate_to_binary(db: Db) -> Result<()> {
+pub(crate) async fn migrate_to_binary(db: Db, room_id: Option<Uuid>) -> Result<()> {
     {
         let mut conn = db.acquire().await?;
         disable_autovacuum(&mut conn).await?;
     }
 
     let stop = Arc::new(AtomicBool::new(false));
-    let handle = tokio::spawn(do_migrate_to_binary(db.clone(), stop.clone()));
+    let handle = tokio::spawn(do_migrate_to_binary(db.clone(), stop.clone(), room_id));
     tokio::spawn(async move {
         if let Err(err) = tokio::signal::ctrl_c().await {
             tracing::error!(%err, "error on signal");
         }
-        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
     });
 
     if let Err(err) = handle.await {
@@ -136,14 +136,19 @@ struct Event {
     id: Uuid,
 }
 
-async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
+async fn do_migrate_to_binary(
+    db: Db,
+    stop: Arc<AtomicBool>,
+    maybe_room_id: Option<Uuid>,
+) -> Result<()> {
     let mut conn = db.acquire().await?;
     create_temp_table_binary(&mut conn).await?;
 
     let mut skip_rooms = Vec::new();
 
     loop {
-        let events = select_not_encoded_events(100_000, &skip_rooms, &mut conn).await?;
+        let events =
+            select_not_encoded_events(100_000, &skip_rooms, maybe_room_id, &mut conn).await?;
 
         if events.is_empty() {
             tracing::info!("DONE");
@@ -199,7 +204,7 @@ async fn do_migrate_to_binary(db: Db, stop: Arc<AtomicBool>) -> Result<()> {
             skip_rooms.push(room_id);
         }
 
-        if stop.load(std::sync::atomic::Ordering::SeqCst) {
+        if stop.load(std::sync::atomic::Ordering::Relaxed) {
             break;
         }
     }
@@ -268,7 +273,7 @@ pub(crate) async fn migrate_to_json(db: Db, dir: String) -> Result<()> {
         if let Err(err) = tokio::signal::ctrl_c().await {
             tracing::error!(%err, "error on signal");
         }
-        stop.store(true, std::sync::atomic::Ordering::SeqCst);
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
     });
 
     if let Err(err) = handle.await {
@@ -289,7 +294,7 @@ async fn do_migrate_to_json(db: Db, dir: String, stop: Arc<AtomicBool>) -> Resul
 
     let mut files = tokio::fs::read_dir(dir).await?;
     while let Some(entry) = files.next_entry().await? {
-        if stop.load(std::sync::atomic::Ordering::SeqCst) {
+        if stop.load(std::sync::atomic::Ordering::Relaxed) {
             break;
         }
 
