@@ -499,6 +499,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "dashmap"
+version = "5.3.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3495912c9c1ccf2e18976439f4443f3fee0fd61f424ff99fde6a66b15ecb448f"
+dependencies = [
+ "cfg-if",
+ "hashbrown 0.12.3",
+ "lock_api",
+ "parking_lot_core 0.9.3",
+]
+
+[[package]]
 name = "debug_stub_derive"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1763,30 +1775,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "proc-macro-error"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c"
-dependencies = [
- "proc-macro-error-attr",
- "proc-macro2",
- "quote 1.0.21",
- "syn 1.0.99",
- "version_check",
-]
-
-[[package]]
-name = "proc-macro-error-attr"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a1be40180e52ecc98ad80b184934baf3d0d29f979574e439af5a55274b35f869"
-dependencies = [
- "proc-macro2",
- "quote 1.0.21",
- "version_check",
-]
-
-[[package]]
 name = "proc-macro2"
 version = "1.0.43"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2212,12 +2200,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustversion"
-version = "1.0.9"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97477e48b4cf8603ad5f7aaf897467cf42ab4218a38ef76fb14c2d6773a6d6a8"
-
-[[package]]
 name = "ryu"
 version = "1.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2522,10 +2504,11 @@ dependencies = [
 
 [[package]]
 name = "serial_test"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7eec42e7232e5ca56aa59d63af3c7f991fe71ee6a3ddd2d3480834cf3902b007"
+checksum = "1c789ec87f4687d022a2405cf46e0cd6284889f1839de292cadeb6c6019506f2"
 dependencies = [
+ "dashmap",
  "futures",
  "lazy_static",
  "log",
@@ -2535,14 +2518,12 @@ dependencies = [
 
 [[package]]
 name = "serial_test_derive"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f1b95bb2f4f624565e8fe8140c789af7e2082c0e0561b5a82a1b678baa9703dc"
+checksum = "b64f9e531ce97c88b4778aad0ceee079216071cffec6ac9b904277f8f92e7fe3"
 dependencies = [
- "proc-macro-error",
  "proc-macro2",
  "quote 1.0.21",
- "rustversion",
  "syn 1.0.99",
 ]
 
