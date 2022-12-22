@@ -5,3 +5,4 @@ App.toml
 deploy
 docker/backend_db/data
 /benchmarks/target
+.idea
