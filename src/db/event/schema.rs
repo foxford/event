@@ -1235,7 +1235,7 @@ impl CompactPathEvent {
             fill_rule: e.fill_rule,
             shadow: e.shadow,
             stroke: e.stroke,
-            opacity: e.opacity as u8,
+            opacity: e.opacity,
             visible: e.visible,
             paint_first: e.paint_first,
             global_composite_operation: e.global_composite_operation,

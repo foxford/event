@@ -148,7 +148,7 @@ impl RequestHandler for ReadHandler {
                     .context("Failed to get state total count")
                     .error(AppErrorKind::DbQueryFailed)?;
 
-                let has_next = total_count as i64 > limit;
+                let has_next = total_count > limit;
                 state.insert(String::from("has_next"), JsonValue::Bool(has_next));
             }
 

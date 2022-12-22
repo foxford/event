@@ -129,8 +129,8 @@ impl From<Object> for DbObject {
             whiteboard_access,
         } = v;
 
-        let locked_types = serde_json::to_value(&locked_types).unwrap();
-        let whiteboard_access = serde_json::to_value(&whiteboard_access).unwrap();
+        let locked_types = serde_json::to_value(locked_types).unwrap();
+        let whiteboard_access = serde_json::to_value(whiteboard_access).unwrap();
 
         Self {
             id,

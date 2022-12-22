@@ -174,7 +174,7 @@ async fn clone_events(
                 FROM gap_starts, gap_stops
                 WHERE gap_stops.row_number = gap_starts.row_number
             )
-        INSERT INTO event (id, room_id, kind, set, label, data, occurred_at, created_by, created_at)
+        INSERT INTO event (id, room_id, kind, set, label, data, binary_data, occurred_at, created_by, created_at)
         SELECT
             id,
             room_id,
@@ -182,6 +182,7 @@ async fn clone_events(
             set,
             label,
             data,
+            binary_data,
             occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1 + $6,
             created_by,
             created_at
@@ -213,6 +214,7 @@ async fn clone_events(
                     ELSE event.data
                     END
                 ) AS data,
+                event.binary_data,
                 (
                     (CASE change.kind
                         WHEN 'addition' THEN change.event_occurred_at
