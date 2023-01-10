@@ -146,7 +146,6 @@ async fn do_migrate_to_binary(
 
     let mut skip_rooms = Vec::new();
     let mut total_for_this_cycle = 0;
-    let mut runs_in_this_cycle = 0;
 
     loop {
         let events =
@@ -203,12 +202,10 @@ async fn do_migrate_to_binary(
             cleanup_temp_table(&mut conn).await?;
 
             total_for_this_cycle += event_count;
-            runs_in_this_cycle += 1;
 
-            if total_for_this_cycle > 200_000 || runs_in_this_cycle > 15 {
+            if total_for_this_cycle > 200_000 {
                 vacuum(&mut conn).await?;
                 total_for_this_cycle = 0;
-                runs_in_this_cycle = 0;
             }
         } else {
             tracing::info!(%room_id, "failed to encode whole room");
