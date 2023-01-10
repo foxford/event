@@ -857,7 +857,6 @@ pub(crate) async fn select_not_encoded_events(
             AND   e.kind = 'draw'
             AND   e.room_id <> ALL($1)
             AND   e.room_id = COALESCE($3, e.room_id)
-            GROUP BY r.id
             LIMIT 1
         )
         AND binary_data IS NULL
