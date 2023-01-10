@@ -9,8 +9,8 @@ data:
     {{- $id := list (include "event.name" . ) .Values.app.svc.audience | compact | join "." }}
     id = {{ $id | quote }}
 
-    {{- $broker_id := list "mqtt-gateway" .Values.app.svc.audience | compact | join "." }}
-    broker_id = {{ $broker_id | quote }}
+    {{- $brokerId := list "mqtt-gateway" .Values.app.svc.audience | compact | join "." }}
+    broker_id = {{ $brokerId | quote }}
 
     http_addr = "0.0.0.0:8080"
 
@@ -51,43 +51,43 @@ data:
     ##
     ## {{ .audience }}
     ##
-    {{- $svc_audience := list "svc" .audience | compact | join "." }}
-    {{- $usr_audience := list "usr" .audience | compact | join "." }}
+    {{- $tenantServiceAudience := include "event.tenantServiceAudience" .audience }}
+    {{- $tenantUserAudience := include "event.tenantUserAudience" .audience }}
+    {{- $tenantObjectAudience := include "event.tenantObjectAudience" (list $.Release.Namespace .audience) }}
     {{- with .authn }}
-    [authn.{{ list "iam" $svc_audience | join "." | quote }}]
-    audience = [{{ $svc_audience | quote }}, {{ $usr_audience | quote }}]
+    [authn.{{ list "iam" $tenantServiceAudience | join "." | quote }}]
+    audience = [{{ $tenantServiceAudience | quote }}, {{ $tenantUserAudience | quote }}]
     algorithm = "ES256"
     key = {{ .key | quote }}
     {{- end }}
 
-    {{- $ns_audience := list (include "event.audienceEnvironment" $) .audience | compact | join "."  }}
     {{- println "" }}
 
     {{- with .authz }}
-    [authz.{{ $ns_audience | quote }}]
+    [authz.{{ $tenantObjectAudience | quote }}]
     type = {{ .type | quote }}
     {{- if eq "http" .type }}
-    {{- $default_authz_url := $ns_audience | list "http://dispatcher-cluster:8080/api/v1/authz/" | join "" }}
-    uri = {{ default $default_authz_url .uri | quote }}
+    {{- $defaultAuthzUrl := list "http://dispatcher-cluster:8080/api/v1/authz/" $tenantObjectAudience | join "" }}
+    uri = {{ default $defaultAuthzUrl .uri | quote }}
     algorithm = {{ default "ES256" .algorithm | quote }}
     key = {{ default "data/keys/svc.private_key.p8.der" .key | quote }}
     user_agent = {{ default $id .user_agent | quote }}
     max_retries = {{ default 3 .max_retries }}
     trusted = [
-      {{- range $account_label := .trusted }}
-        {{ (list $account_label $.Values.app.svc.audience) | compact | join "." | quote }},
+      {{- range $accountLabel := .trusted }}
+        {{ (list $accountLabel $.Values.app.svc.audience) | compact | join "." | quote }},
       {{- end }}
     ]
     {{- end }}
     {{- if eq "local" .type }}
     trusted = [
-      {{- range $account_label := .trusted }}
-        {{ $ns_audience | list $account_label | join "." | quote }},
+      {{- range $accountLabel := .trusted }}
+        {{ list $accountLabel $.Values.app.svc.audience | join "." | quote }},
       {{- end }}
     ]
     {{- end }}
     {{- if eq "localwhitelist" .type }}
-    [[authz.{{ $ns_audience | quote }}.records]]
+    [[authz.{{ $tenantObjectAudience | quote }}.records]]
     {{- range $record := .records }}
     subject_account_id = {{ get $record "subject_account_id" | quote }}
     object = [
