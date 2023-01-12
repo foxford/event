@@ -28,3 +28,6 @@ clean_session = false
 max_history_size = 10
 max_history_lifetime = 86400
 max_deleted_lifetime = 86400
+
+[adjust]
+min_segment_length = "1 second"

@@ -46,6 +46,9 @@ fn build_config(payload_size: Option<usize>) -> Config {
         "http_broker_client": {
             "host": "http://mqtt-gateway-cluster:8081",
             "timeout": "1 minute",
+        },
+        "adjust": {
+            "min_segment_length": "1 second",
         }
     });
 

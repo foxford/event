@@ -34,6 +34,9 @@ data:
 
     [metrics.http]
     bind_address = "0.0.0.0:8888"
+    
+    [adjust]
+    min_segment_length = {{ .Values.adjust.min_segment_length | quote }}
 
     ##
     ## ULMS

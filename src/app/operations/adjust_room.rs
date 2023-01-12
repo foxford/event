@@ -1,11 +1,13 @@
 use std::cmp;
 use std::ops::Bound;
+use std::time::Duration as StdDuration;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
 use sqlx::postgres::{PgConnection, PgPool as Db};
 use tracing::{info, instrument};
 
+use crate::config::AdjustConfig;
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::room_time::RoomTimeBound;
 use crate::{
@@ -48,6 +50,7 @@ pub(crate) async fn call(
     started_at: DateTime<Utc>,
     segments: &Segments,
     offset: i64,
+    cfg: AdjustConfig,
 ) -> Result<AdjustOutput> {
     info!("Room adjustment task started",);
     let start_timestamp = Utc::now();
@@ -142,7 +145,8 @@ pub(crate) async fn call(
         .collect::<Vec<(i64, i64)>>();
 
     // Invert segments to gaps.
-    let segment_gaps = invert_segments(&nano_segments, room_duration)?;
+    let min_segment_length = cfg.min_segment_length;
+    let segment_gaps = invert_segments(&nano_segments, room_duration, min_segment_length)?;
 
     let parsed_segments_finish = parsed_segments.last().unwrap().1;
 
@@ -205,7 +209,11 @@ pub(crate) async fn call(
             *b -= rtc_offset * NANOSECONDS_IN_MILLISECOND;
         });
 
-        let g1 = invert_segments(&cut_g1, Duration::milliseconds(parsed_segments_finish))?;
+        let g1 = invert_segments(
+            &cut_g1,
+            Duration::milliseconds(parsed_segments_finish),
+            min_segment_length,
+        )?;
 
         let segments = nano_segments
             .iter()
@@ -261,15 +269,16 @@ pub(crate) async fn call(
     ///////////////////////////////////////////////////////////////////////////
 
     // Calculate modified segments by inverting cut gaps limited by total initial segments duration.
-    let modified_segments = invert_segments(&cut_gaps, total_segments_duration)?
-        .into_iter()
-        .map(|(start, stop)| {
-            (
-                Bound::Included(cmp::max(start / NANOSECONDS_IN_MILLISECOND, 0)),
-                Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
-            )
-        })
-        .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
+    let modified_segments =
+        invert_segments(&cut_gaps, total_segments_duration, min_segment_length)?
+            .into_iter()
+            .map(|(start, stop)| {
+                (
+                    Bound::Included(cmp::max(start / NANOSECONDS_IN_MILLISECOND, 0)),
+                    Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
+                )
+            })
+            .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -427,6 +436,7 @@ async fn clone_events(
 pub(crate) fn invert_segments(
     segments: &[(i64, i64)],
     room_duration: Duration,
+    min_segment_length: StdDuration,
 ) -> Result<Vec<(i64, i64)>> {
     if segments.is_empty() {
         let total_nanos = room_duration.num_nanoseconds().unwrap_or(std::i64::MAX);
@@ -451,7 +461,11 @@ pub(crate) fn invert_segments(
     if let Some((_, last_segment_stop)) = segments.last() {
         let room_duration_nanos = room_duration.num_nanoseconds().unwrap_or(std::i64::MAX);
 
-        if *last_segment_stop < room_duration_nanos {
+        // Don't create segments less than `min_segment_length`
+        if *last_segment_stop < room_duration_nanos
+            && StdDuration::from_nanos((room_duration_nanos - last_segment_stop) as u64)
+                .gt(&min_segment_length)
+        {
             gaps.push((*last_segment_stop, room_duration_nanos));
         }
     }
@@ -504,9 +518,11 @@ mod intersect;
 #[cfg(test)]
 mod tests {
     use std::ops::Bound;
+    use std::time::Duration as StdDuration;
 
     use super::{call, AdjustOutput};
 
+    use crate::config::AdjustConfig;
     use chrono::{DateTime, Duration, NaiveDateTime, Utc};
     use humantime::parse_duration as pd;
     use prometheus::Registry;
@@ -553,6 +569,7 @@ mod tests {
         opened_at: DateTime<Utc>,
         state: TestCtxState,
         metrics: Metrics,
+        adjust_cfg: AdjustConfig,
     }
 
     impl TestCtx {
@@ -658,6 +675,9 @@ mod tests {
                 opened_at,
                 metrics,
                 state: TestCtxState::Initialized,
+                adjust_cfg: AdjustConfig {
+                    min_segment_length: StdDuration::from_secs(1),
+                },
             };
 
             for (occurred_at, kind, data) in events {
@@ -773,6 +793,7 @@ mod tests {
                 rtc_started_at,
                 segments,
                 offset.num_milliseconds(),
+                self.adjust_cfg.clone(),
             )
             .await
             .expect("Room adjustment failed");

@@ -27,6 +27,7 @@ pub struct Config {
     pub vacuum: VacuumConfig,
     pub http_broker_client: HttpBrokerClientConfig,
     pub constraint: Constraint,
+    pub adjust: AdjustConfig,
 }
 
 impl Config {
@@ -47,7 +48,7 @@ pub struct MetricsConfig {
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct MetricsHttpConfig {
-    pub bind_address: std::net::SocketAddr,
+    pub bind_address: SocketAddr,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -89,4 +90,10 @@ pub struct HttpBrokerClientConfig {
     pub host: String,
     #[serde(default, with = "humantime_serde")]
     pub timeout: Option<StdDuration>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct AdjustConfig {
+    #[serde(with = "humantime_serde")]
+    pub min_segment_length: StdDuration,
 }

@@ -5,6 +5,7 @@ use chrono::Utc;
 use sqlx::postgres::{PgConnection, PgPool as Db};
 use tracing::{info, instrument};
 
+use crate::config::AdjustConfig;
 use crate::db::change::{ListQuery as ChangeListQuery, Object as Change};
 use crate::db::edition::Object as Edition;
 use crate::db::event::{
@@ -34,6 +35,7 @@ pub(crate) async fn call(
     edition: &Edition,
     source: &Room,
     offset: i64,
+    cfg: AdjustConfig,
 ) -> Result<(Room, Segments)> {
     info!("Edition commit task started");
 
@@ -99,7 +101,7 @@ pub(crate) async fn call(
             )
         })?;
 
-    let modified_segments = invert_segments(&cut_gaps, room_duration)?
+    let modified_segments = invert_segments(&cut_gaps, room_duration, cfg.min_segment_length)?
         .into_iter()
         .map(|(start, stop)| {
             (
@@ -356,14 +358,19 @@ fn collect_gaps(cut_events: &[Event], cut_changes: &[Change]) -> Result<Vec<(i64
 #[cfg(test)]
 mod tests {
     use std::ops::Bound;
+    use std::ops::Bound::{Excluded, Included};
+    use std::time::Duration as StdDuration;
 
-    use chrono::{Duration, SubsecRound, Utc};
+    use chrono::{Duration, SubsecRound, TimeZone, Utc};
     use prometheus::Registry;
     use serde_json::{json, Value as JsonValue};
     use sqlx::postgres::PgConnection;
     use svc_agent::{AccountId, AgentId};
     use svc_authn::Authenticable;
 
+    use crate::app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND};
+    use crate::app::operations::commit_edition::collect_gaps;
+    use crate::config::AdjustConfig;
     use crate::db::event::{ListQuery as EventListQuery, Object as Event};
     use crate::db::room::Object as Room;
     use crate::test_helpers::db::TestDb;
@@ -472,10 +479,19 @@ mod tests {
 
         drop(conn);
 
-        let (destination, segments) =
-            super::call(&db.connection_pool(), &metrics, &edition, &room, 0)
-                .await
-                .expect("edition commit failed");
+        let adjust_cfg = AdjustConfig {
+            min_segment_length: StdDuration::from_secs(1),
+        };
+        let (destination, segments) = super::call(
+            &db.connection_pool(),
+            &metrics,
+            &edition,
+            &room,
+            0,
+            adjust_cfg,
+        )
+        .await
+        .expect("edition commit failed");
 
         // Assert original room.
         assert_eq!(destination.source_room_id().unwrap(), room.id());
@@ -600,10 +616,19 @@ mod tests {
 
         drop(conn);
 
-        let (destination, segments) =
-            super::call(&db.connection_pool(), &metrics, &edition, &room, 0)
-                .await
-                .expect("edition commit failed");
+        let adjust_cfg = AdjustConfig {
+            min_segment_length: StdDuration::from_secs(1),
+        };
+        let (destination, segments) = super::call(
+            &db.connection_pool(),
+            &metrics,
+            &edition,
+            &room,
+            0,
+            adjust_cfg,
+        )
+        .await
+        .expect("edition commit failed");
 
         // Assert original room.
         assert_eq!(destination.source_room_id().unwrap(), room.id());
@@ -707,10 +732,19 @@ mod tests {
 
         drop(conn);
 
-        let (destination, segments) =
-            super::call(&db.connection_pool(), &metrics, &edition, &room, 0)
-                .await
-                .expect("edition commit failed");
+        let adjust_cfg = AdjustConfig {
+            min_segment_length: StdDuration::from_secs(1),
+        };
+        let (destination, segments) = super::call(
+            &db.connection_pool(),
+            &metrics,
+            &edition,
+            &room,
+            0,
+            adjust_cfg,
+        )
+        .await
+        .expect("edition commit failed");
 
         // Assert original room.
         assert_eq!(destination.source_room_id().unwrap(), room.id());
@@ -746,7 +780,7 @@ mod tests {
         let created_by = AgentId::new("test", AccountId::new("test", AUDIENCE));
 
         let opened_at = match room.time().map(|t| t.into()) {
-            Ok((Bound::Included(opened_at), _)) => opened_at,
+            Ok((Included(opened_at), _)) => opened_at,
             _ => panic!("Invalid room time"),
         };
 
@@ -759,5 +793,86 @@ mod tests {
             .created_at(opened_at + Duration::nanoseconds(occurred_at))
             .insert(conn)
             .await
+    }
+
+    #[tokio::test]
+    async fn commit_edition_with_min_segment_length() {
+        let db = TestDb::new().await;
+        let mut conn = db.get_conn().await;
+        let classroom_id = uuid::Uuid::new_v4();
+        let t1 = Utc.ymd(2022, 12, 29).and_hms_milli(11, 00, 57, 88);
+        let t2 = Utc.ymd(2022, 12, 29).and_hms_milli(11, 39, 22, 888);
+        let room_duration = t2.signed_duration_since(t1);
+
+        let room = factory::Room::new(classroom_id)
+            .audience(USR_AUDIENCE)
+            .time((Bound::Included(t1), Bound::Excluded(t2)))
+            .tags(&json!({ "webinar_id": "123" }))
+            .insert(&mut conn)
+            .await;
+
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let edition = factory::Edition::new(room.id(), agent.agent_id())
+            .insert(&mut conn)
+            .await;
+
+        let ch1 = factory::Change::new(edition.id(), ChangeType::Addition)
+            .event_data(json!({"cut": "start"}))
+            .event_kind("stream")
+            .event_set("stream")
+            .event_occurred_at(2243994000000)
+            .event_created_by(agent.agent_id())
+            .insert(&mut conn)
+            .await;
+
+        let ch2 = factory::Change::new(edition.id(), ChangeType::Addition)
+            .event_data(json!({"cut": "stop"}))
+            .event_kind("stream")
+            .event_set("stream")
+            .event_occurred_at(2263628000000)
+            .event_created_by(agent.agent_id())
+            .insert(&mut conn)
+            .await;
+
+        let ch3 = factory::Change::new(edition.id(), ChangeType::Addition)
+            .event_data(json!({"cut": "start"}))
+            .event_kind("stream")
+            .event_set("stream")
+            .event_occurred_at(2273725000000)
+            .event_created_by(agent.agent_id())
+            .insert(&mut conn)
+            .await;
+
+        let ch4 = factory::Change::new(edition.id(), ChangeType::Addition)
+            .event_data(json!({"cut": "stop"}))
+            .event_kind("stream")
+            .event_set("stream")
+            .event_occurred_at(2305000000000)
+            .event_created_by(agent.agent_id())
+            .insert(&mut conn)
+            .await;
+
+        let cut_gaps = collect_gaps(&[], &[ch1, ch2, ch3, ch4]).unwrap();
+
+        let modified_segments =
+            invert_segments(&cut_gaps, room_duration, StdDuration::from_secs(1))
+                .unwrap()
+                .into_iter()
+                .map(|(start, stop)| {
+                    (
+                        Included(start / NANOSECONDS_IN_MILLISECOND),
+                        Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
+                    )
+                })
+                .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
+
+        assert_eq!(
+            modified_segments,
+            &[
+                (Included(0), Excluded(2243994)),
+                (Included(2263628), Excluded(2273725))
+            ]
+        )
     }
 }

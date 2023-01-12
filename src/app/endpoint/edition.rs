@@ -383,9 +383,10 @@ impl RequestHandler for CommitHandler {
         // Run commit task asynchronously.
         let db = context.db().to_owned();
         let metrics = context.metrics();
+        let cfg = context.config().to_owned();
 
         let notification_future = tokio::task::spawn(async move {
-            let result = commit_edition(&db, &metrics, &edition, &room, offset).await;
+            let result = commit_edition(&db, &metrics, &edition, &room, offset, cfg.adjust).await;
 
             // Handle result.
             let result = match result {
