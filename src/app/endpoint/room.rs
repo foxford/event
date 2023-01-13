@@ -843,6 +843,7 @@ impl RequestHandler for AdjustHandler {
         // Run asynchronous task for adjustment.
         let db = context.db().to_owned();
         let metrics = context.metrics();
+        let cfg = context.config().to_owned();
 
         let notification_future = tokio::task::spawn(async move {
             let operation_result = adjust_room(
@@ -852,6 +853,7 @@ impl RequestHandler for AdjustHandler {
                 payload.started_at,
                 &payload.segments,
                 payload.offset,
+                cfg.adjust,
             )
             .await;
 

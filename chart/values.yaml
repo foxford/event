@@ -65,6 +65,9 @@ env:
 
 constraint:
   payload_size: 102400 # 100KB
+  
+adjust:
+  min_segment_length: "1 second"
 
 clusterService:
   ports:
