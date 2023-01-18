@@ -147,9 +147,8 @@ impl<'a> Query<'a> {
     pub(crate) async fn total_count(&self, conn: &mut PgConnection) -> sqlx::Result<i64> {
         if let Some(attribute) = self.attribute {
             sqlx::query!(
-                "
-                SELECT COUNT(DISTINCT label) as total FROM (
-                    SELECT
+                "SELECT COUNT(1) as total FROM (
+                    SELECT DISTINCT ON(original_occurred_at, label)
                         *,
                         bool_or(removed) OVER (
                             PARTITION BY room_id, set, label
@@ -177,8 +176,8 @@ impl<'a> Query<'a> {
         } else {
             sqlx::query!(
                 "
-                SELECT COUNT(DISTINCT label) as total FROM (
-                    SELECT
+                SELECT COUNT(1) as total FROM (
+                    SELECT DISTINCT ON(original_occurred_at, label)
                         *,
                         bool_or(removed) OVER (
                             PARTITION BY room_id, set, label
