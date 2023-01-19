@@ -81,6 +81,30 @@
     },
     "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                validate_whiteboard_access,\n                whiteboard_access\n            FROM room\n            WHERE id = $1\n            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)\n            "
   },
+  "0992e871234e79ab3d98e9b51d8891ba7596e1af835ff79142de54eca85f622d": {
+    "describe": {
+      "columns": [
+        {
+          "name": "total",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Int8",
+          "Int8",
+          "Text"
+        ]
+      }
+    },
+    "query": "SELECT COUNT(1) as total FROM (\n                    SELECT DISTINCT ON(original_occurred_at, label)\n                        *,\n                        bool_or(removed) OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS removed_windowed\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) subq\n                WHERE removed_windowed = 'f' AND attribute = $5::TEXT\n                "
+  },
   "15edabc8a95c9d857c0d2f8083753208a750ef1a705a906eeb3235590a3cec62": {
     "describe": {
       "columns": [
@@ -283,30 +307,6 @@
       }
     },
     "query": "DELETE FROM change WHERE id = $1"
-  },
-  "1d4b4726352b9d3fd1a06c1000bf206e539cafd3adec711f12191052290f2827": {
-    "describe": {
-      "columns": [
-        {
-          "name": "total",
-          "ordinal": 0,
-          "type_info": "Int8"
-        }
-      ],
-      "nullable": [
-        null
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "Text",
-          "Int8",
-          "Int8",
-          "Text"
-        ]
-      }
-    },
-    "query": "\n                SELECT COUNT(DISTINCT label) as total FROM (\n                    SELECT\n                        *,\n                        bool_or(removed) OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS removed_windowed\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) subq\n                WHERE removed_windowed = 'f' AND attribute = $5::TEXT\n                "
   },
   "2077d9d356127ec8f3bc6722ca776c96eee5f7e03caa2737f1a25f1f445cac5a": {
     "describe": {
@@ -1998,6 +1998,29 @@
     },
     "query": "\n        WITH\n            gap_starts AS (\n                SELECT start, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($1::BIGINT[]) AS start\n            ),\n            gap_stops AS (\n                SELECT stop, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($2::BIGINT[]) AS stop\n            ),\n            gaps AS (\n                SELECT start, stop\n                FROM gap_starts, gap_stops\n                WHERE gap_stops.row_number = gap_starts.row_number\n            )\n        INSERT INTO event (id, room_id, kind, set, label, data, binary_data, attribute, removed, occurred_at, created_by, created_at)\n        SELECT\n            id,\n            room_id,\n            kind,\n            set,\n            label,\n            data,\n            binary_data,\n            attribute,\n            removed,\n            -- Monotonization\n            -- cutstarts and cutstops are left as is to avoid skew\n            (\n                CASE kind\n                WHEN 'stream' THEN occurred_at\n                ELSE occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at, kind = 'stream' ORDER BY created_at) - 1\n                END\n            ),\n            created_by,\n            created_at\n        FROM (\n            SELECT\n                gen_random_uuid() AS id,\n                $3::UUID AS room_id,\n                kind,\n                set,\n                label,\n                data,\n                binary_data,\n                attribute,\n                removed,\n                (\n                    CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)\n                    WHEN TRUE THEN 0\n                    ELSE occurred_at - (\n                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)\n                        FROM gaps\n                        WHERE start < occurred_at\n                        AND   start >= 0\n                    )\n                    END\n                ) + $4 AS occurred_at,\n                created_by,\n                created_at\n            FROM event\n            WHERE room_id = $5\n            AND   deleted_at IS NULL\n        ) AS sub\n        "
   },
+  "c28ed4947111a2db3a47e016f7eca674ee55fe13cfb5ec0d9258e398be21fff5": {
+    "describe": {
+      "columns": [
+        {
+          "name": "total",
+          "ordinal": 0,
+          "type_info": "Int8"
+        }
+      ],
+      "nullable": [
+        null
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Int8",
+          "Int8"
+        ]
+      }
+    },
+    "query": "SELECT COUNT(1) as total FROM (\n                    SELECT DISTINCT ON(original_occurred_at, label)\n                        *,\n                        bool_or(removed) OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS removed_windowed\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) subq\n                WHERE removed_windowed = 'f'\n                "
+  },
   "d5627598d3da1032cb1e21ea6235eea133cf69fa53234fcbbe62ad9b1e801eb5": {
     "describe": {
       "columns": [
@@ -2434,28 +2457,5 @@
       }
     },
     "query": "\n                SELECT\n                    id,\n                    room_id,\n                    kind,\n                    set,\n                    label,\n                    attribute,\n                    data,\n                    binary_data as \"binary_data: PostcardBin<CompactEvent>\",\n                    occurred_at,\n                    created_by as \"created_by!: AgentId\",\n                    created_at,\n                    deleted_at,\n                    original_occurred_at,\n                    original_created_by as \"original_created_by: AgentId\",\n                    removed\n                FROM (\n                    SELECT DISTINCT ON(original_occurred_at, label) *\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) AS subq\n                WHERE removed = 'f'\n                LIMIT $5\n                "
-  },
-  "fe946b20b9bfce6afbdae07e7d99583b1e75de74c7b688b01098532d38165eaa": {
-    "describe": {
-      "columns": [
-        {
-          "name": "total",
-          "ordinal": 0,
-          "type_info": "Int8"
-        }
-      ],
-      "nullable": [
-        null
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "Text",
-          "Int8",
-          "Int8"
-        ]
-      }
-    },
-    "query": "\n                SELECT COUNT(DISTINCT label) as total FROM (\n                    SELECT\n                        *,\n                        bool_or(removed) OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS removed_windowed\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) subq\n                WHERE removed_windowed = 'f'\n                "
   }
 }
