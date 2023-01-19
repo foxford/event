@@ -175,8 +175,7 @@ impl<'a> Query<'a> {
             .map(|r| r.total.unwrap_or(0))
         } else {
             sqlx::query!(
-                "
-                SELECT COUNT(1) as total FROM (
+                "SELECT COUNT(1) as total FROM (
                     SELECT DISTINCT ON(original_occurred_at, label)
                         *,
                         bool_or(removed) OVER (
@@ -315,6 +314,33 @@ mod tests {
         let r = q.clone().execute(&mut conn).await.unwrap();
         assert_eq!(r.len(), 1);
         assert_eq!(r[0].label(), Some(&msg2_label[..]));
+
+        let r = q.total_count(&mut conn).await.unwrap();
+        assert_eq!(r, 1);
+    }
+
+    #[tokio::test]
+    async fn query_with_duplicated_labels() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+        let mut conn = db.get_conn().await;
+        let room = shared_helpers::insert_room(&mut conn).await;
+
+        let msg_label = format!("message-{}", Uuid::new_v4());
+
+        message_builder(&room, &msg_label, 1000, &agent, false)
+            .insert(&mut conn)
+            .await;
+
+        message_builder(&room, &msg_label, 7000, &agent, false)
+            .insert(&mut conn)
+            .await;
+
+        let q = Query::new(room.id(), "messages".into(), 100_000, 2);
+
+        let r = q.clone().execute(&mut conn).await.unwrap();
+        assert_eq!(r.len(), 1);
 
         let r = q.total_count(&mut conn).await.unwrap();
         assert_eq!(r, 1);
