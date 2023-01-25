@@ -1,0 +1,28 @@
+app:
+  svc:
+    audience: svc.test.net
+    credentials:
+      svc-pkcs8-der-credentials:
+        - subPath: svc.private_key
+          mountPath: /app/data/keys/svc.private_key.p8.der
+      nats-credentials:
+        - subPath: back-user.creds
+          mountPath: /app/nats.creds
+  audiences:
+    - audience: foo.bar
+      credentials:
+        foo-pkcs8-der-credentials:
+          - subPath: iam.foo.public_key
+            mountPath: /app/data/keys/iam.foo.public_key.p8.der
+      authn:
+        key: data/keys/iam.foo.public_key.p8.der
+      authz:
+        type: http
+        trusted:
+          - dispatcher
+  s3:
+    secretName: "s3-credentials"
+ingress:
+  host: test.net
+sentry:
+  dsn: https://test@foo.bar/123
