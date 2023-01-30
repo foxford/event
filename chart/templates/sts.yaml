@@ -6,6 +6,7 @@ metadata:
     {{- include "event.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount | default 2 }}
+  minReadySeconds: {{ .Values.minReadySeconds }}
   serviceName: {{ include "event.fullname" . }}-headless
   selector:
     matchLabels:
