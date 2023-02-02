@@ -16,9 +16,9 @@ impl<S> PostcardBin<S> {
 }
 
 impl<S: Serialize> sqlx::Encode<'_, sqlx::Postgres> for PostcardBin<S> {
-    fn encode_by_ref<'q>(
+    fn encode_by_ref(
         &self,
-        buf: &mut <sqlx::Postgres as sqlx::database::HasArguments<'q>>::ArgumentBuffer,
+        buf: &mut <sqlx::Postgres as sqlx::database::HasArguments>::ArgumentBuffer,
     ) -> sqlx::encode::IsNull {
         let encoded =
             postcard::to_allocvec(&self.value).expect("failed to encode as postcard binary");
@@ -36,7 +36,7 @@ impl<B: DeserializeOwned> sqlx::Decode<'_, sqlx::Postgres> for PostcardBin<B> {
 
         let value: B = {
             postcard::from_bytes(&bytes)
-                .map_err(|err| format!("failed to decode postcard binary: {}", err))?
+                .map_err(|err| format!("failed to decode postcard binary: {err}"))?
         };
 
         Ok(PostcardBin::new(value))

@@ -120,7 +120,7 @@ impl EventHandler for DeleteEventHandler {
         let start_timestamp = context.start_timestamp();
         let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
         let props = evp.to_event("room.leave", short_term_timing);
-        let to_uri = format!("rooms/{}/events", room_id);
+        let to_uri = format!("rooms/{room_id}/events");
         let outgoing_event = OutgoingEvent::broadcast(outgoing_event_payload, props, &to_uri);
         let boxed_event = Box::new(outgoing_event) as Box<_>;
         Ok(Box::new(stream::once(future::ready(boxed_event))))
