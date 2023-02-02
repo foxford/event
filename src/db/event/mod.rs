@@ -47,7 +47,6 @@ impl Object {
         self.room_id
     }
 
-    #[cfg(test)]
     pub(crate) fn kind(&self) -> &str {
         &self.kind
     }
