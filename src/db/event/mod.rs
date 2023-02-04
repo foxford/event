@@ -443,6 +443,8 @@ pub(crate) struct InsertQuery {
     created_by: AgentId,
     created_at: Option<DateTime<Utc>>,
     removed: bool,
+    entity_type: Option<String>,
+    entity_event_id: Option<i64>,
 }
 
 impl InsertQuery {
@@ -470,6 +472,8 @@ impl InsertQuery {
             created_by,
             created_at: None,
             removed: false,
+            entity_type: None,
+            entity_event_id: None,
         })
     }
 
@@ -503,6 +507,20 @@ impl InsertQuery {
         }
     }
 
+    pub(crate) fn entity_type(self, entity_type: String) -> Self {
+        Self {
+            entity_type: Some(entity_type),
+            ..self
+        }
+    }
+
+    pub(crate) fn entity_event_id(self, entity_event_id: i64) -> Self {
+        Self {
+            entity_event_id: Some(entity_event_id),
+            ..self
+        }
+    }
+
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let raw = match self.created_at {
             Some(created_at) => {
@@ -520,9 +538,11 @@ impl InsertQuery {
                         created_by,
                         created_at,
                         removed,
-                        binary_data
+                        binary_data,
+                        entity_type,
+                        entity_event_id
                     )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                     RETURNING
                         id,
                         room_id,
@@ -551,6 +571,8 @@ impl InsertQuery {
                     created_at,
                     self.removed,
                     self.binary_data as Option<PostcardBin<CompactEvent>>,
+                    self.entity_type,
+                    self.entity_event_id,
                 )
                 .fetch_one(conn)
                 .await?
@@ -569,9 +591,11 @@ impl InsertQuery {
                     occurred_at,
                     created_by,
                     removed,
-                    binary_data
+                    binary_data,
+                    entity_type,
+                    entity_event_id
                 )
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                 RETURNING
                     id,
                     room_id,
@@ -599,6 +623,8 @@ impl InsertQuery {
                     self.created_by as AgentId,
                     self.removed,
                     self.binary_data as Option<PostcardBin<CompactEvent>>,
+                    self.entity_type,
+                    self.entity_event_id,
                 )
                 .fetch_one(conn)
                 .await?

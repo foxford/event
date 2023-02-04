@@ -24,6 +24,12 @@ bind_address = "0.0.0.0:8087"
 uri = "mqtt://0.0.0.0:1883"
 clean_session = false
 
+[nats]
+url = "localhost:4222"
+creds = "nats.creds"
+stream = "svc-event-out"
+consumer = "event-consumer"
+
 [vacuum]
 max_history_size = 10
 max_history_lifetime = 86400

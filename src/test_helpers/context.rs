@@ -1,19 +1,24 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use prometheus::Registry;
 use serde_json::json;
 use sqlx::postgres::PgPool as Db;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
+use svc_nats_client::{Event, MessageStream, NatsClient, PublishError, SubscribeError};
 
-use crate::app::broker_client::{BrokerClient, MockBrokerClient};
-use crate::config::Config;
 use crate::{
-    app::context::{Context, GlobalContext, MessageContext},
+    app::{
+        broker_client::{BrokerClient, MockBrokerClient},
+        context::{Context, GlobalContext, MessageContext},
+        s3_client::S3Client,
+    },
+    authz::Authz,
+    config::Config,
     metrics::Metrics,
 };
-use crate::{app::s3_client::S3Client, authz::Authz};
 
 use super::authz::{DbBanTestAuthz, TestAuthz};
 use super::db::TestDb;
@@ -43,6 +48,12 @@ fn build_config(payload_size: Option<usize>) -> Config {
             "uri": "mqtt://0.0.0.0:1883",
             "clean_session": false,
         },
+        "nats": {
+            "url": "nats://0.0.0.0:4222",
+            "creds": "nats.creds",
+            "stream": "svc-event-out",
+            "consumer": "event-consumer",
+        },
         "http_broker_client": {
             "host": "http://mqtt-gateway-cluster:8081",
             "timeout": "1 minute",
@@ -57,6 +68,23 @@ fn build_config(payload_size: Option<usize>) -> Config {
 
 ///////////////////////////////////////////////////////////////////////////////
 
+struct TestNatsClient;
+
+#[async_trait]
+impl NatsClient for TestNatsClient {
+    async fn publish(&self, _event: &Event) -> Result<(), PublishError> {
+        Ok(())
+    }
+
+    async fn subscribe(
+        &self,
+        _stream: &str,
+        _consumer: &str,
+    ) -> Result<MessageStream, SubscribeError> {
+        unimplemented!()
+    }
+}
+
 pub(crate) struct TestContext {
     config: Config,
     authz: Authz,
@@ -66,6 +94,7 @@ pub(crate) struct TestContext {
     start_timestamp: DateTime<Utc>,
     s3_client: Option<S3Client>,
     broker_client: Arc<MockBrokerClient>,
+    nats_client: Arc<dyn NatsClient>,
 }
 
 impl TestContext {
@@ -83,6 +112,7 @@ impl TestContext {
             start_timestamp: Utc::now(),
             s3_client: None,
             broker_client: Arc::new(MockBrokerClient::new()),
+            nats_client: Arc::new(TestNatsClient {}) as Arc<dyn NatsClient>,
         }
     }
 
@@ -100,6 +130,7 @@ impl TestContext {
             start_timestamp: Utc::now(),
             s3_client: None,
             broker_client: Arc::new(MockBrokerClient::new()),
+            nats_client: Arc::new(TestNatsClient {}) as Arc<dyn NatsClient>,
         }
     }
 
@@ -117,6 +148,7 @@ impl TestContext {
             start_timestamp: Utc::now(),
             s3_client: None,
             broker_client: Arc::new(MockBrokerClient::new()),
+            nats_client: Arc::new(TestNatsClient {}) as Arc<dyn NatsClient>,
         }
     }
 
@@ -168,6 +200,10 @@ impl GlobalContext for TestContext {
 
     fn broker_client(&self) -> &dyn BrokerClient {
         self.broker_client.as_ref()
+    }
+
+    fn nats_client(&self) -> &dyn NatsClient {
+        self.nats_client.as_ref()
     }
 }
 

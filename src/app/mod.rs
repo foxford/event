@@ -10,6 +10,7 @@ use svc_agent::{request::Dispatcher, AgentId, Authenticable, SharedGroup, Subscr
 use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::extension::sentry as svc_sentry;
+use svc_nats_client::NatsClient;
 use tokio::{sync::mpsc, task};
 use tracing::{error, info, warn};
 
@@ -87,7 +88,10 @@ pub(crate) async fn run(
     let queue_counter = agent.get_queue_counter();
     let dispatcher = Arc::new(Dispatcher::new(&agent));
     let broker_client = build_broker_client(&config, &token);
-    let context_builder = AppContextBuilder::new(config.clone(), authz, db, broker_client);
+    let nats_client = build_nats_client(&config).await;
+
+    let context_builder =
+        AppContextBuilder::new(config.clone(), authz, db, broker_client, nats_client);
 
     let context_builder = match ro_db {
         Some(db) => context_builder.ro_db(db),
@@ -107,21 +111,20 @@ pub(crate) async fn run(
 
     let metrics = context.metrics();
 
-    let (graceful_tx, graceful_rx) = tokio::sync::oneshot::channel();
+    let ctx = Arc::new(context.clone());
+    let (graceful_tx, graceful_rx) = tokio::sync::watch::channel(());
+    let mut shutdown_server_rx = graceful_rx.clone();
     let http_task = tokio::spawn(
         axum::Server::bind(&config.http_addr)
             .serve(
-                build_router(
-                    Arc::new(context.clone()),
-                    agent.clone(),
-                    config.authn.clone(),
-                )
-                .into_make_service(),
+                build_router(ctx.clone(), agent.clone(), config.authn.clone()).into_make_service(),
             )
             .with_graceful_shutdown(async move {
-                let _ = graceful_rx.await;
+                shutdown_server_rx.changed().await.ok();
             }),
     );
+
+    let nats_puller = nats_puller::run(ctx.clone(), graceful_rx.clone());
 
     // Message handler
     let message_handler = Arc::new(MessageHandler::new(agent.clone(), context, dispatcher));
@@ -135,6 +138,10 @@ pub(crate) async fn run(
     unsubscribe(&mut agent, &agent_id)?;
 
     let _ = graceful_tx.send(());
+
+    if let Err(err) = nats_puller.await {
+        error!(%err, "failed to await nats puller completion");
+    }
 
     if let Some(metrics_task) = metrics_task {
         metrics_task.shutdown().await;
@@ -262,12 +269,21 @@ fn build_broker_client(config: &Config, token: &str) -> Arc<dyn BrokerClient> {
     )
 }
 
-pub mod broker_client;
+async fn build_nats_client(config: &Config) -> Arc<dyn NatsClient> {
+    Arc::new(
+        svc_nats_client::new(&config.nats.url, &config.nats.creds)
+            .await
+            .expect("failed to create nats client"),
+    )
+}
+
+pub(crate) mod broker_client;
 pub(crate) mod context;
 pub(crate) mod endpoint;
 pub(crate) mod error;
 pub(crate) mod http;
 pub(crate) mod message_handler;
+pub(crate) mod nats_puller;
 pub(crate) mod operations;
 pub(crate) mod s3_client;
 pub(crate) mod service_utils;

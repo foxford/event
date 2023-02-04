@@ -397,6 +397,38 @@ impl FindQuery {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct FindRoomIdQuery {
+    classroom_id: Uuid,
+}
+
+impl FindRoomIdQuery {
+    pub(crate) fn new(classroom_id: Uuid) -> Self {
+        Self { classroom_id }
+    }
+
+    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Uuid>> {
+        #[derive(sqlx::Type)]
+        struct RoomId {
+            id: Uuid,
+        }
+
+        let record = sqlx::query_as!(
+            RoomId,
+            r#"
+            SELECT id
+            FROM room
+            WHERE classroom_id = $1
+            "#,
+            self.classroom_id,
+        )
+        .fetch_optional(conn)
+        .await?;
+
+        Ok(record.map(|r| r.id))
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]

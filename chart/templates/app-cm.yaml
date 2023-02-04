@@ -28,6 +28,12 @@ data:
     keep_alive = 15
     max_message_size = 5000000
 
+    [nats]
+    url = "nats://nats-back-front-internal-lb:4222"
+    creds = "nats.creds"
+    stream = "svc-event-out"
+    consumer = "event-consumer"
+
     [sentry]
     dsn = {{ .Values.sentry.dsn | quote }}
     environment = {{ .Release.Namespace | quote }}
