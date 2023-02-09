@@ -721,7 +721,7 @@ dependencies = [
  "svc-agent",
  "svc-authn",
  "svc-authz",
- "svc-error 0.4.1",
+ "svc-error 0.4.2",
  "svc-utils",
  "tokio",
  "tower",
@@ -2319,24 +2319,27 @@ dependencies = [
 
 [[package]]
 name = "sentry"
-version = "0.27.0"
+version = "0.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73642819e7fa63eb264abc818a2f65ac8764afbe4870b5ee25bcecc491be0d4c"
+checksum = "c6f8ce69326daef9d845c3fd17149bd3dbd7caf5dc65dbbad9f5441a40ee407f"
 dependencies = [
+ "httpdate",
+ "reqwest",
  "sentry-anyhow",
- "sentry-backtrace 0.27.0",
- "sentry-core 0.27.0",
+ "sentry-backtrace 0.29.3",
+ "sentry-core 0.29.3",
+ "tokio",
 ]
 
 [[package]]
 name = "sentry-anyhow"
-version = "0.27.0"
+version = "0.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08d3479158a7396b4dfd346a1944d523427a225ff3c39102e8e985bc21cdfea8"
+checksum = "a80510663e6b711de2eed521a95dc38435a0e5858397d1acec79185e4a44215b"
 dependencies = [
  "anyhow",
- "sentry-backtrace 0.27.0",
- "sentry-core 0.27.0",
+ "sentry-backtrace 0.29.3",
+ "sentry-core 0.29.3",
 ]
 
 [[package]]
@@ -2353,14 +2356,14 @@ dependencies = [
 
 [[package]]
 name = "sentry-backtrace"
-version = "0.27.0"
+version = "0.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "49bafa55eefc6dbc04c7dac91e8c8ab9e89e9414f3193c105cabd991bbc75134"
+checksum = "3ed6c0254d4cce319800609aa0d41b486ee57326494802045ff27434fc9a2030"
 dependencies = [
  "backtrace",
  "once_cell",
  "regex",
- "sentry-core 0.27.0",
+ "sentry-core 0.29.3",
 ]
 
 [[package]]
@@ -2394,13 +2397,13 @@ dependencies = [
 
 [[package]]
 name = "sentry-core"
-version = "0.27.0"
+version = "0.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a4591a2d128af73b1b819ab95f143bc6a2fbe48cd23a4c45e1ee32177e66ae6"
+checksum = "b5acbd3da4255938cf0384b6b140e6c07ff65919c26e4d7a989d8d90ee88fa91"
 dependencies = [
  "once_cell",
  "rand",
- "sentry-types 0.27.0",
+ "sentry-types 0.29.3",
  "serde 1.0.144",
  "serde_json",
 ]
@@ -2432,9 +2435,9 @@ dependencies = [
 
 [[package]]
 name = "sentry-types"
-version = "0.27.0"
+version = "0.29.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "823923ae5f54a729159d720aa12181673044ee5c79cbda3be09e56f885e5468f"
+checksum = "10d8587b12c0b8211bb3066979ee57af6e8657e23cf439dc6c8581fd86de24e8"
 dependencies = [
  "debugid 0.8.0",
  "getrandom",
@@ -2970,15 +2973,15 @@ dependencies = [
 
 [[package]]
 name = "svc-error"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c7be50f0b855a2da6e40ed331b4ac62c8d0a4a34a064769a366983da1ee66a17"
+checksum = "720a00493b0ec0fe7e9e146216809c752133fec80fc27ddfdd609310e61bcfda"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
  "http",
  "once_cell",
- "sentry 0.27.0",
+ "sentry 0.29.3",
  "sentry-anyhow",
  "serde 1.0.144",
  "serde_derive",
