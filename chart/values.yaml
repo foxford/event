@@ -9,7 +9,6 @@ minReadySeconds: 5
 app:
   image:
     repository: cr.yandex/crp1of6bddata8ain3q5/event
-    tag: ""
 
   resources:
     requests:
@@ -19,7 +18,6 @@ app:
 migrations:
   image:
     repository: cr.yandex/crp1of6bddata8ain3q5/event-migration
-    tag: ""
 
   resources:
     limits:
