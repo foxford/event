@@ -12,7 +12,7 @@ BEGIN
 
     -- Blocks insert if there's concurrent insert into the same (room_id, set, label)
     -- tuple to avoid duplicate events
-    SELECT pg_advisory_xact_lock(hashtext(concat(NEW.room_id, NEW.set, NEW.label)));
+    PERFORM pg_advisory_xact_lock(hashtext(concat(NEW.room_id, NEW.set, NEW.label)));
 
     SELECT INTO original *
     FROM event
