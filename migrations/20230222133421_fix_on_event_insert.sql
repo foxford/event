@@ -21,7 +21,7 @@ BEGIN
     AND   room_id = NEW.room_id
     AND   set = NEW.set
     AND   label = NEW.label
-    ORDER BY occurred_at
+    ORDER BY created_at
     LIMIT 1;
 
     NEW.original_occurred_at := COALESCE(original.occurred_at, NEW.occurred_at);
