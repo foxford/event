@@ -11,7 +11,8 @@ BEGIN
     END IF;
 
     -- Blocks insert if there's concurrent insert into the same (room_id, set, label)
-    -- tuple to avoid duplicate events
+    -- tuple to avoid duplicate events which should have been just the different versions
+    -- of one event
     PERFORM pg_advisory_xact_lock(hashtext(concat(NEW.room_id, NEW.set, NEW.label)));
 
     SELECT INTO original *
