@@ -680,7 +680,7 @@ dependencies = [
 
 [[package]]
 name = "event"
-version = "0.2.69"
+version = "0.2.70"
 dependencies = [
  "anyhow",
  "async-trait",
