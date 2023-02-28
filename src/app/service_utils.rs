@@ -48,8 +48,8 @@ impl AsyncTasks {
         stream::iter(self.0)
             .flat_map(stream::once)
             .filter(|jh_output| {
-                if let Err(e) = jh_output {
-                    error!(err = ?e, "Failed to await async task, join handle error");
+                if let Err(err) = jh_output {
+                    error!(?err, "Failed to await async task, join handle error");
                 }
                 future::ready(jh_output.is_ok())
             })

@@ -258,7 +258,7 @@ use std::collections::HashMap;
 
 pub struct Error {
     kind: ErrorKind,
-    err: Arc<anyhow::Error>,
+    err: Option<Arc<anyhow::Error>>,
     tags: HashMap<String, String>,
 }
 
@@ -266,7 +266,7 @@ impl Error {
     pub(crate) fn new(kind: ErrorKind, err: anyhow::Error) -> Self {
         Self {
             kind,
-            err: Arc::new(err),
+            err: Some(Arc::new(err)),
             tags: HashMap::new(),
         }
     }
@@ -287,13 +287,20 @@ impl Error {
         self.tags.insert(k.to_owned(), v.to_owned());
     }
 
+    pub fn detail(&self) -> String {
+        match &self.err {
+            Some(s) => s.to_string(),
+            None => String::new(),
+        }
+    }
+
     pub fn to_svc_error(&self) -> SvcError {
         let properties: ErrorKindProperties = self.kind.into();
 
         let mut e = SvcError::builder()
             .status(properties.status)
             .kind(properties.kind, properties.title)
-            .detail(&self.err.to_string())
+            .detail(&self.detail())
             .build();
 
         for (tag, val) in self.tags.iter() {
@@ -307,8 +314,10 @@ impl Error {
             return;
         }
 
-        if let Err(e) = sentry::send(self.err.clone()) {
-            tracing::error!("Failed to send error to sentry, reason = {:?}", e);
+        if let Some(e) = &self.err {
+            if let Err(e) = sentry::send(e.clone()) {
+                tracing::error!("Failed to send error to sentry, reason = {:?}", e);
+            }
         }
     }
 }
@@ -331,7 +340,7 @@ impl From<svc_authz::Error> for Error {
 
         Self {
             kind,
-            err: Arc::new(source.into()),
+            err: Some(Arc::new(source.into())),
             tags: HashMap::new(),
         }
     }
@@ -343,8 +352,8 @@ pub trait ErrorExt<T> {
     fn error(self, kind: ErrorKind) -> Result<T, Error>;
 }
 
-impl<T> ErrorExt<T> for Result<T, anyhow::Error> {
+impl<T, E: Into<anyhow::Error>> ErrorExt<T> for Result<T, E> {
     fn error(self, kind: ErrorKind) -> Result<T, Error> {
-        self.map_err(|source| Error::new(kind, source))
+        self.map_err(|source| Error::new(kind, source.into()))
     }
 }

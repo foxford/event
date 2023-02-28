@@ -406,7 +406,7 @@ pub async fn enter(
     let agent_label = payload
         .agent_label
         .as_ref()
-        .ok_or_else(|| anyhow!("No agent label present"))
+        .context("No agent label present")
         .error(AppErrorKind::InvalidPayload)?;
     let agent_id = AgentId::new(agent_label, agent_id.as_account_id().to_owned());
     let request = EnterRequest { id: room_id };
@@ -482,7 +482,7 @@ impl RequestHandler for EnterHandler {
             .enter_broadcast_room(room.id(), reqp.as_agent_id());
 
         tokio::try_join!(req1, req2)
-            .map_err(|e| anyhow!("Broker request failed, err = {:?}", e))
+            .context("Broker request failed")
             .error(AppErrorKind::BrokerRequestFailed)?;
 
         // Determine whether the agent is banned.
