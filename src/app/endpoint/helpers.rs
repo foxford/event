@@ -56,7 +56,7 @@ pub(crate) async fn find_room<C: Context>(
         .await
         .context("Failed to find room")
         .error(AppErrorKind::DbQueryFailed)?
-        .ok_or_else(|| anyhow!("Room not found"))
+        .context("Room not found")
         .error(AppErrorKind::RoomNotFound)?;
 
     add_room_logger_tags(&room);

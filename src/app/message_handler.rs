@@ -2,6 +2,7 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
+use anyhow::Context as AnyhowContext;
 use chrono::{DateTime, Utc};
 use futures::{future, stream, Stream, StreamExt};
 use futures_util::pin_mut;
@@ -137,17 +138,12 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
         response: &IncomingResponse<String>,
     ) -> Result<(), AppError> {
         let json_response = IncomingResponse::convert(response.to_owned())
-            .map_err(|e| {
-                anyhow!(
-                    "Failed to convert response payload str to json, err = {:?}",
-                    e
-                )
-            })
+            .context("Failed to convert response payload str to json")
             .error(AppErrorKind::InvalidPayload)?;
 
         self.dispatcher
             .response(json_response)
-            .map_err(|e| anyhow!("Failed to send response through dispatcher, err = {:?}", e))
+            .context("Failed to send response through dispatcher")
             .error(AppErrorKind::MessageHandlingFailed)
     }
 
@@ -215,7 +211,7 @@ fn error_response(
 pub(crate) fn publish_message(agent: &mut Agent, message: Message) -> Result<(), AppError> {
     agent
         .publish_publishable(message)
-        .map_err(|err| anyhow!("Failed to publish message: {:?}", err))
+        .context("Failed to publish message")
         .error(AppErrorKind::PublishFailed)
 }
 

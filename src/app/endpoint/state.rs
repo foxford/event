@@ -42,7 +42,7 @@ pub async fn read(
     RawQuery(query): RawQuery,
 ) -> RequestResult {
     let payload = serde_qs::from_str(&query.unwrap_or_default())
-        .map_err(|e| anyhow!("Failed to parse qs, err = {:?}", e))
+        .context("Failed to parse qs")
         .error(AppErrorKind::InvalidQueryString)?;
     let request = ReadRequest { room_id, payload };
     ReadHandler::handle(

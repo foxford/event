@@ -343,8 +343,8 @@ pub trait ErrorExt<T> {
     fn error(self, kind: ErrorKind) -> Result<T, Error>;
 }
 
-impl<T> ErrorExt<T> for Result<T, anyhow::Error> {
+impl<T, E: Into<anyhow::Error>> ErrorExt<T> for Result<T, E> {
     fn error(self, kind: ErrorKind) -> Result<T, Error> {
-        self.map_err(|source| Error::new(kind, source))
+        self.map_err(|source| Error::new(kind, source.into()))
     }
 }
