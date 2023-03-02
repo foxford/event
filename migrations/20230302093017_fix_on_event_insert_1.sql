@@ -1,3 +1,5 @@
+ALTER TABLE event ALTER COLUMN created_at DROP DEFAULT;
+
 CREATE OR REPLACE FUNCTION on_event_insert() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
@@ -26,7 +28,7 @@ BEGIN
 
     NEW.original_occurred_at := COALESCE(original.occurred_at, NEW.occurred_at);
     NEW.original_created_by := COALESCE(original.created_by, NEW.created_by);
-    NEW.created_at = now();
+    NEW.created_at = COALESCE(NEW.created_at, now());
 
     RETURN NEW;
 END;
