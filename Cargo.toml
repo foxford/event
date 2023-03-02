@@ -40,7 +40,7 @@ svc-authn = { version = "0.7", features = ["jose", "sqlx"] }
 svc-authz = "0.11"
 svc-error = { version = "0.4", features = ["sqlx", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
 svc-utils = { version = "0.4", features = ["authn-extractor", "cors-middleware", "log-middleware"] }
-tokio = { version = "1.14", features = ["full"] }
+tokio = { version = "1.26", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.2", features = ["trace"] }
 tracing = "0.1"
