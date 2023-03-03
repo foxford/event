@@ -505,54 +505,106 @@ impl InsertQuery {
     }
 
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
-        let raw = sqlx::query_as!(
-            RawObject,
-            r#"
-            INSERT INTO event (
-                room_id,
-                set,
-                kind,
-                label,
-                attribute,
-                data,
-                occurred_at,
-                created_by,
-                created_at,
-                removed,
-                binary_data
-            )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-            RETURNING
-                id,
-                room_id,
-                kind,
-                set,
-                label,
-                attribute,
-                data,
-                binary_data AS "binary_data: PostcardBin<CompactEvent>",
-                occurred_at,
-                created_by AS "created_by!: AgentId",
-                created_at,
-                deleted_at,
-                original_occurred_at,
-                original_created_by as "original_created_by: AgentId",
-                removed
-            "#,
-            self.room_id,
-            self.set,
-            self.kind,
-            self.label,
-            self.attribute,
-            self.data,
-            self.occurred_at,
-            self.created_by as AgentId,
-            self.created_at.unwrap_or_else(|| Utc::now()),
-            self.removed,
-            self.binary_data as Option<PostcardBin<CompactEvent>>,
-        )
-        .fetch_one(conn)
-        .await?;
+        let raw = match self.created_at {
+            Some(created_at) => {
+                sqlx::query_as!(
+                    RawObject,
+                    r#"
+                    INSERT INTO event (
+                        room_id,
+                        set,
+                        kind,
+                        label,
+                        attribute,
+                        data,
+                        occurred_at,
+                        created_by,
+                        created_at,
+                        removed,
+                        binary_data
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+                    RETURNING
+                        id,
+                        room_id,
+                        kind,
+                        set,
+                        label,
+                        attribute,
+                        data,
+                        binary_data AS "binary_data: PostcardBin<CompactEvent>",
+                        occurred_at,
+                        created_by AS "created_by!: AgentId",
+                        created_at,
+                        deleted_at,
+                        original_occurred_at,
+                        original_created_by as "original_created_by: AgentId",
+                        removed
+                    "#,
+                    self.room_id,
+                    self.set,
+                    self.kind,
+                    self.label,
+                    self.attribute,
+                    self.data,
+                    self.occurred_at,
+                    self.created_by as AgentId,
+                    created_at,
+                    self.removed,
+                    self.binary_data as Option<PostcardBin<CompactEvent>>,
+                )
+                .fetch_one(conn)
+                .await?
+            }
+            None => {
+                sqlx::query_as!(
+                    RawObject,
+                    r#"
+                INSERT INTO event (
+                    room_id,
+                    set,
+                    kind,
+                    label,
+                    attribute,
+                    data,
+                    occurred_at,
+                    created_by,
+                    removed,
+                    binary_data
+                )
+                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                RETURNING
+                    id,
+                    room_id,
+                    kind,
+                    set,
+                    label,
+                    attribute,
+                    data,
+                    binary_data AS "binary_data: PostcardBin<CompactEvent>",
+                    occurred_at,
+                    created_by AS "created_by!: AgentId",
+                    created_at,
+                    deleted_at,
+                    original_occurred_at,
+                    original_created_by as "original_created_by: AgentId",
+                    removed
+                "#,
+                    self.room_id,
+                    self.set,
+                    self.kind,
+                    self.label,
+                    self.attribute,
+                    self.data,
+                    self.occurred_at,
+                    self.created_by as AgentId,
+                    self.removed,
+                    self.binary_data as Option<PostcardBin<CompactEvent>>,
+                )
+                .fetch_one(conn)
+                .await?
+            }
+        };
 
         Object::try_from(raw)
     }
