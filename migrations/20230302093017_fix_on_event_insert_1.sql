@@ -28,7 +28,9 @@ BEGIN
 
     NEW.original_occurred_at := COALESCE(original.occurred_at, NEW.occurred_at);
     NEW.original_created_by := COALESCE(original.created_by, NEW.created_by);
-    NEW.created_at = COALESCE(NEW.created_at, now());
+    -- `greatest` avoids creating original and non-original events with the same
+    -- timestamp which break the stability of SELECT above
+    NEW.created_at = COALESCE(NEW.created_at, greatest(now(), original.created_at + '1 microsecond'));
 
     RETURN NEW;
 END;
