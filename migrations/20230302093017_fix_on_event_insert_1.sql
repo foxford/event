@@ -13,8 +13,7 @@ BEGIN
     END IF;
 
     -- Blocks insert if there's concurrent insert into the same (room_id, set, label)
-    -- tuple to avoid duplicate events which should have been just the different versions
-    -- of one event
+    -- tuple to avoid the race between original event and the next one
     PERFORM pg_advisory_xact_lock(hashtext(concat(NEW.room_id, NEW.set, NEW.label)));
 
     SELECT INTO original *
@@ -28,8 +27,9 @@ BEGIN
 
     NEW.original_occurred_at := COALESCE(original.occurred_at, NEW.occurred_at);
     NEW.original_created_by := COALESCE(original.created_by, NEW.created_by);
+    -- 'COALESCE' is used to allow setting custom 'created_at' values (e.g. for tests)
     -- `greatest` avoids creating original and non-original events with the same
-    -- timestamp which break the stability of SELECT above
+    -- timestamp, so that 'original' event (the earliest one) never changes
     NEW.created_at = COALESCE(NEW.created_at, greatest(now(), original.created_at + '1 microsecond'));
 
     RETURN NEW;
