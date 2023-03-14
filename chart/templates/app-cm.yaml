@@ -28,11 +28,14 @@ data:
     keep_alive = 15
     max_message_size = 5000000
 
+    {{- with .Values.nats }}
+    {{- println "" }}
     [nats]
-    url = "nats://nats-back-front-internal-lb:4222"
-    creds = "nats.creds"
-    stream = "svc-event-out"
-    consumer = "event-consumer"
+    url = {{ .url | quote }}
+    creds = {{ .creds | quote }}
+    stream = {{ .stream| quote }}
+    consumer = {{ .consumer | quote }}
+    {{- end }}
 
     [sentry]
     dsn = {{ .Values.sentry.dsn | quote }}

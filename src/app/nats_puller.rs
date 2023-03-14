@@ -4,17 +4,20 @@ use futures_util::StreamExt;
 use serde_json::json;
 use std::{str::FromStr, sync::Arc, time::Duration};
 use svc_conference_events::{Event, EventV1};
-use svc_nats_client::{AckKind, Message, Subject};
+use svc_nats_client::{AckKind, Message, NatsClient, Subject};
 use tokio::{sync::watch, task::JoinHandle};
 use tracing::{error, info, warn};
 
-pub fn run(ctx: Arc<dyn GlobalContext>, mut shutdown_rx: watch::Receiver<()>) -> JoinHandle<()> {
+pub fn run(
+    ctx: Arc<dyn GlobalContext>,
+    nats_client: Arc<dyn NatsClient>,
+    stream: String,
+    consumer: String,
+    mut shutdown_rx: watch::Receiver<()>,
+) -> JoinHandle<()> {
     tokio::spawn(async move {
-        let cfg = ctx.config().nats.clone();
-        let nats_client = ctx.nats_client();
-
         loop {
-            let mut messages = match nats_client.subscribe(&cfg.stream, &cfg.consumer).await {
+            let mut messages = match nats_client.subscribe(&stream, &consumer).await {
                 Ok(messages) => messages,
                 Err(err) => {
                     error!(%err, "failed to get the stream of messages from nats");

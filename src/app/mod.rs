@@ -88,10 +88,8 @@ pub(crate) async fn run(
     let queue_counter = agent.get_queue_counter();
     let dispatcher = Arc::new(Dispatcher::new(&agent));
     let broker_client = build_broker_client(&config, &token);
-    let nats_client = build_nats_client(&config).await;
 
-    let context_builder =
-        AppContextBuilder::new(config.clone(), authz, db, broker_client, nats_client);
+    let context_builder = AppContextBuilder::new(config.clone(), authz, db, broker_client);
 
     let context_builder = match ro_db {
         Some(db) => context_builder.ro_db(db),
@@ -124,7 +122,31 @@ pub(crate) async fn run(
             }),
     );
 
-    let nats_puller = nats_puller::run(ctx.clone(), graceful_rx.clone());
+    let nats_puller = match config.nats {
+        Some(cfg) => {
+            let stream = cfg
+                .stream
+                .ok_or_else(|| anyhow!("missing nats stream in config"))?;
+            let consumer = cfg
+                .consumer
+                .ok_or_else(|| anyhow!("missing nats consumer in config"))?;
+
+            let nats_client = build_nats_client(&cfg.url, &cfg.creds).await;
+            info!("Connected to nats");
+
+            let nats_puller = nats_puller::run(
+                ctx.clone(),
+                nats_client,
+                stream,
+                consumer,
+                graceful_rx.clone(),
+            );
+            info!("Nats puller started");
+
+            Some(nats_puller)
+        }
+        None => None,
+    };
 
     // Message handler
     let message_handler = Arc::new(MessageHandler::new(agent.clone(), context, dispatcher));
@@ -139,8 +161,10 @@ pub(crate) async fn run(
 
     let _ = graceful_tx.send(());
 
-    if let Err(err) = nats_puller.await {
-        error!(%err, "failed to await nats puller completion");
+    if let Some(puller) = nats_puller {
+        if let Err(err) = puller.await {
+            error!(%err, "failed to await nats puller completion");
+        }
     }
 
     if let Some(metrics_task) = metrics_task {
@@ -269,9 +293,9 @@ fn build_broker_client(config: &Config, token: &str) -> Arc<dyn BrokerClient> {
     )
 }
 
-async fn build_nats_client(config: &Config) -> Arc<dyn NatsClient> {
+async fn build_nats_client(url: &str, creds: &str) -> Arc<dyn NatsClient> {
     Arc::new(
-        svc_nats_client::new(&config.nats.url, &config.nats.creds)
+        svc_nats_client::new(url, creds)
             .await
             .expect("failed to create nats client"),
     )
