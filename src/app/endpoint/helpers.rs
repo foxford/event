@@ -47,7 +47,7 @@ pub(crate) async fn find_room<C: Context>(
 ) -> Result<db::room::Object, AppError> {
     tracing::Span::current().record("room_id", &display(id));
 
-    let query = db::room::FindQuery::new(id);
+    let query = db::room::FindQuery::new().by_id(id);
     let mut conn = context.get_ro_conn().await?;
 
     let room = context

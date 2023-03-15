@@ -1,86 +1,5 @@
 {
   "db": "PostgreSQL",
-  "05a4104370276e98923d26b0dd1fb384e334d7020de02afb68587607929b324c": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "audience",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "source_room_id",
-          "ordinal": 2,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "time!: Time",
-          "ordinal": 3,
-          "type_info": "TstzRange"
-        },
-        {
-          "name": "tags",
-          "ordinal": 4,
-          "type_info": "Json"
-        },
-        {
-          "name": "created_at",
-          "ordinal": 5,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "preserve_history",
-          "ordinal": 6,
-          "type_info": "Bool"
-        },
-        {
-          "name": "classroom_id",
-          "ordinal": 7,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "locked_types",
-          "ordinal": 8,
-          "type_info": "Jsonb"
-        },
-        {
-          "name": "validate_whiteboard_access",
-          "ordinal": 9,
-          "type_info": "Bool"
-        },
-        {
-          "name": "whiteboard_access",
-          "ordinal": 10,
-          "type_info": "Jsonb"
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        true,
-        false,
-        true,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "TstzRange"
-        ]
-      }
-    },
-    "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                validate_whiteboard_access,\n                whiteboard_access\n            FROM room\n            WHERE id = $1\n            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)\n            "
-  },
   "0992e871234e79ab3d98e9b51d8891ba7596e1af835ff79142de54eca85f622d": {
     "describe": {
       "columns": [
@@ -104,26 +23,6 @@
       }
     },
     "query": "SELECT COUNT(1) as total FROM (\n                    SELECT DISTINCT ON(original_occurred_at, label)\n                        *,\n                        bool_or(removed) OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS removed_windowed\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) subq\n                WHERE removed_windowed = 'f' AND attribute = $5::TEXT\n                "
-  },
-  "1099cbf5f85d7ad72eb4030dc14cd5019d556484c85f9a9df9c3748fef6c55bb": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        }
-      ],
-      "nullable": [
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid"
-        ]
-      }
-    },
-    "query": "\n            SELECT id\n            FROM room\n            WHERE classroom_id = $1\n            "
   },
   "15edabc8a95c9d857c0d2f8083753208a750ef1a705a906eeb3235590a3cec62": {
     "describe": {

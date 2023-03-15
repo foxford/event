@@ -201,6 +201,8 @@ pub(crate) async fn call(
             )
         })?;
 
+    tracing::warn!(?host_events, "adjust: host events");
+
     let mut insert_queries = Vec::new();
     if let Some(host_event) = host_events.first() {
         let q = EventInsertQuery::new(
@@ -228,6 +230,8 @@ pub(crate) async fn call(
                 original_room.id()
             )
         })?;
+
+    tracing::warn!(?break_group_events, "adjust: break and video_group events");
 
     for event in break_group_events {
         let data = if event.kind() == "break" {
@@ -303,11 +307,15 @@ pub(crate) async fn call(
             )
         })?;
 
+    tracing::warn!(?cut_events, "adjust: cut events");
+
     let cut_gaps = cut_events_to_gaps(&cut_events)?;
+
+    tracing::warn!(?cut_gaps, "adjust: cut gaps");
 
     let cut_original_segments = {
         let query = EventListQuery::new()
-            .room_id(real_time_room.id())
+            .room_id(original_room.id())
             .kind("stream".to_string());
 
         let cut_events = metrics
@@ -320,17 +328,23 @@ pub(crate) async fn call(
                 )
             })?;
 
+        tracing::warn!(?cut_events, "adjust: cut_events");
+
         let mut cut_g1 = cut_events_to_gaps(&cut_events)?;
         cut_g1.iter_mut().for_each(|(a, b)| {
             *a -= rtc_offset * NANOSECONDS_IN_MILLISECOND;
             *b -= rtc_offset * NANOSECONDS_IN_MILLISECOND;
         });
 
+        tracing::warn!(?cut_g1, "adjust: cut_g1");
+
         let g1 = invert_segments(
             &cut_g1,
             Duration::milliseconds(parsed_segments_finish),
             min_segment_length,
         )?;
+
+        tracing::warn!(?g1, "adjust: g1");
 
         let segments = nano_segments
             .iter()
@@ -340,6 +354,8 @@ pub(crate) async fn call(
                 (a, b)
             })
             .collect::<Vec<_>>();
+
+        tracing::warn!(?segments, "adjust: segments");
 
         intersect::intersect(&g1, &segments)
             .into_iter()
@@ -351,6 +367,8 @@ pub(crate) async fn call(
             })
             .collect::<Vec<(Bound<i64>, Bound<i64>)>>()
     };
+
+    tracing::warn!(?cut_original_segments, "adjust: cut original segments");
 
     // Create modified room with events shifted again according to cut events this time.
     let modified_room = create_room(
@@ -396,6 +414,8 @@ pub(crate) async fn call(
                 )
             })
             .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
+
+    tracing::warn!(?modified_segments, "adjust: modified segments");
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -1499,7 +1519,7 @@ mod tests {
         )
         .await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000), (13000, 20000)])
+        ctx.assert_cut_original_segments(&[(0, 10000), (12000, 20000)])
     }
 
     #[tokio::test]
@@ -1519,7 +1539,7 @@ mod tests {
         ctx.run().await;
         ctx.events_asserts(&[], &[(0, 10000), (11000, 17000)]).await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000), (14000, 20000)])
+        ctx.assert_cut_original_segments(&[(1000, 10000), (13000, 20000)])
     }
 
     #[tokio::test]

@@ -1,5 +1,6 @@
 use crate::{app::context::GlobalContext, db};
 use anyhow::Result;
+use chrono::{DateTime, TimeZone, Utc};
 use futures_util::StreamExt;
 use serde_json::json;
 use std::{str::FromStr, sync::Arc, time::Duration};
@@ -90,11 +91,12 @@ async fn handle_message(ctx: Arc<dyn GlobalContext>, message: &Message) -> Resul
         .map_err(|e| anyhow!("failed to get DB connection: {:?}", e))?;
 
     let classroom_id = subject.classroom_id;
-    let room_id = db::room::FindRoomIdQuery::new(classroom_id)
+    let room = db::room::FindQuery::new()
+        .by_classroom_id(classroom_id)
         .execute(&mut conn)
         .await?
         .ok_or(anyhow!(
-            "failed to get room_id by classroom_id: {}",
+            "failed to get room by classroom_id: {}",
             classroom_id
         ))?;
 
@@ -102,11 +104,21 @@ async fn handle_message(ctx: Arc<dyn GlobalContext>, message: &Message) -> Resul
     let agent_id = headers.sender_id();
     let entity_event_id = headers.event_id().sequence_id();
 
+    let created_at: DateTime<Utc> = Utc.timestamp_nanos(created_at);
+    let occurred_at = match room.time().map(|t| t.start().to_owned()) {
+        Ok(opened_at) => (created_at - opened_at)
+            .num_nanoseconds()
+            .unwrap_or(std::i64::MAX),
+        _ => {
+            return Err(anyhow!("Invalid room time"));
+        }
+    };
+
     match db::event::InsertQuery::new(
-        room_id,
+        room.id(),
         entity_type.to_string(),
         json!({ entity_type: label }),
-        created_at,
+        occurred_at,
         agent_id.to_owned(),
     )
     .map_err(|e| anyhow!("invalid data: {}", e))?
