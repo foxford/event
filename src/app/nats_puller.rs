@@ -1,6 +1,8 @@
-use crate::app::error::Error;
 use crate::{
-    app::{context::GlobalContext, error::ErrorKind},
+    app::{
+        context::GlobalContext,
+        error::{Error, ErrorKind},
+    },
     db,
 };
 use anyhow::Result;
@@ -25,7 +27,12 @@ pub fn run(
             let mut messages = match nats_client.subscribe(&stream, &consumer).await {
                 Ok(messages) => messages,
                 Err(err) => {
-                    error!(%err, "failed to get the stream of messages from nats");
+                    log_error_and_send_to_sentry(
+                        anyhow!(err),
+                        "failed to get the stream of messages from nats",
+                        ErrorKind::NatsGettingStreamFailed,
+                    );
+
                     tokio::time::sleep(Duration::from_secs(3)).await;
                     continue;
                 }
@@ -36,7 +43,12 @@ pub fn run(
                     let message = match result {
                         Ok(msg) => msg,
                         Err(err) => {
-                            error!(%err, "failed to get a message from nats");
+                            log_error_and_send_to_sentry(
+                                anyhow!(err),
+                                "failed to get a message from nats",
+                                ErrorKind::NatsGettingMessageFailed,
+                            );
+
                             continue;
                         }
                     };
@@ -49,19 +61,31 @@ pub fn run(
                     );
 
                     if let Err(err) = handle_message(ctx.clone(), &message).await {
-                        error!(%err, "failed to handle nats message");
-                        Error::new(ErrorKind::MessageHandlingFailed, err).notify_sentry();
+                        log_error_and_send_to_sentry(
+                            anyhow!(err),
+                            "failed to handle nats message",
+                            ErrorKind::NatsMessageHandlingFailed,
+                        );
 
                         // todo: replace with nack + duration
                         if let Err(err) = message.ack_with(AckKind::Term).await {
-                            error!(%err, "failed to term nats message");
+                            log_error_and_send_to_sentry(
+                                anyhow!(err),
+                                "failed to term nats message",
+                                ErrorKind::NatsTermFailed,
+                            );
                         }
 
                         continue;
                     }
 
                     if let Err(err) = message.ack().await {
-                        error!(%err, "failed to ack nats message");
+                        log_error_and_send_to_sentry(
+                            anyhow!(err),
+                            "failed to ack nats message",
+                            ErrorKind::NatsAckFailed,
+                        );
+
                         continue;
                     }
                 }
@@ -72,6 +96,11 @@ pub fn run(
             }
         }
     })
+}
+
+fn log_error_and_send_to_sentry(error: anyhow::Error, message: &str, kind: ErrorKind) {
+    error!(%error, message);
+    Error::new(kind, error).notify_sentry();
 }
 
 async fn handle_message(ctx: Arc<dyn GlobalContext>, message: &Message) -> Result<()> {

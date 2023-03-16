@@ -45,6 +45,11 @@ pub enum ErrorKind {
     WhiteboardAccessUpdateNotChecked,
     PayloadSizeExceeded,
     InvalidEvent,
+    NatsGettingStreamFailed,
+    NatsGettingMessageFailed,
+    NatsMessageHandlingFailed,
+    NatsTermFailed,
+    NatsAckFailed,
 }
 
 impl ErrorKind {
@@ -247,6 +252,36 @@ impl From<ErrorKind> for ErrorKindProperties {
                 kind: "invalid_event",
                 title: "Invalid event",
                 is_notify_sentry: false
+            },
+            ErrorKind::NatsGettingStreamFailed => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "nats_getting_stream_failed",
+                title: "Nats getting stream failed",
+                is_notify_sentry: true
+            },
+            ErrorKind::NatsGettingMessageFailed => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "nats_getting_message_failed",
+                title: "Nats getting message failed",
+                is_notify_sentry: true
+            },
+            ErrorKind::NatsMessageHandlingFailed => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "nats_message_handling_failed",
+                title: "Nats message handling failed",
+                is_notify_sentry: true
+            },
+            ErrorKind::NatsTermFailed => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "nats_term_failed",
+                title: "Nats term failed",
+                is_notify_sentry: true
+            },
+            ErrorKind::NatsAckFailed => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "nats_ack_failed",
+                title: "Nats ack failed",
+                is_notify_sentry: true
             },
         }
     }
