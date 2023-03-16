@@ -1,4 +1,8 @@
-use crate::{app::context::GlobalContext, db};
+use crate::app::error::Error;
+use crate::{
+    app::{context::GlobalContext, error::ErrorKind},
+    db,
+};
 use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use futures_util::StreamExt;
@@ -46,6 +50,7 @@ pub fn run(
 
                     if let Err(err) = handle_message(ctx.clone(), &message).await {
                         error!(%err, "failed to handle nats message");
+                        Error::new(ErrorKind::MessageHandlingFailed, err).notify_sentry();
 
                         // todo: replace with nack + duration
                         if let Err(err) = message.ack_with(AckKind::Term).await {
