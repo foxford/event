@@ -63,12 +63,7 @@ pub(crate) async fn call(
 
     // Parse segments.
     let bounded_offset_tuples: Vec<(Bound<i64>, Bound<i64>)> = segments.to_owned().into();
-
-    tracing::warn!(?bounded_offset_tuples, "adjust: bounded_offset_tuples");
-
     let mut parsed_segments = Vec::with_capacity(bounded_offset_tuples.len());
-
-    tracing::warn!(?parsed_segments, "adjust: parsed_segments");
 
     for segment in bounded_offset_tuples {
         match segment {
@@ -77,7 +72,7 @@ pub(crate) async fn call(
         }
     }
 
-    tracing::warn!(?parsed_segments, "adjust: updated parsed_segments");
+    tracing::warn!(?parsed_segments, "adjust: parsed_segments");
 
     // Create adjustment.
     let mut conn = db
@@ -230,6 +225,8 @@ pub(crate) async fn call(
     // Calculate RTC offset as the difference between event room opening and RTC start.
     let rtc_offset = (started_at - room_opening).num_milliseconds();
 
+    tracing::warn!(?rtc_offset, "adjust: rtc_offset");
+
     // Convert segments to nanoseconds.
     let nano_segments = parsed_segments
         .iter()
@@ -284,11 +281,7 @@ pub(crate) async fn call(
             )
         })?;
 
-    tracing::warn!(?cut_events, "adjust: cut events");
-
     let cut_gaps = cut_events_to_gaps(&cut_events)?;
-
-    tracing::warn!(?cut_gaps, "adjust: cut gaps");
 
     let cut_original_segments = {
         let query = EventListQuery::new()
@@ -301,18 +294,19 @@ pub(crate) async fn call(
             .with_context(|| {
                 format!(
                     "failed to fetch cut events for room_id = '{}'",
-                    original_room.id()
+                    real_time_room.id()
                 )
             })?;
 
-        tracing::warn!(?cut_events, "adjust: cut_events");
+        let cut_events_len = cut_events.len();
+        tracing::warn!(%cut_events_len, "adjust: cut_events.len()");
 
         let mut cut_g1 = cut_events_to_gaps(&cut_events)?;
 
         tracing::warn!(?cut_g1, "adjust: cut_g1");
-        tracing::warn!(?rtc_offset, "adjust: rtc_offset");
 
         let rtc_offset_in_nanoseconds = rtc_offset * NANOSECONDS_IN_MILLISECOND;
+
         tracing::warn!(
             ?rtc_offset_in_nanoseconds,
             "adjust: rtc_offset_in_nanoseconds"
@@ -1621,7 +1615,9 @@ mod tests {
     #[tokio::test]
     async fn adjust_room_test_break_event_as_stream_cut() {
         let mut ctx = TestCtx::new(&[
-            (1_000_000_000, "message", json!({"message": "m1"})),
+            (1_000_000_000, "message", json!({"message": "m0"})),
+            (3_000_000_000, "break", json!({"value": false})),
+            (5_000_000_000, "message", json!({"message": "m1"})),
             (10_000_000_000, "break", json!({"value": true})),
             (12_000_000_000, "message", json!({"message": "m2"})),
             (13_000_000_000, "break", json!({"value": false})),
@@ -1636,12 +1632,12 @@ mod tests {
         assert_eq!(
             mod_segments.as_slice(),
             &[
-                (Bound::Included(0), Bound::Excluded(10000)),
+                (Bound::Included(3000), Bound::Excluded(10000)),
                 (Bound::Included(13000), Bound::Excluded(20000))
             ]
         );
 
-        ctx.assert_cut_original_segments(&[(0, 10000), (13000, 20000)])
+        ctx.assert_cut_original_segments(&[(3000, 10000), (13000, 20000)])
     }
 
     #[tokio::test]
@@ -1676,5 +1672,47 @@ mod tests {
         );
 
         ctx.assert_cut_original_segments(&[(0, 11000), (13000, 20000)])
+    }
+
+    #[tokio::test]
+    async fn adjust_room_test_break_and_video_group_events_as_stream_cut() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m0"})),
+            (3_000_000_000, "break", json!({"value": false})),
+            (5_000_000_000, "message", json!({"message": "m1"})),
+            (
+                7_000_000_000,
+                "video_group",
+                json!({"video_group": "created"}),
+            ),
+            (10_000_000_000, "message", json!({"message": "m2"})),
+            (
+                11_000_000_000,
+                "video_group",
+                json!({"video_group": "updated"}),
+            ),
+            (12_000_000_000, "message", json!({"message": "m3"})),
+            (
+                13_000_000_000,
+                "video_group",
+                json!({"video_group": "deleted"}),
+            ),
+            (15_000_000_000, "message", json!({"message": "m4"})),
+        ])
+        .await;
+
+        ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+        ctx.run().await;
+
+        let mod_segments: Vec<(Bound<i64>, Bound<i64>)> = ctx.modified_segments().to_owned().into();
+        assert_eq!(
+            mod_segments.as_slice(),
+            &[
+                (Bound::Included(3000), Bound::Excluded(7000)),
+                (Bound::Included(13000), Bound::Excluded(20000))
+            ]
+        );
+
+        ctx.assert_cut_original_segments(&[(3000, 7000), (13000, 20000)])
     }
 }
