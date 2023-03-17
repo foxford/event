@@ -16,7 +16,7 @@ use crate::{
     db::{
         adjustment::{InsertQuery as AdjustmentInsertQuery, Segments},
         event::{
-            DeleteQuery as EventDeleteQuery, Direction, InsertQuery as EventInsertQuery,
+            DeleteQuery as EventDeleteQuery, InsertQuery as EventInsertQuery,
             ListQuery as EventListQuery, Object as Event,
         },
         room::{InsertQuery as RoomInsertQuery, Object as Room},
@@ -136,43 +136,10 @@ pub(crate) async fn call(
     ///////////////////////////////////////////////////////////////////////////
 
     // Finds events and creates the stream events for them:
-    // host                         -> stream { cut: stop }
     // break(value: true)           -> stream { cut: start }
     // break(value: false)          -> stream { cut: stop }
     // group(group: created)        -> stream { cut: start }
     // group(group: deleted)        -> stream { cut: stop }
-
-    // Finds the first host event
-    let query = EventListQuery::new()
-        .room_id(real_time_room.id())
-        .kind("host".to_string())
-        .direction(Direction::Forward)
-        .limit(1);
-
-    let host_events = metrics
-        .measure_query(QueryKey::EventListQuery, query.execute(&mut conn))
-        .await
-        .with_context(|| {
-            format!(
-                "failed to fetch the host event for room_id = '{}'",
-                real_time_room.id()
-            )
-        })?;
-
-    tracing::warn!(?host_events, "adjust: host events");
-
-    let mut insert_queries = Vec::new();
-    if let Some(host_event) = host_events.first() {
-        let q = EventInsertQuery::new(
-            real_time_room.id(),
-            "stream".to_string(),
-            json!({"cut": "stop"}),
-            host_event.occurred_at(),
-            host_event.created_by().to_owned(),
-        )?;
-
-        insert_queries.push(q);
-    }
 
     // Finds break and group events
     let query = EventListQuery::new()
@@ -191,6 +158,7 @@ pub(crate) async fn call(
 
     tracing::warn!(?break_group_events, "adjust: break and video_group events");
 
+    let mut insert_queries = Vec::new();
     for event in break_group_events {
         let data = if event.kind() == "break" {
             let value = event.data().get("value").and_then(|v| v.as_bool());
@@ -1540,7 +1508,7 @@ mod tests {
         )
         .await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000), (12000, 20000)])
+        ctx.assert_cut_original_segments(&[(0, 10000), (13000, 20000)])
     }
 
     #[tokio::test]
@@ -1560,7 +1528,7 @@ mod tests {
         ctx.run().await;
         ctx.events_asserts(&[], &[(0, 10000), (11000, 17000)]).await;
 
-        ctx.assert_cut_original_segments(&[(1000, 10000), (13000, 20000)])
+        ctx.assert_cut_original_segments(&[(0, 10000), (14000, 20000)])
     }
 
     #[tokio::test]
@@ -1651,27 +1619,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn adjust_room_test_host_event_as_stream_cut() {
-        let mut ctx = TestCtx::new(&[
-            (1_000_000_000, "message", json!({"message": "m1"})),
-            (10_000_000_000, "host", json!({})),
-            (12_000_000_000, "message", json!({"message": "m2"})),
-            (15_000_000_000, "message", json!({"message": "m3"})),
-            (17_000_000_000, "host", json!({})),
-        ])
-        .await;
-
-        ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
-        ctx.run().await;
-
-        let mod_segments: Vec<(Bound<i64>, Bound<i64>)> = ctx.modified_segments().to_owned().into();
-        assert_eq!(
-            mod_segments.as_slice(),
-            &[(Bound::Included(10000), Bound::Excluded(20000))]
-        )
-    }
-
-    #[tokio::test]
     async fn adjust_room_test_break_event_as_stream_cut() {
         let mut ctx = TestCtx::new(&[
             (1_000_000_000, "message", json!({"message": "m1"})),
@@ -1692,7 +1639,9 @@ mod tests {
                 (Bound::Included(0), Bound::Excluded(10000)),
                 (Bound::Included(13000), Bound::Excluded(20000))
             ]
-        )
+        );
+
+        ctx.assert_cut_original_segments(&[(0, 10000), (13000, 20000)])
     }
 
     #[tokio::test]
@@ -1724,6 +1673,8 @@ mod tests {
                 (Bound::Included(0), Bound::Excluded(11000)),
                 (Bound::Included(13000), Bound::Excluded(20000))
             ]
-        )
+        );
+
+        ctx.assert_cut_original_segments(&[(0, 11000), (13000, 20000)])
     }
 }
