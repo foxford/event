@@ -135,6 +135,121 @@ pub(crate) async fn call(
 
     ///////////////////////////////////////////////////////////////////////////
 
+    // Finds events and creates the stream events for them:
+    // host                         -> stream { cut: stop }
+    // break(value: true)           -> stream { cut: start }
+    // break(value: false)          -> stream { cut: stop }
+    // group(group: created)        -> stream { cut: start }
+    // group(group: deleted)        -> stream { cut: stop }
+
+    // Finds the first host event
+    let query = EventListQuery::new()
+        .room_id(real_time_room.id())
+        .kind("host".to_string())
+        .direction(Direction::Forward)
+        .limit(1);
+
+    let host_events = metrics
+        .measure_query(QueryKey::EventListQuery, query.execute(&mut conn))
+        .await
+        .with_context(|| {
+            format!(
+                "failed to fetch the host event for room_id = '{}'",
+                real_time_room.id()
+            )
+        })?;
+
+    tracing::warn!(?host_events, "adjust: host events");
+
+    let mut insert_queries = Vec::new();
+    if let Some(host_event) = host_events.first() {
+        let q = EventInsertQuery::new(
+            real_time_room.id(),
+            "stream".to_string(),
+            json!({"cut": "stop"}),
+            host_event.occurred_at(),
+            host_event.created_by().to_owned(),
+        )?;
+
+        insert_queries.push(q);
+    }
+
+    // Finds break and group events
+    let query = EventListQuery::new()
+        .room_id(real_time_room.id())
+        .kinds(vec!["break".to_string(), "video_group".to_string()]);
+
+    let break_group_events = metrics
+        .measure_query(QueryKey::EventListQuery, query.execute(&mut conn))
+        .await
+        .with_context(|| {
+            format!(
+                "failed to fetch break and video group events for room_id = '{}'",
+                real_time_room.id()
+            )
+        })?;
+
+    tracing::warn!(?break_group_events, "adjust: break and video_group events");
+
+    for event in break_group_events {
+        let data = if event.kind() == "break" {
+            let value = event.data().get("value").and_then(|v| v.as_bool());
+            match value {
+                Some(true) => {
+                    json!({"cut": "start"})
+                }
+                Some(false) => {
+                    json!({"cut": "stop"})
+                }
+                None => continue,
+            }
+        } else {
+            let value = event.data().get("video_group").and_then(|v| v.as_str());
+            match value {
+                Some("created") => {
+                    json!({"cut": "start"})
+                }
+                Some("deleted") => {
+                    json!({"cut": "stop"})
+                }
+                _ => continue,
+            }
+        };
+
+        let q = EventInsertQuery::new(
+            real_time_room.id(),
+            "stream".to_string(),
+            data,
+            event.occurred_at(),
+            event.created_by().to_owned(),
+        )?;
+
+        insert_queries.push(q);
+    }
+
+    if !insert_queries.is_empty() {
+        let mut txn = conn
+            .begin()
+            .await
+            .context("Failed to acquire transaction")?;
+
+        for q in insert_queries {
+            metrics
+                .measure_query(QueryKey::EventInsertQuery, q.execute(&mut txn))
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed to create stream event for room_id = '{}'",
+                        real_time_room.id()
+                    )
+                })?;
+        }
+
+        txn.commit().await.context("Failed to commit transaction")?;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+
     // Get room opening time and duration.
     let (room_opening, room_duration) = match real_time_room_new_time.end() {
         RoomTimeBound::Excluded(stop) => {
@@ -186,121 +301,6 @@ pub(crate) async fn call(
 
     ///////////////////////////////////////////////////////////////////////////
 
-    // Finds events and creates the stream events for them:
-    // host                         -> stream { cut: stop }
-    // break(value: true)           -> stream { cut: start }
-    // break(value: false)          -> stream { cut: stop }
-    // group(group: created)        -> stream { cut: start }
-    // group(group: deleted)        -> stream { cut: stop }
-
-    // Finds the first host event
-    let query = EventListQuery::new()
-        .room_id(original_room.id())
-        .kind("host".to_string())
-        .direction(Direction::Forward)
-        .limit(1);
-
-    let host_events = metrics
-        .measure_query(QueryKey::EventListQuery, query.execute(&mut conn))
-        .await
-        .with_context(|| {
-            format!(
-                "failed to fetch the host event for room_id = '{}'",
-                original_room.id()
-            )
-        })?;
-
-    tracing::warn!(?host_events, "adjust: host events");
-
-    let mut insert_queries = Vec::new();
-    if let Some(host_event) = host_events.first() {
-        let q = EventInsertQuery::new(
-            original_room.id(),
-            "stream".to_string(),
-            json!({"cut": "stop"}),
-            host_event.occurred_at(),
-            host_event.created_by().to_owned(),
-        )?;
-
-        insert_queries.push(q);
-    }
-
-    // Finds break and group events
-    let query = EventListQuery::new()
-        .room_id(original_room.id())
-        .kinds(vec!["break".to_string(), "video_group".to_string()]);
-
-    let break_group_events = metrics
-        .measure_query(QueryKey::EventListQuery, query.execute(&mut conn))
-        .await
-        .with_context(|| {
-            format!(
-                "failed to fetch break and video group events for room_id = '{}'",
-                original_room.id()
-            )
-        })?;
-
-    tracing::warn!(?break_group_events, "adjust: break and video_group events");
-
-    for event in break_group_events {
-        let data = if event.kind() == "break" {
-            let value = event.data().get("value").and_then(|v| v.as_bool());
-            match value {
-                Some(true) => {
-                    json!({"cut": "start"})
-                }
-                Some(false) => {
-                    json!({"cut": "stop"})
-                }
-                None => continue,
-            }
-        } else {
-            let value = event.data().get("video_group").and_then(|v| v.as_str());
-            match value {
-                Some("created") => {
-                    json!({"cut": "start"})
-                }
-                Some("deleted") => {
-                    json!({"cut": "stop"})
-                }
-                _ => continue,
-            }
-        };
-
-        let q = EventInsertQuery::new(
-            original_room.id(),
-            "stream".to_string(),
-            data,
-            event.occurred_at(),
-            event.created_by().to_owned(),
-        )?;
-
-        insert_queries.push(q);
-    }
-
-    if !insert_queries.is_empty() {
-        let mut txn = conn
-            .begin()
-            .await
-            .context("Failed to acquire transaction")?;
-
-        for q in insert_queries {
-            metrics
-                .measure_query(QueryKey::EventInsertQuery, q.execute(&mut txn))
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to create stream event for room_id = '{}'",
-                        original_room.id()
-                    )
-                })?;
-        }
-
-        txn.commit().await.context("Failed to commit transaction")?;
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-
     // Fetch shifted cut events and transform them to gaps.
     let query = EventListQuery::new()
         .room_id(original_room.id())
@@ -324,7 +324,7 @@ pub(crate) async fn call(
 
     let cut_original_segments = {
         let query = EventListQuery::new()
-            .room_id(original_room.id())
+            .room_id(real_time_room.id())
             .kind("stream".to_string());
 
         let cut_events = metrics
