@@ -63,7 +63,12 @@ pub(crate) async fn call(
 
     // Parse segments.
     let bounded_offset_tuples: Vec<(Bound<i64>, Bound<i64>)> = segments.to_owned().into();
+
+    tracing::warn!(?bounded_offset_tuples, "adjust: bounded_offset_tuples");
+
     let mut parsed_segments = Vec::with_capacity(bounded_offset_tuples.len());
+
+    tracing::warn!(?parsed_segments, "adjust: parsed_segments");
 
     for segment in bounded_offset_tuples {
         match segment {
@@ -71,6 +76,8 @@ pub(crate) async fn call(
             segment => bail!("Invalid segment: {:?}", segment),
         }
     }
+
+    tracing::warn!(?parsed_segments, "adjust: updated parsed_segments");
 
     // Create adjustment.
     let mut conn = db
@@ -149,6 +156,8 @@ pub(crate) async fn call(
             (nano_start, nano_stop)
         })
         .collect::<Vec<(i64, i64)>>();
+
+    tracing::warn!(?nano_segments, "adjust: nano_segments");
 
     // Invert segments to gaps.
     let min_segment_length = cfg.min_segment_length;
@@ -331,12 +340,24 @@ pub(crate) async fn call(
         tracing::warn!(?cut_events, "adjust: cut_events");
 
         let mut cut_g1 = cut_events_to_gaps(&cut_events)?;
-        cut_g1.iter_mut().for_each(|(a, b)| {
-            *a -= rtc_offset * NANOSECONDS_IN_MILLISECOND;
-            *b -= rtc_offset * NANOSECONDS_IN_MILLISECOND;
-        });
 
         tracing::warn!(?cut_g1, "adjust: cut_g1");
+        tracing::warn!(?rtc_offset, "adjust: rtc_offset");
+
+        let rtc_offset_in_nanoseconds = rtc_offset * NANOSECONDS_IN_MILLISECOND;
+        tracing::warn!(
+            ?rtc_offset_in_nanoseconds,
+            "adjust: rtc_offset_in_nanoseconds"
+        );
+
+        cut_g1.iter_mut().for_each(|(a, b)| {
+            *a -= rtc_offset_in_nanoseconds;
+            *b -= rtc_offset_in_nanoseconds;
+        });
+
+        tracing::warn!(?cut_g1, "adjust: cut_g1 - rtc_offset_in_nanoseconds");
+        tracing::warn!(?parsed_segments_finish, "adjust: parsed_segments_finish");
+        tracing::warn!(?min_segment_length, "adjust: min_segment_length");
 
         let g1 = invert_segments(
             &cut_g1,
@@ -349,8 +370,8 @@ pub(crate) async fn call(
         let segments = nano_segments
             .iter()
             .map(|(a, b)| {
-                let a = *a - rtc_offset * NANOSECONDS_IN_MILLISECOND;
-                let b = *b - rtc_offset * NANOSECONDS_IN_MILLISECOND;
+                let a = *a - rtc_offset_in_nanoseconds;
+                let b = *b - rtc_offset_in_nanoseconds;
                 (a, b)
             })
             .collect::<Vec<_>>();
