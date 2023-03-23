@@ -72,14 +72,6 @@ pub(crate) async fn call(
         }
     }
 
-    // todo
-    //  проблема в том, что в запись попадает кусок из подгруппы, но кусок после не попадает
-    //  cut_original_segments:
-    //  [[0,48204],[54862,72880],[90827,107229]]}
-
-    // "[(0, 48204), (54862, 107229)]"
-    tracing::warn!(?parsed_segments, "adjust: parsed_segments");
-
     // Create adjustment.
     let mut conn = db
         .acquire()
@@ -142,10 +134,6 @@ pub(crate) async fn call(
     // group(group: created)        -> stream { cut: start }
     // group(group: deleted)        -> stream { cut: stop }
 
-    // todo
-    //  recreate adjust doesn't work because it creates new stream
-    //  check readjust
-
     // Finds break and group events
     let query = EventListQuery::new()
         .room_id(real_time_room.id())
@@ -160,11 +148,6 @@ pub(crate) async fn call(
                 real_time_room.id()
             )
         })?;
-
-    // Object { id: 791b7a9d-afe0-4658-a580-fae265c0c0f3, room_id: 9f7b0e83-9617-4738-9652-33f56e550501, kind: \"break\", set: \"break\", label: None, attribute: None, data: Object {\"value\": Bool(false)}, occurred_at: 124535095229, created_by: AgentId { account_id: AccountId { label: \"Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==\", audience: \"usr.foxford.ru\" }, label: \"http\" }, created_at: 2023-03-17T15:56:27.520280Z, deleted_at: None, original_occurred_at: 124535095229, original_created_by: AgentId { account_id: AccountId { label: \"Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==\", audience: \"usr.foxford.ru\" }, label: \"http\" }, removed: false },
-    // Object { id: 818bf626-7a2a-4f0b-9f12-5aa276fce7d5, room_id: 9f7b0e83-9617-4738-9652-33f56e550501, kind: \"video_group\", set: \"video_group\", label: None, attribute: None, data: Object {\"video_group\": String(\"created\")}, occurred_at: 199262675891, created_by: AgentId { account_id: AccountId { label: \"conference\", audience: \"svc.netology-group.services\" }, label: \"conference-0\" }, created_at: 2023-03-17T15:57:42.311500Z, deleted_at: None, original_occurred_at: 199262675891, original_created_by: AgentId { account_id: AccountId { label: \"conference\", audience: \"svc.netology-group.services\" }, label: \"conference-0\" }, removed: false },
-    // Object { id: f82c0f91-0a90-44b9-af9e-63cf5b473c5a, room_id: 9f7b0e83-9617-4738-9652-33f56e550501, kind: \"video_group\", set: \"video_group\", label: None, attribute: None, data: Object {\"video_group\": String(\"deleted\")}, occurred_at: 217209156813, created_by: AgentId { account_id: AccountId { label: \"conference\", audience: \"svc.netology-group.services\" }, label: \"conference-0\" }, created_at: 2023-03-17T15:58:00.263455Z, deleted_at: None, original_occurred_at: 217209156813, original_created_by: AgentId { account_id: AccountId { label: \"conference\", audience: \"svc.netology-group.services\" }, label: \"conference-0\" }, removed: false }]"
-    tracing::warn!(?break_group_events, "adjust: break and video_group events");
 
     let mut insert_queries = Vec::new();
     for event in break_group_events {
@@ -238,9 +221,6 @@ pub(crate) async fn call(
     // Calculate RTC offset as the difference between event room opening and RTC start.
     let rtc_offset = (started_at - room_opening).num_milliseconds();
 
-    // "211876"
-    tracing::warn!(?rtc_offset, "adjust: rtc_offset");
-
     // Convert segments to nanoseconds.
     let nano_segments = parsed_segments
         .iter()
@@ -251,14 +231,9 @@ pub(crate) async fn call(
         })
         .collect::<Vec<(i64, i64)>>();
 
-    // "[(211876000000, 248850000000), (258118000000, 321272000000)]"
-    tracing::warn!(?nano_segments, "adjust: nano_segments");
-
     // Invert segments to gaps.
     let min_segment_length = cfg.min_segment_length;
     let segment_gaps = invert_segments(&nano_segments, room_duration, min_segment_length)?;
-
-    tracing::warn!(?segment_gaps, "adjust: segment_gaps");
 
     let parsed_segments_finish = parsed_segments.last().unwrap().1;
 
@@ -315,35 +290,12 @@ pub(crate) async fn call(
                 )
             })?;
 
-        let cut_events_len = cut_events.len();
-
-        // 3
-        tracing::warn!(%cut_events_len, "adjust: cut_events.len()");
-
         let mut cut_g1 = cut_events_to_gaps(&cut_events)?;
 
-        // "[(0, 209903353373), (281410015756, 305705655462)]"
-        tracing::warn!(?cut_g1, "adjust: cut_g1");
-
-        let rtc_offset_in_nanoseconds = rtc_offset * NANOSECONDS_IN_MILLISECOND;
-
-        // "211876000000"
-        tracing::warn!(
-            ?rtc_offset_in_nanoseconds,
-            "adjust: rtc_offset_in_nanoseconds"
-        );
-
         cut_g1.iter_mut().for_each(|(a, b)| {
-            *a -= rtc_offset_in_nanoseconds;
-            *b -= rtc_offset_in_nanoseconds;
+            *a -= rtc_offset * NANOSECONDS_IN_MILLISECOND;
+            *b -= rtc_offset * NANOSECONDS_IN_MILLISECOND;
         });
-
-        // "[(-211876000000, -1972646627), (69534015756, 93829655462)]"
-        tracing::warn!(?cut_g1, "adjust: cut_g1 - rtc_offset_in_nanoseconds");
-        // "109396"
-        tracing::warn!(?parsed_segments_finish, "adjust: parsed_segments_finish");
-        // "1s"
-        tracing::warn!(?min_segment_length, "adjust: min_segment_length");
 
         let g1 = invert_segments(
             &cut_g1,
@@ -351,20 +303,14 @@ pub(crate) async fn call(
             min_segment_length,
         )?;
 
-        // "[(-1972646627, 69534015756), (93829655462, 109396000000)]"
-        tracing::warn!(?g1, "adjust: g1");
-
         let segments = nano_segments
             .iter()
             .map(|(a, b)| {
-                let a = *a - rtc_offset_in_nanoseconds;
-                let b = *b - rtc_offset_in_nanoseconds;
+                let a = *a - rtc_offset * NANOSECONDS_IN_MILLISECOND;
+                let b = *b - rtc_offset * NANOSECONDS_IN_MILLISECOND;
                 (a, b)
             })
             .collect::<Vec<_>>();
-
-        // "[(0, 36974000000), (46242000000, 109396000000)]"
-        tracing::warn!(?segments, "adjust: segments");
 
         intersect::intersect(&g1, &segments)
             .into_iter()
@@ -376,9 +322,6 @@ pub(crate) async fn call(
             })
             .collect::<Vec<(Bound<i64>, Bound<i64>)>>()
     };
-
-    // "[(Included(0), Excluded(36974)), (Included(46242), Excluded(69534)), (Included(93829), Excluded(109396))]"
-    tracing::warn!(?cut_original_segments, "adjust: cut original segments");
 
     // Create modified room with events shifted again according to cut events this time.
     let modified_room = create_room(
@@ -425,9 +368,6 @@ pub(crate) async fn call(
             })
             .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
 
-    // "[(Included(0), Excluded(60266)), (Included(84561), Excluded(100128))]"
-    tracing::warn!(?modified_segments, "adjust: modified segments");
-
     ///////////////////////////////////////////////////////////////////////////
 
     // Done.
@@ -473,34 +413,6 @@ async fn create_room(
         .context("failed to insert room")
 }
 
-//+------------------------------------+------------------------------------+-------------+-------------+------------------------------------+------------------------------------------------------------------------------------------------------------------------------------+------------+---------------------------------------------------------------------+---------------------------------+----------+--------------------+---------+---------------------------------------------------------------------+-------+-----------+-----------------+-----------+---------------+
-// |id                                  |room_id                             |kind         |set          |label                               |data                                                                                                                                |occurred_at |created_by                                                           |created_at                       |deleted_at|original_occurred_at|attribute|original_created_by                                                  |removed|binary_data|source_command_id|entity_type|entity_event_id|
-// +------------------------------------+------------------------------------+-------------+-------------+------------------------------------+------------------------------------------------------------------------------------------------------------------------------------+------------+---------------------------------------------------------------------+---------------------------------+----------+--------------------+---------+---------------------------------------------------------------------+-------+-----------+-----------------+-----------+---------------+
-// |bab9cd86-83b5-4879-a6c1-4b3b98da89f4|9f7b0e83-9617-4738-9652-33f56e550501|agent_enter  |agent_enter  |null                                |null                                                                                                                                |25642791892 |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",web)            |2023-03-17 15:54:48.627353 +00:00|null      |25642791892         |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",web)            |false  |null       |null             |null       |null           |
-// |2b70b758-8e7d-4a67-8b51-96244900765b|9f7b0e83-9617-4738-9652-33f56e550501|document     |document     |fc0dc91c-421a-59d3-98ae-11942029ad00|{"url": "about:iframe#taskdigests/ulms/homeworks/2172", "page": 1, "title": "Подборка задач", "_removed": false, "published": false}|41133708406 |("(dispatcher,svc.netology-group.services)",dispatcher-0)            |2023-03-17 15:55:04.150804 +00:00|null      |41133708406         |null     |("(dispatcher,svc.netology-group.services)",dispatcher-0)            |false  |null       |null             |null       |null           |
-// |90ee6acb-ec37-435b-94d4-aa23c5f1af30|9f7b0e83-9617-4738-9652-33f56e550501|agent_enter  |agent_enter  |null                                |null                                                                                                                                |75610610540 |("(Z2lkOi8vc3RvZWdlL1VzZXI6OlB1cGlsLzIyNDI2MTI=,usr.foxford.ru)",web)|2023-03-17 15:55:38.595067 +00:00|null      |75610610540         |null     |("(Z2lkOi8vc3RvZWdlL1VzZXI6OlB1cGlsLzIyNDI2MTI=,usr.foxford.ru)",web)|false  |null       |null             |null       |null           |
-// |a3097981-a165-4869-a087-d24b5e3bd6da|9f7b0e83-9617-4738-9652-33f56e550501|agent_enter  |agent_enter  |null                                |null                                                                                                                                |99934241630 |("(Z2lkOi8vc3RvZWdlL1VzZXI6OlB1cGlsLzIyNDMxMjg=,usr.foxford.ru)",web)|2023-03-17 15:56:02.918689 +00:00|null      |99934241630         |null     |("(Z2lkOi8vc3RvZWdlL1VzZXI6OlB1cGlsLzIyNDMxMjg=,usr.foxford.ru)",web)|false  |null       |null             |null       |null           |
-// |29fa0d2c-01d0-4d78-a70c-35ea23ac8519|9f7b0e83-9617-4738-9652-33f56e550501|host         |host         |null                                |{"agent_id": "web.Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==.usr.foxford.ru"}                                                                 |124365857305|("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |2023-03-17 15:56:27.383929 +00:00|null      |124365857305        |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |false  |null       |null             |null       |null           |
-// |9dd8c8a3-d77b-4731-9223-5433f2880b4d|9f7b0e83-9617-4738-9652-33f56e550501|stream       |stream       |null                                |{"cut": "stop"}                                                                                                                     |124535095229|("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |2023-03-17 16:00:39.163839 +00:00|null      |124535095229        |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |false  |null       |null             |null       |null           |
-// |791b7a9d-afe0-4658-a580-fae265c0c0f3|9f7b0e83-9617-4738-9652-33f56e550501|break        |break        |null                                |{"value": false}                                                                                                                    |124535095229|("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |2023-03-17 15:56:27.520280 +00:00|null      |124535095229        |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |false  |null       |null             |null       |null           |
-// |49288271-3524-4f90-b555-a9ea44008519|9f7b0e83-9617-4738-9652-33f56e550501|screenSharing|screenSharing|null                                |false                                                                                                                               |126401673652|("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |2023-03-17 15:56:29.419838 +00:00|null      |126401673652        |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |false  |null       |null             |null       |null           |
-// |d44c1fde-093a-4e6b-8e48-c57616ff9fb8|9f7b0e83-9617-4738-9652-33f56e550501|agent_left   |agent_left   |null                                |null                                                                                                                                |174751982408|("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",web)            |2023-03-17 15:57:17.769654 +00:00|null      |174751982408        |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",web)            |false  |null       |null             |null       |null           |
-// +------------------------------------+------------------------------------+-------------+-------------+------------------------------------+------------------------------------------------------------------------------------------------------------------------------------+------------+---------------------------------------------------------------------+---------------------------------+----------+--------------------+---------+---------------------------------------------------------------------+-------+-----------+-----------------+-----------+---------------+
-
-// +------------------------------------+------------------------------------+-------------+-------------+------------------------------------+------------------------------------------------------------------------------------------------------------------------------------+-----------+---------------------------------------------------------------------+---------------------------------+----------+--------------------+---------+---------------------------------------------------------------------+-------+-----------+-----------------+-----------+---------------+
-// |id                                  |room_id                             |kind         |set          |label                               |data                                                                                                                                |occurred_at|created_by                                                           |created_at                       |deleted_at|original_occurred_at|attribute|original_created_by                                                  |removed|binary_data|source_command_id|entity_type|entity_event_id|
-// +------------------------------------+------------------------------------+-------------+-------------+------------------------------------+------------------------------------------------------------------------------------------------------------------------------------+-----------+---------------------------------------------------------------------+---------------------------------+----------+--------------------+---------+---------------------------------------------------------------------+-------+-----------+-----------------+-----------+---------------+
-// |31ea9d78-1f38-415e-b1e0-d2e9015f64e4|28611026-49e1-46ee-be4d-cb79eee7e7c2|stream       |stream       |null                                |{"cut": "stop"}                                                                                                                     |0          |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |2023-03-17 16:00:39.163839 +00:00|null      |0                   |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |false  |null       |null             |null       |null           |
-// |fc5205ed-357b-484f-b4c9-678fad366607|28611026-49e1-46ee-be4d-cb79eee7e7c2|agent_enter  |agent_enter  |null                                |null                                                                                                                                |0          |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",web)            |2023-03-17 15:54:48.627353 +00:00|null      |0                   |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",web)            |false  |null       |null             |null       |null           |
-// |cea9ed52-ff31-4563-9aa0-ed937f5d3561|28611026-49e1-46ee-be4d-cb79eee7e7c2|document     |document     |fc0dc91c-421a-59d3-98ae-11942029ad00|{"url": "about:iframe#taskdigests/ulms/homeworks/2172", "page": 1, "title": "Подборка задач", "_removed": false, "published": false}|1          |("(dispatcher,svc.netology-group.services)",dispatcher-0)            |2023-03-17 15:55:04.150804 +00:00|null      |1                   |null     |("(dispatcher,svc.netology-group.services)",dispatcher-0)            |false  |null       |null             |null       |null           |
-// |e40c1ee6-f10a-4bf5-a2fb-89370fe3ca7f|28611026-49e1-46ee-be4d-cb79eee7e7c2|agent_enter  |agent_enter  |null                                |null                                                                                                                                |2          |("(Z2lkOi8vc3RvZWdlL1VzZXI6OlB1cGlsLzIyNDI2MTI=,usr.foxford.ru)",web)|2023-03-17 15:55:38.595067 +00:00|null      |2                   |null     |("(Z2lkOi8vc3RvZWdlL1VzZXI6OlB1cGlsLzIyNDI2MTI=,usr.foxford.ru)",web)|false  |null       |null             |null       |null           |
-// |6f41e211-e8fd-4ae9-a002-06c315a9f294|28611026-49e1-46ee-be4d-cb79eee7e7c2|agent_enter  |agent_enter  |null                                |null                                                                                                                                |3          |("(Z2lkOi8vc3RvZWdlL1VzZXI6OlB1cGlsLzIyNDMxMjg=,usr.foxford.ru)",web)|2023-03-17 15:56:02.918689 +00:00|null      |3                   |null     |("(Z2lkOi8vc3RvZWdlL1VzZXI6OlB1cGlsLzIyNDMxMjg=,usr.foxford.ru)",web)|false  |null       |null             |null       |null           |
-// |54e91ef3-ae04-48f0-8a06-eb19aeef7e60|28611026-49e1-46ee-be4d-cb79eee7e7c2|host         |host         |null                                |{"agent_id": "web.Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==.usr.foxford.ru"}                                                                 |4          |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |2023-03-17 15:56:27.383929 +00:00|null      |4                   |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |false  |null       |null             |null       |null           |
-// |2ee0b7b7-a141-4763-b428-ddd85c6191ab|28611026-49e1-46ee-be4d-cb79eee7e7c2|break        |break        |null                                |{"value": false}                                                                                                                    |5          |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |2023-03-17 15:56:27.520280 +00:00|null      |5                   |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |false  |null       |null             |null       |null           |
-// |7bd3882e-c532-449f-9a88-0fd1c71e21fc|28611026-49e1-46ee-be4d-cb79eee7e7c2|screenSharing|screenSharing|null                                |false                                                                                                                               |19673652   |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |2023-03-17 15:56:29.419838 +00:00|null      |19673652            |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",http)           |false  |null       |null             |null       |null           |
-// |510344a4-6750-42ed-b420-66ee2df6b726|28611026-49e1-46ee-be4d-cb79eee7e7c2|agent_left   |agent_left   |null                                |null                                                                                                                                |48204000000|("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",web)            |2023-03-17 15:57:17.769654 +00:00|null      |48204000000         |null     |("(Z2lkOi8vc3RvZWdlL0FkbWluLzc1NA==,usr.foxford.ru)",web)            |false  |null       |null             |null       |null           |
-// +------------------------------------+------------------------------------+-------------+-------------+------------------------------------+------------------------------------------------------------------------------------------------------------------------------------+-----------+---------------------------------------------------------------------+---------------------------------+----------+--------------------+---------+---------------------------------------------------------------------+-------+-----------+-----------------+-----------+---------------+
-
 /// Clones events from the source room of the `room` with shifting them according to `gaps` and
 /// adding `offset` (both in nanoseconds).
 async fn clone_events(
@@ -522,9 +434,6 @@ async fn clone_events(
         starts.push(*start);
         stops.push(*stop);
     }
-
-    tracing::warn!(?starts, "adjust: clone_events / starts");
-    tracing::warn!(?stops, "adjust: clone_events / stops");
 
     let query = sqlx::query!(
         "
@@ -657,14 +566,6 @@ enum CutEventsToGapsState {
     Started(i64),
     Stopped,
 }
-
-// "modified_segments":[[0,45038],[177980,238168]]
-//
-// "cut_original_segments":[[0,189584],[193583,242167]]}"
-
-// "[(0, 189584000000), (193583000000, 242167000000)]"
-
-// segments=[[0, 189584], [193583, 242167]]
 
 /// Transforms cut-start/stop events ordered list to gaps list with a simple FSM.
 pub(crate) fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>> {
