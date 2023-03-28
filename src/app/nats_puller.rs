@@ -1,43 +1,44 @@
 use crate::{
     app::{
         context::GlobalContext,
-        error::{Error, ErrorKind},
+        error::{Error as AppError, ErrorKind},
     },
     db,
 };
-use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use futures_util::StreamExt;
 use serde_json::json;
 use std::{str::FromStr, sync::Arc, time::Duration};
 use svc_conference_events::{Event, EventV1};
-use svc_nats_client::{AckKind, Message, NatsClient, Subject};
+use svc_nats_client::{
+    error::{AckKind, Error as NatsError, ErrorExt as NatsErrorExt},
+    AckKind as NatsAckKind, Message, NatsClient, Subject,
+};
 use tokio::{sync::watch, task::JoinHandle};
 use tracing::{error, info, warn};
 
-pub fn run(
+pub async fn run(
     ctx: Arc<dyn GlobalContext>,
     nats_client: Arc<dyn NatsClient>,
-    stream: String,
-    consumer: String,
+    config: &svc_nats_client::Config,
     mut shutdown_rx: watch::Receiver<()>,
-) -> JoinHandle<()> {
-    tokio::spawn(async move {
+) -> anyhow::Result<JoinHandle<()>> {
+    let stream = config
+        .stream
+        .as_ref()
+        .ok_or_else(|| anyhow!("missing nats stream in config"))?;
+    let consumer = config
+        .consumer
+        .as_ref()
+        .ok_or_else(|| anyhow!("missing nats consumer in config"))?;
+    let redelivery_interval = config
+        .redelivery_interval
+        .ok_or_else(|| anyhow!("missing nats redelivery_interval in config"))?;
+
+    let mut messages = nats_client.subscribe(stream, consumer).await?;
+
+    let handle = tokio::spawn(async move {
         loop {
-            let mut messages = match nats_client.subscribe(&stream, &consumer).await {
-                Ok(messages) => messages,
-                Err(err) => {
-                    log_error_and_send_to_sentry(
-                        anyhow!(err),
-                        "failed to get the stream of messages from nats",
-                        ErrorKind::NatsGettingStreamFailed,
-                    );
-
-                    tokio::time::sleep(Duration::from_secs(3)).await;
-                    continue;
-                }
-            };
-
             tokio::select! {
                 Some(result) = messages.next() => {
                     let message = match result {
@@ -60,33 +61,44 @@ pub fn run(
                         message.headers
                     );
 
-                    if let Err(err) = handle_message(ctx.clone(), &message).await {
-                        log_error_and_send_to_sentry(
-                            anyhow!(err),
-                            "failed to handle nats message",
-                            ErrorKind::NatsMessageHandlingFailed,
-                        );
-
-                        // todo: replace with nack + duration
-                        if let Err(err) = message.ack_with(AckKind::Term).await {
-                            log_error_and_send_to_sentry(
-                                anyhow!(err),
-                                "failed to term nats message",
-                                ErrorKind::NatsTermFailed,
-                            );
+                    match handle_message(ctx.clone(), &message, redelivery_interval).await {
+                        Ok(_) => {
+                            if let Err(err) = message.ack().await {
+                                log_error_and_send_to_sentry(
+                                    anyhow!(err),
+                                    "failed to ack nats message",
+                                    ErrorKind::NatsAckFailed,
+                                );
+                            }
                         }
+                        Err(NatsError { error, ack_kind }) => {
+                            log_error_and_send_to_sentry(
+                                error,
+                                "failed to handle nats message",
+                                ErrorKind::NatsMessageHandlingFailed,
+                            );
 
-                        continue;
-                    }
-
-                    if let Err(err) = message.ack().await {
-                        log_error_and_send_to_sentry(
-                            anyhow!(err),
-                            "failed to ack nats message",
-                            ErrorKind::NatsAckFailed,
-                        );
-
-                        continue;
+                            match ack_kind {
+                                AckKind::Nak(duration) => {
+                                    if let Err(err) = message.ack_with(NatsAckKind::Nak(Some(duration))).await {
+                                        log_error_and_send_to_sentry(
+                                            anyhow!(err),
+                                            "failed to nack nats message",
+                                            ErrorKind::NatsTermFailed,
+                                        );
+                                    }
+                                }
+                                AckKind::Term => {
+                                    if let Err(err) = message.ack_with(NatsAckKind::Term).await {
+                                        log_error_and_send_to_sentry(
+                                            anyhow!(err),
+                                            "failed to term nats message",
+                                            ErrorKind::NatsTermFailed,
+                                        );
+                                    }
+                                },
+                            }
+                        }
                     }
                 }
                 // Graceful shutdown
@@ -95,25 +107,26 @@ pub fn run(
                 }
             }
         }
-    })
+    });
+
+    Ok(handle)
 }
 
 fn log_error_and_send_to_sentry(error: anyhow::Error, message: &str, kind: ErrorKind) {
     error!(%error, message);
-    Error::new(kind, error).notify_sentry();
+    AppError::new(kind, error).notify_sentry();
 }
 
-async fn handle_message(ctx: Arc<dyn GlobalContext>, message: &Message) -> Result<()> {
-    let subject = Subject::from_str(&message.subject)?;
+async fn handle_message(
+    ctx: Arc<dyn GlobalContext>,
+    message: &Message,
+    redelivery_interval: Duration,
+) -> Result<(), NatsError> {
+    let subject = Subject::from_str(&message.subject).ack_with(AckKind::Term)?;
     let entity_type = subject.entity_type.as_str();
 
-    let event = match serde_json::from_slice::<Event>(message.payload.as_ref()) {
-        Ok(event) => event,
-        Err(err) => {
-            warn!(%err, "The version of the event is not supported");
-            return Ok(());
-        }
-    };
+    let event =
+        serde_json::from_slice::<Event>(message.payload.as_ref()).ack_with(AckKind::Term)?;
 
     let (label, created_at) = match event {
         Event::V1(EventV1::VideoGroup(e)) => (e.as_label(), e.created_at()),
@@ -122,19 +135,23 @@ async fn handle_message(ctx: Arc<dyn GlobalContext>, message: &Message) -> Resul
     let mut conn = ctx
         .get_conn()
         .await
-        .map_err(|e| anyhow!("failed to get DB connection: {:?}", e))?;
+        .map_err(|e| anyhow!("failed to get DB connection: {:?}", e))
+        .ack_with(AckKind::Nak(redelivery_interval))?;
 
     let classroom_id = subject.classroom_id;
     let room = db::room::FindQuery::new()
         .by_classroom_id(classroom_id)
         .execute(&mut conn)
-        .await?
+        .await
+        .ack_with(AckKind::Term)?
         .ok_or(anyhow!(
             "failed to get room by classroom_id: {}",
             classroom_id
-        ))?;
+        ))
+        .ack_with(AckKind::Term)?;
 
-    let headers = svc_nats_client::Headers::try_from(message.headers.clone().unwrap_or_default())?;
+    let headers = svc_nats_client::Headers::try_from(message.headers.clone().unwrap_or_default())
+        .ack_with(AckKind::Term)?;
     let agent_id = headers.sender_id();
     let entity_event_id = headers.event_id().sequence_id();
 
@@ -144,7 +161,7 @@ async fn handle_message(ctx: Arc<dyn GlobalContext>, message: &Message) -> Resul
             .num_nanoseconds()
             .unwrap_or(std::i64::MAX),
         _ => {
-            return Err(anyhow!("Invalid room time"));
+            return Err(anyhow!("Invalid room time")).ack_with(AckKind::Term);
         }
     };
 
@@ -155,7 +172,8 @@ async fn handle_message(ctx: Arc<dyn GlobalContext>, message: &Message) -> Resul
         occurred_at,
         agent_id.to_owned(),
     )
-    .map_err(|e| anyhow!("invalid data: {}", e))?
+    .map_err(|e| anyhow!("invalid data: {}", e))
+    .ack_with(AckKind::Term)?
     .entity_type(entity_type.to_string())
     .entity_event_id(entity_event_id)
     .execute(&mut conn)
@@ -171,11 +189,11 @@ async fn handle_message(ctx: Arc<dyn GlobalContext>, message: &Message) -> Resul
 
                 Ok(())
             } else {
-                bail!("failed to create event from nats: {}", err);
+                Err(anyhow!("failed to create event from nats: {}", err)).ack_with(AckKind::Term)
             }
         }
         Err(err) => {
-            bail!("failed to create event from nats: {}", err);
+            Err(anyhow!("failed to create event from nats: {}", err)).ack_with(AckKind::Term)
         }
         Ok(_) => Ok(()),
     }

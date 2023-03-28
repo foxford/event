@@ -74,21 +74,22 @@ dependencies = [
 
 [[package]]
 name = "async-nats"
-version = "0.28.0"
+version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ddf2d540de89dc290f7abdd8a3889af74083eaf677ad845718542670d792847"
+checksum = "1174495e436c928905018f10a36160f7a8a6786450f50f4ce7fba05d1539704c"
 dependencies = [
+ "async-nats-tokio-rustls-deps",
  "base64 0.13.0",
  "base64-url",
  "bytes",
  "futures",
  "http",
- "itertools",
  "itoa 1.0.3",
- "lazy_static",
+ "memchr",
  "nkeys",
  "nuid",
  "once_cell",
+ "rand",
  "regex",
  "ring",
  "rustls-native-certs",
@@ -97,13 +98,23 @@ dependencies = [
  "serde_json",
  "serde_nanos",
  "serde_repr",
- "subslice",
+ "thiserror",
  "time 0.3.20",
  "tokio",
  "tokio-retry",
- "tokio-rustls 0.23.4",
  "tracing",
  "url 2.2.2",
+]
+
+[[package]]
+name = "async-nats-tokio-rustls-deps"
+version = "0.24.0-ALPHA.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8cdefe54cd7867d937c0a507d2a3a830af410044282cd3e4002b5b7860e1892e"
+dependencies = [
+ "rustls 0.21.0-alpha.1",
+ "tokio",
+ "webpki 0.22.0",
 ]
 
 [[package]]
@@ -1220,9 +1231,9 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 
 [[package]]
 name = "humantime-serde"
-version = "1.0.1"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac34a56cfd4acddb469cc7fff187ed5ac36f498ba085caf8bbc725e3ff474058"
+checksum = "57a3db5ea5923d99402c94e9feb261dc5ee9b4efa158b0315f788cf549cc200c"
 dependencies = [
  "humantime",
  "serde 1.0.158",
@@ -2210,7 +2221,7 @@ dependencies = [
  "pollster",
  "thiserror",
  "tokio",
- "tokio-rustls 0.22.0",
+ "tokio-rustls",
  "webpki 0.21.4",
 ]
 
@@ -2367,14 +2378,14 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.20.8"
+version = "0.21.0-alpha.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fff78fc74d175294f4e83b28343315ffcfb114b156f0185e9741cb5570f50e2f"
+checksum = "f647910688d2f5e0e9eaf5a1d55b1cb970153d5b2dafb5d2daa6a112491c831b"
 dependencies = [
  "log",
  "ring",
+ "rustls-webpki",
  "sct 0.7.0",
- "webpki 0.22.0",
 ]
 
 [[package]]
@@ -2396,6 +2407,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d194b56d58803a43635bdc398cd17e383d6f71f9182b9a192c127ca42494a59b"
 dependencies = [
  "base64 0.21.0",
+]
+
+[[package]]
+name = "rustls-webpki"
+version = "0.100.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f3ebea7be4213f3fcfb1a680824ebbd3b39f1521d167c2cf060f7bf994b7ac44"
+dependencies = [
+ "ring",
+ "untrusted",
 ]
 
 [[package]]
@@ -3093,15 +3114,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "subslice"
-version = "0.2.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0a8e4809a3bb02de01f1f7faf1ba01a83af9e8eabcd4d31dd6e413d14d56aae"
-dependencies = [
- "memchr",
-]
-
-[[package]]
 name = "subtle"
 version = "2.4.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3208,11 +3220,13 @@ dependencies = [
 [[package]]
 name = "svc-nats-client"
 version = "0.1.0"
-source = "git+https://github.com/foxford/svc-nats-client.git?branch=impl-client#a43ae9f069fad6302b08d26a2ba5950b27af5ff9"
+source = "git+https://github.com/foxford/svc-nats-client.git?branch=impl-client#60a268bdd3a6d145463fcbc0b2e9aefa747e1518"
 dependencies = [
+ "anyhow",
  "async-nats",
  "async-trait",
  "futures",
+ "humantime-serde",
  "serde 1.0.158",
  "svc-agent",
  "thiserror",
@@ -3462,17 +3476,6 @@ dependencies = [
  "rustls 0.19.1",
  "tokio",
  "webpki 0.21.4",
-]
-
-[[package]]
-name = "tokio-rustls"
-version = "0.23.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c43ee83903113e03984cb9e5cebe6c04a5116269e900e3ddba8f068a62adda59"
-dependencies = [
- "rustls 0.20.8",
- "tokio",
- "webpki 0.22.0",
 ]
 
 [[package]]

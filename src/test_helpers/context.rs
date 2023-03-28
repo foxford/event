@@ -51,6 +51,7 @@ fn build_config(payload_size: Option<usize>) -> Config {
             "creds": "nats.creds",
             "stream": "svc-event-out",
             "consumer": "event-consumer",
+            "redelivery_interval": "2 minute",
         },
         "http_broker_client": {
             "host": "http://mqtt-gateway-cluster:8081",

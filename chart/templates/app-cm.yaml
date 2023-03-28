@@ -35,6 +35,7 @@ data:
     creds = {{ .creds | quote }}
     stream = {{ .stream| quote }}
     consumer = {{ .consumer | quote }}
+    redelivery_interval = {{ .redelivery_interval | quote }}
     {{- end }}
 
     [sentry]

@@ -124,23 +124,12 @@ pub(crate) async fn run(
 
     let nats_puller = match config.nats {
         Some(cfg) => {
-            let stream = cfg
-                .stream
-                .ok_or_else(|| anyhow!("missing nats stream in config"))?;
-            let consumer = cfg
-                .consumer
-                .ok_or_else(|| anyhow!("missing nats consumer in config"))?;
-
-            let nats_client = build_nats_client(&cfg.url, &cfg.creds).await;
+            let nats_client = build_nats_client(&cfg).await;
             info!("Connected to nats");
 
-            let nats_puller = nats_puller::run(
-                ctx.clone(),
-                nats_client,
-                stream,
-                consumer,
-                graceful_rx.clone(),
-            );
+            let nats_puller = nats_puller::run(ctx.clone(), nats_client, &cfg, graceful_rx.clone())
+                .await
+                .context("nats puller")?;
             info!("Nats puller started");
 
             Some(nats_puller)
@@ -293,9 +282,9 @@ fn build_broker_client(config: &Config, token: &str) -> Arc<dyn BrokerClient> {
     )
 }
 
-async fn build_nats_client(url: &str, creds: &str) -> Arc<dyn NatsClient> {
+async fn build_nats_client(config: &svc_nats_client::Config) -> Arc<dyn NatsClient> {
     Arc::new(
-        svc_nats_client::new(url, creds)
+        svc_nats_client::new(&config.url, &config.creds)
             .await
             .expect("failed to create nats client"),
     )
