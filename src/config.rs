@@ -29,6 +29,7 @@ pub struct Config {
     pub constraint: Constraint,
     pub adjust: AdjustConfig,
     pub nats: Option<svc_nats_client::Config>,
+    pub nats_puller: Option<NatsPuller>,
 }
 
 impl Config {
@@ -97,4 +98,12 @@ pub struct HttpBrokerClientConfig {
 pub struct AdjustConfig {
     #[serde(with = "humantime_serde")]
     pub min_segment_length: StdDuration,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct NatsPuller {
+    #[serde(with = "humantime_serde")]
+    pub wait_interval: StdDuration,
+    #[serde(with = "humantime_serde")]
+    pub max_wait_interval: StdDuration,
 }

@@ -3,38 +3,36 @@ use crate::{
         context::GlobalContext,
         error::{Error as AppError, ErrorKind},
     },
-    db,
+    config, db,
 };
+use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use futures_util::StreamExt;
 use serde_json::json;
+use sqlx::{pool::PoolConnection, Postgres};
 use std::{str::FromStr, sync::Arc, time::Duration};
 use svc_conference_events::{Event, EventV1};
-use svc_nats_client::{
-    error::{AckKind, Error as NatsError, ErrorExt as NatsErrorExt},
-    AckKind as NatsAckKind, Message, NatsClient, Subject,
-};
+use svc_nats_client::{AckKind as NatsAckKind, Message, NatsClient, Subject};
 use tokio::{sync::watch, task::JoinHandle};
 use tracing::{error, info, warn};
 
 pub async fn run(
     ctx: Arc<dyn GlobalContext>,
     nats_client: Arc<dyn NatsClient>,
-    config: &svc_nats_client::Config,
+    nats_config: &svc_nats_client::Config,
+    nats_puller_config: config::NatsPuller,
     mut shutdown_rx: watch::Receiver<()>,
-) -> anyhow::Result<JoinHandle<()>> {
-    let stream = config
+) -> Result<JoinHandle<()>> {
+    let stream = nats_config
         .stream
         .as_ref()
         .ok_or_else(|| anyhow!("missing nats stream in config"))?;
-    let consumer = config
+    let consumer = nats_config
         .consumer
         .as_ref()
         .ok_or_else(|| anyhow!("missing nats consumer in config"))?;
-    let redelivery_interval = config
-        .redelivery_interval
-        .ok_or_else(|| anyhow!("missing nats redelivery_interval in config"))?;
 
+    let mut retry_count = 0;
     let mut messages = nats_client.subscribe(stream, consumer).await?;
 
     let handle = tokio::spawn(async move {
@@ -61,44 +59,53 @@ pub async fn run(
                         message.headers
                     );
 
-                    match handle_message(ctx.clone(), &message, redelivery_interval).await {
-                        Ok(_) => {
-                            if let Err(err) = message.ack().await {
+                    let mut conn = match ctx.get_conn().await {
+                        Ok(conn) => conn,
+                        Err(err) => {
+                            error!(?err, "failed to get DB connection");
+                            err.notify_sentry();
+
+                            if let Err(err) = message.ack_with(NatsAckKind::Nak(None)).await {
                                 log_error_and_send_to_sentry(
                                     anyhow!(err),
-                                    "failed to ack nats message",
-                                    ErrorKind::NatsAckFailed,
+                                    "failed to nack nats message",
+                                    ErrorKind::NatsNackFailed,
                                 );
                             }
-                        }
-                        Err(NatsError { error, ack_kind }) => {
-                            log_error_and_send_to_sentry(
-                                error,
-                                "failed to handle nats message",
-                                ErrorKind::NatsMessageHandlingFailed,
-                            );
 
-                            match ack_kind {
-                                AckKind::Nak(duration) => {
-                                    if let Err(err) = message.ack_with(NatsAckKind::Nak(Some(duration))).await {
-                                        log_error_and_send_to_sentry(
-                                            anyhow!(err),
-                                            "failed to nack nats message",
-                                            ErrorKind::NatsTermFailed,
-                                        );
-                                    }
-                                }
-                                AckKind::Term => {
-                                    if let Err(err) = message.ack_with(NatsAckKind::Term).await {
-                                        log_error_and_send_to_sentry(
-                                            anyhow!(err),
-                                            "failed to term nats message",
-                                            ErrorKind::NatsTermFailed,
-                                        );
-                                    }
-                                },
-                            }
+                            retry_count += 1;
+                            let wait_interval = next_wait_interval(retry_count, &nats_puller_config);
+                            warn!("nats puller suspenses the processing of nats messages on {} seconds", wait_interval.as_secs());
+                            tokio::time::sleep(wait_interval).await;
+
+                            continue;
                         }
+                    };
+
+                    if let Err(err) = handle_message(&mut conn, &message).await {
+                        log_error_and_send_to_sentry(
+                            err,
+                            "failed to handle nats message",
+                            ErrorKind::NatsMessageHandlingFailed,
+                        );
+
+                        if let Err(err) = nats_client.term_message(message).await {
+                            log_error_and_send_to_sentry(
+                                anyhow!(err),
+                                "failed to term nats message",
+                                ErrorKind::NatsTermFailed,
+                            );
+                        }
+
+                        continue;
+                    }
+
+                    if let Err(err) = message.ack().await {
+                        log_error_and_send_to_sentry(
+                            anyhow!(err),
+                            "failed to ack nats message",
+                            ErrorKind::NatsAckFailed,
+                        );
                     }
                 }
                 // Graceful shutdown
@@ -112,46 +119,41 @@ pub async fn run(
     Ok(handle)
 }
 
+pub fn next_wait_interval(retry_count: u32, nats_puller_config: &config::NatsPuller) -> Duration {
+    let seconds = std::cmp::min(
+        nats_puller_config.wait_interval.as_secs() * 2_u64.pow(retry_count),
+        nats_puller_config.max_wait_interval.as_secs(),
+    );
+
+    Duration::from_secs(seconds)
+}
+
 fn log_error_and_send_to_sentry(error: anyhow::Error, message: &str, kind: ErrorKind) {
     error!(%error, message);
     AppError::new(kind, error).notify_sentry();
 }
 
-async fn handle_message(
-    ctx: Arc<dyn GlobalContext>,
-    message: &Message,
-    redelivery_interval: Duration,
-) -> Result<(), NatsError> {
-    let subject = Subject::from_str(&message.subject).ack_with(AckKind::Term)?;
+async fn handle_message(conn: &mut PoolConnection<Postgres>, message: &Message) -> Result<()> {
+    let subject = Subject::from_str(&message.subject)?;
     let entity_type = subject.entity_type.as_str();
 
-    let event =
-        serde_json::from_slice::<Event>(message.payload.as_ref()).ack_with(AckKind::Term)?;
+    let event = serde_json::from_slice::<Event>(message.payload.as_ref())?;
 
     let (label, created_at) = match event {
         Event::V1(EventV1::VideoGroup(e)) => (e.as_label(), e.created_at()),
     };
 
-    let mut conn = ctx
-        .get_conn()
-        .await
-        .map_err(|e| anyhow!("failed to get DB connection: {:?}", e))
-        .ack_with(AckKind::Nak(redelivery_interval))?;
-
     let classroom_id = subject.classroom_id;
     let room = db::room::FindQuery::new()
         .by_classroom_id(classroom_id)
-        .execute(&mut conn)
-        .await
-        .ack_with(AckKind::Term)?
+        .execute(conn)
+        .await?
         .ok_or(anyhow!(
             "failed to get room by classroom_id: {}",
             classroom_id
-        ))
-        .ack_with(AckKind::Term)?;
+        ))?;
 
-    let headers = svc_nats_client::Headers::try_from(message.headers.clone().unwrap_or_default())
-        .ack_with(AckKind::Term)?;
+    let headers = svc_nats_client::Headers::try_from(message.headers.clone().unwrap_or_default())?;
     let agent_id = headers.sender_id();
     let entity_event_id = headers.event_id().sequence_id();
 
@@ -161,7 +163,7 @@ async fn handle_message(
             .num_nanoseconds()
             .unwrap_or(std::i64::MAX),
         _ => {
-            return Err(anyhow!("Invalid room time")).ack_with(AckKind::Term);
+            return Err(anyhow!("Invalid room time"));
         }
     };
 
@@ -172,11 +174,10 @@ async fn handle_message(
         occurred_at,
         agent_id.to_owned(),
     )
-    .map_err(|e| anyhow!("invalid data: {}", e))
-    .ack_with(AckKind::Term)?
+    .map_err(|e| anyhow!("invalid data: {}", e))?
     .entity_type(entity_type.to_string())
     .entity_event_id(entity_event_id)
-    .execute(&mut conn)
+    .execute(conn)
     .await
     {
         Err(sqlx::Error::Database(err)) => {
@@ -189,12 +190,10 @@ async fn handle_message(
 
                 Ok(())
             } else {
-                Err(anyhow!("failed to create event from nats: {}", err)).ack_with(AckKind::Term)
+                Err(anyhow!("failed to create event from nats: {}", err))
             }
         }
-        Err(err) => {
-            Err(anyhow!("failed to create event from nats: {}", err)).ack_with(AckKind::Term)
-        }
+        Err(err) => Err(anyhow!("failed to create event from nats: {}", err)),
         Ok(_) => Ok(()),
     }
 }

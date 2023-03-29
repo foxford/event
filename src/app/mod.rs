@@ -122,14 +122,20 @@ pub(crate) async fn run(
             }),
     );
 
-    let nats_puller = match config.nats {
-        Some(cfg) => {
-            let nats_client = build_nats_client(&cfg).await;
+    let nats_puller = match config.nats.zip(config.nats_puller) {
+        Some((nats_cfg, nats_puller_cfg)) => {
+            let nats_client = build_nats_client(&nats_cfg).await;
             info!("Connected to nats");
 
-            let nats_puller = nats_puller::run(ctx.clone(), nats_client, &cfg, graceful_rx.clone())
-                .await
-                .context("nats puller")?;
+            let nats_puller = nats_puller::run(
+                ctx.clone(),
+                nats_client,
+                &nats_cfg,
+                nats_puller_cfg,
+                graceful_rx.clone(),
+            )
+            .await
+            .context("nats puller")?;
             info!("Nats puller started");
 
             Some(nats_puller)
