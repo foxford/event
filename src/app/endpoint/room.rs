@@ -18,7 +18,7 @@ use svc_agent::{
 };
 use svc_error::Error as SvcError;
 use svc_utils::extractors::AuthnExtractor;
-use tracing::{error, instrument};
+use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 use crate::app::endpoint::prelude::*;
@@ -864,14 +864,17 @@ impl RequestHandler for AdjustHandler {
                     modified_room,
                     modified_segments,
                     cut_original_segments,
-                }) => RoomAdjustResult::Success {
-                    original_room_id: original_room.id(),
-                    modified_room_id: modified_room.id(),
-                    modified_segments,
-                    cut_original_segments,
-                },
+                }) => {
+                    info!(class_id = %room.classroom_id(), "Adjustment job succeeded");
+                    RoomAdjustResult::Success {
+                        original_room_id: original_room.id(),
+                        modified_room_id: modified_room.id(),
+                        modified_segments,
+                        cut_original_segments,
+                    }
+                }
                 Err(err) => {
-                    error!("Room adjustment job failed: {:?}", err);
+                    error!(class_id = %room.classroom_id(), "Room adjustment job failed: {:?}", err);
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
                     app_error.notify_sentry();
                     RoomAdjustResult::Error {
