@@ -290,7 +290,7 @@ fn build_broker_client(config: &Config, token: &str) -> Arc<dyn BrokerClient> {
 
 async fn build_nats_client(config: &svc_nats_client::Config) -> Arc<dyn NatsClient> {
     Arc::new(
-        svc_nats_client::new(&config.url, &config.creds)
+        svc_nats_client::Client::new(&config.url, &config.creds)
             .await
             .expect("failed to create nats client"),
     )

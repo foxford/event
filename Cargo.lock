@@ -3220,13 +3220,12 @@ dependencies = [
 [[package]]
 name = "svc-nats-client"
 version = "0.1.0"
-source = "git+https://github.com/foxford/svc-nats-client.git?branch=impl-client#d6f9b2fc3823dbfdda6b18b029a2b0d4a9e73304"
+source = "git+https://github.com/foxford/svc-nats-client.git?branch=impl-client#94068a03f6208f8c51db466572a0bb60c83471a5"
 dependencies = [
  "anyhow",
  "async-nats",
  "async-trait",
  "futures",
- "humantime-serde",
  "serde 1.0.158",
  "svc-agent",
  "thiserror",
