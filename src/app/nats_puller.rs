@@ -28,16 +28,19 @@ pub async fn run(
     let handle = tokio::spawn(async move {
         loop {
             tokio::select! {
-                Some(result) = messages.next() => {
+                result = messages.next() => {
                     let message = match result {
-                        Ok(msg) => msg,
-                        Err(err) => {
+                        Some(Ok(msg)) => msg,
+                        Some(Err(err)) => {
                             log_error_and_send_to_sentry(
                                 anyhow!(err),
                                 "failed to get a message from nats",
                                 ErrorKind::NatsGettingMessageFailed,
                             );
 
+                            continue;
+                        },
+                        None => {
                             continue;
                         }
                     };
