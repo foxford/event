@@ -112,7 +112,7 @@ version = "0.24.0-ALPHA.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8cdefe54cd7867d937c0a507d2a3a830af410044282cd3e4002b5b7860e1892e"
 dependencies = [
- "rustls 0.21.0-alpha.1",
+ "rustls 0.21.0",
  "tokio",
  "webpki 0.22.0",
 ]
@@ -2378,9 +2378,9 @@ dependencies = [
 
 [[package]]
 name = "rustls"
-version = "0.21.0-alpha.1"
+version = "0.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f647910688d2f5e0e9eaf5a1d55b1cb970153d5b2dafb5d2daa6a112491c831b"
+checksum = "07180898a28ed6a7f7ba2311594308f595e3dd2e3c3812fa0a80a47b45f17e5d"
 dependencies = [
  "log",
  "ring",
@@ -3220,12 +3220,13 @@ dependencies = [
 [[package]]
 name = "svc-nats-client"
 version = "0.1.0"
-source = "git+https://github.com/foxford/svc-nats-client.git?branch=impl-client#94068a03f6208f8c51db466572a0bb60c83471a5"
+source = "git+https://github.com/foxford/svc-nats-client.git?branch=impl-client#fa0ebb6f1009f7ead6865e792249b032f14d7c6f"
 dependencies = [
  "anyhow",
  "async-nats",
  "async-trait",
  "futures",
+ "humantime-serde",
  "serde 1.0.158",
  "svc-agent",
  "thiserror",

@@ -19,21 +19,11 @@ use tracing::{error, info, warn};
 pub async fn run(
     ctx: Arc<dyn GlobalContext>,
     nats_client: Arc<dyn NatsClient>,
-    nats_config: &svc_nats_client::Config,
     nats_puller_config: config::NatsPuller,
     mut shutdown_rx: watch::Receiver<()>,
 ) -> Result<JoinHandle<()>> {
-    let stream = nats_config
-        .stream
-        .as_ref()
-        .ok_or_else(|| anyhow!("missing nats stream in config"))?;
-    let consumer = nats_config
-        .consumer
-        .as_ref()
-        .ok_or_else(|| anyhow!("missing nats consumer in config"))?;
-
     let mut retry_count = 0;
-    let mut messages = nats_client.subscribe(stream, consumer).await?;
+    let mut messages = nats_client.subscribe().await?;
 
     let handle = tokio::spawn(async move {
         loop {

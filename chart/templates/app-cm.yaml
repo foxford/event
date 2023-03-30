@@ -33,8 +33,10 @@ data:
     [nats]
     url = {{ .url | quote }}
     creds = {{ .creds | quote }}
-    stream = {{ .stream| quote }}
-    consumer = {{ .consumer | quote }}
+    subscribe.stream = {{ .subscribe.stream | quote }}
+    subscribe.consumer = {{ .subscribe.consumer | quote }}
+    subscribe.batch = {{ .subscribe.batch }}
+    subscribe.idle_heartbeat = {{ .subscribe.idle_heartbeat | quote }}
     {{- end }}
 
     {{- with .Values.nats_puller }}

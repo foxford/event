@@ -124,13 +124,12 @@ pub(crate) async fn run(
 
     let nats_puller = match config.nats.zip(config.nats_puller) {
         Some((nats_cfg, nats_puller_cfg)) => {
-            let nats_client = build_nats_client(&nats_cfg).await;
+            let nats_client = build_nats_client(nats_cfg).await;
             info!("Connected to nats");
 
             let nats_puller = nats_puller::run(
                 ctx.clone(),
                 nats_client,
-                &nats_cfg,
                 nats_puller_cfg,
                 graceful_rx.clone(),
             )
@@ -288,9 +287,9 @@ fn build_broker_client(config: &Config, token: &str) -> Arc<dyn BrokerClient> {
     )
 }
 
-async fn build_nats_client(config: &svc_nats_client::Config) -> Arc<dyn NatsClient> {
+async fn build_nats_client(config: svc_nats_client::Config) -> Arc<dyn NatsClient> {
     Arc::new(
-        svc_nats_client::Client::new(&config.url, &config.creds)
+        svc_nats_client::Client::new(config)
             .await
             .expect("failed to create nats client"),
     )
