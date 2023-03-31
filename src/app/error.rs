@@ -45,7 +45,7 @@ pub enum ErrorKind {
     WhiteboardAccessUpdateNotChecked,
     PayloadSizeExceeded,
     InvalidEvent,
-    NatsGettingStreamFailed,
+    NatsSubscriptionFailed,
     NatsGettingMessageFailed,
     NatsMessageHandlingFailed,
     NatsTermFailed,
@@ -254,10 +254,10 @@ impl From<ErrorKind> for ErrorKindProperties {
                 title: "Invalid event",
                 is_notify_sentry: false
             },
-            ErrorKind::NatsGettingStreamFailed => ErrorKindProperties {
+            ErrorKind::NatsSubscriptionFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
-                kind: "nats_getting_stream_failed",
-                title: "Nats getting stream failed",
+                kind: "nats_subscription_failed",
+                title: "Nats subscription failed",
                 is_notify_sentry: true
             },
             ErrorKind::NatsGettingMessageFailed => ErrorKindProperties {

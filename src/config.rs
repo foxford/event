@@ -103,7 +103,11 @@ pub struct AdjustConfig {
 #[derive(Clone, Debug, Deserialize)]
 pub struct NatsPuller {
     #[serde(with = "humantime_serde")]
-    pub wait_interval: StdDuration,
+    pub suspend_interval: StdDuration,
     #[serde(with = "humantime_serde")]
-    pub max_wait_interval: StdDuration,
+    pub max_suspend_interval: StdDuration,
+    #[serde(with = "humantime_serde")]
+    pub not_spam_sentry_interval: StdDuration,
+    #[serde(with = "humantime_serde")]
+    pub try_resubscribe_interval: StdDuration,
 }

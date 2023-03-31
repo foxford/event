@@ -42,8 +42,10 @@ data:
     {{- with .Values.nats_puller }}
     {{- println "" }}
     [nats_puller]
-    wait_interval = {{ .wait_interval | quote }}
-    max_wait_interval = {{ .max_wait_interval | quote }}
+    suspend_interval = {{ .suspend_interval | quote }}
+    max_suspend_interval = {{ .max_suspend_interval | quote }}
+    not_spam_sentry_interval = {{ .not_spam_sentry_interval | quote }}
+    try_resubscribe_interval = {{ .try_resubscribe_interval | quote }}
     {{- end }}
 
     [sentry]

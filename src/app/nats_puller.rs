@@ -12,8 +12,10 @@ use serde_json::json;
 use sqlx::{pool::PoolConnection, Postgres};
 use std::{str::FromStr, sync::Arc, time::Duration};
 use svc_conference_events::{Event, EventV1};
-use svc_nats_client::{AckKind as NatsAckKind, Message, NatsClient, Subject};
-use tokio::{sync::watch, task::JoinHandle};
+use svc_nats_client::{
+    AckKind as NatsAckKind, Message, MessageStream, NatsClient, Subject, SubscribeError,
+};
+use tokio::{sync::watch, task::JoinHandle, time::MissedTickBehavior};
 use tracing::{error, info, warn};
 
 pub async fn run(
@@ -21,85 +23,58 @@ pub async fn run(
     nats_client: Arc<dyn NatsClient>,
     nats_puller_config: config::NatsPuller,
     mut shutdown_rx: watch::Receiver<()>,
-) -> Result<JoinHandle<()>> {
-    let mut retry_count = 0;
-    let mut messages = nats_client.subscribe().await?;
-
+) -> Result<JoinHandle<Result<(), SubscribeError>>> {
     let handle = tokio::spawn(async move {
+        // In case of subscription errors we don't want to spam sentry
+        let mut may_send_to_sentry = true;
+        let mut not_spam_sentry_interval =
+            tokio::time::interval(nats_puller_config.not_spam_sentry_interval);
+        not_spam_sentry_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
         loop {
-            tokio::select! {
-                result = messages.next() => {
-                    let message = match result {
-                        Some(Ok(msg)) => msg,
-                        Some(Err(err)) => {
-                            log_error_and_send_to_sentry(
-                                anyhow!(err),
-                                "failed to get a message from nats",
-                                ErrorKind::NatsGettingMessageFailed,
-                            );
-
-                            continue;
-                        },
-                        None => {
-                            continue;
-                        }
-                    };
-
-                    info!(
-                        "got a message from nats, subject: {:?}, payload: {:?}, headers: {:?}",
-                        message.subject,
-                        message.payload,
-                        message.headers
-                    );
-
-                    let mut conn = match ctx.get_conn().await {
-                        Ok(conn) => conn,
-                        Err(err) => {
-                            error!(?err, "failed to get DB connection");
-                            err.notify_sentry();
-
-                            if let Err(err) = message.ack_with(NatsAckKind::Nak(None)).await {
-                                log_error_and_send_to_sentry(
-                                    anyhow!(err),
-                                    "failed to nack nats message",
-                                    ErrorKind::NatsNackFailed,
-                                );
-                            }
-
-                            retry_count += 1;
-                            let wait_interval = next_wait_interval(retry_count, &nats_puller_config);
-                            warn!("nats puller suspenses the processing of nats messages on {} seconds", wait_interval.as_secs());
-                            tokio::time::sleep(wait_interval).await;
-
-                            continue;
-                        }
-                    };
-
-                    if let Err(err) = handle_message(&mut conn, &message).await {
-                        log_error_and_send_to_sentry(
-                            err,
-                            "failed to handle nats message",
-                            ErrorKind::NatsMessageHandlingFailed,
-                        );
-
-                        if let Err(err) = nats_client.term_message(message).await {
-                            log_error_and_send_to_sentry(
-                                anyhow!(err),
-                                "failed to term nats message",
-                                ErrorKind::NatsTermFailed,
-                            );
-                        }
-
-                        continue;
-                    }
-
-                    if let Err(err) = message.ack().await {
+            let result = nats_client.subscribe().await;
+            let messages = match result {
+                Ok(messages) => messages,
+                Err(err) => {
+                    if may_send_to_sentry {
                         log_error_and_send_to_sentry(
                             anyhow!(err),
-                            "failed to ack nats message",
-                            ErrorKind::NatsAckFailed,
+                            "failed to subscribe to the nats stream",
+                            ErrorKind::NatsSubscriptionFailed,
                         );
                     }
+                    may_send_to_sentry = false;
+
+                    tokio::time::sleep(nats_puller_config.try_resubscribe_interval).await;
+                    continue;
+                }
+            };
+
+            let handle_stream_future = handle_stream(
+                ctx.as_ref(),
+                nats_client.as_ref(),
+                &nats_puller_config,
+                messages,
+            );
+
+            tokio::select! {
+                _ = handle_stream_future => {
+                    // Stream was closed. Send an error to sentry and try to resubscribe.
+                    if may_send_to_sentry {
+                        log_error_and_send_to_sentry(
+                            anyhow!("nats stream was closed"),
+                            "failed to handle the nats stream",
+                            ErrorKind::NatsSubscriptionFailed,
+                        );
+                    }
+                    may_send_to_sentry = false;
+
+                    tokio::time::sleep(nats_puller_config.try_resubscribe_interval).await;
+                    continue;
+                }
+                _ = not_spam_sentry_interval.tick() => {
+                    // Allow sending errors to sentry in case of subscription errors
+                    may_send_to_sentry = true;
                 }
                 // Graceful shutdown
                 _ = shutdown_rx.changed() => {
@@ -107,15 +82,110 @@ pub async fn run(
                 }
             }
         }
+
+        Ok::<_, SubscribeError>(())
     });
 
     Ok(handle)
 }
 
-pub fn next_wait_interval(retry_count: u32, nats_puller_config: &config::NatsPuller) -> Duration {
+async fn handle_stream(
+    ctx: &dyn GlobalContext,
+    nats_client: &dyn NatsClient,
+    nats_puller_config: &config::NatsPuller,
+    mut messages: MessageStream,
+) {
+    let mut retry_count = 0;
+    let mut suspend_interval: Option<Duration> = None;
+
+    loop {
+        if let Some(interval) = suspend_interval.take() {
+            warn!(
+                "nats puller suspenses the processing of nats messages on {} seconds",
+                interval.as_secs()
+            );
+            tokio::time::sleep(interval).await;
+        }
+
+        let message = match messages.next().await {
+            Some(Ok(msg)) => msg,
+            Some(Err(err)) => {
+                log_error_and_send_to_sentry(
+                    anyhow!(err),
+                    "failed to get a message from nats",
+                    ErrorKind::NatsGettingMessageFailed,
+                );
+
+                continue;
+            }
+            None => {
+                // Stream was closed. Send an error to sentry and try to resubscribe.
+                return;
+            }
+        };
+
+        info!(
+            "got a message from nats, subject: {:?}, payload: {:?}, headers: {:?}",
+            message.subject, message.payload, message.headers
+        );
+
+        let mut conn = match ctx.get_conn().await {
+            Ok(conn) => conn,
+            Err(err) => {
+                error!(?err, "failed to get DB connection");
+                err.notify_sentry();
+
+                if let Err(err) = message.ack_with(NatsAckKind::Nak(None)).await {
+                    log_error_and_send_to_sentry(
+                        anyhow!(err),
+                        "failed to nack nats message",
+                        ErrorKind::NatsNackFailed,
+                    );
+                }
+
+                retry_count += 1;
+                let interval = next_suspend_interval(retry_count, nats_puller_config);
+                suspend_interval = Some(interval);
+
+                continue;
+            }
+        };
+
+        if let Err(err) = handle_message(&mut conn, &message).await {
+            log_error_and_send_to_sentry(
+                err,
+                "failed to handle nats message",
+                ErrorKind::NatsMessageHandlingFailed,
+            );
+
+            if let Err(err) = nats_client.term_message(message).await {
+                log_error_and_send_to_sentry(
+                    anyhow!(err),
+                    "failed to term nats message",
+                    ErrorKind::NatsTermFailed,
+                );
+            }
+
+            continue;
+        }
+
+        if let Err(err) = message.ack().await {
+            log_error_and_send_to_sentry(
+                anyhow!(err),
+                "failed to ack nats message",
+                ErrorKind::NatsAckFailed,
+            );
+        }
+    }
+}
+
+pub fn next_suspend_interval(
+    retry_count: u32,
+    nats_puller_config: &config::NatsPuller,
+) -> Duration {
     let seconds = std::cmp::min(
-        nats_puller_config.wait_interval.as_secs() * 2_u64.pow(retry_count),
-        nats_puller_config.max_wait_interval.as_secs(),
+        nats_puller_config.suspend_interval.as_secs() * 2_u64.pow(retry_count),
+        nats_puller_config.max_suspend_interval.as_secs(),
     );
 
     Duration::from_secs(seconds)
