@@ -15,11 +15,11 @@ use svc_conference_events::{Event, EventV1};
 use svc_nats_client::{
     AckKind as NatsAckKind, Message, MessageStream, NatsClient, Subject, SubscribeError,
 };
-use tokio::{sync::watch, task::JoinHandle, time::MissedTickBehavior};
+use tokio::{sync::watch, task::JoinHandle};
 use tracing::{error, info, warn};
 
 pub async fn run(
-    ctx: Arc<dyn GlobalContext>,
+    ctx: Arc<dyn GlobalContext + Send>,
     nats_client: Arc<dyn NatsClient>,
     nats_puller_config: config::NatsPuller,
     mut shutdown_rx: watch::Receiver<()>,
@@ -29,7 +29,6 @@ pub async fn run(
         let mut may_send_to_sentry = true;
         let mut not_spam_sentry_interval =
             tokio::time::interval(nats_puller_config.not_spam_sentry_interval);
-        not_spam_sentry_interval.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
         loop {
             let result = nats_client.subscribe().await;

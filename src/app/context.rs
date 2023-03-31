@@ -22,7 +22,7 @@ use super::broker_client::BrokerClient;
 pub trait Context: GlobalContext + MessageContext {}
 
 #[async_trait]
-pub trait GlobalContext: Send + Sync {
+pub trait GlobalContext: Sync {
     fn authz(&self) -> &Authz;
     fn config(&self) -> &Config;
     fn db(&self) -> &Db;
