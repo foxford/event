@@ -39,13 +39,13 @@ data:
     subscribe.idle_heartbeat = {{ .subscribe.idle_heartbeat | quote }}
     {{- end }}
 
-    {{- with .Values.nats_puller }}
+    {{- with .Values.nats_consumer }}
     {{- println "" }}
-    [nats_puller]
+    [nats_consumer]
     suspend_interval = {{ .suspend_interval | quote }}
     max_suspend_interval = {{ .max_suspend_interval | quote }}
-    not_spam_sentry_interval = {{ .not_spam_sentry_interval | quote }}
-    try_resubscribe_interval = {{ .try_resubscribe_interval | quote }}
+    suspend_sentry_interval = {{ .suspend_sentry_interval | quote }}
+    resubscribe_interval = {{ .resubscribe_interval | quote }}
     {{- end }}
 
     [sentry]

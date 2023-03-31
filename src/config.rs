@@ -29,7 +29,7 @@ pub struct Config {
     pub constraint: Constraint,
     pub adjust: AdjustConfig,
     pub nats: Option<svc_nats_client::Config>,
-    pub nats_puller: Option<NatsPuller>,
+    pub nats_consumer: Option<NatsConsumer>,
 }
 
 impl Config {
@@ -101,13 +101,13 @@ pub struct AdjustConfig {
 }
 
 #[derive(Clone, Debug, Deserialize)]
-pub struct NatsPuller {
+pub struct NatsConsumer {
     #[serde(with = "humantime_serde")]
     pub suspend_interval: StdDuration,
     #[serde(with = "humantime_serde")]
     pub max_suspend_interval: StdDuration,
     #[serde(with = "humantime_serde")]
-    pub not_spam_sentry_interval: StdDuration,
+    pub suspend_sentry_interval: StdDuration,
     #[serde(with = "humantime_serde")]
-    pub try_resubscribe_interval: StdDuration,
+    pub resubscribe_interval: StdDuration,
 }

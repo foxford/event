@@ -21,14 +21,14 @@ use tracing::{error, info, warn};
 pub async fn run(
     ctx: Arc<dyn GlobalContext + Send>,
     nats_client: Arc<dyn NatsClient>,
-    nats_puller_config: config::NatsPuller,
+    nats_consumer_config: config::NatsConsumer,
     mut shutdown_rx: watch::Receiver<()>,
 ) -> Result<JoinHandle<Result<(), SubscribeError>>> {
     let handle = tokio::spawn(async move {
         // In case of subscription errors we don't want to spam sentry
         let mut may_send_to_sentry = true;
         let mut not_spam_sentry_interval =
-            tokio::time::interval(nats_puller_config.not_spam_sentry_interval);
+            tokio::time::interval(nats_consumer_config.suspend_sentry_interval);
 
         loop {
             let result = nats_client.subscribe().await;
@@ -44,7 +44,7 @@ pub async fn run(
                     }
                     may_send_to_sentry = false;
 
-                    tokio::time::sleep(nats_puller_config.try_resubscribe_interval).await;
+                    tokio::time::sleep(nats_consumer_config.resubscribe_interval).await;
                     continue;
                 }
             };
@@ -52,7 +52,7 @@ pub async fn run(
             let handle_stream_future = handle_stream(
                 ctx.as_ref(),
                 nats_client.as_ref(),
-                &nats_puller_config,
+                &nats_consumer_config,
                 messages,
             );
 
@@ -68,7 +68,7 @@ pub async fn run(
                     }
                     may_send_to_sentry = false;
 
-                    tokio::time::sleep(nats_puller_config.try_resubscribe_interval).await;
+                    tokio::time::sleep(nats_consumer_config.resubscribe_interval).await;
                     continue;
                 }
                 _ = not_spam_sentry_interval.tick() => {
@@ -91,7 +91,7 @@ pub async fn run(
 async fn handle_stream(
     ctx: &dyn GlobalContext,
     nats_client: &dyn NatsClient,
-    nats_puller_config: &config::NatsPuller,
+    nats_consumer_config: &config::NatsConsumer,
     mut messages: MessageStream,
 ) {
     let mut retry_count = 0;
@@ -100,7 +100,7 @@ async fn handle_stream(
     loop {
         if let Some(interval) = suspend_interval.take() {
             warn!(
-                "nats puller suspenses the processing of nats messages on {} seconds",
+                "nats consumer suspenses the processing of nats messages on {} seconds",
                 interval.as_secs()
             );
             tokio::time::sleep(interval).await;
@@ -143,7 +143,7 @@ async fn handle_stream(
                 }
 
                 retry_count += 1;
-                let interval = next_suspend_interval(retry_count, nats_puller_config);
+                let interval = next_suspend_interval(retry_count, nats_consumer_config);
                 suspend_interval = Some(interval);
 
                 continue;
@@ -180,11 +180,11 @@ async fn handle_stream(
 
 pub fn next_suspend_interval(
     retry_count: u32,
-    nats_puller_config: &config::NatsPuller,
+    nats_consumer_config: &config::NatsConsumer,
 ) -> Duration {
     let seconds = std::cmp::min(
-        nats_puller_config.suspend_interval.as_secs() * 2_u64.pow(retry_count),
-        nats_puller_config.max_suspend_interval.as_secs(),
+        nats_consumer_config.suspend_interval.as_secs() * 2_u64.pow(retry_count),
+        nats_consumer_config.max_suspend_interval.as_secs(),
     );
 
     Duration::from_secs(seconds)

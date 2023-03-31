@@ -46,7 +46,7 @@ adjust:
   min_segment_length: "1 second"
   
 nats: {}
-nats_puller: {}
+nats_consumer: {}
 
 clusterService:
   ports:

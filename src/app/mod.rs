@@ -122,22 +122,22 @@ pub(crate) async fn run(
             }),
     );
 
-    let nats_puller = match config.nats.zip(config.nats_puller) {
-        Some((nats_cfg, nats_puller_cfg)) => {
+    let nats_consumer = match config.nats.zip(config.nats_consumer) {
+        Some((nats_cfg, nats_consumer_cfg)) => {
             let nats_client = build_nats_client(nats_cfg).await;
             info!("Connected to nats");
 
-            let nats_puller = nats_puller::run(
+            let nats_consumer = nats_consumer::run(
                 ctx.clone(),
                 nats_client,
-                nats_puller_cfg,
+                nats_consumer_cfg,
                 graceful_rx.clone(),
             )
             .await
-            .context("nats puller")?;
-            info!("Nats puller started");
+            .context("nats consumer")?;
+            info!("Nats consumer started");
 
-            Some(nats_puller)
+            Some(nats_consumer)
         }
         None => None,
     };
@@ -155,9 +155,9 @@ pub(crate) async fn run(
 
     let _ = graceful_tx.send(());
 
-    if let Some(puller) = nats_puller {
-        if let Err(err) = puller.await {
-            error!(%err, "failed to await nats puller completion");
+    if let Some(consumer) = nats_consumer {
+        if let Err(err) = consumer.await {
+            error!(%err, "failed to await nats consumer completion");
         }
     }
 
@@ -301,7 +301,7 @@ pub(crate) mod endpoint;
 pub(crate) mod error;
 pub(crate) mod http;
 pub(crate) mod message_handler;
-pub(crate) mod nats_puller;
+pub(crate) mod nats_consumer;
 pub(crate) mod operations;
 pub(crate) mod s3_client;
 pub(crate) mod service_utils;
