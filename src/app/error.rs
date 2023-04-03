@@ -46,7 +46,7 @@ pub enum ErrorKind {
     PayloadSizeExceeded,
     InvalidEvent,
     NatsSubscriptionFailed,
-    NatsGettingMessageFailed,
+    InternalNatsError,
     NatsMessageHandlingFailed,
     NatsTermFailed,
     NatsNackFailed,
@@ -260,10 +260,10 @@ impl From<ErrorKind> for ErrorKindProperties {
                 title: "Nats subscription failed",
                 is_notify_sentry: true
             },
-            ErrorKind::NatsGettingMessageFailed => ErrorKindProperties {
-                status: ResponseStatus::UNPROCESSABLE_ENTITY,
-                kind: "nats_getting_message_failed",
-                title: "Nats getting message failed",
+            ErrorKind::InternalNatsError => ErrorKindProperties {
+                status: ResponseStatus::FAILED_DEPENDENCY,
+                kind: "internal_nats_error",
+                title: "Internal nats error",
                 is_notify_sentry: true
             },
             ErrorKind::NatsMessageHandlingFailed => ErrorKindProperties {

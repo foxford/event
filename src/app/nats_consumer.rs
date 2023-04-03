@@ -15,22 +15,25 @@ use svc_conference_events::{Event, EventV1};
 use svc_nats_client::{
     AckKind as NatsAckKind, Message, MessageStream, NatsClient, Subject, SubscribeError,
 };
-use tokio::{sync::watch, task::JoinHandle};
+use tokio::{sync::watch, task::JoinHandle, time::Instant};
 use tracing::{error, info, warn};
 
 pub async fn run(
     ctx: Arc<dyn GlobalContext + Send>,
     nats_client: Arc<dyn NatsClient>,
     nats_consumer_config: config::NatsConsumer,
-    mut shutdown_rx: watch::Receiver<()>,
+    shutdown_rx: watch::Receiver<()>,
 ) -> Result<JoinHandle<Result<(), SubscribeError>>> {
     let handle = tokio::spawn(async move {
         // In case of subscription errors we don't want to spam sentry
         let mut may_send_to_sentry = true;
-        let mut not_spam_sentry_interval =
-            tokio::time::interval(nats_consumer_config.suspend_sentry_interval);
+        let mut sentry_last_sent = Instant::now();
 
         loop {
+            if sentry_last_sent.elapsed() > nats_consumer_config.suspend_sentry_interval {
+                may_send_to_sentry = true;
+            }
+
             let result = nats_client.subscribe().await;
             let messages = match result {
                 Ok(messages) => messages,
@@ -41,43 +44,47 @@ pub async fn run(
                             "failed to subscribe to the nats stream",
                             ErrorKind::NatsSubscriptionFailed,
                         );
+
+                        may_send_to_sentry = false;
+                        sentry_last_sent = Instant::now();
                     }
-                    may_send_to_sentry = false;
 
                     tokio::time::sleep(nats_consumer_config.resubscribe_interval).await;
                     continue;
                 }
             };
 
-            let handle_stream_future = handle_stream(
+            // Run the loop of getting messages from the stream
+            let reason = handle_stream(
                 ctx.as_ref(),
                 nats_client.as_ref(),
                 &nats_consumer_config,
                 messages,
-            );
+                shutdown_rx.clone(),
+            )
+            .await;
 
-            tokio::select! {
-                _ = handle_stream_future => {
-                    // Stream was closed. Send an error to sentry and try to resubscribe.
+            match reason {
+                CompletionReason::Shutdown => {
+                    warn!("Nats consumer completes its work");
+                    break;
+                }
+                CompletionReason::StreamClosed => {
+                    // If the `handle_stream` function ends, then the stream was closed.
+                    // Send an error to sentry and try to resubscribe.
                     if may_send_to_sentry {
                         log_error_and_send_to_sentry(
                             anyhow!("nats stream was closed"),
                             "failed to handle the nats stream",
                             ErrorKind::NatsSubscriptionFailed,
                         );
+
+                        may_send_to_sentry = false;
+                        sentry_last_sent = Instant::now();
                     }
-                    may_send_to_sentry = false;
 
                     tokio::time::sleep(nats_consumer_config.resubscribe_interval).await;
                     continue;
-                }
-                _ = not_spam_sentry_interval.tick() => {
-                    // Allow sending errors to sentry in case of subscription errors
-                    may_send_to_sentry = true;
-                }
-                // Graceful shutdown
-                _ = shutdown_rx.changed() => {
-                    break;
                 }
             }
         }
@@ -88,12 +95,18 @@ pub async fn run(
     Ok(handle)
 }
 
+enum CompletionReason {
+    Shutdown,
+    StreamClosed,
+}
+
 async fn handle_stream(
     ctx: &dyn GlobalContext,
     nats_client: &dyn NatsClient,
     nats_consumer_config: &config::NatsConsumer,
     mut messages: MessageStream,
-) {
+    mut shutdown_rx: watch::Receiver<()>,
+) -> CompletionReason {
     let mut retry_count = 0;
     let mut suspend_interval: Option<Duration> = None;
 
@@ -106,79 +119,92 @@ async fn handle_stream(
             tokio::time::sleep(interval).await;
         }
 
-        let message = match messages.next().await {
-            Some(Ok(msg)) => msg,
-            Some(Err(err)) => {
-                log_error_and_send_to_sentry(
-                    anyhow!(err),
-                    "failed to get a message from nats",
-                    ErrorKind::NatsGettingMessageFailed,
+        tokio::select! {
+            result = messages.next() => {
+                let message = match result {
+                    Some(Ok(msg)) => msg,
+                    Some(Err(err)) => {
+                        // Types of internal nats errors that may arise here:
+                        // * Heartbeat errors
+                        // * Failed to send request
+                        // * Consumer deleted
+                        // * Received unknown message
+                        log_error_and_send_to_sentry(
+                            anyhow!(err),
+                            "internal nats error while processing messages from the stream",
+                            ErrorKind::InternalNatsError,
+                        );
+
+                        continue;
+                    }
+                    None => {
+                        // Stream was closed. Send an error to sentry and try to resubscribe.
+                        return CompletionReason::StreamClosed;
+                    }
+                };
+
+                info!(
+                    "got a message from nats, subject: {:?}, payload: {:?}, headers: {:?}",
+                    message.subject, message.payload, message.headers
                 );
 
-                continue;
-            }
-            None => {
-                // Stream was closed. Send an error to sentry and try to resubscribe.
-                return;
-            }
-        };
+                let mut conn = match ctx.get_conn().await {
+                    Ok(conn) => conn,
+                    Err(err) => {
+                        error!(?err, "failed to get DB connection");
+                        err.notify_sentry();
 
-        info!(
-            "got a message from nats, subject: {:?}, payload: {:?}, headers: {:?}",
-            message.subject, message.payload, message.headers
-        );
+                        if let Err(err) = message.ack_with(NatsAckKind::Nak(None)).await {
+                            log_error_and_send_to_sentry(
+                                anyhow!(err),
+                                "failed to nack nats message",
+                                ErrorKind::NatsNackFailed,
+                            );
+                        }
 
-        let mut conn = match ctx.get_conn().await {
-            Ok(conn) => conn,
-            Err(err) => {
-                error!(?err, "failed to get DB connection");
-                err.notify_sentry();
+                        retry_count += 1;
+                        let interval = next_suspend_interval(retry_count, nats_consumer_config);
+                        suspend_interval = Some(interval);
 
-                if let Err(err) = message.ack_with(NatsAckKind::Nak(None)).await {
+                        continue;
+                    }
+                };
+
+                if let Err(err) = handle_message(&mut conn, &message).await {
                     log_error_and_send_to_sentry(
-                        anyhow!(err),
-                        "failed to nack nats message",
-                        ErrorKind::NatsNackFailed,
+                        err,
+                        "failed to handle nats message",
+                        ErrorKind::NatsMessageHandlingFailed,
                     );
+
+                    if let Err(err) = nats_client.term_message(message).await {
+                        log_error_and_send_to_sentry(
+                            anyhow!(err),
+                            "failed to term nats message",
+                            ErrorKind::NatsTermFailed,
+                        );
+                    }
+
+                    continue;
                 }
 
-                retry_count += 1;
-                let interval = next_suspend_interval(retry_count, nats_consumer_config);
-                suspend_interval = Some(interval);
-
-                continue;
+                if let Err(err) = message.ack().await {
+                    log_error_and_send_to_sentry(
+                        anyhow!(err),
+                        "failed to ack nats message",
+                        ErrorKind::NatsAckFailed,
+                    );
+                }
             }
-        };
-
-        if let Err(err) = handle_message(&mut conn, &message).await {
-            log_error_and_send_to_sentry(
-                err,
-                "failed to handle nats message",
-                ErrorKind::NatsMessageHandlingFailed,
-            );
-
-            if let Err(err) = nats_client.term_message(message).await {
-                log_error_and_send_to_sentry(
-                    anyhow!(err),
-                    "failed to term nats message",
-                    ErrorKind::NatsTermFailed,
-                );
+            // Graceful shutdown
+            _ = shutdown_rx.changed() => {
+                return CompletionReason::Shutdown;
             }
-
-            continue;
-        }
-
-        if let Err(err) = message.ack().await {
-            log_error_and_send_to_sentry(
-                anyhow!(err),
-                "failed to ack nats message",
-                ErrorKind::NatsAckFailed,
-            );
         }
     }
 }
 
-pub fn next_suspend_interval(
+fn next_suspend_interval(
     retry_count: u32,
     nats_consumer_config: &config::NatsConsumer,
 ) -> Duration {
