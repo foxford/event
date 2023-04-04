@@ -157,7 +157,7 @@ async fn handle_stream(
                         if let Err(err) = message.ack_with(NatsAckKind::Nak(None)).await {
                             log_error_and_send_to_sentry(
                                 anyhow!(err),
-                                ErrorKind::NatsNackFailed,
+                                ErrorKind::NatsPublishFailed,
                             );
                         }
 
@@ -178,7 +178,7 @@ async fn handle_stream(
                     if let Err(err) = nats_client.term_message(message).await {
                         log_error_and_send_to_sentry(
                             anyhow!(err),
-                            ErrorKind::NatsTermFailed,
+                            ErrorKind::NatsPublishFailed,
                         );
                     }
 
@@ -188,7 +188,7 @@ async fn handle_stream(
                 if let Err(err) = message.ack().await {
                     log_error_and_send_to_sentry(
                         anyhow!(err),
-                        ErrorKind::NatsAckFailed,
+                        ErrorKind::NatsPublishFailed,
                     );
                 }
             }

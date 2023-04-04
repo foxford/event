@@ -48,9 +48,7 @@ pub enum ErrorKind {
     NatsSubscriptionFailed,
     InternalNatsError,
     NatsMessageHandlingFailed,
-    NatsTermFailed,
-    NatsNackFailed,
-    NatsAckFailed,
+    NatsPublishFailed,
 }
 
 impl ErrorKind {
@@ -272,22 +270,10 @@ impl From<ErrorKind> for ErrorKindProperties {
                 title: "Nats message handling failed",
                 is_notify_sentry: true
             },
-            ErrorKind::NatsTermFailed => ErrorKindProperties {
+            ErrorKind::NatsPublishFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
-                kind: "nats_term_failed",
-                title: "Nats term failed",
-                is_notify_sentry: true
-            },
-            ErrorKind::NatsNackFailed => ErrorKindProperties {
-                status: ResponseStatus::UNPROCESSABLE_ENTITY,
-                kind: "nats_nack_failed",
-                title: "Nats nack failed",
-                is_notify_sentry: true
-            },
-            ErrorKind::NatsAckFailed => ErrorKindProperties {
-                status: ResponseStatus::UNPROCESSABLE_ENTITY,
-                kind: "nats_ack_failed",
-                title: "Nats ack failed",
+                kind: "nats_publish_failed",
+                title: "Nats publish failed",
                 is_notify_sentry: true
             },
         }
