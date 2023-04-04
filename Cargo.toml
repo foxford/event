@@ -38,8 +38,7 @@ sqlx = { version = "0.5", features = ["offline", "postgres", "macros", "uuid", "
 svc-agent = { version = "0.19", features = ["sqlx", "queue-counter"] }
 svc-authn = { version = "0.7", features = ["jose", "sqlx"] }
 svc-authz = "0.11"
-#svc-conference-events = "0.2"
-svc-conference-events = { git = "https://github.com/foxford/svc-conference-events.git", branch = "from-slice" }
+svc-conference-events = "0.2"
 svc-error = { version = "0.4", features = ["sqlx", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
 #svc-nats-client = { version = "0.1" }
 svc-nats-client = { git = "https://github.com/foxford/svc-nats-client.git", branch = "impl-client" }

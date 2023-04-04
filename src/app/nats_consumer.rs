@@ -26,28 +26,18 @@ pub async fn run(
 ) -> Result<JoinHandle<Result<(), SubscribeError>>> {
     let handle = tokio::spawn(async move {
         // In case of subscription errors we don't want to spam sentry
-        let mut suspend_sentry = false;
-        let mut sentry_last_sent = Instant::now();
+        let mut sentry_last_sent = Instant::now() - nats_consumer_config.suspend_sentry_interval;
 
         loop {
-            if sentry_last_sent.elapsed() > nats_consumer_config.suspend_sentry_interval {
-                suspend_sentry = false;
-            }
-
             let result = nats_client.subscribe().await;
             let messages = match result {
-                Ok(messages) => {
-                    suspend_sentry = false;
-                    messages
-                }
+                Ok(messages) => messages,
                 Err(err) => {
-                    if !suspend_sentry {
-                        log_error_and_send_to_sentry(
-                            anyhow!(err),
-                            ErrorKind::NatsSubscriptionFailed,
-                        );
+                    error!(%err);
 
-                        suspend_sentry = true;
+                    if sentry_last_sent.elapsed() >= nats_consumer_config.suspend_sentry_interval {
+                        AppError::new(ErrorKind::NatsSubscriptionFailed, anyhow!(err))
+                            .notify_sentry();
                         sentry_last_sent = Instant::now();
                     }
 
@@ -74,13 +64,11 @@ pub async fn run(
                 CompletionReason::StreamClosed => {
                     // If the `handle_stream` function ends, then the stream was closed.
                     // Send an error to sentry and try to resubscribe.
-                    if !suspend_sentry {
-                        log_error_and_send_to_sentry(
-                            anyhow!("nats stream was closed"),
-                            ErrorKind::NatsSubscriptionFailed,
-                        );
+                    let error = anyhow!("nats stream was closed");
+                    error!(%error);
 
-                        suspend_sentry = true;
+                    if sentry_last_sent.elapsed() >= nats_consumer_config.suspend_sentry_interval {
+                        AppError::new(ErrorKind::NatsSubscriptionFailed, error).notify_sentry();
                         sentry_last_sent = Instant::now();
                     }
 
@@ -224,7 +212,7 @@ async fn handle_message(conn: &mut PoolConnection<Postgres>, message: &Message) 
     let event = serde_json::from_slice::<Event>(message.payload.as_ref())?;
 
     let (label, created_at) = match event {
-        Event::V1(EventV1::VideoGroup(e)) => (e.as_label(), e.created_at()),
+        Event::V1(EventV1::VideoGroup(e)) => (e.as_label().to_owned(), e.created_at()),
     };
 
     let classroom_id = subject.classroom_id;
