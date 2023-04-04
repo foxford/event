@@ -26,26 +26,28 @@ pub async fn run(
 ) -> Result<JoinHandle<Result<(), SubscribeError>>> {
     let handle = tokio::spawn(async move {
         // In case of subscription errors we don't want to spam sentry
-        let mut may_send_to_sentry = true;
+        let mut suspend_sentry = false;
         let mut sentry_last_sent = Instant::now();
 
         loop {
             if sentry_last_sent.elapsed() > nats_consumer_config.suspend_sentry_interval {
-                may_send_to_sentry = true;
+                suspend_sentry = false;
             }
 
             let result = nats_client.subscribe().await;
             let messages = match result {
-                Ok(messages) => messages,
+                Ok(messages) => {
+                    suspend_sentry = false;
+                    messages
+                }
                 Err(err) => {
-                    if may_send_to_sentry {
+                    if !suspend_sentry {
                         log_error_and_send_to_sentry(
                             anyhow!(err),
-                            "failed to subscribe to the nats stream",
                             ErrorKind::NatsSubscriptionFailed,
                         );
 
-                        may_send_to_sentry = false;
+                        suspend_sentry = true;
                         sentry_last_sent = Instant::now();
                     }
 
@@ -72,14 +74,13 @@ pub async fn run(
                 CompletionReason::StreamClosed => {
                     // If the `handle_stream` function ends, then the stream was closed.
                     // Send an error to sentry and try to resubscribe.
-                    if may_send_to_sentry {
+                    if !suspend_sentry {
                         log_error_and_send_to_sentry(
                             anyhow!("nats stream was closed"),
-                            "failed to handle the nats stream",
                             ErrorKind::NatsSubscriptionFailed,
                         );
 
-                        may_send_to_sentry = false;
+                        suspend_sentry = true;
                         sentry_last_sent = Instant::now();
                     }
 
@@ -131,7 +132,6 @@ async fn handle_stream(
                         // * Received unknown message
                         log_error_and_send_to_sentry(
                             anyhow!(err),
-                            "internal nats error while processing messages from the stream",
                             ErrorKind::InternalNatsError,
                         );
 
@@ -157,7 +157,6 @@ async fn handle_stream(
                         if let Err(err) = message.ack_with(NatsAckKind::Nak(None)).await {
                             log_error_and_send_to_sentry(
                                 anyhow!(err),
-                                "failed to nack nats message",
                                 ErrorKind::NatsNackFailed,
                             );
                         }
@@ -173,14 +172,12 @@ async fn handle_stream(
                 if let Err(err) = handle_message(&mut conn, &message).await {
                     log_error_and_send_to_sentry(
                         err,
-                        "failed to handle nats message",
                         ErrorKind::NatsMessageHandlingFailed,
                     );
 
                     if let Err(err) = nats_client.term_message(message).await {
                         log_error_and_send_to_sentry(
                             anyhow!(err),
-                            "failed to term nats message",
                             ErrorKind::NatsTermFailed,
                         );
                     }
@@ -191,7 +188,6 @@ async fn handle_stream(
                 if let Err(err) = message.ack().await {
                     log_error_and_send_to_sentry(
                         anyhow!(err),
-                        "failed to ack nats message",
                         ErrorKind::NatsAckFailed,
                     );
                 }
@@ -216,8 +212,8 @@ fn next_suspend_interval(
     Duration::from_secs(seconds)
 }
 
-fn log_error_and_send_to_sentry(error: anyhow::Error, message: &str, kind: ErrorKind) {
-    error!(%error, message);
+fn log_error_and_send_to_sentry(error: anyhow::Error, kind: ErrorKind) {
+    error!(%error);
     AppError::new(kind, error).notify_sentry();
 }
 

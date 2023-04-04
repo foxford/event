@@ -10,7 +10,6 @@ use svc_agent::{request::Dispatcher, AgentId, Authenticable, SharedGroup, Subscr
 use svc_authn::token::jws_compact;
 use svc_authz::cache::{AuthzCache, ConnectionPool as RedisConnectionPool};
 use svc_error::extension::sentry as svc_sentry;
-use svc_nats_client::NatsClient;
 use tokio::{sync::mpsc, task};
 use tracing::{error, info, warn};
 
@@ -124,7 +123,11 @@ pub(crate) async fn run(
 
     let nats_consumer = match config.nats.zip(config.nats_consumer) {
         Some((nats_cfg, nats_consumer_cfg)) => {
-            let nats_client = build_nats_client(nats_cfg).await;
+            let nats_client = svc_nats_client::Client::new(nats_cfg)
+                .await
+                .context("nats client")?;
+
+            let nats_client = Arc::new(nats_client);
             info!("Connected to nats");
 
             let nats_consumer = nats_consumer::run(
@@ -284,14 +287,6 @@ fn build_broker_client(config: &Config, token: &str) -> Arc<dyn BrokerClient> {
             config.http_broker_client.timeout,
         )
         .expect("Failed to create Http Broker Client"),
-    )
-}
-
-async fn build_nats_client(config: svc_nats_client::Config) -> Arc<dyn NatsClient> {
-    Arc::new(
-        svc_nats_client::Client::new(config)
-            .await
-            .expect("failed to create nats client"),
     )
 }
 
