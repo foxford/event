@@ -9,7 +9,6 @@ use anyhow::Result;
 use chrono::{DateTime, TimeZone, Utc};
 use futures_util::StreamExt;
 use serde_json::json;
-use sqlx::{pool::PoolConnection, Postgres};
 use std::{str::FromStr, sync::Arc, time::Duration};
 use svc_conference_events::{Event, EventV1};
 use svc_nats_client::{
@@ -136,48 +135,34 @@ async fn handle_stream(
                     message.subject, message.payload, message.headers
                 );
 
-                let mut conn = match ctx.get_conn().await {
-                    Ok(conn) => conn,
-                    Err(err) => {
-                        error!(?err, "failed to get DB connection");
+                let result = handle_message(ctx, &message).await;
+                match result {
+                    Ok(_) => {
+                        retry_count = 0;
+
+                        if let Err(err) = message.ack().await {
+                            log_error_and_send_to_sentry(anyhow!(err), ErrorKind::NatsPublishFailed);
+                        }
+                    }
+                    Err(HandleMessageError::DbConnAcquisitionFailed(err)) => {
+                        error!(?err);
                         err.notify_sentry();
 
                         if let Err(err) = message.ack_with(NatsAckKind::Nak(None)).await {
-                            log_error_and_send_to_sentry(
-                                anyhow!(err),
-                                ErrorKind::NatsPublishFailed,
-                            );
+                            log_error_and_send_to_sentry(anyhow!(err), ErrorKind::NatsPublishFailed);
                         }
 
                         retry_count += 1;
                         let interval = next_suspend_interval(retry_count, nats_consumer_config);
                         suspend_interval = Some(interval);
-
-                        continue;
                     }
-                };
+                    Err(HandleMessageError::Other(err)) => {
+                        log_error_and_send_to_sentry(err, ErrorKind::NatsMessageHandlingFailed);
 
-                if let Err(err) = handle_message(&mut conn, &message).await {
-                    log_error_and_send_to_sentry(
-                        err,
-                        ErrorKind::NatsMessageHandlingFailed,
-                    );
-
-                    if let Err(err) = nats_client.terminate(message).await {
-                        log_error_and_send_to_sentry(
-                            anyhow!(err),
-                            ErrorKind::NatsPublishFailed,
-                        );
+                        if let Err(err) = nats_client.terminate(message).await {
+                            log_error_and_send_to_sentry(anyhow!(err), ErrorKind::NatsPublishFailed);
+                        }
                     }
-
-                    continue;
-                }
-
-                if let Err(err) = message.ack().await {
-                    log_error_and_send_to_sentry(
-                        anyhow!(err),
-                        ErrorKind::NatsPublishFailed,
-                    );
                 }
             }
             // Graceful shutdown
@@ -205,27 +190,46 @@ fn log_error_and_send_to_sentry(error: anyhow::Error, kind: ErrorKind) {
     AppError::new(kind, error).notify_sentry();
 }
 
-async fn handle_message(conn: &mut PoolConnection<Postgres>, message: &Message) -> Result<()> {
-    let subject = Subject::from_str(&message.subject)?;
+enum HandleMessageError {
+    DbConnAcquisitionFailed(AppError),
+    Other(anyhow::Error),
+}
+
+async fn handle_message(
+    ctx: &dyn GlobalContext,
+    message: &Message,
+) -> Result<(), HandleMessageError> {
+    let subject =
+        Subject::from_str(&message.subject).map_err(|e| HandleMessageError::Other(e.into()))?;
     let entity_type = subject.entity_type.as_str();
 
-    let event = serde_json::from_slice::<Event>(message.payload.as_ref())?;
+    let event = serde_json::from_slice::<Event>(message.payload.as_ref())
+        .map_err(|e| HandleMessageError::Other(e.into()))?;
 
     let (label, created_at) = match event {
         Event::V1(EventV1::VideoGroup(e)) => (e.as_label().to_owned(), e.created_at()),
     };
 
     let classroom_id = subject.classroom_id;
-    let room = db::room::FindQuery::new()
-        .by_classroom_id(classroom_id)
-        .execute(conn)
-        .await?
-        .ok_or(anyhow!(
-            "failed to get room by classroom_id: {}",
-            classroom_id
-        ))?;
+    let room = {
+        let mut conn = ctx
+            .get_conn()
+            .await
+            .map_err(HandleMessageError::DbConnAcquisitionFailed)?;
 
-    let headers = svc_nats_client::Headers::try_from(message.headers.clone().unwrap_or_default())?;
+        db::room::FindQuery::new()
+            .by_classroom_id(classroom_id)
+            .execute(&mut conn)
+            .await
+            .map_err(|e| HandleMessageError::Other(e.into()))?
+            .ok_or(HandleMessageError::Other(anyhow!(
+                "failed to get room by classroom_id: {}",
+                classroom_id
+            )))?
+    };
+
+    let headers = svc_nats_client::Headers::try_from(message.headers.clone().unwrap_or_default())
+        .map_err(|e| HandleMessageError::Other(e.into()))?;
     let agent_id = headers.sender_id();
     let entity_event_id = headers.event_id().sequence_id();
 
@@ -233,11 +237,16 @@ async fn handle_message(conn: &mut PoolConnection<Postgres>, message: &Message) 
     let occurred_at = match room.time().map(|t| t.start().to_owned()) {
         Ok(opened_at) => (created_at - opened_at)
             .num_nanoseconds()
-            .unwrap_or(std::i64::MAX),
+            .unwrap_or(i64::MAX),
         _ => {
-            return Err(anyhow!("Invalid room time"));
+            return Err(HandleMessageError::Other(anyhow!("invalid room time")));
         }
     };
+
+    let mut conn = ctx
+        .get_conn()
+        .await
+        .map_err(HandleMessageError::DbConnAcquisitionFailed)?;
 
     match db::event::InsertQuery::new(
         room.id(),
@@ -246,10 +255,10 @@ async fn handle_message(conn: &mut PoolConnection<Postgres>, message: &Message) 
         occurred_at,
         agent_id.to_owned(),
     )
-    .map_err(|e| anyhow!("invalid data: {}", e))?
+    .map_err(|e| HandleMessageError::Other(anyhow!("invalid data: {}", e)))?
     .entity_type(entity_type.to_string())
     .entity_event_id(entity_event_id)
-    .execute(conn)
+    .execute(&mut conn)
     .await
     {
         Err(sqlx::Error::Database(err)) => {
@@ -262,10 +271,16 @@ async fn handle_message(conn: &mut PoolConnection<Postgres>, message: &Message) 
 
                 Ok(())
             } else {
-                Err(anyhow!("failed to create event from nats: {}", err))
+                Err(HandleMessageError::Other(anyhow!(
+                    "failed to create event from nats: {}",
+                    err
+                )))
             }
         }
-        Err(err) => Err(anyhow!("failed to create event from nats: {}", err)),
+        Err(err) => Err(HandleMessageError::Other(anyhow!(
+            "failed to create event from nats: {}",
+            err
+        ))),
         Ok(_) => Ok(()),
     }
 }
