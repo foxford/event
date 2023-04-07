@@ -46,13 +46,6 @@ fn build_config(payload_size: Option<usize>) -> Config {
             "uri": "mqtt://0.0.0.0:1883",
             "clean_session": false,
         },
-        "nats": {
-            "url": "nats://0.0.0.0:4222",
-            "creds": "nats.creds",
-            "stream": "svc-event-out",
-            "consumer": "event-consumer",
-            "redelivery_interval": "2 minute",
-        },
         "http_broker_client": {
             "host": "http://mqtt-gateway-cluster:8081",
             "timeout": "1 minute",

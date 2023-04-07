@@ -163,7 +163,7 @@ async fn handle_stream(
                         ErrorKind::NatsMessageHandlingFailed,
                     );
 
-                    if let Err(err) = nats_client.term_message(message).await {
+                    if let Err(err) = nats_client.terminate(message).await {
                         log_error_and_send_to_sentry(
                             anyhow!(err),
                             ErrorKind::NatsPublishFailed,
