@@ -201,7 +201,7 @@ async fn handle_message(
 ) -> Result<(), HandleMessageError> {
     let subject =
         Subject::from_str(&message.subject).map_err(|e| HandleMessageError::Other(e.into()))?;
-    let entity_type = subject.entity_type.as_str();
+    let entity_type = subject.entity_type();
 
     let event = serde_json::from_slice::<Event>(message.payload.as_ref())
         .map_err(|e| HandleMessageError::Other(e.into()))?;
@@ -210,7 +210,7 @@ async fn handle_message(
         Event::V1(EventV1::VideoGroup(e)) => (e.as_label().to_owned(), e.created_at()),
     };
 
-    let classroom_id = subject.classroom_id;
+    let classroom_id = subject.classroom_id();
     let room = {
         let mut conn = ctx
             .get_conn()
