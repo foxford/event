@@ -297,7 +297,7 @@ pub(crate) async fn call(
             *b -= rtc_offset * NANOSECONDS_IN_MILLISECOND;
         });
 
-        let mut g1 = invert_segments(
+        let g1 = invert_segments(
             &cut_g1,
             Duration::milliseconds(parsed_segments_finish),
             min_segment_length,
@@ -312,12 +312,17 @@ pub(crate) async fn call(
             })
             .collect::<Vec<_>>();
 
+        let mut cut_original_segments = intersect::intersect(&g1, &segments)
+            .into_iter()
+            .collect::<Vec<(i64, i64)>>();
+
         // Check that there was at least one break
         if segments.len() > 1 {
-            g1 = remove_break_gaps_from_segments(&segments, &g1)?;
+            cut_original_segments =
+                remove_break_gaps_from_segments(&segments, &cut_original_segments)?;
         }
 
-        intersect::intersect(&g1, &segments)
+        cut_original_segments
             .into_iter()
             .map(|(start, stop)| {
                 (
@@ -1528,7 +1533,7 @@ mod tests {
         ])
         .await;
 
-        ctx.set_segments(vec![(0, 11000), (12000, 20000)], ctx.opened_at, "0 seconds");
+        ctx.set_segments(vec![(0, 10000), (13000, 20000)], ctx.opened_at, "0 seconds");
 
         ctx.run().await;
         ctx.events_asserts(
@@ -1537,11 +1542,11 @@ mod tests {
                 (10_000_000_000, "message", json!({"message": "m2"})),
                 (12_000_000_000, "message", json!({"message": "m3"})),
             ],
-            &[(0, 10000), (12000, 19000)],
+            &[(0, 10000), (10000, 17000)],
         )
         .await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000), (12000, 19000)])
+        ctx.assert_cut_original_segments(&[(0, 10000), (10000, 17000)])
     }
 
     #[tokio::test]
@@ -1561,7 +1566,7 @@ mod tests {
         ctx.run().await;
         ctx.events_asserts(&[], &[(0, 10000), (11000, 17000)]).await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000), (13000, 17000)])
+        ctx.assert_cut_original_segments(&[(0, 10000), (11000, 17000)])
     }
 
     #[tokio::test]
@@ -1664,7 +1669,7 @@ mod tests {
         ])
         .await;
 
-        ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+        ctx.set_segments(vec![(0, 10000), (13000, 20000)], ctx.opened_at, "0 seconds");
         ctx.run().await;
 
         let mod_segments: Vec<(Bound<i64>, Bound<i64>)> = ctx.modified_segments().to_owned().into();
@@ -1672,11 +1677,11 @@ mod tests {
             mod_segments.as_slice(),
             &[
                 (Bound::Included(3000), Bound::Excluded(10000)),
-                (Bound::Included(13000), Bound::Excluded(20000))
+                (Bound::Included(10000), Bound::Excluded(17000))
             ]
         );
 
-        ctx.assert_cut_original_segments(&[(3000, 10000), (13000, 20000)])
+        ctx.assert_cut_original_segments(&[(3000, 10000), (10000, 17000)])
     }
 
     #[tokio::test]
@@ -1753,6 +1758,55 @@ mod tests {
         );
 
         ctx.assert_cut_original_segments(&[(3000, 7000), (13000, 20000)])
+    }
+
+    #[tokio::test]
+    async fn adjust_room_with_break_and_video_group_events_as_stream_cut() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m0"})),
+            (2_000_000_000, "stream", json!({"cut": "stop"})),
+            (3_000_000_000, "message", json!({"message": "m1"})),
+            // video_group 1 created
+            (4_000_000_000, "stream", json!({"cut": "start"})),
+            (5_000_000_000, "message", json!({"message": "m2"})),
+            // video_group 1 deleted
+            (6_000_000_000, "stream", json!({"cut": "stop"})),
+            (7_000_000_000, "message", json!({"message": "m3"})),
+            // break started
+            (8_000_000_000, "stream", json!({"cut": "start"})),
+            (9_000_000_000, "message", json!({"message": "m4"})),
+            // break ended
+            (10_000_000_000, "stream", json!({"cut": "stop"})),
+            (11_000_000_000, "message", json!({"message": "m5"})),
+            // video_group 2 created
+            (12_000_000_000, "stream", json!({"cut": "start"})),
+            (13_000_000_000, "message", json!({"message": "m6"})),
+            // video_group 2 deleted
+            (14_000_000_000, "stream", json!({"cut": "stop"})),
+            (15_000_000_000, "message", json!({"message": "m7"})),
+        ])
+        .await;
+
+        ctx.set_segments(vec![(0, 8000), (10000, 20000)], ctx.opened_at, "0 seconds");
+        ctx.run().await;
+
+        let mod_segments: Vec<(Bound<i64>, Bound<i64>)> = ctx.modified_segments().to_owned().into();
+        assert_eq!(
+            mod_segments.as_slice(),
+            &[
+                (Bound::Included(2000), Bound::Excluded(4000)),
+                (Bound::Included(6000), Bound::Excluded(8000)),
+                (Bound::Included(8000), Bound::Excluded(10000)),
+                (Bound::Included(12000), Bound::Excluded(18000)),
+            ]
+        );
+
+        ctx.assert_cut_original_segments(&[
+            (2000, 4000),
+            (6000, 8000),
+            (8000, 10000),
+            (12000, 18000),
+        ])
     }
 
     #[test]

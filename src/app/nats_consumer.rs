@@ -186,7 +186,7 @@ fn next_suspend_interval(
 }
 
 fn log_error_and_send_to_sentry(error: anyhow::Error, kind: ErrorKind) {
-    error!(%error);
+    error!(%error, "nats consumer");
     AppError::new(kind, error).notify_sentry();
 }
 
