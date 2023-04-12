@@ -261,21 +261,23 @@ async fn handle_message(
     .execute(&mut conn)
     .await;
 
-    if let Err(sqlx::Error::Database(err)) = &result {
-        if let Some("uniq_entity_type_entity_event_id") = err.constraint() {
-            warn!(
-                "duplicate nats message, entity_type: {:?}, entity_event_id: {:?}",
-                entity_type.to_string(),
-                entity_event_id
-            );
-        }
-    }
-
     if let Err(err) = result {
-        return Err(HandleMessageError::Other(anyhow!(
-            "failed to create event from nats: {}",
-            err
-        )));
+        if let sqlx::Error::Database(err) = err {
+            if let Some("uniq_entity_type_entity_event_id") = err.constraint() {
+                warn!(
+                    "duplicate nats message, entity_type: {:?}, entity_event_id: {:?}",
+                    entity_type.to_string(),
+                    entity_event_id
+                );
+            } else {
+                return Err(HandleMessageError::Other(anyhow!(err)));
+            }
+        } else {
+            return Err(HandleMessageError::Other(anyhow!(
+                "failed to create event from nats: {}",
+                err
+            )));
+        }
     }
 
     Ok(())
