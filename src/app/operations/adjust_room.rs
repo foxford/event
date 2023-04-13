@@ -9,7 +9,7 @@ use sqlx::{
     postgres::{PgConnection, PgPool as Db},
     Acquire,
 };
-use tracing::{info, instrument, warn};
+use tracing::{info, instrument};
 
 use crate::{
     config::AdjustConfig,
@@ -312,25 +312,7 @@ pub(crate) async fn call(
             })
             .collect::<Vec<_>>();
 
-        let mut cut_original_segments = intersect::intersect(&g1, &segments)
-            .into_iter()
-            .collect::<Vec<(i64, i64)>>();
-
-        // Check that there was at least one break
-        if segments.len() > 1 {
-            warn!(
-                "adjust, cut_original_segments before removing break gaps: {:?}",
-                &cut_original_segments
-            );
-            cut_original_segments =
-                remove_break_gaps_from_segments(&segments, &cut_original_segments)?;
-            warn!(
-                "adjust, cut_original_segments after removing break gaps: {:?}",
-                &cut_original_segments
-            );
-        }
-
-        cut_original_segments
+        intersect::intersect(&g1, &segments)
             .into_iter()
             .map(|(start, stop)| {
                 (
@@ -400,71 +382,6 @@ pub(crate) async fn call(
         modified_segments: Segments::from(modified_segments),
         cut_original_segments: Segments::from(cut_original_segments),
     })
-}
-
-/// This function returns `modified_segments` from which the break time has been removed
-/// based on `original_segments`.
-///
-/// Example
-///
-/// There was one break between two session groups in the lesson:
-/// * `original_segments`: `vec![(0, 78434), (97524, 134925)]`
-/// * `modified_segments`: `vec![(0, 32236), (67350, 78434), (97524, 104581), (121961, 134925)]`
-///
-/// The break was 19090 microseconds (97524 - 78434).
-/// Since the break does not include into the final record,
-/// we need to reduce the rest of the segments after a break by 19090 microseconds.
-///
-/// The final result will be such:
-/// vec![
-///     (0, 32236),      // not changed
-///     (67350, 78434),  // not changed
-///     (78434, 85491),  // (97524 - 19090), (104581 - 19090)
-///     (102871, 115835) // (121961 - 19090), (134925 - 19090)
-/// ]
-fn remove_break_gaps_from_segments(
-    original_segments: &[(i64, i64)],
-    modified_segments: &[(i64, i64)],
-) -> Result<Vec<(i64, i64)>> {
-    // We want to iterate over 2 segments at once,
-    // so that we can determine the duration of the break for shifting the segments.
-    // To do this, we add an empty element to the end.
-    let mut segments = original_segments.to_owned();
-    segments.push((0, 0));
-
-    let mut result = Vec::with_capacity(modified_segments.len());
-
-    for (start, stop) in modified_segments {
-        let duration = stop - start;
-        let start_in_stream = find_position_in_segments(start, &segments)?;
-
-        result.push((start_in_stream, start_in_stream + duration))
-    }
-
-    Ok(result)
-}
-
-fn find_position_in_segments(position: &i64, segments: &[(i64, i64)]) -> Result<i64> {
-    let mut offset = 0;
-
-    for (segment, next_segment) in segments[0..segments.len() - 1]
-        .iter()
-        .zip(segments[1..].iter())
-    {
-        let (start, stop) = segment;
-        if position >= start && position < stop {
-            return Ok(position - offset);
-        } else {
-            let (next_start, _next_stop) = next_segment;
-            offset += next_start - stop;
-        }
-    }
-
-    Err(anyhow!(
-        "position {} not found in segments: {:?}",
-        position,
-        segments
-    ))
 }
 
 /// Creates a derived room from the source room.
@@ -693,7 +610,6 @@ mod tests {
 
     use super::{call, AdjustOutput};
 
-    use crate::app::operations::adjust_room::remove_break_gaps_from_segments;
     use crate::config::AdjustConfig;
     use chrono::{DateTime, Duration, NaiveDateTime, Utc};
     use humantime::parse_duration as pd;
@@ -1554,7 +1470,7 @@ mod tests {
         )
         .await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000), (10000, 17000)])
+        ctx.assert_cut_original_segments(&[(0, 10000), (13000, 20000)])
     }
 
     #[tokio::test]
@@ -1574,7 +1490,7 @@ mod tests {
         ctx.run().await;
         ctx.events_asserts(&[], &[(0, 10000), (11000, 17000)]).await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000), (11000, 17000)])
+        ctx.assert_cut_original_segments(&[(0, 10000), (14000, 20000)])
     }
 
     #[tokio::test]
@@ -1689,7 +1605,7 @@ mod tests {
             ]
         );
 
-        ctx.assert_cut_original_segments(&[(3000, 10000), (10000, 17000)])
+        ctx.assert_cut_original_segments(&[(3000, 10000), (13000, 20000)])
     }
 
     #[tokio::test]
@@ -1766,97 +1682,5 @@ mod tests {
         );
 
         ctx.assert_cut_original_segments(&[(3000, 7000), (13000, 20000)])
-    }
-
-    #[tokio::test]
-    async fn adjust_room_with_break_between_video_group_events() {
-        let mut ctx = TestCtx::new(&[
-            (1_000_000_000, "message", json!({"message": "m0"})),
-            (2_000_000_000, "stream", json!({"cut": "stop"})),
-            (3_000_000_000, "message", json!({"message": "m1"})),
-            // video_group 1 created
-            (4_000_000_000, "stream", json!({"cut": "start"})),
-            (5_000_000_000, "message", json!({"message": "m2"})),
-            // video_group 1 deleted
-            (6_000_000_000, "stream", json!({"cut": "stop"})),
-            (7_000_000_000, "message", json!({"message": "m3"})),
-            // break started
-            (8_000_000_000, "stream", json!({"cut": "start"})),
-            (9_000_000_000, "message", json!({"message": "m4"})),
-            // break ended
-            (10_000_000_000, "stream", json!({"cut": "stop"})),
-            (11_000_000_000, "message", json!({"message": "m5"})),
-            // video_group 2 created
-            (12_000_000_000, "stream", json!({"cut": "start"})),
-            (13_000_000_000, "message", json!({"message": "m6"})),
-            // video_group 2 deleted
-            (14_000_000_000, "stream", json!({"cut": "stop"})),
-            (15_000_000_000, "message", json!({"message": "m7"})),
-        ])
-        .await;
-
-        ctx.set_segments(vec![(0, 8000), (10000, 20000)], ctx.opened_at, "0 seconds");
-        ctx.run().await;
-
-        let mod_segments: Vec<(Bound<i64>, Bound<i64>)> = ctx.modified_segments().to_owned().into();
-        assert_eq!(
-            mod_segments.as_slice(),
-            &[
-                (Bound::Included(2000), Bound::Excluded(4000)),
-                (Bound::Included(6000), Bound::Excluded(8000)),
-                (Bound::Included(8000), Bound::Excluded(10000)),
-                (Bound::Included(12000), Bound::Excluded(18000)),
-            ]
-        );
-
-        ctx.assert_cut_original_segments(&[
-            (2000, 4000),
-            (6000, 8000),
-            (8000, 10000),
-            (12000, 18000),
-        ])
-    }
-
-    #[test]
-    fn test_remove_break_gaps_from_segments() {
-        let original_segments: Vec<(i64, i64)> = vec![(0, 78434), (97524, 134925)];
-        let modified_segments: Vec<(i64, i64)> = vec![
-            (0, 32236),
-            (67350, 78434),
-            (97524, 104581),
-            (121961, 134925),
-        ];
-
-        let segments = remove_break_gaps_from_segments(&original_segments, &modified_segments)
-            .expect("failed to remove break gaps");
-
-        assert_eq!(
-            segments,
-            vec![(0, 32236), (67350, 78434), (78434, 85491), (102871, 115835)]
-        )
-    }
-
-    #[test]
-    fn test_remove_break_gaps_from_segments_no_breaks() {
-        let original_segments: Vec<(i64, i64)> = vec![(0, 134925)];
-        let modified_segments: Vec<(i64, i64)> = vec![
-            (0, 32236),
-            (67350, 78434),
-            (97524, 104581),
-            (121961, 134925),
-        ];
-
-        let segments = remove_break_gaps_from_segments(&original_segments, &modified_segments)
-            .expect("failed to remove break gaps");
-
-        assert_eq!(
-            segments,
-            vec![
-                (0, 32236),
-                (67350, 78434),
-                (97524, 104581),
-                (121961, 134925)
-            ]
-        )
     }
 }

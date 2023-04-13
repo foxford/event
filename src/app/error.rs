@@ -348,6 +348,13 @@ impl Error {
             }
         }
     }
+
+    pub fn log(self) -> Self {
+        if let Some(err) = &self.err {
+            tracing::error!(%err);
+        }
+        self
+    }
 }
 
 impl fmt::Debug for Error {
@@ -383,5 +390,15 @@ pub trait ErrorExt<T> {
 impl<T, E: Into<anyhow::Error>> ErrorExt<T> for Result<T, E> {
     fn error(self, kind: ErrorKind) -> Result<T, Error> {
         self.map_err(|source| Error::new(kind, source.into()))
+    }
+}
+
+pub trait ErrorKindExt {
+    fn kind(self, kind: ErrorKind) -> Error;
+}
+
+impl ErrorKindExt for anyhow::Error {
+    fn kind(self, kind: ErrorKind) -> Error {
+        Error::new(kind, self)
     }
 }

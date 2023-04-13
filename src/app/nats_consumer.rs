@@ -1,7 +1,7 @@
 use crate::{
     app::{
         context::GlobalContext,
-        error::{Error as AppError, ErrorKind},
+        error::{Error as AppError, ErrorKind, ErrorKindExt},
     },
     config, db,
 };
@@ -117,10 +117,11 @@ async fn handle_stream(
                         // * Failed to send request
                         // * Consumer deleted
                         // * Received unknown message
-                        log_error_and_send_to_sentry(
-                            anyhow!(err),
-                            ErrorKind::InternalNatsError,
-                        );
+                        anyhow!(err)
+                            .context("internal nats error")
+                            .kind(ErrorKind::InternalNatsError)
+                            .log()
+                            .notify_sentry();
 
                         continue;
                     }
@@ -141,15 +142,22 @@ async fn handle_stream(
                         retry_count = 0;
 
                         if let Err(err) = message.ack().await {
-                            log_error_and_send_to_sentry(anyhow!(err), ErrorKind::NatsPublishFailed);
+                            anyhow!(err)
+                                .context("nats ack error")
+                                .kind(ErrorKind::NatsPublishFailed)
+                                .log()
+                                .notify_sentry();
                         }
                     }
                     Err(HandleMessageError::DbConnAcquisitionFailed(err)) => {
-                        error!(?err);
-                        err.notify_sentry();
+                        err.log().notify_sentry();
 
                         if let Err(err) = message.ack_with(NatsAckKind::Nak(None)).await {
-                            log_error_and_send_to_sentry(anyhow!(err), ErrorKind::NatsPublishFailed);
+                            anyhow!(err)
+                                .context("nats nack error")
+                                .kind(ErrorKind::NatsPublishFailed)
+                                .log()
+                                .notify_sentry();
                         }
 
                         retry_count += 1;
@@ -157,10 +165,17 @@ async fn handle_stream(
                         suspend_interval = Some(interval);
                     }
                     Err(HandleMessageError::Other(err)) => {
-                        log_error_and_send_to_sentry(err, ErrorKind::NatsMessageHandlingFailed);
+                        err
+                            .kind(ErrorKind::NatsMessageHandlingFailed)
+                            .log()
+                            .notify_sentry();
 
                         if let Err(err) = nats_client.terminate(message).await {
-                            log_error_and_send_to_sentry(anyhow!(err), ErrorKind::NatsPublishFailed);
+                            anyhow!(err)
+                                .context("failed to handle nats message")
+                                .kind(ErrorKind::NatsPublishFailed)
+                                .log()
+                                .notify_sentry();
                         }
                     }
                 }
@@ -183,11 +198,6 @@ fn next_suspend_interval(
     );
 
     Duration::from_secs(seconds)
-}
-
-fn log_error_and_send_to_sentry(error: anyhow::Error, kind: ErrorKind) {
-    error!(%error, "nats consumer");
-    AppError::new(kind, error).notify_sentry();
 }
 
 enum HandleMessageError {
@@ -266,23 +276,23 @@ async fn handle_message(
     .execute(&mut conn)
     .await;
 
+    if let Err(sqlx::Error::Database(ref err)) = result {
+        if let Some("uniq_entity_type_entity_event_id") = err.constraint() {
+            warn!(
+                "duplicate nats message, entity_type: {:?}, entity_event_id: {:?}",
+                entity_type.to_string(),
+                entity_event_id
+            );
+
+            return Ok(());
+        };
+    }
+
     if let Err(err) = result {
-        if let sqlx::Error::Database(err) = err {
-            if let Some("uniq_entity_type_entity_event_id") = err.constraint() {
-                warn!(
-                    "duplicate nats message, entity_type: {:?}, entity_event_id: {:?}",
-                    entity_type.to_string(),
-                    entity_event_id
-                );
-            } else {
-                return Err(HandleMessageError::Other(anyhow!(err)));
-            }
-        } else {
-            return Err(HandleMessageError::Other(anyhow!(
-                "failed to create event from nats: {}",
-                err
-            )));
-        }
+        return Err(HandleMessageError::Other(anyhow!(
+            "failed to create event from nats: {}",
+            err
+        )));
     }
 
     Ok(())
