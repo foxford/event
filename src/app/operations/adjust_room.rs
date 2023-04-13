@@ -9,7 +9,7 @@ use sqlx::{
     postgres::{PgConnection, PgPool as Db},
     Acquire,
 };
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 use crate::{
     config::AdjustConfig,
@@ -318,8 +318,16 @@ pub(crate) async fn call(
 
         // Check that there was at least one break
         if segments.len() > 1 {
+            warn!(
+                "adjust, cut_original_segments before removing break gaps: {:?}",
+                &cut_original_segments
+            );
             cut_original_segments =
                 remove_break_gaps_from_segments(&segments, &cut_original_segments)?;
+            warn!(
+                "adjust, cut_original_segments after removing break gaps: {:?}",
+                &cut_original_segments
+            );
         }
 
         cut_original_segments
