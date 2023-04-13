@@ -5,7 +5,7 @@ use crate::{
     },
     config, db,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use futures_util::StreamExt;
 use serde_json::json;
@@ -195,16 +195,21 @@ enum HandleMessageError {
     Other(anyhow::Error),
 }
 
+impl From<anyhow::Error> for HandleMessageError {
+    fn from(error: anyhow::Error) -> Self {
+        HandleMessageError::Other(error)
+    }
+}
+
 async fn handle_message(
     ctx: &dyn GlobalContext,
     message: &Message,
 ) -> Result<(), HandleMessageError> {
-    let subject =
-        Subject::from_str(&message.subject).map_err(|e| HandleMessageError::Other(e.into()))?;
+    let subject = Subject::from_str(&message.subject).context("parse nats subject")?;
     let entity_type = subject.entity_type();
 
-    let event = serde_json::from_slice::<Event>(message.payload.as_ref())
-        .map_err(|e| HandleMessageError::Other(e.into()))?;
+    let event =
+        serde_json::from_slice::<Event>(message.payload.as_ref()).context("parse nats payload")?;
 
     let (label, created_at) = match event {
         Event::V1(EventV1::VideoGroup(e)) => (e.as_label().to_owned(), e.created_at()),
@@ -221,7 +226,7 @@ async fn handle_message(
             .by_classroom_id(classroom_id)
             .execute(&mut conn)
             .await
-            .map_err(|e| HandleMessageError::Other(e.into()))?
+            .context("find room by classroom_id")?
             .ok_or(HandleMessageError::Other(anyhow!(
                 "failed to get room by classroom_id: {}",
                 classroom_id
@@ -229,19 +234,19 @@ async fn handle_message(
     };
 
     let headers = svc_nats_client::Headers::try_from(message.headers.clone().unwrap_or_default())
-        .map_err(|e| HandleMessageError::Other(e.into()))?;
+        .context("parse nats headers")?;
     let agent_id = headers.sender_id();
     let entity_event_id = headers.event_id().sequence_id();
 
     let created_at: DateTime<Utc> = Utc.timestamp_nanos(created_at);
-    let occurred_at = match room.time().map(|t| t.start().to_owned()) {
-        Ok(opened_at) => (created_at - opened_at)
-            .num_nanoseconds()
-            .unwrap_or(i64::MAX),
-        _ => {
-            return Err(HandleMessageError::Other(anyhow!("invalid room time")));
-        }
-    };
+    let occurred_at = room
+        .time()
+        .map(|t| {
+            (created_at - t.start().to_owned())
+                .num_nanoseconds()
+                .unwrap_or(i64::MAX)
+        })
+        .map_err(|_| HandleMessageError::Other(anyhow!("invalid room time")))?;
 
     let mut conn = ctx
         .get_conn()
@@ -255,7 +260,7 @@ async fn handle_message(
         occurred_at,
         agent_id.to_owned(),
     )
-    .map_err(|e| HandleMessageError::Other(anyhow!("invalid data: {}", e)))?
+    .context("invalid event data")?
     .entity_type(entity_type.to_string())
     .entity_event_id(entity_event_id)
     .execute(&mut conn)

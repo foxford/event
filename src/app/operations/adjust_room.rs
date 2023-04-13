@@ -1769,7 +1769,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn adjust_room_with_break_and_video_group_events_as_stream_cut() {
+    async fn adjust_room_with_break_between_video_group_events() {
         let mut ctx = TestCtx::new(&[
             (1_000_000_000, "message", json!({"message": "m0"})),
             (2_000_000_000, "stream", json!({"cut": "stop"})),
