@@ -73,7 +73,7 @@ async fn upload_events(
     destination: S3Destination,
 ) -> Result<String> {
     let S3Destination { bucket, key } = destination;
-    let s3_uri = format!("s3://{}/{}", bucket, key);
+    let s3_uri = format!("s3://{bucket}/{key}");
 
     let body = S3Content {
         room: room.to_owned(),

@@ -60,7 +60,7 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
         match message {
             Ok(ref msg) => {
                 if let Err(err) = self.handle_message(&mut msg_context, msg).await {
-                    let err = format!("{:?}", err);
+                    let err = format!("{err:?}");
                     Self::report_error(message, &err).await;
                 }
             }
