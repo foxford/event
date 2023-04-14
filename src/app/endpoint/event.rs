@@ -300,6 +300,169 @@ impl RequestHandler for CreateHandler {
     }
 }
 
+//////////////////////////////////////////////////////////////////////
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeletePayload {
+    set: Option<String>,
+    edition_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct DeleteRequest {
+    pub room_id: Uuid,
+    #[serde(flatten)]
+    pub payload: DeletePayload,
+}
+
+pub async fn delete(
+    Extension(ctx): Extension<Arc<AppContext>>,
+    AuthnExtractor(agent_id): AuthnExtractor,
+    Path(room_id): Path<Uuid>,
+    Query(payload): Query<DeletePayload>,
+) -> RequestResult {
+    let request = DeleteRequest { room_id, payload };
+    DeleteHandler::handle(
+        &mut ctx.start_message(),
+        request,
+        RequestParams::Http {
+            agent_id: &agent_id,
+        },
+    )
+    .await
+}
+
+pub(crate) struct DeleteHandler;
+
+
+#[async_trait]
+impl RequestHandler for DeleteHandler {
+    type Payload = DeleteRequest;
+
+    #[instrument(skip_all, fields(room_id, scope, classroom_id))]
+    async fn handle<C: Context>(
+        context: &mut C,
+        Self::Payload { room_id, payload }: Self::Payload,
+        reqp: RequestParams<'_>,
+    ) -> RequestResult {
+        let (room, author) = {
+            let room =
+                helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Open).await?;
+
+            let author = match payload {
+                // Get author of the original event with the same label if applicable.
+                DeletePayload {
+                    set: Some(ref set),
+                    edition_id: Some(ref label),
+                    ..
+                } => {
+                    Span::current().record("set", &set.as_str());
+                    Span::current().record("set_label", &label.as_str());
+
+                    let query = db::event::OriginalEventQuery::new(
+                        room.id(),
+                        set.to_owned(),
+                        label.to_owned(),
+                    );
+
+                    let mut conn = context.get_ro_conn().await?;
+
+                    context
+                        .metrics()
+                        .measure_query(QueryKey::EventOriginalEventQuery, query.execute(&mut conn))
+                        .await
+                        .context("Failed to find original event")
+                        .error(AppErrorKind::DbQueryFailed)?
+                        .map(|original_event| {
+                            original_event.created_by().as_account_id().to_string()
+                        })
+                }
+                _ => None,
+            }
+            .unwrap_or_else(|| {
+                // If set & label are not given or there're no events for them use current account.
+                reqp.as_account_id().to_string()
+            });
+
+            (room, author)
+        };
+
+        // NOTE:
+        // Currently we simply override authz object to room update if event type is in locked_types
+        // or if room mandates whiteboard access validation and the user is not allowed access through whiteboard access map
+        //
+        // Assumption here is that admins can always update rooms and its ok for them to post messages in locked chat
+        // So room update authz check works for them
+        // But the same check always fails for common users
+        //
+        // This is probably a temporary solution, relying on room update being allowed only to those who can post in locked chat
+        let (object, action) = {
+            let object = room.authz_object();
+            let object = object.iter().map(|s| s.as_ref()).collect::<Vec<_>>();
+            (AuthzObject::new(&object).into(), "delete")
+        };
+
+        let authz_time = context
+            .authz()
+            .authorize(
+                room.audience().into(),
+                reqp.as_account_id().to_owned(),
+                object,
+                action.into(),
+            )
+            .await?;
+
+        // Calculate occurrence date.
+        let occurred_at = match room.time().map(|t| t.start().to_owned()) {
+            Ok(opened_at) => (Utc::now() - opened_at)
+                .num_nanoseconds()
+                .unwrap_or(std::i64::MAX),
+            _ => {
+                return Err(anyhow!("Invalid room time")).error(AppErrorKind::InvalidRoomTime);
+            }
+        };
+        let DeletePayload {
+            set,
+            //edition_id,
+            ..
+        } = payload;
+
+        let event = {
+            // Build transient event.
+            let mut builder = db::event::Builder::new()
+                .room_id(room_id)
+                .occurred_at(occurred_at)
+                .created_by(reqp.as_agent_id());
+
+            if let Some(ref set) = set {
+                builder = builder.set(set)
+            }
+
+            builder
+                .build()
+                .map_err(|err| anyhow!("Error building transient event: {:?}", err))
+                .error(AppErrorKind::TransientEventCreationFailed)?
+        };
+
+        // Respond to the agent.
+        let mut response = AppResponse::new(
+            ResponseStatus::OK,
+            "",
+            context.start_timestamp(),
+            Some(authz_time),
+        );
+
+        // Notify room subscribers.
+        response.add_notification(
+            "event.delete",
+            &format!("rooms/{}/events", room.id()),
+            event,
+            context.start_timestamp(),
+        );
+
+        Ok(response)
+    }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 
 const MAX_LIMIT: usize = 100;

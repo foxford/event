@@ -57,6 +57,7 @@ pub fn build_router(
             "/rooms/:id/events",
             get(endpoint::event::list)
                 .post(endpoint::event::create)
+                .delete(endpoint::event::delete)
                 .options(endpoint::read_options),
         )
         .route(
