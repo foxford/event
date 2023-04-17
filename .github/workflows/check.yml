@@ -43,7 +43,12 @@ jobs:
     - name: Install sqlx-cli
       run: cargo install sqlx-cli --version 0.5.7
     - name: Run tests
-      run: cargo sqlx database create && cargo sqlx migrate run && cargo test --verbose
+      run: >
+        cargo sqlx database create && 
+        cargo sqlx migrate run &&
+        cargo sqlx prepare --check -- --tests &&
+        cargo test --verbose
       env:
         PGPORT: 5432
         DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+        SQLX_OFFLINE: true
