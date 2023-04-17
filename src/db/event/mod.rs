@@ -8,6 +8,8 @@ use sqlx::postgres::PgConnection;
 use svc_agent::{AccountId, AgentId};
 use uuid::Uuid;
 
+pub mod mass_delete_by_room;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
