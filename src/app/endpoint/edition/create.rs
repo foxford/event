@@ -2,19 +2,15 @@ use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::extract::{Extension, Path};
 use serde_derive::Deserialize;
-use svc_agent::{
-    mqtt::ResponseStatus,
-    Addressable,
-};
+use svc_agent::{mqtt::ResponseStatus, Addressable};
 use svc_authn::Authenticable;
 use svc_utils::extractors::AuthnExtractor;
 use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
-use crate::app::endpoint::prelude::*;
 use crate::app::context::Context;
+use crate::app::endpoint::prelude::*;
 use crate::db;
-
 
 pub(crate) struct CreateHandler;
 
@@ -105,4 +101,3 @@ impl RequestHandler for CreateHandler {
         Ok(response)
     }
 }
-

@@ -4,8 +4,8 @@ use axum::extract::{Extension, Json, Path};
 use chrono::Utc;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
-use svc_agent::{
-    mqtt::{OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties}
+use svc_agent::mqtt::{
+    OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties,
 };
 use svc_authn::Authenticable;
 use svc_error::Error as SvcError;
