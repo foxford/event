@@ -2,8 +2,8 @@ use super::super::*;
 use crate::db::edition::Object as Edition;
 use crate::test_helpers::prelude::*;
 
-use uuid::Uuid;
 use svc_agent::mqtt::ResponseStatus;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn create_edition() {

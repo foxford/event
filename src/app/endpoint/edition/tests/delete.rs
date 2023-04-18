@@ -2,8 +2,8 @@ use super::super::*;
 use crate::db::{self, edition::Object as Edition};
 use crate::test_helpers::prelude::*;
 
-use uuid::Uuid;
 use svc_agent::mqtt::ResponseStatus;
+use uuid::Uuid;
 
 #[tokio::test]
 async fn delete_edition() {
@@ -121,5 +121,3 @@ async fn delete_editions_missing_room() {
     assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
     assert_eq!(err.kind(), "edition_not_found");
 }
-
-

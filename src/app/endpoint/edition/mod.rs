@@ -9,4 +9,3 @@ pub use self::commit::*;
 
 #[cfg(test)]
 mod tests;
-
