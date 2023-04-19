@@ -69,5 +69,5 @@ pub struct RemovalData {
 
 #[derive(Debug, Deserialize)]
 pub struct BulkRemovalData {
-    pub set: Option<String>,
+    pub set: String,
 }

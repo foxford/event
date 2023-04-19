@@ -125,7 +125,7 @@ impl RequestHandler for CreateHandler {
                 }
             }
             Changeset::Removal(event) => query.event_id(event.event_id),
-            Changeset::BulkRemoval(event) => query.event_set(event.set),
+            Changeset::BulkRemoval(event) => query.event_set(Some(event.set)),
         };
 
         let change = {

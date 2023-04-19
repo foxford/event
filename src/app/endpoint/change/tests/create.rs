@@ -360,7 +360,7 @@ async fn create_bulk_removal_change() {
     let payload = CreateRequest {
         edition_id: edition.id(),
         changeset: Changeset::BulkRemoval(BulkRemovalData {
-            set: Some("set2".to_string()),
+            set: "set2".to_string(),
         }),
     };
 
