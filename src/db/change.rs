@@ -20,6 +20,8 @@ pub(crate) enum ChangeType {
     Modification,
     #[sqlx(rename = "removal")]
     Removal,
+    #[sqlx(rename = "bulk_removal")]
+    BulkRemoval,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, sqlx::FromRow)]
@@ -57,6 +59,11 @@ impl Object {
     #[cfg(test)]
     pub(crate) fn kind(&self) -> ChangeType {
         self.kind
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set(&self) -> Option<&String> {
+        self.event_set.as_ref()
     }
 
     #[cfg(test)]

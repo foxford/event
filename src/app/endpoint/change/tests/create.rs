@@ -3,7 +3,7 @@ use svc_agent::mqtt::ResponseStatus;
 use uuid::Uuid;
 
 use crate::app::endpoint::change::create_request::{
-    AdditionData, Changeset, CreateRequest, ModificationData, RemovalData,
+    AdditionData, BulkRemovalData, Changeset, CreateRequest, ModificationData, RemovalData,
 };
 use crate::db::change::{ChangeType, Object as Change};
 use crate::test_helpers::prelude::*;
@@ -300,4 +300,78 @@ async fn create_change_missing_edition() {
 
     assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
     assert_eq!(err.kind(), "edition_not_found");
+}
+
+#[tokio::test]
+async fn create_bulk_removal_change() {
+    let db = TestDb::new().await;
+    let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
+
+    let (room, edition, _events) = {
+        let mut conn = db.get_conn().await;
+        let room = shared_helpers::insert_room(&mut conn).await;
+
+        let edition = shared_helpers::insert_edition(&mut conn, &room, &agent.agent_id()).await;
+
+        let mut events = vec![];
+
+        for i in 1..4 {
+            let event = factory::Event::new()
+                .room_id(room.id())
+                .set("set1")
+                .kind("message")
+                .data(&json!({ "text": format!("message {}", i) }))
+                .occurred_at(i * 1000)
+                .created_by(&agent.agent_id())
+                .insert(&mut conn)
+                .await;
+
+            events.push(event);
+        }
+
+        for i in 1..2 {
+            let event = factory::Event::new()
+                .room_id(room.id())
+                .set("set2")
+                .kind("message")
+                .data(&json!({ "text": format!("message {}", i) }))
+                .occurred_at(i * 1000)
+                .created_by(&agent.agent_id())
+                .insert(&mut conn)
+                .await;
+
+            events.push(event);
+        }
+
+        (room, edition, events)
+    };
+
+    // Allow agent to create editions
+    let mut authz = TestAuthz::new();
+    authz.allow(
+        agent.account_id(),
+        vec!["classrooms", &room.classroom_id().to_string()],
+        "update",
+    );
+
+    // Make edition.create request
+    let mut context = TestContext::new(db, authz);
+
+    let payload = CreateRequest {
+        edition_id: edition.id(),
+        changeset: Changeset::BulkRemoval(BulkRemovalData {
+            set: Some("set2".to_string()),
+        }),
+    };
+
+    let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
+        .await
+        .expect("Failed to create change");
+
+    // Assert response
+    let (change, respp, _) = find_response::<Change>(messages.as_slice());
+    assert_eq!(respp.status(), ResponseStatus::CREATED);
+    assert_eq!(change.edition_id(), edition.id());
+    assert_eq!(change.kind(), ChangeType::BulkRemoval);
+    assert_eq!(change.set().unwrap(), "set2");
 }
