@@ -12,14 +12,14 @@ use serde_json::json;
 use std::{str::FromStr, sync::Arc, time::Duration};
 use svc_conference_events::{Event, EventV1};
 use svc_nats_client::{
-    AckKind as NatsAckKind, Message, MessageStream, NatsClient, Subject, SubscribeError,
+    AckKind as NatsAckKind, Client, Message, MessageStream, NatsClient, Subject, SubscribeError,
 };
 use tokio::{sync::watch, task::JoinHandle, time::Instant};
 use tracing::{error, info, warn};
 
 pub async fn run(
     ctx: Arc<dyn GlobalContext + Send>,
-    nats_client: Arc<dyn NatsClient>,
+    nats_client: Client,
     nats_consumer_config: config::NatsConsumer,
     shutdown_rx: watch::Receiver<()>,
 ) -> Result<JoinHandle<Result<(), SubscribeError>>> {
@@ -35,7 +35,8 @@ pub async fn run(
                     error!(%err);
 
                     if sentry_last_sent.elapsed() >= nats_consumer_config.suspend_sentry_interval {
-                        AppError::new(ErrorKind::NatsSubscriptionFailed, anyhow!(err))
+                        anyhow!(err)
+                            .kind(ErrorKind::NatsSubscriptionFailed)
                             .notify_sentry();
                         sentry_last_sent = Instant::now();
                     }
@@ -48,7 +49,7 @@ pub async fn run(
             // Run the loop of getting messages from the stream
             let reason = handle_stream(
                 ctx.as_ref(),
-                nats_client.as_ref(),
+                &nats_client,
                 &nats_consumer_config,
                 messages,
                 shutdown_rx.clone(),
@@ -67,7 +68,9 @@ pub async fn run(
                     error!(%error);
 
                     if sentry_last_sent.elapsed() >= nats_consumer_config.suspend_sentry_interval {
-                        AppError::new(ErrorKind::NatsSubscriptionFailed, error).notify_sentry();
+                        error
+                            .kind(ErrorKind::NatsSubscriptionFailed)
+                            .notify_sentry();
                         sentry_last_sent = Instant::now();
                     }
 
@@ -90,7 +93,7 @@ enum CompletionReason {
 
 async fn handle_stream(
     ctx: &dyn GlobalContext,
-    nats_client: &dyn NatsClient,
+    nats_client: &Client,
     nats_consumer_config: &config::NatsConsumer,
     mut messages: MessageStream,
     mut shutdown_rx: watch::Receiver<()>,
@@ -232,8 +235,7 @@ async fn handle_message(
             .await
             .map_err(HandleMessageError::DbConnAcquisitionFailed)?;
 
-        db::room::FindQuery::new()
-            .by_classroom_id(classroom_id)
+        db::room::FindQuery::by_classroom_id(classroom_id)
             .execute(&mut conn)
             .await
             .context("find room by classroom_id")?

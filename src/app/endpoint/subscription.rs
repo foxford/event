@@ -94,8 +94,7 @@ impl EventHandler for DeleteEventHandler {
             return Ok(Box::new(stream::empty()));
         }
         let mut conn = context.get_conn().await?;
-        let room = room::FindQuery::new()
-            .by_id(room_id)
+        let room = room::FindQuery::by_id(room_id)
             .execute(&mut conn)
             .await
             .context("Failed to find room")

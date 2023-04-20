@@ -291,7 +291,6 @@ pub(crate) async fn call(
             })?;
 
         let mut cut_g1 = cut_events_to_gaps(&cut_events)?;
-
         cut_g1.iter_mut().for_each(|(a, b)| {
             *a -= rtc_offset * NANOSECONDS_IN_MILLISECOND;
             *b -= rtc_offset * NANOSECONDS_IN_MILLISECOND;

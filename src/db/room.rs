@@ -361,21 +361,17 @@ pub(crate) struct FindQuery {
 }
 
 impl FindQuery {
-    pub(crate) fn new() -> Self {
-        Default::default()
-    }
-
-    pub(crate) fn by_id(self, id: Uuid) -> Self {
+    pub(crate) fn by_id(id: Uuid) -> Self {
         Self {
             id: Some(id),
-            ..self
+            ..Default::default()
         }
     }
 
-    pub(crate) fn by_classroom_id(self, classroom_id: Uuid) -> Self {
+    pub(crate) fn by_classroom_id(classroom_id: Uuid) -> Self {
         Self {
             classroom_id: Some(classroom_id),
-            ..self
+            ..Default::default()
         }
     }
 

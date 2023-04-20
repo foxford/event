@@ -87,7 +87,6 @@ pub(crate) async fn run(
     let queue_counter = agent.get_queue_counter();
     let dispatcher = Arc::new(Dispatcher::new(&agent));
     let broker_client = build_broker_client(&config, &token);
-
     let context_builder = AppContextBuilder::new(config.clone(), authz, db, broker_client);
 
     let context_builder = match ro_db {
@@ -126,8 +125,6 @@ pub(crate) async fn run(
             let nats_client = svc_nats_client::Client::new(nats_cfg)
                 .await
                 .context("nats client")?;
-
-            let nats_client = Arc::new(nats_client);
             info!("Connected to nats");
 
             let nats_consumer = nats_consumer::run(
