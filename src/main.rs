@@ -111,7 +111,19 @@ async fn main() -> Result<()> {
         (None, None)
     };
 
-    app::run(db, maybe_ro_db, redis_pool, authz_cache).await
+    match var("EVENT_MIGRATE_TO_BINARY") {
+        Ok(_) => {
+            let room_id = var("EVENT_MIGRATE_ROOM_ID")
+                .ok()
+                .and_then(|s| uuid::Uuid::parse_str(s.as_str()).ok());
+
+            migration_to_binary_format::migrate_to_binary(db, room_id).await
+        }
+        Err(_) => match var("EVENT_MIGRATE_TO_JSON") {
+            Ok(dir) => migration_to_binary_format::migrate_to_json(db, dir).await,
+            Err(_) => app::run(db, maybe_ro_db, redis_pool, authz_cache).await,
+        },
+    }
 }
 
 mod app;
@@ -119,6 +131,7 @@ mod authz;
 mod config;
 mod db;
 mod metrics;
+mod migration_to_binary_format;
 #[allow(unused_imports)]
 mod serde;
 #[cfg(test)]

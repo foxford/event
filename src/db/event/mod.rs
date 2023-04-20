@@ -118,6 +118,31 @@ pub(crate) struct RawObject {
     removed: bool,
 }
 
+pub type EventData = (Uuid, Option<JsonValue>, Option<PostcardBin<CompactEvent>>);
+
+impl RawObject {
+    pub fn encode_to_binary(&self) -> Result<EventData, anyhow::Error> {
+        let r = match self.data.as_ref() {
+            Some(data) => (
+                self.id,
+                Some(data.clone()),
+                Some(PostcardBin::new(CompactEvent::from_json(data.clone())?)),
+            ),
+            None => (self.id, None, None),
+        };
+
+        Ok(r)
+    }
+
+    pub fn data(&self) -> Option<&JsonValue> {
+        self.data.as_ref()
+    }
+
+    pub fn room_id(&self) -> Uuid {
+        self.room_id
+    }
+}
+
 impl TryFrom<RawObject> for Object {
     type Error = sqlx::Error;
 
@@ -848,6 +873,54 @@ pub(crate) async fn insert_account_ban_event(
     .execute(conn)
     .await?;
     Ok(())
+}
+
+pub(crate) async fn select_not_encoded_events(
+    limit: i64,
+    skip_rooms: &[Uuid],
+    room_id: Option<Uuid>,
+    conn: &mut PgConnection,
+) -> sqlx::Result<Vec<RawObject>> {
+    sqlx::query_as!(
+        RawObject,
+        r#"
+        SELECT
+            id,
+            room_id,
+            kind,
+            set,
+            label,
+            attribute,
+            data,
+            binary_data AS "binary_data: PostcardBin<CompactEvent>",
+            occurred_at,
+            created_by AS "created_by!: AgentId",
+            created_at,
+            deleted_at,
+            original_occurred_at,
+            original_created_by as "original_created_by: AgentId",
+            removed
+        FROM event
+        WHERE room_id = (
+            SELECT r.id FROM room AS r
+            INNER JOIN event AS e
+            ON r.id = e.room_id
+            WHERE e.binary_data IS NULL
+            AND   e.kind = 'draw'
+            AND   e.room_id <> ALL($1)
+            AND   e.room_id = COALESCE($3, e.room_id)
+            LIMIT 1
+        )
+        AND binary_data IS NULL
+        AND kind = 'draw'
+        LIMIT $2
+        "#,
+        skip_rooms,
+        limit,
+        room_id,
+    )
+    .fetch_all(conn)
+    .await
 }
 
 mod binary_encoding;

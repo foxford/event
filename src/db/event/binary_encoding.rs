@@ -15,13 +15,20 @@ impl<S> PostcardBin<S> {
     }
 }
 
+impl<S: Serialize> PostcardBin<S> {
+    pub fn to_bytes(&self) -> Result<Vec<u8>, postcard::Error> {
+        postcard::to_allocvec(&self.value)
+    }
+}
+
 impl<S: Serialize> sqlx::Encode<'_, sqlx::Postgres> for PostcardBin<S> {
     fn encode_by_ref(
         &self,
         buf: &mut <sqlx::Postgres as sqlx::database::HasArguments>::ArgumentBuffer,
     ) -> sqlx::encode::IsNull {
-        let encoded =
-            postcard::to_allocvec(&self.value).expect("failed to encode as postcard binary");
+        let encoded = self
+            .to_bytes()
+            .expect("failed to encode as postcard binary");
 
         encoded.encode_by_ref(buf)
     }
