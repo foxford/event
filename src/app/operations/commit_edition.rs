@@ -175,6 +175,11 @@ async fn clone_events(
                 SELECT start, stop
                 FROM gap_starts, gap_stops
                 WHERE gap_stops.row_number = gap_starts.row_number
+            ),
+            removed_sets AS (
+                SELECT DISTINCT event_set
+                FROM change
+                WHERE change.edition_id = $3 AND change.kind = 'bulk_removal'
             )
         INSERT INTO event (id, room_id, kind, set, label, data, binary_data, occurred_at, created_by, created_at)
         SELECT
@@ -236,10 +241,13 @@ async fn clone_events(
                 ) AS created_by,
                 COALESCE(event.created_at, NOW()) as created_at
             FROM
-                (SELECT * FROM event WHERE event.room_id = $1 AND deleted_at IS NULL)
-                AS event
+                (SELECT * FROM event 
+                    WHERE   event.room_id = $1 
+                        AND deleted_at IS NULL 
+                        AND event.set NOT IN (SELECT event_set FROM removed_sets)
+                ) AS event
                 FULL OUTER JOIN
-                (SELECT * FROM change WHERE change.edition_id = $3)
+                (SELECT * FROM change WHERE change.edition_id = $3 AND change.kind <> 'bulk_removal')
                 AS change
                 ON change.event_id = event.id
             WHERE
