@@ -1,11 +1,11 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::extract::{Extension, Path, Query};
+use axum::extract::{Path, Query, State};
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::ResponseStatus;
 use svc_authn::Authenticable;
-use svc_utils::extractors::AuthnExtractor;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
@@ -13,7 +13,7 @@ use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::db;
 
-pub(crate) struct ListHandler;
+pub struct ListHandler;
 
 #[derive(Debug, Deserialize)]
 pub struct ListPayload {
@@ -29,8 +29,8 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(id): Path<Uuid>,
     Query(payload): Query<ListPayload>,
 ) -> RequestResult {

@@ -1,10 +1,10 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::extract::{Extension, Path};
+use axum::extract::{Path, State};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::ResponseStatus;
 use svc_authn::Authenticable;
-use svc_utils::extractors::AuthnExtractor;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
@@ -14,16 +14,16 @@ use crate::db;
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct DeleteHandler;
+pub struct DeleteHandler;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct DeleteRequest {
+pub struct DeleteRequest {
     pub id: Uuid,
 }
 
 pub async fn delete(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(id): Path<Uuid>,
 ) -> RequestResult {
     let request = DeleteRequest { id };

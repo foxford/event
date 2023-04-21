@@ -12,10 +12,10 @@ use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::db;
 
-pub(crate) struct CreateHandler;
+pub struct CreateHandler;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct CreateRequest {
+pub struct CreateRequest {
     pub room_id: Uuid,
 }
 

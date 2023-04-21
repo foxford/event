@@ -19,7 +19,7 @@ use crate::app::{context::Context, message_handler::Message};
 use crate::db;
 use crate::db::adjustment::Segments;
 
-pub(crate) struct CommitHandler;
+pub struct CommitHandler;
 
 #[derive(Debug, Deserialize, Clone)]
 pub struct CommitPayload {
@@ -28,7 +28,7 @@ pub struct CommitPayload {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-pub(crate) struct CommitRequest {
+pub struct CommitRequest {
     pub id: Uuid,
     #[serde(flatten)]
     pub payload: CommitPayload,
@@ -157,7 +157,7 @@ impl RequestHandler for CommitHandler {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct EditionCommitNotification {
+pub struct EditionCommitNotification {
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tags: Option<JsonValue>,
@@ -167,7 +167,7 @@ pub(crate) struct EditionCommitNotification {
 
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
-pub(crate) enum EditionCommitResult {
+pub enum EditionCommitResult {
     Success {
         source_room_id: Uuid,
         committed_room_id: Uuid,

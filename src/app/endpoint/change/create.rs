@@ -1,12 +1,12 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
-    extract::{Extension, Path},
+    extract::{Path, State},
     Json,
 };
 use svc_agent::mqtt::ResponseStatus;
 use svc_authn::Authenticable;
-use svc_utils::extractors::AuthnExtractor;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
@@ -15,11 +15,11 @@ use crate::app::endpoint::change::create_request::{Changeset, CreateRequest};
 use crate::app::endpoint::prelude::*;
 use crate::db;
 
-pub(crate) struct CreateHandler;
+pub struct CreateHandler;
 
 pub async fn create(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(edition_id): Path<Uuid>,
     Json(changeset): Json<Changeset>,
 ) -> RequestResult {

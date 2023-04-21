@@ -12,10 +12,10 @@ use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::db;
 
-pub(crate) struct DeleteHandler;
+pub struct DeleteHandler;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct DeleteRequest {
+pub struct DeleteRequest {
     pub id: Uuid,
 }
 
