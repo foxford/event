@@ -1,6 +1,6 @@
 use serde_json::json;
-use svc_agent::mqtt::ResponseStatus;
 use std::collections::HashMap;
+use svc_agent::mqtt::ResponseStatus;
 
 use crate::app::endpoint::change;
 use crate::db::{
@@ -10,7 +10,6 @@ use crate::db::{
 use crate::test_helpers::prelude::*;
 
 use super::super::*;
-
 
 #[tokio::test]
 async fn addition() {
@@ -78,9 +77,7 @@ async fn addition() {
 
     let payload = CommitRequest {
         id: edition.id(),
-        payload: CommitPayload {
-            offset: 0
-        },
+        payload: CommitPayload { offset: 0 },
     };
 
     let messages = handle_request::<CommitHandler>(&mut context, &agent, payload.clone())
@@ -93,8 +90,10 @@ async fn addition() {
 
     let (commit_notification, _, _) = find_event::<EditionCommitNotification>(messages.as_slice());
     let new_room_id = match commit_notification.result {
-        EditionCommitResult::Error{..} => panic!("error in edition commit notification"),
-        EditionCommitResult::Success { committed_room_id, .. } => committed_room_id,
+        EditionCommitResult::Error { .. } => panic!("error in edition commit notification"),
+        EditionCommitResult::Success {
+            committed_room_id, ..
+        } => committed_room_id,
     };
 
     //let mut conn = db.get_conn().await;
@@ -195,9 +194,7 @@ async fn modification() {
 
     let payload = CommitRequest {
         id: edition.id(),
-        payload: CommitPayload {
-            offset: 0
-        },
+        payload: CommitPayload { offset: 0 },
     };
 
     let messages = handle_request::<CommitHandler>(&mut context, &agent, payload.clone())
@@ -210,8 +207,10 @@ async fn modification() {
 
     let (commit_notification, _, _) = find_event::<EditionCommitNotification>(messages.as_slice());
     let new_room_id = match commit_notification.result {
-        EditionCommitResult::Error{..} => panic!("error in edition commit notification"),
-        EditionCommitResult::Success { committed_room_id, .. } => committed_room_id,
+        EditionCommitResult::Error { .. } => panic!("error in edition commit notification"),
+        EditionCommitResult::Success {
+            committed_room_id, ..
+        } => committed_room_id,
     };
 
     //let mut conn = db.get_conn().await;
@@ -297,9 +296,7 @@ async fn removal() {
 
     let payload = CommitRequest {
         id: edition.id(),
-        payload: CommitPayload {
-            offset: 0
-        },
+        payload: CommitPayload { offset: 0 },
     };
 
     let messages = handle_request::<CommitHandler>(&mut context, &agent, payload.clone())
@@ -312,8 +309,10 @@ async fn removal() {
 
     let (commit_notification, _, _) = find_event::<EditionCommitNotification>(messages.as_slice());
     let new_room_id = match commit_notification.result {
-        EditionCommitResult::Error{..} => panic!("error in edition commit notification"),
-        EditionCommitResult::Success { committed_room_id, .. } => committed_room_id,
+        EditionCommitResult::Error { .. } => panic!("error in edition commit notification"),
+        EditionCommitResult::Success {
+            committed_room_id, ..
+        } => committed_room_id,
     };
 
     //let mut conn = db.get_conn().await;
@@ -329,7 +328,6 @@ async fn removal() {
         assert_ne!(ev.id(), removed_event.id());
     }
 }
-
 
 #[tokio::test]
 async fn bulk_removal() {
@@ -406,9 +404,7 @@ async fn bulk_removal() {
 
     let payload = CommitRequest {
         id: edition.id(),
-        payload: CommitPayload {
-            offset: 0
-        },
+        payload: CommitPayload { offset: 0 },
     };
 
     let messages = handle_request::<CommitHandler>(&mut context, &agent, payload.clone())
@@ -421,8 +417,10 @@ async fn bulk_removal() {
 
     let (commit_notification, _, _) = find_event::<EditionCommitNotification>(messages.as_slice());
     let new_room_id = match commit_notification.result {
-        EditionCommitResult::Error{..} => panic!("error in edition commit notification"),
-        EditionCommitResult::Success { committed_room_id, .. } => committed_room_id,
+        EditionCommitResult::Error { .. } => panic!("error in edition commit notification"),
+        EditionCommitResult::Success {
+            committed_room_id, ..
+        } => committed_room_id,
     };
 
     //let mut conn = db.get_conn().await;
