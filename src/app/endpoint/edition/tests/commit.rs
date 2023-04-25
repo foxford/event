@@ -356,7 +356,7 @@ async fn bulk_removal() {
             events.push(event);
         }
 
-        for i in 1..2 {
+        for i in 1..6 {
             let event = factory::Event::new()
                 .room_id(room.id())
                 .set("set2")
