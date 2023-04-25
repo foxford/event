@@ -24,7 +24,7 @@ pub struct CommitHandler;
 #[derive(Debug, Deserialize, Clone)]
 pub struct CommitPayload {
     #[serde(default)]
-    pub offset: i64,
+    pub(crate) offset: i64,
 }
 
 #[derive(Debug, Deserialize, Clone)]
