@@ -24,7 +24,7 @@ async fn addition() {
 
         let mut events_map = HashMap::new();
 
-        for i in 1..4 {
+        for i in 0..3 {
             let event = factory::Event::new()
                 .room_id(room.id())
                 .set("set1")
@@ -139,7 +139,7 @@ async fn modification() {
 
         let mut events = vec![];
 
-        for i in 1..4 {
+        for i in 0..3 {
             let event = factory::Event::new()
                 .room_id(room.id())
                 .set("set1")
@@ -245,7 +245,7 @@ async fn removal() {
 
         let mut events = vec![];
 
-        for i in 1..4 {
+        for i in 0..3 {
             let event = factory::Event::new()
                 .room_id(room.id())
                 .set("set1")
@@ -342,7 +342,7 @@ async fn bulk_removal() {
 
         let mut events = vec![];
 
-        for i in 1..4 {
+        for i in 0..3 {
             let event = factory::Event::new()
                 .room_id(room.id())
                 .set("set1")
@@ -356,7 +356,7 @@ async fn bulk_removal() {
             events.push(event);
         }
 
-        for i in 1..6 {
+        for i in 0..5 {
             let event = factory::Event::new()
                 .room_id(room.id())
                 .set("set2")
