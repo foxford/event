@@ -96,7 +96,6 @@ async fn addition() {
         } => committed_room_id,
     };
 
-    //let mut conn = db.get_conn().await;
     let mut conn = db.get_conn().await;
     let events = event::ListQuery::new()
         .room_id(new_room_id)
