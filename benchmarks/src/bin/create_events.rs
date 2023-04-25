@@ -1,8 +1,11 @@
 extern crate event_benchmark;
 
+use parking_lot::Mutex;
 use std::str::FromStr;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 use chrono::Utc;
 use clap::{value_t, App, Arg};
