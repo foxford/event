@@ -60,10 +60,15 @@ pub struct JwtConfig {
 }
 
 pub(crate) fn load() -> Result<Config, config::ConfigError> {
-    let mut parser = config::Config::default();
-    parser.merge(config::File::with_name("App"))?;
-    parser.merge(config::Environment::with_prefix("APP").separator("__"))?;
-    parser.try_into::<Config>()
+    let parser = config::Config::builder()
+        .add_source(config::File::with_name("App"))
+        .add_source(
+            config::Environment::with_prefix("APP")
+                .try_parsing(true)
+                .separator("__"),
+        )
+        .build()?;
+    parser.try_deserialize()
 }
 
 #[derive(Clone, Debug, Deserialize)]
