@@ -58,11 +58,11 @@ version = "0.15"
 optional = true
 
 [dev-dependencies]
-hex = "0.4.3"
-humantime = "2.1.0"
-mockall = "0.10"
+hex = "0.4"
+humantime = "2.1"
+mockall = "0.11"
 rusoto_mock = "0.48"
-serial_test = "0.8"
+serial_test = "2.0"
 
 [profile.release]
 debug = true
