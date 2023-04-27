@@ -190,8 +190,8 @@ impl ListWithBansQuery {
             "#,
             self.room_id,
             self.status as Status,
-            self.limit as u32,
-            self.offset as u32
+            self.limit as i64,
+            self.offset as i64
         )
         .fetch_all(conn)
         .await
