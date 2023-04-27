@@ -1,1 +1,1 @@
-ALTER TYPE change_type ADD VALUE 'bulk_removal';
+ALTER TYPE change_type ADD VALUE IF NOT EXISTS 'bulk_removal';
