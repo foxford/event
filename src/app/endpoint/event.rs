@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
-    extract::{Extension, Path, Query},
+    extract::{Path, Query, State},
     Json,
 };
 use chrono::Utc;
@@ -11,7 +11,7 @@ use serde_derive::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use svc_agent::Authenticable;
 use svc_agent::{mqtt::ResponseStatus, Addressable};
-use svc_utils::extractors::AuthnExtractor;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
@@ -55,8 +55,8 @@ impl CreateRequest {
 }
 
 pub async fn create(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<CreatePayload>,
 ) -> RequestResult {
@@ -332,8 +332,8 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Query(payload): Query<ListPayload>,
 ) -> RequestResult {

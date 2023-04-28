@@ -100,9 +100,9 @@ pub fn build_router(
         .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
         .layer(layer_fn(|inner| MetricsMiddleware { inner }))
         .layer(svc_utils::middleware::CorsLayer)
-        .layer(Extension(context))
         .layer(Extension(agent))
-        .layer(Extension(Arc::new(authn)));
+        .layer(Extension(Arc::new(authn)))
+        .with_state(context);
 
     let routes = Router::new().nest("/api/v1", router);
 

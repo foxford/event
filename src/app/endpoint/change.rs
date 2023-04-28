@@ -1,14 +1,14 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
-    extract::{Extension, Path, Query},
+    extract::{Path, Query, State},
     Json,
 };
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::ResponseStatus;
 use svc_authn::Authenticable;
-use svc_utils::extractors::AuthnExtractor;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
@@ -22,8 +22,8 @@ use crate::db;
 pub(crate) struct CreateHandler;
 
 pub async fn create(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(edition_id): Path<Uuid>,
     Json(changeset): Json<Changeset>,
 ) -> RequestResult {
@@ -171,8 +171,8 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(id): Path<Uuid>,
     Query(payload): Query<ListPayload>,
 ) -> RequestResult {
@@ -272,8 +272,8 @@ pub(crate) struct DeleteRequest {
 }
 
 pub async fn delete(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(id): Path<Uuid>,
 ) -> RequestResult {
     let request = DeleteRequest { id };

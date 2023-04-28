@@ -2,11 +2,11 @@ use std::sync::Arc;
 
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::extract::{Extension, Path};
+use axum::extract::{Path, State};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::ResponseStatus;
 use svc_authn::Authenticable;
-use svc_utils::extractors::AuthnExtractor;
+use svc_utils::extractors::AgentIdExtractor;
 use uuid::Uuid;
 
 use crate::app::context::Context;
@@ -21,8 +21,8 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {
     let request = ListRequest { room_id };

@@ -44,8 +44,8 @@ impl EventsDumpResult {
 }
 
 pub async fn dump_events(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {
     let request = EventsDumpRequest { id: room_id };

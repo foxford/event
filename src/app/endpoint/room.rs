@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
-    extract::{Extension, Path},
+    extract::{Path, State},
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -17,7 +17,7 @@ use svc_agent::{
     AccountId, Addressable, AgentId,
 };
 use svc_error::Error as SvcError;
-use svc_utils::extractors::AuthnExtractor;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::{error, info, instrument};
 use uuid::Uuid;
 
@@ -48,8 +48,8 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Json(request): Json<CreateRequest>,
 ) -> RequestResult {
     CreateHandler::handle(
@@ -168,8 +168,8 @@ pub(crate) struct ReadRequest {
 }
 
 pub async fn read(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {
     let request = ReadRequest { id: room_id };
@@ -243,8 +243,8 @@ pub(crate) struct UpdateRequest {
 }
 
 pub async fn update(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<UpdatePayload>,
 ) -> RequestResult {
@@ -398,8 +398,8 @@ pub(crate) struct RoomEnterEvent {
 pub(crate) struct EnterHandler;
 
 pub async fn enter(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<EnterPayload>,
 ) -> RequestResult {
@@ -556,8 +556,8 @@ pub struct LockedTypesRequest {
 }
 
 pub async fn locked_types(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<LockedTypesPayload>,
 ) -> RequestResult {
@@ -670,8 +670,8 @@ pub struct WhiteboardAccessRequest {
 }
 
 pub async fn whiteboard_access(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<WhiteboardAccessPayload>,
 ) -> RequestResult {
@@ -793,8 +793,8 @@ pub struct AdjustRequest {
 }
 
 pub async fn adjust(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<AdjustPayload>,
 ) -> RequestResult {

@@ -2,11 +2,11 @@ use std::ops::Bound;
 
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::extract::{Extension, Path, RawQuery};
+use axum::extract::{Path, RawQuery, State};
 use serde_derive::Deserialize;
 use serde_json::{map::Map as JsonMap, Value as JsonValue};
 use svc_agent::mqtt::ResponseStatus;
-use svc_utils::extractors::AuthnExtractor;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::{field::display, instrument, Span};
 use uuid::Uuid;
 
@@ -36,8 +36,8 @@ pub(crate) struct ReadRequest {
 }
 
 pub async fn read(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     RawQuery(query): RawQuery,
 ) -> RequestResult {

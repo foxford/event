@@ -1,6 +1,6 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::extract::{Extension, Json, Path, Query};
+use axum::extract::{Json, Path, Query, State};
 use chrono::{DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -10,7 +10,7 @@ use svc_agent::{
 };
 use svc_authn::Authenticable;
 use svc_error::Error as SvcError;
-use svc_utils::extractors::AuthnExtractor;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::{error, field::display, instrument, Span};
 use uuid::Uuid;
 
@@ -30,8 +30,8 @@ pub(crate) struct CreateRequest {
 }
 
 pub async fn create(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {
     let request = CreateRequest { room_id };
@@ -130,8 +130,8 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Query(payload): Query<ListPayload>,
 ) -> RequestResult {
@@ -211,8 +211,8 @@ pub(crate) struct DeleteRequest {
 }
 
 pub async fn delete(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(id): Path<Uuid>,
 ) -> RequestResult {
     let request = DeleteRequest { id };
@@ -314,8 +314,8 @@ pub(crate) struct CommitRequest {
 }
 
 pub async fn commit(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(id): Path<Uuid>,
     Json(payload): Json<CommitPayload>,
 ) -> RequestResult {

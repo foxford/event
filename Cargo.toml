@@ -7,7 +7,7 @@ version = "0.2.71"
 [dependencies]
 anyhow = "1"
 async-trait = "0.1"
-axum = "0.6"
+axum = { version = "0.6", features = ["macros"] }
 chrono = { version = "0.4", features = ["serde"] }
 config = "0.13"
 crossbeam-channel = "0.5"
@@ -51,7 +51,7 @@ tracing-futures = "0.2"
 tracing-log = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 url = { version = "2.1" }
-uuid = { version = "1.1", features = ["v4", "serde"] }
+uuid = { version = "1.1.2", features = ["v4", "serde"] }
 
 [dependencies.dotenv]
 version = "0.15"
