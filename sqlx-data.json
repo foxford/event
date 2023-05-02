@@ -1,5 +1,132 @@
 {
   "db": "PostgreSQL",
+  "01b1ab9d14fed8a80c81f7b7b51180e8f074c8614d0a1afeb439b6ffbe28acd7": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "edition_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "kind!: ChangeType",
+          "ordinal": 2,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Enum": [
+                  "addition",
+                  "modification",
+                  "removal",
+                  "bulk_removal"
+                ]
+              },
+              "name": "change_type"
+            }
+          }
+        },
+        {
+          "name": "event_id",
+          "ordinal": 3,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "event_kind",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "event_set",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "event_label",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "event_data",
+          "ordinal": 7,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "event_occurred_at",
+          "ordinal": 8,
+          "type_info": "Int8"
+        },
+        {
+          "name": "event_created_by?: AgentId",
+          "ordinal": 9,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "created_at",
+          "ordinal": 10,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Timestamp",
+          "Int8"
+        ]
+      }
+    },
+    "query": "\n            SELECT\n                id,\n                edition_id,\n                kind               AS \"kind!: ChangeType\",\n                event_id,\n                event_kind,\n                event_set,\n                event_label,\n                event_data,\n                event_occurred_at,\n                event_created_by   AS \"event_created_by?: AgentId\",\n                created_at\n            FROM change\n            WHERE edition_id = $1\n                AND ($2::text IS NULL OR (event_kind = $2::text))\n                AND ($3::timestamp IS NULL OR (created_at > $3::timestamp))\n            ORDER BY created_at DESC LIMIT $4\n            "
+  },
   "05a4104370276e98923d26b0dd1fb384e334d7020de02afb68587607929b324c": {
     "describe": {
       "columns": [
@@ -330,7 +457,8 @@
                 "Enum": [
                   "addition",
                   "modification",
-                  "removal"
+                  "removal",
+                  "bulk_removal"
                 ]
               },
               "name": "change_type"
@@ -471,7 +599,8 @@
                 "Enum": [
                   "addition",
                   "modification",
-                  "removal"
+                  "removal",
+                  "bulk_removal"
                 ]
               },
               "name": "change_type"
@@ -1807,6 +1936,174 @@
     },
     "query": "\n                INSERT INTO event (\n                    room_id,\n                    set,\n                    kind,\n                    label,\n                    attribute,\n                    data,\n                    occurred_at,\n                    created_by,\n                    removed,\n                    binary_data\n                )\n                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n                RETURNING\n                    id,\n                    room_id,\n                    kind,\n                    set,\n                    label,\n                    attribute,\n                    data,\n                    binary_data AS \"binary_data: PostcardBin<CompactEvent>\",\n                    occurred_at,\n                    created_by AS \"created_by!: AgentId\",\n                    created_at,\n                    deleted_at,\n                    original_occurred_at,\n                    original_created_by as \"original_created_by: AgentId\",\n                    removed\n                "
   },
+  "94b0f3542791a00d3b45d26e1b3bd13c3569a04227d1a12a69459086355a6c5a": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "room_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "kind",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "set",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "label",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "data!: Value",
+          "ordinal": 5,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "occurred_at",
+          "ordinal": 6,
+          "type_info": "Int8"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 7,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "deleted_at",
+          "ordinal": 8,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "created_by!: AgentId",
+          "ordinal": 9,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "original_created_by!: AgentId",
+          "ordinal": 10,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "original_occurred_at",
+          "ordinal": 11,
+          "type_info": "Int8"
+        },
+        {
+          "name": "removed",
+          "ordinal": 12,
+          "type_info": "Bool"
+        },
+        {
+          "name": "attribute",
+          "ordinal": 13,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Text",
+          "Text",
+          "TextArray",
+          "Int8",
+          "Int8"
+        ]
+      }
+    },
+    "query": "\n                    SELECT\n                        id,\n                        room_id,\n                        kind,\n                        set,\n                        label,\n                        data                AS \"data!: Value\",\n                        occurred_at,\n                        created_at,\n                        deleted_at,\n                        created_by          AS \"created_by!: AgentId\",\n                        original_created_by AS \"original_created_by!: AgentId\",\n                        original_occurred_at,\n                        removed,\n                        attribute\n                    FROM event\n                    WHERE deleted_at IS NULL\n                        AND ($1::uuid IS NULL OR (room_id = $1::uuid))\n                        AND ($2::text IS NULL OR (set = $2::text))\n                        AND ($3::text IS NULL OR (label = $3::text))\n                        AND ($4::text IS NULL OR (attribute = $4::text))\n                        AND (array_length($5::text[], 1) = 0 OR (kind = ANY($5)))\n                        AND ($6::bigint IS NULL OR (occurred_at > $6::bigint))\n                    ORDER BY occurred_at ASC, created_at ASC LIMIT $7\n                    "
+  },
   "96ca15b6812ff9ec3fc998fe3651d09d83ed927466773ee1da1e84c29d45748c": {
     "describe": {
       "columns": [],
@@ -1943,6 +2240,174 @@
     },
     "query": "DELETE FROM edition WHERE id = $1"
   },
+  "a3a2c1aee41c9e9fec5488b82dc9ed7c9b021161a9b154e59cafdc7328d64f97": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "room_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "kind",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "set",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "label",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "data!: Value",
+          "ordinal": 5,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "occurred_at",
+          "ordinal": 6,
+          "type_info": "Int8"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 7,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "deleted_at",
+          "ordinal": 8,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "created_by!: AgentId",
+          "ordinal": 9,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "original_created_by!: AgentId",
+          "ordinal": 10,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "original_occurred_at",
+          "ordinal": 11,
+          "type_info": "Int8"
+        },
+        {
+          "name": "removed",
+          "ordinal": 12,
+          "type_info": "Bool"
+        },
+        {
+          "name": "attribute",
+          "ordinal": 13,
+          "type_info": "Text"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Text",
+          "Text",
+          "TextArray",
+          "Int8",
+          "Int8"
+        ]
+      }
+    },
+    "query": "\n                    SELECT\n                        id,\n                        room_id,\n                        kind,\n                        set,\n                        label,\n                        data                AS \"data!: Value\",\n                        occurred_at,\n                        created_at,\n                        deleted_at,\n                        created_by          AS \"created_by!: AgentId\",\n                        original_created_by AS \"original_created_by!: AgentId\",\n                        original_occurred_at,\n                        removed,\n                        attribute\n                    FROM event\n                    WHERE deleted_at IS NULL\n                        AND ($1::uuid IS NULL OR (room_id = $1::uuid))\n                        AND ($2::text IS NULL OR (set = $2::text))\n                        AND ($3::text IS NULL OR (label = $3::text))\n                        AND ($4::text IS NULL OR (attribute = $4::text))\n                        AND (array_length($5::text[], 1) = 0 OR (kind = ANY($5)))\n                        AND ($6::bigint IS NULL OR (occurred_at <= $6::bigint))\n                    ORDER BY occurred_at DESC, created_at DESC LIMIT $7\n                    "
+  },
   "ac9057b29aa15bfce1867dca3324e3c3b27a6bb4184588bc6cca99ccc9e6cfca": {
     "describe": {
       "columns": [
@@ -1965,7 +2430,8 @@
                 "Enum": [
                   "addition",
                   "modification",
-                  "removal"
+                  "removal",
+                  "bulk_removal"
                 ]
               },
               "name": "change_type"

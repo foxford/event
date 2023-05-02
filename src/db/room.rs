@@ -13,7 +13,7 @@ use uuid::Uuid;
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct Object {
+pub struct Object {
     id: Uuid,
     audience: String,
     #[serde(skip_serializing_if = "Option::is_none")]

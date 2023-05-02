@@ -21,7 +21,6 @@ hyper = { version = "0.14.26", features = [ "server" ] }
 parking_lot = "0.12"
 postcard = { version = "1.0.4", features = ["alloc"] }
 prometheus = "0.13"
-quaint = { version = "0.1", features = ["uuid-0_8", "chrono-0_4"] }
 rand = "0.8"
 reqwest = "0.11"
 rusoto_core = "0.48"

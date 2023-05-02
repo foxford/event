@@ -10,7 +10,7 @@ use uuid::Uuid;
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "agent_status")]
-pub(crate) enum Status {
+pub enum Status {
     #[sqlx(rename = "in_progress")]
     InProgress,
     #[sqlx(rename = "ready")]
@@ -18,7 +18,7 @@ pub(crate) enum Status {
 }
 
 #[derive(Debug, Serialize, sqlx::FromRow)]
-pub(crate) struct Object {
+pub struct Object {
     #[serde(skip_serializing)]
     #[allow(dead_code)]
     id: Uuid,
@@ -32,7 +32,7 @@ pub(crate) struct Object {
 }
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
-pub(crate) struct AgentWithBan {
+pub struct AgentWithBan {
     #[serde(skip_serializing)]
     #[allow(dead_code)]
     id: Uuid,
@@ -56,10 +56,11 @@ impl AgentWithBan {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+const DEFAULT_LIST_LIMIT: usize = 1000;
 
 #[cfg(test)]
 #[derive(Debug)]
-pub(crate) struct ListQuery {
+pub struct ListQuery {
     agent_id: Option<AgentId>,
     room_id: Option<Uuid>,
     status: Option<Status>,
@@ -69,7 +70,7 @@ pub(crate) struct ListQuery {
 
 #[cfg(test)]
 impl ListQuery {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             agent_id: None,
             room_id: None,
@@ -79,79 +80,53 @@ impl ListQuery {
         }
     }
 
-    pub(crate) fn agent_id(self, agent_id: AgentId) -> Self {
+    pub fn agent_id(self, agent_id: AgentId) -> Self {
         Self {
             agent_id: Some(agent_id),
             ..self
         }
     }
 
-    pub(crate) fn room_id(self, room_id: Uuid) -> Self {
+    pub fn room_id(self, room_id: Uuid) -> Self {
         Self {
             room_id: Some(room_id),
             ..self
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
-        use quaint::ast::{Comparable, Orderable, Select};
-        use quaint::visitor::{Postgres, Visitor};
-
-        let mut q = Select::from_table("agent");
-
-        if self.agent_id.is_some() {
-            q = q.and_where("agent_id".equals("_placeholder_"));
-        }
-
-        if let Some(room_id) = self.room_id {
-            q = q.and_where("room_id".equals(room_id));
-        }
-
-        if self.status.is_some() {
-            q = q.and_where("status".equals("_placeholder_"));
-        }
-
-        if let Some(limit) = self.limit {
-            q = q.limit(limit);
-        }
-
-        if let Some(offset) = self.offset {
-            q = q.offset(offset);
-        }
-
-        q = q.order_by("created_at".descend());
-
-        let (sql, _bindings) = Postgres::build(q);
-        let mut query = sqlx::query_as(&sql);
-
-        if let Some(agent_id) = self.agent_id {
-            query = query.bind(agent_id);
-        }
-
-        if let Some(room_id) = self.room_id {
-            query = query.bind(room_id);
-        }
-
-        if let Some(status) = self.status {
-            query = query.bind(status);
-        }
-
-        if let Some(limit) = self.limit {
-            query = query.bind(limit as u32);
-        }
-
-        if let Some(offset) = self.offset {
-            query = query.bind(offset as u32);
-        }
-
-        query.fetch_all(conn).await
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+        let limit = self.limit.unwrap_or(DEFAULT_LIST_LIMIT);
+        let offset = self.offset.unwrap_or(0);
+        sqlx::query_as!(
+            Object,
+            r#"
+            SELECT
+                id,
+                agent_id            AS "agent_id!: AgentId",
+                room_id,
+                status              AS "status!: Status",
+                created_at
+            FROM agent
+            WHERE ($1::agent_id IS NULL OR (agent_id = $1::agent_id))
+                AND ($2::uuid IS NULL OR (room_id = $2::uuid))
+                AND ($3::agent_status IS NULL OR (status > $3::agent_status))
+            ORDER BY created_at DESC LIMIT $4 OFFSET $5
+            "#,
+            self.agent_id as Option<AgentId>,
+            self.room_id,
+            self.status as Option<Status>,
+            limit as i64,
+            offset as i64,
+        )
+        .fetch_all(conn)
+        .await
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct ListWithBansQuery {
+pub struct ListWithBansQuery {
     room_id: Uuid,
     status: Status,
     offset: usize,
@@ -159,7 +134,7 @@ pub(crate) struct ListWithBansQuery {
 }
 
 impl ListWithBansQuery {
-    pub(crate) fn new(room_id: Uuid, status: Status, offset: usize, limit: usize) -> Self {
+    pub fn new(room_id: Uuid, status: Status, offset: usize, limit: usize) -> Self {
         Self {
             room_id,
             status,
@@ -168,7 +143,7 @@ impl ListWithBansQuery {
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<AgentWithBan>> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<AgentWithBan>> {
         sqlx::query_as!(
             AgentWithBan,
             r#"
@@ -199,20 +174,17 @@ impl ListWithBansQuery {
 }
 
 #[derive(Debug)]
-pub(crate) struct FindWithBanQuery {
+pub struct FindWithBanQuery {
     agent_id: AgentId,
     room_id: Uuid,
 }
 
 impl FindWithBanQuery {
-    pub(crate) fn new(agent_id: AgentId, room_id: Uuid) -> Self {
+    pub fn new(agent_id: AgentId, room_id: Uuid) -> Self {
         Self { agent_id, room_id }
     }
 
-    pub(crate) async fn execute(
-        self,
-        conn: &mut PgConnection,
-    ) -> sqlx::Result<Option<AgentWithBan>> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<AgentWithBan>> {
         sqlx::query_as!(
             AgentWithBan,
             r#"
@@ -239,14 +211,14 @@ impl FindWithBanQuery {
 }
 
 #[derive(Debug)]
-pub(crate) struct InsertQuery {
+pub struct InsertQuery {
     agent_id: AgentId,
     room_id: Uuid,
     status: Status,
 }
 
 impl InsertQuery {
-    pub(crate) fn new(agent_id: AgentId, room_id: Uuid) -> Self {
+    pub fn new(agent_id: AgentId, room_id: Uuid) -> Self {
         Self {
             agent_id,
             room_id,
@@ -255,11 +227,11 @@ impl InsertQuery {
     }
 
     #[cfg(test)]
-    pub(crate) fn status(self, status: Status) -> Self {
+    pub fn status(self, status: Status) -> Self {
         Self { status, ..self }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         sqlx::query_as!(
             Object,
             r#"
@@ -285,14 +257,14 @@ impl InsertQuery {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct UpdateQuery {
+pub struct UpdateQuery {
     agent_id: AgentId,
     room_id: Uuid,
     status: Option<Status>,
 }
 
 impl UpdateQuery {
-    pub(crate) fn new(agent_id: AgentId, room_id: Uuid) -> Self {
+    pub fn new(agent_id: AgentId, room_id: Uuid) -> Self {
         Self {
             agent_id,
             room_id,
@@ -300,14 +272,14 @@ impl UpdateQuery {
         }
     }
 
-    pub(crate) fn status(self, status: Status) -> Self {
+    pub fn status(self, status: Status) -> Self {
         Self {
             status: Some(status),
             ..self
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
         sqlx::query_as!(
             Object,
             r#"
@@ -334,17 +306,17 @@ impl UpdateQuery {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct DeleteQuery {
+pub struct DeleteQuery {
     agent_id: AgentId,
     room_id: Uuid,
 }
 
 impl DeleteQuery {
-    pub(crate) fn new(agent_id: AgentId, room_id: Uuid) -> Self {
+    pub fn new(agent_id: AgentId, room_id: Uuid) -> Self {
         Self { agent_id, room_id }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<usize> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<usize> {
         sqlx::query_as!(
             Object,
             r#"

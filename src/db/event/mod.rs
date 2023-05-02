@@ -11,7 +11,7 @@ use uuid::Uuid;
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
-pub(crate) struct Object {
+pub struct Object {
     id: Uuid,
     room_id: Uuid,
     #[serde(rename = "type")]
@@ -38,60 +38,60 @@ pub(crate) struct Object {
 }
 
 impl Object {
-    pub(crate) fn id(&self) -> Uuid {
+    pub fn id(&self) -> Uuid {
         self.id
     }
 
     #[cfg(test)]
-    pub(crate) fn room_id(&self) -> Uuid {
+    pub fn room_id(&self) -> Uuid {
         self.room_id
     }
 
     #[cfg(test)]
-    pub(crate) fn kind(&self) -> &str {
+    pub fn kind(&self) -> &str {
         &self.kind
     }
 
     #[cfg(test)]
-    pub(crate) fn set(&self) -> &str {
+    pub fn set(&self) -> &str {
         &self.set
     }
 
     #[cfg(test)]
-    pub(crate) fn label(&self) -> Option<&str> {
+    pub fn label(&self) -> Option<&str> {
         self.label.as_deref()
     }
 
     #[cfg(test)]
-    pub(crate) fn attribute(&self) -> Option<&str> {
+    pub fn attribute(&self) -> Option<&str> {
         self.attribute.as_deref()
     }
 
-    pub(crate) fn data(&self) -> &JsonValue {
+    pub fn data(&self) -> &JsonValue {
         &self.data
     }
 
-    pub(crate) fn occurred_at(&self) -> i64 {
+    pub fn occurred_at(&self) -> i64 {
         self.occurred_at
     }
 
-    pub(crate) fn created_by(&self) -> &AgentId {
+    pub fn created_by(&self) -> &AgentId {
         &self.created_by
     }
 
     #[cfg(test)]
-    pub(crate) fn original_occurred_at(&self) -> i64 {
+    pub fn original_occurred_at(&self) -> i64 {
         self.original_occurred_at
     }
 
     #[cfg(test)]
-    pub(crate) fn removed(&self) -> bool {
+    pub fn removed(&self) -> bool {
         self.removed
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, sqlx::FromRow)]
-pub(crate) struct RawObject {
+pub struct RawObject {
     id: Uuid,
     room_id: Uuid,
     #[serde(rename = "type")]
@@ -154,7 +154,7 @@ impl TryFrom<RawObject> for Object {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Default)]
-pub(crate) struct Builder {
+pub struct Builder {
     room_id: Option<Uuid>,
     kind: Option<String>,
     set: Option<String>,
@@ -166,67 +166,67 @@ pub(crate) struct Builder {
 }
 
 impl Builder {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Default::default()
     }
 
-    pub(crate) fn room_id(self, room_id: Uuid) -> Self {
+    pub fn room_id(self, room_id: Uuid) -> Self {
         Self {
             room_id: Some(room_id),
             ..self
         }
     }
 
-    pub(crate) fn kind(self, kind: &str) -> Self {
+    pub fn kind(self, kind: &str) -> Self {
         Self {
             kind: Some(kind.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn set(self, set: &str) -> Self {
+    pub fn set(self, set: &str) -> Self {
         Self {
             set: Some(set.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn label(self, label: &str) -> Self {
+    pub fn label(self, label: &str) -> Self {
         Self {
             label: Some(label.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn attribute(self, attribute: &str) -> Self {
+    pub fn attribute(self, attribute: &str) -> Self {
         Self {
             attribute: Some(attribute.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn data(self, data: &JsonValue) -> Self {
+    pub fn data(self, data: &JsonValue) -> Self {
         Self {
             data: Some(data.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn occurred_at(self, occurred_at: i64) -> Self {
+    pub fn occurred_at(self, occurred_at: i64) -> Self {
         Self {
             occurred_at: Some(occurred_at),
             ..self
         }
     }
 
-    pub(crate) fn created_by(self, created_by: &AgentId) -> Self {
+    pub fn created_by(self, created_by: &AgentId) -> Self {
         Self {
             created_by: Some(created_by.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn build(self) -> Result<Object, &'static str> {
+    pub fn build(self) -> Result<Object, &'static str> {
         let room_id = self.room_id.ok_or("Missing `room_id`")?;
         let kind = self.kind.ok_or("Missing `kind`")?;
         let set = self.set.unwrap_or_else(|| kind.clone());
@@ -257,7 +257,7 @@ impl Builder {
 
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Direction {
+pub enum Direction {
     Forward,
     Backward,
 }
@@ -269,6 +269,7 @@ impl Default for Direction {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+const DEFAULT_LIST_LIMIT: usize = 1000;
 
 #[derive(Debug)]
 enum KindFilter {
@@ -277,7 +278,7 @@ enum KindFilter {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct ListQuery<'a> {
+pub struct ListQuery<'a> {
     room_id: Option<Uuid>,
     kind: Option<KindFilter>,
     set: Option<&'a str>,
@@ -289,150 +290,169 @@ pub(crate) struct ListQuery<'a> {
 }
 
 impl<'a> ListQuery<'a> {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Default::default()
     }
 
-    pub(crate) fn room_id(self, room_id: Uuid) -> Self {
+    pub fn room_id(self, room_id: Uuid) -> Self {
         Self {
             room_id: Some(room_id),
             ..self
         }
     }
 
-    pub(crate) fn kind(self, kind: String) -> Self {
+    pub fn kind(self, kind: String) -> Self {
         Self {
             kind: Some(KindFilter::Single(kind)),
             ..self
         }
     }
 
-    pub(crate) fn kinds(self, kinds: Vec<String>) -> Self {
+    pub fn kinds(self, kinds: Vec<String>) -> Self {
         Self {
             kind: Some(KindFilter::Multiple(kinds)),
             ..self
         }
     }
 
-    pub(crate) fn set(self, set: &'a str) -> Self {
+    pub fn set(self, set: &'a str) -> Self {
         Self {
             set: Some(set),
             ..self
         }
     }
 
-    pub(crate) fn label(self, label: &'a str) -> Self {
+    pub fn label(self, label: &'a str) -> Self {
         Self {
             label: Some(label),
             ..self
         }
     }
 
-    pub(crate) fn attribute(self, attribute: &'a str) -> Self {
+    pub fn attribute(self, attribute: &'a str) -> Self {
         Self {
             attribute: Some(attribute),
             ..self
         }
     }
 
-    pub(crate) fn last_occurred_at(self, last_occurred_at: i64) -> Self {
+    pub fn last_occurred_at(self, last_occurred_at: i64) -> Self {
         Self {
             last_occurred_at: Some(last_occurred_at),
             ..self
         }
     }
 
-    pub(crate) fn direction(self, direction: Direction) -> Self {
+    pub fn direction(self, direction: Direction) -> Self {
         Self { direction, ..self }
     }
 
-    pub(crate) fn limit(self, limit: usize) -> Self {
+    pub fn limit(self, limit: usize) -> Self {
         Self {
             limit: Some(limit),
             ..self
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
-        use quaint::ast::{Comparable, Orderable, ParameterizedValue, Select};
-        use quaint::visitor::{Postgres, Visitor};
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+        use serde_json::Value;
 
-        let mut q = Select::from_table("event").so_that("deleted_at".is_null());
-
-        if let Some(room_id) = self.room_id {
-            q = q.and_where("room_id".equals(room_id));
-        }
-
-        q = match self.kind {
-            Some(KindFilter::Single(ref kind)) => q.and_where("kind".equals(kind.as_str())),
-            Some(KindFilter::Multiple(ref kinds)) => {
-                let kinds = kinds.iter().map(|k| k.as_str()).collect::<Vec<&str>>();
-                q.and_where("kind".in_selection(kinds))
-            }
-            None => q,
+        let limit = self.limit.unwrap_or(DEFAULT_LIST_LIMIT);
+        let kinds = match self.kind {
+            Some(KindFilter::Single(ref kind)) => vec![kind.clone()],
+            Some(KindFilter::Multiple(ref kinds)) => kinds.clone(),
+            None => vec![],
         };
 
-        if let Some(set) = self.set {
-            q = q.and_where("set".equals(set));
-        }
-
-        if let Some(label) = self.label {
-            q = q.and_where("label".equals(label));
-        }
-
-        if let Some(attribute) = self.attribute {
-            q = q.and_where("attribute".equals(attribute));
-        }
-
-        if let Some(limit) = self.limit {
-            q = q.limit(limit);
-        }
-
-        q = match self.direction {
+        match self.direction {
             Direction::Forward => {
-                if let Some(last_occurred_at) = self.last_occurred_at {
-                    q = q.and_where("occurred_at".greater_than(last_occurred_at));
-                }
-
-                q.order_by("occurred_at").order_by("created_at")
+                sqlx::query_as!(
+                    Object,
+                    r#"
+                    SELECT
+                        id,
+                        room_id,
+                        kind,
+                        set,
+                        label,
+                        data                AS "data!: Value",
+                        occurred_at,
+                        created_at,
+                        deleted_at,
+                        created_by          AS "created_by!: AgentId",
+                        original_created_by AS "original_created_by!: AgentId",
+                        original_occurred_at,
+                        removed,
+                        attribute
+                    FROM event
+                    WHERE deleted_at IS NULL
+                        AND ($1::uuid IS NULL OR (room_id = $1::uuid))
+                        AND ($2::text IS NULL OR (set = $2::text))
+                        AND ($3::text IS NULL OR (label = $3::text))
+                        AND ($4::text IS NULL OR (attribute = $4::text))
+                        AND (array_length($5::text[], 1) = 0 OR (kind = ANY($5)))
+                        AND ($6::bigint IS NULL OR (occurred_at > $6::bigint))
+                    ORDER BY occurred_at ASC, created_at ASC LIMIT $7
+                    "#,
+                    self.room_id,
+                    self.set,
+                    self.label,
+                    self.attribute,
+                    kinds.as_slice(),
+                    self.last_occurred_at,
+                    limit as i64,
+                )
+                .fetch_all(conn)
+                .await
             }
             Direction::Backward => {
-                if let Some(last_occurred_at) = self.last_occurred_at {
-                    q = q.and_where("occurred_at".less_than(last_occurred_at));
-                }
-
-                q.order_by("occurred_at".descend())
-                    .order_by("created_at".descend())
-            }
-        };
-
-        let (sql, bindings) = Postgres::build(q);
-        let mut query = sqlx::query_as(&sql);
-
-        for binding in bindings {
-            query = match binding {
-                ParameterizedValue::Integer(value) => query.bind(value),
-                ParameterizedValue::Text(value) => query.bind(value.to_string()),
-                ParameterizedValue::Uuid(value) => query.bind(value),
-                _ => query,
+                sqlx::query_as!(
+                    Object,
+                    r#"
+                    SELECT
+                        id,
+                        room_id,
+                        kind,
+                        set,
+                        label,
+                        data                AS "data!: Value",
+                        occurred_at,
+                        created_at,
+                        deleted_at,
+                        created_by          AS "created_by!: AgentId",
+                        original_created_by AS "original_created_by!: AgentId",
+                        original_occurred_at,
+                        removed,
+                        attribute
+                    FROM event
+                    WHERE deleted_at IS NULL
+                        AND ($1::uuid IS NULL OR (room_id = $1::uuid))
+                        AND ($2::text IS NULL OR (set = $2::text))
+                        AND ($3::text IS NULL OR (label = $3::text))
+                        AND ($4::text IS NULL OR (attribute = $4::text))
+                        AND (array_length($5::text[], 1) = 0 OR (kind = ANY($5)))
+                        AND ($6::bigint IS NULL OR (occurred_at <= $6::bigint))
+                    ORDER BY occurred_at DESC, created_at DESC LIMIT $7
+                    "#,
+                    self.room_id,
+                    self.set,
+                    self.label,
+                    self.attribute,
+                    kinds.as_slice(),
+                    self.last_occurred_at,
+                    limit as i64,
+                )
+                .fetch_all(conn)
+                .await
             }
         }
-
-        let raw_objects: Vec<RawObject> = query.fetch_all(conn).await?;
-        let mut objects = Vec::with_capacity(raw_objects.len());
-
-        for raw in raw_objects {
-            objects.push(Object::try_from(raw)?);
-        }
-
-        Ok(objects)
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct InsertQuery {
+pub struct InsertQuery {
     room_id: Uuid,
     kind: String,
     set: String,
@@ -447,7 +467,7 @@ pub(crate) struct InsertQuery {
 }
 
 impl InsertQuery {
-    pub(crate) fn new(
+    pub fn new(
         room_id: Uuid,
         kind: String,
         data: JsonValue,
@@ -474,37 +494,37 @@ impl InsertQuery {
         })
     }
 
-    pub(crate) fn set(self, set: String) -> Self {
+    pub fn set(self, set: String) -> Self {
         Self { set, ..self }
     }
 
-    pub(crate) fn label(self, label: String) -> Self {
+    pub fn label(self, label: String) -> Self {
         Self {
             label: Some(label),
             ..self
         }
     }
 
-    pub(crate) fn attribute(self, attribute: String) -> Self {
+    pub fn attribute(self, attribute: String) -> Self {
         Self {
             attribute: Some(attribute),
             ..self
         }
     }
 
-    pub(crate) fn removed(self, removed: bool) -> Self {
+    pub fn removed(self, removed: bool) -> Self {
         Self { removed, ..self }
     }
 
     #[cfg(test)]
-    pub(crate) fn created_at(self, created_at: DateTime<Utc>) -> Self {
+    pub fn created_at(self, created_at: DateTime<Utc>) -> Self {
         Self {
             created_at: Some(created_at),
             ..self
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let raw = match self.created_at {
             Some(created_at) => {
                 sqlx::query_as!(
@@ -613,17 +633,17 @@ impl InsertQuery {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct DeleteQuery<'a> {
+pub struct DeleteQuery<'a> {
     room_id: Uuid,
     kind: &'a str,
 }
 
 impl<'a> DeleteQuery<'a> {
-    pub(crate) fn new(room_id: Uuid, kind: &'a str) -> Self {
+    pub fn new(room_id: Uuid, kind: &'a str) -> Self {
         Self { room_id, kind }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<()> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<()> {
         sqlx::query!(
             "
             DELETE FROM event
@@ -643,14 +663,14 @@ impl<'a> DeleteQuery<'a> {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct OriginalEventQuery {
+pub struct OriginalEventQuery {
     room_id: Uuid,
     set: String,
     label: String,
 }
 
 impl OriginalEventQuery {
-    pub(crate) fn new(room_id: Uuid, set: String, label: String) -> Self {
+    pub fn new(room_id: Uuid, set: String, label: String) -> Self {
         Self {
             room_id,
             set,
@@ -658,7 +678,7 @@ impl OriginalEventQuery {
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
         let raw = sqlx::query_as!(
             RawObject,
             r#"
@@ -703,14 +723,14 @@ impl OriginalEventQuery {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct VacuumQuery {
+pub struct VacuumQuery {
     max_history_size: usize,
     max_history_lifetime: Duration,
     max_deleted_lifetime: Duration,
 }
 
 impl VacuumQuery {
-    pub(crate) fn new(
+    pub fn new(
         max_history_size: usize,
         max_history_lifetime: Duration,
         max_deleted_lifetime: Duration,
@@ -722,7 +742,7 @@ impl VacuumQuery {
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<()> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<()> {
         sqlx::query!(
             r#"
             DELETE FROM event
@@ -793,7 +813,7 @@ impl AgentAction {
     }
 }
 
-pub(crate) async fn insert_agent_action(
+pub async fn insert_agent_action(
     room: &super::room::Object,
     action: AgentAction,
     agent_id: &AgentId,
@@ -821,7 +841,7 @@ pub(crate) async fn insert_agent_action(
     Ok(())
 }
 
-pub(crate) async fn insert_account_ban_event(
+pub async fn insert_account_ban_event(
     room: &super::room::Object,
     banned_user: &AccountId,
     value: bool,
