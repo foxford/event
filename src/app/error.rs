@@ -45,6 +45,10 @@ pub enum ErrorKind {
     WhiteboardAccessUpdateNotChecked,
     PayloadSizeExceeded,
     InvalidEvent,
+    NatsSubscriptionFailed,
+    InternalNatsError,
+    NatsMessageHandlingFailed,
+    NatsPublishFailed,
 }
 
 impl ErrorKind {
@@ -248,6 +252,30 @@ impl From<ErrorKind> for ErrorKindProperties {
                 title: "Invalid event",
                 is_notify_sentry: false
             },
+            ErrorKind::NatsSubscriptionFailed => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "nats_subscription_failed",
+                title: "Nats subscription failed",
+                is_notify_sentry: true
+            },
+            ErrorKind::InternalNatsError => ErrorKindProperties {
+                status: ResponseStatus::FAILED_DEPENDENCY,
+                kind: "internal_nats_error",
+                title: "Internal nats error",
+                is_notify_sentry: true
+            },
+            ErrorKind::NatsMessageHandlingFailed => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "nats_message_handling_failed",
+                title: "Nats message handling failed",
+                is_notify_sentry: true
+            },
+            ErrorKind::NatsPublishFailed => ErrorKindProperties {
+                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                kind: "nats_publish_failed",
+                title: "Nats publish failed",
+                is_notify_sentry: true
+            },
         }
     }
 }
@@ -320,6 +348,13 @@ impl Error {
             }
         }
     }
+
+    pub fn log(self) -> Self {
+        if let Some(err) = &self.err {
+            tracing::error!(%err);
+        }
+        self
+    }
 }
 
 impl fmt::Debug for Error {
@@ -355,5 +390,15 @@ pub trait ErrorExt<T> {
 impl<T, E: Into<anyhow::Error>> ErrorExt<T> for Result<T, E> {
     fn error(self, kind: ErrorKind) -> Result<T, Error> {
         self.map_err(|source| Error::new(kind, source.into()))
+    }
+}
+
+pub trait ErrorKindExt {
+    fn kind(self, kind: ErrorKind) -> Error;
+}
+
+impl ErrorKindExt for anyhow::Error {
+    fn kind(self, kind: ErrorKind) -> Error {
+        Error::new(kind, self)
     }
 }

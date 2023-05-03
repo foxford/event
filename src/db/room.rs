@@ -34,7 +34,7 @@ pub struct Object {
     whiteboard_access: HashMap<AccountId, bool>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, sqlx::FromRow)]
 struct DbObject {
     id: Uuid,
     audience: String,
@@ -354,46 +354,57 @@ impl Builder {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub(crate) struct FindQuery {
-    id: Uuid,
-    time: Option<Time>,
+    id: Option<Uuid>,
+    classroom_id: Option<Uuid>,
 }
 
 impl FindQuery {
-    pub(crate) fn new(id: Uuid) -> Self {
-        Self { id, time: None }
+    pub(crate) fn by_id(id: Uuid) -> Self {
+        Self {
+            id: Some(id),
+            ..Default::default()
+        }
+    }
+
+    pub(crate) fn by_classroom_id(classroom_id: Uuid) -> Self {
+        Self {
+            classroom_id: Some(classroom_id),
+            ..Default::default()
+        }
     }
 
     pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
-        let time: Option<PgRange<DateTime<Utc>>> = self.time.map(|t| t.into());
+        use quaint::ast::{Comparable, Select};
+        use quaint::visitor::{Postgres, Visitor};
 
-        sqlx::query_as!(
-            DbObject,
-            r#"
-            SELECT
-                id,
-                audience,
-                source_room_id,
-                time AS "time!: Time",
-                tags,
-                created_at,
-                preserve_history,
-                classroom_id,
-                locked_types,
-                validate_whiteboard_access,
-                whiteboard_access
-            FROM room
-            WHERE id = $1
-            AND   ($2::TSTZRANGE IS NULL OR time && $2::TSTZRANGE)
-            "#,
-            self.id,
-            time,
-        )
-        .fetch_optional(conn)
-        .await?
-        .map(|v| v.try_into())
-        .transpose()
+        let mut q = Select::from_table("room");
+
+        if self.id.is_some() {
+            q = q.and_where("id".equals("_placeholder_"));
+        }
+
+        if self.classroom_id.is_some() {
+            q = q.and_where("classroom_id".equals("_placeholder_"));
+        }
+
+        let (sql, _bindings) = Postgres::build(q);
+        let mut query = sqlx::query_as::<_, DbObject>(&sql);
+
+        if let Some(id) = self.id {
+            query = query.bind(id);
+        }
+
+        if let Some(classroom_id) = self.classroom_id {
+            query = query.bind(classroom_id);
+        }
+
+        query
+            .fetch_optional(conn)
+            .await?
+            .map(|v| v.try_into())
+            .transpose()
     }
 }
 

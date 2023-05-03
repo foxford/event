@@ -51,6 +51,9 @@ constraint:
   
 adjust:
   min_segment_length: "1 second"
+  
+nats: {}
+nats_consumer: {}
 
 clusterService:
   ports:

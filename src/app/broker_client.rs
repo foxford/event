@@ -110,7 +110,7 @@ impl HttpBrokerClient {
         let mut headers = header::HeaderMap::new();
         headers.insert(
             http::header::AUTHORIZATION,
-            format!("Bearer {}", token).try_into().unwrap(),
+            format!("Bearer {token}").try_into().unwrap(),
         );
         headers.insert(
             http::header::CONTENT_TYPE,

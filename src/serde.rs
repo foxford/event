@@ -170,7 +170,7 @@ pub(crate) mod milliseconds_bound_tuples {
                         elements.push((Bound::Included(lt), Bound::Excluded(rt)))
                     } else {
                         return Err(de::Error::invalid_value(
-                            de::Unexpected::Str(&format!("[{}, {}]", lt, rt)),
+                            de::Unexpected::Str(&format!("[{lt}, {rt}]")),
                             &"lt <= rt",
                         ));
                     }

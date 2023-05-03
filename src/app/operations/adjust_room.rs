@@ -4,19 +4,25 @@ use std::time::Duration as StdDuration;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
-use sqlx::postgres::{PgConnection, PgPool as Db};
+use serde_json::json;
+use sqlx::{
+    postgres::{PgConnection, PgPool as Db},
+    Acquire,
+};
 use tracing::{info, instrument};
 
-use crate::config::AdjustConfig;
-use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
-use crate::db::room_time::RoomTimeBound;
 use crate::{
-    db::adjustment::{InsertQuery as AdjustmentInsertQuery, Segments},
-    metrics::Metrics,
-};
-use crate::{
-    db::event::{DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery, Object as Event},
-    metrics::QueryKey,
+    config::AdjustConfig,
+    db::{
+        adjustment::{InsertQuery as AdjustmentInsertQuery, Segments},
+        event::{
+            DeleteQuery as EventDeleteQuery, InsertQuery as EventInsertQuery,
+            ListQuery as EventListQuery, Object as Event,
+        },
+        room::{InsertQuery as RoomInsertQuery, Object as Room},
+        room_time::RoomTimeBound,
+    },
+    metrics::{Metrics, QueryKey},
 };
 
 pub const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
@@ -122,6 +128,87 @@ pub async fn call(
 
     ///////////////////////////////////////////////////////////////////////////
 
+    // Finds events and creates the stream events for them:
+    // break(value: true)           -> stream { cut: start }
+    // break(value: false)          -> stream { cut: stop }
+    // group(group: created)        -> stream { cut: start }
+    // group(group: deleted)        -> stream { cut: stop }
+
+    // Finds break and group events
+    let query = EventListQuery::new()
+        .room_id(real_time_room.id())
+        .kinds(vec!["break".to_string(), "video_group".to_string()]);
+
+    let break_group_events = metrics
+        .measure_query(QueryKey::EventListQuery, query.execute(&mut conn))
+        .await
+        .with_context(|| {
+            format!(
+                "failed to fetch break and video group events for room_id = '{}'",
+                real_time_room.id()
+            )
+        })?;
+
+    let mut insert_queries = Vec::new();
+    for event in break_group_events {
+        let data = if event.kind() == "break" {
+            let value = event.data().get("value").and_then(|v| v.as_bool());
+            match value {
+                Some(true) => {
+                    json!({"cut": "start"})
+                }
+                Some(false) => {
+                    json!({"cut": "stop"})
+                }
+                None => continue,
+            }
+        } else {
+            let value = event.data().get("video_group").and_then(|v| v.as_str());
+            match value {
+                Some("created") => {
+                    json!({"cut": "start"})
+                }
+                Some("deleted") => {
+                    json!({"cut": "stop"})
+                }
+                _ => continue,
+            }
+        };
+
+        let q = EventInsertQuery::new(
+            real_time_room.id(),
+            "stream".to_string(),
+            data,
+            event.occurred_at(),
+            event.created_by().to_owned(),
+        )?;
+
+        insert_queries.push(q);
+    }
+
+    if !insert_queries.is_empty() {
+        let mut txn = conn
+            .begin()
+            .await
+            .context("Failed to acquire transaction")?;
+
+        for q in insert_queries {
+            metrics
+                .measure_query(QueryKey::EventInsertQuery, q.execute(&mut txn))
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed to create stream event for room_id = '{}'",
+                        real_time_room.id()
+                    )
+                })?;
+        }
+
+        txn.commit().await.context("Failed to commit transaction")?;
+    }
+
+    ///////////////////////////////////////////////////////////////////////////
+
     // Get room opening time and duration.
     let (room_opening, room_duration) = match real_time_room_new_time.end() {
         RoomTimeBound::Excluded(stop) => {
@@ -199,7 +286,7 @@ pub async fn call(
             .with_context(|| {
                 format!(
                     "failed to fetch cut events for room_id = '{}'",
-                    original_room.id()
+                    real_time_room.id()
                 )
             })?;
 
@@ -1372,7 +1459,7 @@ mod tests {
         ])
         .await;
 
-        ctx.set_segments(vec![(0, 11000), (12000, 20000)], ctx.opened_at, "0 seconds");
+        ctx.set_segments(vec![(0, 10000), (13000, 20000)], ctx.opened_at, "0 seconds");
 
         ctx.run().await;
         ctx.events_asserts(
@@ -1381,7 +1468,7 @@ mod tests {
                 (10_000_000_000, "message", json!({"message": "m2"})),
                 (12_000_000_000, "message", json!({"message": "m3"})),
             ],
-            &[(0, 10000), (12000, 19000)],
+            &[(0, 10000), (10000, 17000)],
         )
         .await;
 
@@ -1493,5 +1580,109 @@ mod tests {
         assert_eq!(event.kind(), kind);
         assert_eq!(event.data(), data);
         assert_eq!(event.occurred_at(), occurred_at);
+    }
+
+    #[tokio::test]
+    async fn adjust_room_test_break_event_as_stream_cut() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m0"})),
+            (3_000_000_000, "break", json!({"value": false})),
+            (5_000_000_000, "message", json!({"message": "m1"})),
+            (10_000_000_000, "break", json!({"value": true})),
+            (12_000_000_000, "message", json!({"message": "m2"})),
+            (13_000_000_000, "break", json!({"value": false})),
+            (15_000_000_000, "message", json!({"message": "m3"})),
+        ])
+        .await;
+
+        ctx.set_segments(vec![(0, 10000), (13000, 20000)], ctx.opened_at, "0 seconds");
+        ctx.run().await;
+
+        let mod_segments: Vec<(Bound<i64>, Bound<i64>)> = ctx.modified_segments().to_owned().into();
+        assert_eq!(
+            mod_segments.as_slice(),
+            &[
+                (Bound::Included(3000), Bound::Excluded(10000)),
+                (Bound::Included(10000), Bound::Excluded(17000))
+            ]
+        );
+
+        ctx.assert_cut_original_segments(&[(3000, 10000), (13000, 20000)])
+    }
+
+    #[tokio::test]
+    async fn adjust_room_test_video_group_event_as_stream_cut() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m1"})),
+            (
+                11_000_000_000,
+                "video_group",
+                json!({"video_group": "created"}),
+            ),
+            (12_000_000_000, "message", json!({"message": "m2"})),
+            (
+                13_000_000_000,
+                "video_group",
+                json!({"video_group": "deleted"}),
+            ),
+            (14_000_000_000, "message", json!({"message": "m3"})),
+        ])
+        .await;
+
+        ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+        ctx.run().await;
+
+        let mod_segments: Vec<(Bound<i64>, Bound<i64>)> = ctx.modified_segments().to_owned().into();
+        assert_eq!(
+            mod_segments.as_slice(),
+            &[
+                (Bound::Included(0), Bound::Excluded(11000)),
+                (Bound::Included(13000), Bound::Excluded(20000))
+            ]
+        );
+
+        ctx.assert_cut_original_segments(&[(0, 11000), (13000, 20000)])
+    }
+
+    #[tokio::test]
+    async fn adjust_room_test_break_and_video_group_events_as_stream_cut() {
+        let mut ctx = TestCtx::new(&[
+            (1_000_000_000, "message", json!({"message": "m0"})),
+            (3_000_000_000, "break", json!({"value": false})),
+            (5_000_000_000, "message", json!({"message": "m1"})),
+            (
+                7_000_000_000,
+                "video_group",
+                json!({"video_group": "created"}),
+            ),
+            (10_000_000_000, "message", json!({"message": "m2"})),
+            (
+                11_000_000_000,
+                "video_group",
+                json!({"video_group": "updated"}),
+            ),
+            (12_000_000_000, "message", json!({"message": "m3"})),
+            (
+                13_000_000_000,
+                "video_group",
+                json!({"video_group": "deleted"}),
+            ),
+            (15_000_000_000, "message", json!({"message": "m4"})),
+        ])
+        .await;
+
+        ctx.set_segments(vec![(0, 20000)], ctx.opened_at, "0 seconds");
+        ctx.run().await;
+
+        let mod_segments: Vec<(Bound<i64>, Bound<i64>)> = ctx.modified_segments().to_owned().into();
+        assert_eq!(
+            mod_segments.as_slice(),
+            &[
+                (Bound::Included(3000), Bound::Excluded(7000)),
+                (Bound::Included(13000), Bound::Excluded(20000))
+            ]
+        );
+
+        ctx.assert_cut_original_segments(&[(3000, 7000), (13000, 20000)])
     }
 }
