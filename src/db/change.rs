@@ -337,8 +337,8 @@ impl ListQuery {
                 created_at
             FROM change
             WHERE edition_id = $1
-                AND ($2::text IS NULL OR (event_kind = $2::text))
-                AND ($3::timestamp IS NULL OR (created_at > $3::timestamp))
+                AND ($2::text IS NULL OR event_kind = $2)
+                AND ($3::timestamp IS NULL OR created_at > $3)
             ORDER BY created_at DESC LIMIT $4
             "#,
             self.id,

@@ -386,21 +386,22 @@ impl<'a> ListQuery<'a> {
                         attribute
                     FROM event
                     WHERE deleted_at IS NULL
-                        AND ($1::uuid IS NULL OR (room_id = $1::uuid))
-                        AND ($2::text IS NULL OR (set = $2::text))
-                        AND ($3::text IS NULL OR (label = $3::text))
-                        AND ($4::text IS NULL OR (attribute = $4::text))
-                        AND (array_length($5::text[], 1) = 0 OR (kind = ANY($5)))
-                        AND ($6::bigint IS NULL OR (occurred_at > $6::bigint))
-                    ORDER BY occurred_at ASC, created_at ASC LIMIT $7
+                        AND ($2::uuid IS NULL OR room_id = $2)
+                        AND ($3::text IS NULL OR event.attribute = $3)
+                        AND (array_length($4::text[], 1) IS NULL OR kind = ANY($4))
+                        AND ($5::bigint IS NULL OR occurred_at > $5)
+                        AND ($6::text IS NULL OR set = $6)
+                        AND ($7::text IS NULL OR label = $7)
+                    ORDER BY occurred_at ASC, created_at ASC
+                    LIMIT $1
                     "#,
+                    limit as i64,
                     self.room_id,
-                    self.set,
-                    self.label,
                     self.attribute,
                     kinds.as_slice(),
                     self.last_occurred_at,
-                    limit as i64,
+                    self.set,
+                    self.label,
                 )
                 .fetch_all(conn)
                 .await
@@ -426,21 +427,22 @@ impl<'a> ListQuery<'a> {
                         attribute
                     FROM event
                     WHERE deleted_at IS NULL
-                        AND ($1::uuid IS NULL OR (room_id = $1::uuid))
-                        AND ($2::text IS NULL OR (set = $2::text))
-                        AND ($3::text IS NULL OR (label = $3::text))
-                        AND ($4::text IS NULL OR (attribute = $4::text))
-                        AND (array_length($5::text[], 1) = 0 OR (kind = ANY($5)))
-                        AND ($6::bigint IS NULL OR (occurred_at <= $6::bigint))
-                    ORDER BY occurred_at DESC, created_at DESC LIMIT $7
+                        AND ($2::uuid IS NULL OR room_id = $2)
+                        AND ($3::text IS NULL OR attribute = $3)
+                        AND (array_length($4::text[], 1) IS NULL OR kind = ANY($4))
+                        AND ($5::bigint IS NULL OR occurred_at < $5)
+                        AND ($6::text IS NULL OR set = $6)
+                        AND ($7::text IS NULL OR label = $7)
+                    ORDER BY occurred_at DESC, created_at DESC
+                    LIMIT $1
                     "#,
+                    limit as i64,
                     self.room_id,
-                    self.set,
-                    self.label,
                     self.attribute,
                     kinds.as_slice(),
                     self.last_occurred_at,
-                    limit as i64,
+                    self.set,
+                    self.label,
                 )
                 .fetch_all(conn)
                 .await

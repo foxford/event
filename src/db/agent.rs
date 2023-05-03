@@ -107,9 +107,9 @@ impl ListQuery {
                 status              AS "status!: Status",
                 created_at
             FROM agent
-            WHERE ($1::agent_id IS NULL OR (agent_id = $1::agent_id))
-                AND ($2::uuid IS NULL OR (room_id = $2::uuid))
-                AND ($3::agent_status IS NULL OR (status > $3::agent_status))
+            WHERE ($1::agent_id IS NULL OR agent_id = $1)
+                AND ($2::uuid IS NULL OR room_id = $2)
+                AND ($3::agent_status IS NULL OR status > $3)
             ORDER BY created_at DESC LIMIT $4 OFFSET $5
             "#,
             self.agent_id as Option<AgentId>,

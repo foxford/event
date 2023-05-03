@@ -19,19 +19,19 @@ use crate::{
     metrics::QueryKey,
 };
 
-pub(crate) const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
+pub const NANOSECONDS_IN_MILLISECOND: i64 = 1_000_000;
 
 ////////////////////////////////////////////////////////////////////////////////
 
 pub struct AdjustOutput {
     // Original room - with events shifted into video segments
-    pub(crate) original_room: Room,
+    pub original_room: Room,
     // Modified room - same as original but has cut-start & cut-stop events applied
-    pub(crate) modified_room: Room,
+    pub modified_room: Room,
     // Modified segments with applied cut-starts and cut-stops - used for webinars
-    pub(crate) modified_segments: Segments,
+    pub modified_segments: Segments,
     // Initial video segments but with applied cut-starts and cut-stops - used for minigroups
-    pub(crate) cut_original_segments: Segments,
+    pub cut_original_segments: Segments,
 }
 
 #[instrument(
@@ -43,7 +43,7 @@ pub struct AdjustOutput {
         offset = ?offset,
     )
 )]
-pub(crate) async fn call(
+pub async fn call(
     db: &Db,
     metrics: &Metrics,
     real_time_room: &Room,
@@ -433,7 +433,7 @@ async fn clone_events(
 }
 
 /// Turns `segments` into gaps.
-pub(crate) fn invert_segments(
+pub fn invert_segments(
     segments: &[(i64, i64)],
     room_duration: Duration,
     min_segment_length: StdDuration,
@@ -480,7 +480,7 @@ enum CutEventsToGapsState {
 }
 
 /// Transforms cut-start/stop events ordered list to gaps list with a simple FSM.
-pub(crate) fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>> {
+pub fn cut_events_to_gaps(cut_events: &[Event]) -> Result<Vec<(i64, i64)>> {
     let mut gaps = Vec::with_capacity(cut_events.len());
     let mut state: CutEventsToGapsState = CutEventsToGapsState::Started(0);
 
@@ -661,7 +661,10 @@ mod tests {
             let db = TestDb::new().await;
             let metrics = Metrics::new(&Registry::new()).unwrap();
             let mut conn = db.get_conn().await;
-            let opened_at = DateTime::from_utc(NaiveDateTime::from_timestamp(1582002673, 0), Utc);
+            let opened_at = DateTime::from_utc(
+                NaiveDateTime::from_timestamp_opt(1582002673, 0).unwrap(),
+                Utc,
+            );
             let time = RoomTime::from((Bound::Included(opened_at), Bound::Unbounded));
 
             let room = RoomInsertQuery::new(AUDIENCE, time, uuid::Uuid::new_v4())
