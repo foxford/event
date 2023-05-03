@@ -21,17 +21,17 @@ use crate::db::adjustment::Segments;
 
 pub(crate) struct CommitHandler;
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub struct CommitPayload {
     #[serde(default)]
-    offset: i64,
+    pub(crate) offset: i64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 pub(crate) struct CommitRequest {
-    id: Uuid,
+    pub id: Uuid,
     #[serde(flatten)]
-    payload: CommitPayload,
+    pub payload: CommitPayload,
 }
 
 pub async fn commit(
@@ -128,7 +128,7 @@ impl RequestHandler for CommitHandler {
 
             // Publish success/failure notification.
             let notification = EditionCommitNotification {
-                status: result.status(),
+                status: result.status().to_string(),
                 tags: room.tags().map(|t| t.to_owned()),
                 result,
             };
@@ -156,18 +156,18 @@ impl RequestHandler for CommitHandler {
     }
 }
 
-#[derive(Serialize)]
-struct EditionCommitNotification {
-    status: &'static str,
+#[derive(Serialize, Deserialize)]
+pub(crate) struct EditionCommitNotification {
+    pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    tags: Option<JsonValue>,
+    pub tags: Option<JsonValue>,
     #[serde(flatten)]
-    result: EditionCommitResult,
+    pub result: EditionCommitResult,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 #[serde(untagged)]
-enum EditionCommitResult {
+pub(crate) enum EditionCommitResult {
     Success {
         source_room_id: Uuid,
         committed_room_id: Uuid,
@@ -175,6 +175,8 @@ enum EditionCommitResult {
         modified_segments: Segments,
     },
     Error {
+        // хак для того что-бы добавить Deserialize, нужно для тестов
+        #[serde(skip_deserializing, default = "default_svc_error")]
         error: SvcError,
     },
 }
@@ -186,4 +188,8 @@ impl EditionCommitResult {
             Self::Error { .. } => "error",
         }
     }
+}
+
+fn default_svc_error() -> SvcError {
+    SvcError::builder().build()
 }
