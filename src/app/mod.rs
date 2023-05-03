@@ -107,21 +107,40 @@ pub(crate) async fn run(
 
     let metrics = context.metrics();
 
-    let (graceful_tx, graceful_rx) = tokio::sync::oneshot::channel();
+    let ctx = Arc::new(context.clone());
+    let (graceful_tx, graceful_rx) = tokio::sync::watch::channel(());
+    let mut shutdown_server_rx = graceful_rx.clone();
     let http_task = tokio::spawn(
         axum::Server::bind(&config.http_addr)
             .serve(
-                build_router(
-                    Arc::new(context.clone()),
-                    agent.clone(),
-                    config.authn.clone(),
-                )
-                .into_make_service(),
+                build_router(ctx.clone(), agent.clone(), config.authn.clone()).into_make_service(),
             )
             .with_graceful_shutdown(async move {
-                let _ = graceful_rx.await;
+                shutdown_server_rx.changed().await.ok();
             }),
     );
+
+    let nats_consumer = match config.nats.zip(config.nats_consumer) {
+        Some((nats_cfg, nats_consumer_cfg)) => {
+            let nats_client = svc_nats_client::Client::new(nats_cfg)
+                .await
+                .context("nats client")?;
+            info!("Connected to nats");
+
+            let nats_consumer = nats_consumer::run(
+                ctx.clone(),
+                nats_client,
+                nats_consumer_cfg,
+                graceful_rx.clone(),
+            )
+            .await
+            .context("nats consumer")?;
+            info!("Nats consumer started");
+
+            Some(nats_consumer)
+        }
+        None => None,
+    };
 
     // Message handler
     let message_handler = Arc::new(MessageHandler::new(agent.clone(), context, dispatcher));
@@ -135,6 +154,12 @@ pub(crate) async fn run(
     unsubscribe(&mut agent, &agent_id)?;
 
     let _ = graceful_tx.send(());
+
+    if let Some(consumer) = nats_consumer {
+        if let Err(err) = consumer.await {
+            error!(%err, "failed to await nats consumer completion");
+        }
+    }
 
     if let Some(metrics_task) = metrics_task {
         metrics_task.shutdown().await;
@@ -262,12 +287,13 @@ fn build_broker_client(config: &Config, token: &str) -> Arc<dyn BrokerClient> {
     )
 }
 
-pub mod broker_client;
+pub(crate) mod broker_client;
 pub(crate) mod context;
 pub(crate) mod endpoint;
 pub(crate) mod error;
 pub(crate) mod http;
 pub(crate) mod message_handler;
+pub(crate) mod nats_consumer;
 pub(crate) mod operations;
 pub(crate) mod s3_client;
 pub(crate) mod service_utils;

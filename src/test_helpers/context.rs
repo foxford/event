@@ -7,13 +7,16 @@ use sqlx::postgres::PgPool as Db;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 
-use crate::app::broker_client::{BrokerClient, MockBrokerClient};
-use crate::config::Config;
 use crate::{
-    app::context::{Context, GlobalContext, MessageContext},
+    app::{
+        broker_client::{BrokerClient, MockBrokerClient},
+        context::{Context, GlobalContext, MessageContext},
+        s3_client::S3Client,
+    },
+    authz::Authz,
+    config::Config,
     metrics::Metrics,
 };
-use crate::{app::s3_client::S3Client, authz::Authz};
 
 use super::authz::{DbBanTestAuthz, TestAuthz};
 use super::db::TestDb;
