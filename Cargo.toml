@@ -2,7 +2,7 @@
 authors = ["Timofey Martynov <t.martinov@netology-group.ru>"]
 edition = "2021"
 name = "event"
-version = "0.2.71"
+version = "0.2.72"
 
 [dependencies]
 anyhow = "1"
@@ -27,22 +27,24 @@ reqwest = "0.11"
 rusoto_core = "0.47"
 rusoto_credential = "0.47"
 rusoto_s3 = "0.47"
-sentry = { version = "0.23", default-features = true }
+sentry = "0.29"
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
-serde_qs = "0.8.5"
+serde_qs = "0.11"
 signal-hook = "0.3"
 signal-hook-tokio = { version = "0.3", features = ["futures-v0_3"] }
 sqlx = { version = "0.5", features = ["offline", "postgres", "macros", "uuid", "chrono", "json", "bigdecimal", "runtime-tokio-native-tls"] }
 svc-agent = { version = "0.19", features = ["sqlx", "queue-counter"] }
 svc-authn = { version = "0.7", features = ["jose", "sqlx"] }
 svc-authz = "0.11"
+svc-conference-events = "0.2"
 svc-error = { version = "0.4", features = ["sqlx", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
+svc-nats-client = "0.1"
 svc-utils = { version = "0.4", features = ["authn-extractor", "cors-middleware", "log-middleware"] }
 tokio = { version = "1.14", features = ["full"] }
 tower = "0.4"
-tower-http = { version = "0.2", features = ["trace"] }
+tower-http = { version = "0.3", features = ["trace"] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-attributes  = "0.1"
@@ -60,9 +62,9 @@ optional = true
 [dev-dependencies]
 hex = "0.4.3"
 humantime = "2.1.0"
-mockall = "0.10"
+mockall = "0.11"
 rusoto_mock = "0.47"
-serial_test = "0.8"
+serial_test = "1.0"
 
 [profile.release]
 debug = true

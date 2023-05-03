@@ -28,6 +28,26 @@ data:
     keep_alive = 15
     max_message_size = 5000000
 
+    {{- with .Values.nats }}
+    {{- println "" }}
+    [nats]
+    url = {{ .url | quote }}
+    creds = {{ .creds | quote }}
+    subscribe.stream = {{ .subscribe.stream | quote }}
+    subscribe.consumer = {{ .subscribe.consumer | quote }}
+    subscribe.batch = {{ .subscribe.batch }}
+    subscribe.idle_heartbeat = {{ .subscribe.idle_heartbeat | quote }}
+    {{- end }}
+
+    {{- with .Values.nats_consumer }}
+    {{- println "" }}
+    [nats_consumer]
+    suspend_interval = {{ .suspend_interval | quote }}
+    max_suspend_interval = {{ .max_suspend_interval | quote }}
+    suspend_sentry_interval = {{ .suspend_sentry_interval | quote }}
+    resubscribe_interval = {{ .resubscribe_interval | quote }}
+    {{- end }}
+
     [sentry]
     dsn = {{ .Values.sentry.dsn | quote }}
     environment = {{ .Release.Namespace | quote }}

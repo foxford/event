@@ -189,7 +189,7 @@ impl std::fmt::Display for Error {
             Error::MissingPath => "missing path for path event",
         };
 
-        write!(f, "{:?}", disp)
+        write!(f, "{disp:?}")
     }
 }
 

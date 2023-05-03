@@ -36,7 +36,7 @@ impl<B: DeserializeOwned> sqlx::Decode<'_, sqlx::Postgres> for PostcardBin<B> {
 
         let value: B = {
             postcard::from_bytes(&bytes)
-                .map_err(|err| format!("failed to decode postcard binary: {}", err))?
+                .map_err(|err| format!("failed to decode postcard binary: {err}"))?
         };
 
         Ok(PostcardBin::new(value))

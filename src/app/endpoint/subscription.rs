@@ -94,7 +94,7 @@ impl EventHandler for DeleteEventHandler {
             return Ok(Box::new(stream::empty()));
         }
         let mut conn = context.get_conn().await?;
-        let room = room::FindQuery::new(room_id)
+        let room = room::FindQuery::by_id(room_id)
             .execute(&mut conn)
             .await
             .context("Failed to find room")
@@ -120,7 +120,7 @@ impl EventHandler for DeleteEventHandler {
         let start_timestamp = context.start_timestamp();
         let short_term_timing = ShortTermTimingProperties::until_now(start_timestamp);
         let props = evp.to_event("room.leave", short_term_timing);
-        let to_uri = format!("rooms/{}/events", room_id);
+        let to_uri = format!("rooms/{room_id}/events");
         let outgoing_event = OutgoingEvent::broadcast(outgoing_event_payload, props, &to_uri);
         let boxed_event = Box::new(outgoing_event) as Box<_>;
         Ok(Box::new(stream::once(future::ready(boxed_event))))
