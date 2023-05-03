@@ -7,3 +7,5 @@ docker/backend_db/data
 /benchmarks/target
 .idea
 .env
+nats.creds
+
