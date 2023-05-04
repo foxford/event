@@ -31,12 +31,7 @@ pub struct InsertQuery {
 }
 
 impl InsertQuery {
-    pub fn new(
-        room_id: Uuid,
-        started_at: DateTime<Utc>,
-        segments: Segments,
-        offset: i64,
-    ) -> Self {
+    pub fn new(room_id: Uuid, started_at: DateTime<Utc>, segments: Segments, offset: i64) -> Self {
         Self {
             room_id,
             started_at,
