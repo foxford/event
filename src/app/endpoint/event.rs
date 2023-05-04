@@ -101,8 +101,8 @@ impl RequestHandler for CreateHandler {
                     label: Some(ref label),
                     ..
                 } => {
-                    Span::current().record("set", &set.as_str());
-                    Span::current().record("set_label", &label.as_str());
+                    Span::current().record("set", set.as_str());
+                    Span::current().record("set_label", label.as_str());
 
                     let query = db::event::OriginalEventQuery::new(
                         room.id(),

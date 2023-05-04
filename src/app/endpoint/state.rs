@@ -124,7 +124,7 @@ impl RequestHandler for ReadHandler {
         let mut conn = context.get_ro_conn().await?;
 
         for set in payload.sets.iter() {
-            Span::current().record("set", &set.as_str());
+            Span::current().record("set", set.as_str());
 
             // Build a query for the particular set state.
             let mut query =
