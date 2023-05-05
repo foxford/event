@@ -8,3 +8,4 @@ docker/backend_db/data
 .idea
 .env
 nats.creds
+App.toml

@@ -61,16 +61,12 @@ pub struct JwtConfig {
     pub key: Vec<u8>,
 }
 
-pub(crate) fn load() -> Result<Config, config::ConfigError> {
-    let parser = config::Config::builder()
+pub fn load() -> Result<Config, config::ConfigError> {
+    config::Config::builder()
         .add_source(config::File::with_name("App"))
-        .add_source(
-            config::Environment::with_prefix("APP")
-                .try_parsing(true)
-                .separator("__"),
-        )
-        .build()?;
-    parser.try_deserialize()
+        .add_source(config::Environment::with_prefix("APP"))
+        .build()
+        .and_then(|c| c.try_deserialize::<Config>())
 }
 
 #[derive(Clone, Debug, Deserialize)]
