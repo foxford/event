@@ -57,11 +57,6 @@ impl AgentWithBan {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-// это не мертвый код, он используется в методе ListQuery::execute
-// но по какой то причине определяется анализатором как мертвый
-#[allow(dead_code)]
-const DEFAULT_LIST_LIMIT: usize = 1000;
-
 #[cfg(test)]
 #[derive(Debug)]
 pub struct ListQuery {
@@ -69,7 +64,7 @@ pub struct ListQuery {
     room_id: Option<Uuid>,
     status: Option<Status>,
     offset: Option<usize>,
-    limit: Option<usize>,
+    limit: Option<i64>,
 }
 
 #[cfg(test)]
@@ -99,7 +94,6 @@ impl ListQuery {
     }
 
     pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
-        let limit = self.limit.unwrap_or(DEFAULT_LIST_LIMIT);
         let offset = self.offset.unwrap_or(0);
         sqlx::query_as!(
             Object,
@@ -119,7 +113,7 @@ impl ListQuery {
             self.agent_id as Option<AgentId>,
             self.room_id,
             self.status as Option<Status>,
-            limit as i64,
+            self.limit,
             offset as i64,
         )
         .fetch_all(conn)
