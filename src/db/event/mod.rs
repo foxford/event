@@ -268,7 +268,7 @@ impl Default for Direction {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-const DEFAULT_LIST_LIMIT: usize = 1000;
+const DEFAULT_LIST_LIMIT: usize = 100;
 
 #[derive(Debug)]
 enum KindFilter {
@@ -356,17 +356,22 @@ impl<'a> ListQuery<'a> {
     pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
         use serde_json::Value;
 
+        // для запросов, которые могут вернуть большое кол-во строк лучше всегда использовать какой-то дефолтный LIMIT
+        // иначе клиент может выбрать млн. строк и на сервере закончится память
         let limit = self.limit.unwrap_or(DEFAULT_LIST_LIMIT);
+        // приводим все случае к списку kinds, если условие нужно игнорировать то это пустой список
+        // (array_length($4::text[], 1) IS NULL - это аналог $4 IS NULL для списков
+        // kind = ANY($4) это аналог конструкции kind IN ($4)
         let kinds = match self.kind {
             Some(KindFilter::Single(ref kind)) => vec![kind.clone()],
             Some(KindFilter::Multiple(ref kinds)) => kinds.clone(),
             None => vec![],
         };
 
-        match self.direction {
+        let raw_objects = match self.direction {
             Direction::Forward => {
                 sqlx::query_as!(
-                    Object,
+                    RawObject,
                     r#"
                     SELECT
                         id,
@@ -374,7 +379,7 @@ impl<'a> ListQuery<'a> {
                         kind,
                         set,
                         label,
-                        data                AS "data!: Value",
+                        data                AS "data?: Value",
                         occurred_at,
                         created_at,
                         deleted_at,
@@ -382,7 +387,8 @@ impl<'a> ListQuery<'a> {
                         original_created_by AS "original_created_by!: AgentId",
                         original_occurred_at,
                         removed,
-                        attribute
+                        attribute,
+                        binary_data         AS "binary_data?: PostcardBin<CompactEvent>"
                     FROM event
                     WHERE deleted_at IS NULL
                         AND ($2::uuid IS NULL OR room_id = $2)
@@ -407,7 +413,7 @@ impl<'a> ListQuery<'a> {
             }
             Direction::Backward => {
                 sqlx::query_as!(
-                    Object,
+                    RawObject,
                     r#"
                     SELECT
                         id,
@@ -415,7 +421,7 @@ impl<'a> ListQuery<'a> {
                         kind,
                         set,
                         label,
-                        data                AS "data!: Value",
+                        data                AS "data?: Value",
                         occurred_at,
                         created_at,
                         deleted_at,
@@ -423,7 +429,8 @@ impl<'a> ListQuery<'a> {
                         original_created_by AS "original_created_by!: AgentId",
                         original_occurred_at,
                         removed,
-                        attribute
+                        attribute,
+                        binary_data         AS "binary_data?: PostcardBin<CompactEvent>"
                     FROM event
                     WHERE deleted_at IS NULL
                         AND ($2::uuid IS NULL OR room_id = $2)
@@ -446,7 +453,15 @@ impl<'a> ListQuery<'a> {
                 .fetch_all(conn)
                 .await
             }
+        }?;
+
+        let mut objects = Vec::with_capacity(raw_objects.len());
+
+        for raw in raw_objects {
+            objects.push(Object::try_from(raw)?);
         }
+
+        Ok(objects)
     }
 }
 

@@ -805,18 +805,13 @@ mod tests {
 
     #[tokio::test]
     async fn commit_edition_with_min_segment_length() {
-        use core::ops::Add;
         let db = TestDb::new().await;
         let mut conn = db.get_conn().await;
         let classroom_id = uuid::Uuid::new_v4();
-        let t1 = Utc
-            .with_ymd_and_hms(2022, 12, 29, 11, 00, 57)
-            .unwrap()
-            .add(Duration::milliseconds(88));
-        let t2 = Utc
-            .with_ymd_and_hms(2022, 12, 29, 11, 39, 22)
-            .unwrap()
-            .add(Duration::milliseconds(888));
+        let t1 =
+            Utc.with_ymd_and_hms(2022, 12, 29, 11, 00, 57).unwrap() + Duration::milliseconds(88);
+        let t2 =
+            Utc.with_ymd_and_hms(2022, 12, 29, 11, 39, 22).unwrap() + Duration::milliseconds(888);
         let room_duration = t2.signed_duration_since(t1);
 
         let room = factory::Room::new(classroom_id)

@@ -102,6 +102,7 @@ pub fn build_router(
         .layer(svc_utils::middleware::CorsLayer)
         .layer(Extension(agent))
         .layer(Extension(Arc::new(authn)))
+        .layer(Extension(context.clone()))
         .with_state(context);
 
     let routes = Router::new().nest("/api/v1", router);
