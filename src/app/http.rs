@@ -5,13 +5,13 @@ use std::{
 
 use axum::{
     response::IntoResponse,
-    routing::{delete, get, options, post},
+    routing::{delete, get, post},
     Extension, Json, Router,
 };
 
 use futures::{future::BoxFuture, StreamExt};
 use futures_util::pin_mut;
-use http::{Request, Response, StatusCode};
+use http::{Request, Response};
 use hyper::Body;
 use svc_agent::mqtt::Agent;
 use tower::{layer::layer_fn, Service};
