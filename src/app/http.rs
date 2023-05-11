@@ -5,20 +5,22 @@ use std::{
 
 use axum::{
     response::IntoResponse,
-    routing::{delete, get, post},
+    routing::{delete, get, options, post},
     Extension, Json, Router,
 };
 
 use futures::{future::BoxFuture, StreamExt};
 use futures_util::pin_mut;
-use http::{Request, Response};
+use http::{Request, Response, StatusCode};
 use hyper::Body;
 use svc_agent::mqtt::Agent;
 use tower::{layer::layer_fn, Service};
 use tracing::error;
 
-use crate::app::message_handler::MessageStream;
-use crate::app::{message_handler::publish_message, service_utils};
+use crate::app::{
+    message_handler::{publish_message, MessageStream},
+    service_utils,
+};
 
 use super::{
     context::{AppContext, GlobalContext},
@@ -26,12 +28,24 @@ use super::{
     error::{Error as AppError, ErrorKind},
 };
 
+pub async fn cors_options() -> impl IntoResponse {
+    (
+        StatusCode::NO_CONTENT,
+        [
+            ("Access-Control-Allow-Origin", "*"),
+            ("Access-Control-Allow-Methods", "POST, GET, DELETE, OPTIONS"),
+        ],
+    )
+}
+
 pub fn build_router(
     context: Arc<AppContext>,
     agent: Agent,
     authn: svc_authn::jose::ConfigMap,
 ) -> Router {
     let router = Router::new()
+        .route("/", options(cors_options))
+        .route("/*", options(cors_options))
         .route("/rooms", post(endpoint::room::create))
         .route(
             "/rooms/:id",
@@ -99,7 +113,7 @@ pub fn build_router(
         )
         .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
         .layer(layer_fn(|inner| MetricsMiddleware { inner }))
-        .layer(svc_utils::middleware::CorsLayer)
+        //.layer(svc_utils::middleware::CorsLayer)
         .layer(Extension(agent))
         .layer(Extension(Arc::new(authn)))
         .layer(Extension(context.clone()))
