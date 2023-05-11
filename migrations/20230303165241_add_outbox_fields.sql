@@ -1,12 +1,17 @@
 alter table event
-    add source_command_id uuid;
+    add if not exists source_command_id uuid;
 
 alter table event
-    add entity_type text;
+    add if not exists entity_type text;
 
 alter table event
-    add entity_event_id bigint;
+    add if not exists entity_event_id bigint;
 
-alter table event
-    add constraint uniq_entity_type_entity_event_id
-        unique (entity_type, entity_event_id);
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_constraint 
+                   WHERE conname = 'uniq_entity_type_entity_event_id') THEN 
+            alter table event
+                add constraint uniq_entity_type_entity_event_id
+                unique (entity_type, entity_event_id);
+    END IF;
+END $$;
