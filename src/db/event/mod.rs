@@ -268,7 +268,7 @@ impl Default for Direction {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-const DEFAULT_LIST_LIMIT: usize = 100;
+const DEFAULT_LIST_LIMIT: usize = 10000;
 
 #[derive(Debug)]
 enum KindFilter {
