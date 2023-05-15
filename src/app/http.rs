@@ -49,16 +49,15 @@ pub fn build_router(
             HeaderName::from_static("x-agent-label"),
         ])
         .max_age(std::time::Duration::from_secs(3600))
-        //.allow_credentials(true)
         .allow_origin(Any);
 
-    let service = ServiceBuilder::new()
-        .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
-        .layer(layer_fn(|inner| MetricsMiddleware { inner }))
-        .layer(cors)
+    let middleware = ServiceBuilder::new()
         .layer(Extension(agent))
         .layer(Extension(Arc::new(authn)))
-        .layer(Extension(context.clone()));
+        .layer(Extension(context.clone()))
+        .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
+        .layer(layer_fn(|inner| MetricsMiddleware { inner }))
+        .layer(cors);
 
     let router = Router::new()
         .route("/rooms", post(endpoint::room::create))
@@ -126,7 +125,7 @@ pub fn build_router(
             "/changes/:id",
             delete(endpoint::change::delete).options(endpoint::read_options),
         )
-        .layer(service)
+        .layer(middleware)
         .with_state(context);
 
     let routes = Router::new().nest("/api/v1", router);

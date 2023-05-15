@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::ops::Bound;
 use std::sync::Arc;
 
-use crate::app::extractors::AgentIdExtractor;
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
@@ -18,6 +17,7 @@ use svc_agent::{
     AccountId, Addressable, AgentId,
 };
 use svc_error::Error as SvcError;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::{error, info, instrument};
 use uuid::Uuid;
 

@@ -291,7 +291,6 @@ pub mod broker_client;
 pub mod context;
 pub mod endpoint;
 pub mod error;
-pub mod extractors;
 pub mod http;
 pub mod message_handler;
 pub mod nats_consumer;
