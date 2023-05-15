@@ -38,7 +38,7 @@ pub fn build_router(
     authn: svc_authn::jose::ConfigMap,
 ) -> Router {
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST, Method::DELETE])
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
         .allow_headers([
             AUTHORIZATION,
             CONTENT_TYPE,
