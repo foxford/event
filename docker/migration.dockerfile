@@ -1,4 +1,4 @@
-FROM rust:1.67.0-slim-buster
+FROM rust:1.68.0-slim-buster
 
 RUN apt update && apt install -y --no-install-recommends \
   pkg-config \

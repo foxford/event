@@ -17,7 +17,7 @@ label            | string             | _optional_ | Collection item's filter.
 attribute        | string             | _optional_ | Attribute filter.
 last_occurred_at | int                | _optional_ | `occurred_at` value of the last seen event on the previous page in nanoseconds.
 direction        | string             |    forward | Pagination direction: forward | backward.
-limit            | int                |        100 | Limits the number of events in the response.
+limit            | int                |       100к | Limits the number of events in the response.
 
 ## Unicast response
 

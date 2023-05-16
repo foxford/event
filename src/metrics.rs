@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Arc};
 
-use enum_iterator::IntoEnumIterator;
+use enum_iterator::{all, Sequence};
 use futures::Future;
 use parking_lot::RwLock;
 use prometheus::{
@@ -14,7 +14,7 @@ use crate::app::endpoint;
 use crate::app::error::ErrorKind;
 
 #[allow(clippy::enum_variant_names)]
-#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, IntoEnumIterator)]
+#[derive(Clone, Copy, Eq, PartialEq, Hash, Serialize, Sequence)]
 #[serde(rename_all = "snake_case")]
 pub enum QueryKey {
     AdjustmentInsertQuery,
@@ -98,7 +98,7 @@ impl Metrics {
             request_duration_vec: request_duration,
             total_requests,
             app_result_ok: request_stats.get_metric_with_label_values(&["ok"])?,
-            app_results_errors: ErrorKind::into_enum_iter()
+            app_results_errors: all::<ErrorKind>()
                 .map(|kind| {
                     Ok((
                         kind,
@@ -111,7 +111,7 @@ impl Metrics {
                 .get_metric_with_label_values(&["connection_error"])?,
             mqtt_disconnect: mqtt_errors.get_metric_with_label_values(&["disconnect"])?,
             mqtt_reconnection: mqtt_errors.get_metric_with_label_values(&["reconnect"])?,
-            db_duration: QueryKey::into_enum_iter()
+            db_duration: all::<QueryKey>()
                 .map(|kind| {
                     Ok((
                         kind,

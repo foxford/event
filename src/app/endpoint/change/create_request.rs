@@ -19,6 +19,7 @@ pub enum Changeset {
     Addition(AdditionData),
     Modification(ModificationData),
     Removal(RemovalData),
+    BulkRemoval(BulkRemovalData),
 }
 
 impl Changeset {
@@ -27,6 +28,7 @@ impl Changeset {
             Changeset::Addition(_) => ChangeType::Addition,
             Changeset::Modification(_) => ChangeType::Modification,
             Changeset::Removal(_) => ChangeType::Removal,
+            Changeset::BulkRemoval(_) => ChangeType::BulkRemoval,
         }
     }
 }
@@ -63,4 +65,9 @@ pub struct RemovalData {
     pub kind: Option<String>,
     pub set: Option<String>,
     pub occurred_at: Option<i64>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BulkRemovalData {
+    pub set: String,
 }

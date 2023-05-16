@@ -19,8 +19,11 @@ alter table event
 alter table event
     add if not exists entity_event_id bigint;
 
-create unique index if not exists event_entity_type_entity_event_id_idx on event (entity_type, entity_event_id);
-
-alter table event
-    drop constraint if exists uniq_entity_type_entity_event_id,
-    add constraint uniq_entity_type_entity_event_id unique using index event_entity_type_entity_event_id_idx;
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT FROM pg_constraint 
+                   WHERE conname = 'uniq_entity_type_entity_event_id') THEN 
+            alter table event
+                add constraint uniq_entity_type_entity_event_id
+                unique (entity_type, entity_event_id);
+    END IF;
+END $$;

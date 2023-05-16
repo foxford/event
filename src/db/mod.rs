@@ -12,7 +12,7 @@ pub(crate) async fn create_pool(
     PgPoolOptions::new()
         .max_connections(size)
         .min_connections(idle_size.unwrap_or(1))
-        .connect_timeout(Duration::from_secs(timeout))
+        .acquire_timeout(Duration::from_secs(timeout))
         .max_lifetime(Duration::from_secs(max_lifetime))
         .connect(url)
         .await

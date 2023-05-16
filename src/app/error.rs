@@ -1,4 +1,4 @@
-use enum_iterator::IntoEnumIterator;
+use enum_iterator::Sequence;
 use std::fmt;
 use std::sync::Arc;
 
@@ -14,7 +14,7 @@ struct ErrorKindProperties {
     is_notify_sentry: bool,
 }
 
-#[derive(Debug, Clone, Copy, IntoEnumIterator, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Sequence, Hash, PartialEq, Eq)]
 pub enum ErrorKind {
     AccessDenied,
     AgentNotEnteredTheRoom,

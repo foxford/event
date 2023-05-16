@@ -9,7 +9,7 @@ use uuid::Uuid;
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug, Serialize)]
-pub(crate) struct Object {
+pub struct Object {
     room_id: Uuid,
     #[serde(with = "ts_seconds")]
     started_at: DateTime<Utc>,
@@ -23,7 +23,7 @@ pub(crate) struct Object {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct InsertQuery {
+pub struct InsertQuery {
     room_id: Uuid,
     started_at: DateTime<Utc>,
     segments: Segments,
@@ -31,12 +31,7 @@ pub(crate) struct InsertQuery {
 }
 
 impl InsertQuery {
-    pub(crate) fn new(
-        room_id: Uuid,
-        started_at: DateTime<Utc>,
-        segments: Segments,
-        offset: i64,
-    ) -> Self {
+    pub fn new(room_id: Uuid, started_at: DateTime<Utc>, segments: Segments, offset: i64) -> Self {
         Self {
             room_id,
             started_at,
@@ -45,7 +40,7 @@ impl InsertQuery {
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         sqlx::query_as!(
             Object,
             r#"
@@ -76,7 +71,7 @@ type BoundedOffsetTuples = Vec<(Bound<i64>, Bound<i64>)>;
 #[sqlx(transparent)]
 #[serde(from = "BoundedOffsetTuples")]
 #[serde(into = "BoundedOffsetTuples")]
-pub(crate) struct Segments(Vec<PgRange<i64>>);
+pub struct Segments(Vec<PgRange<i64>>);
 
 impl From<BoundedOffsetTuples> for Segments {
     fn from(segments: BoundedOffsetTuples) -> Self {
@@ -98,13 +93,13 @@ impl From<Segments> for Vec<PgRange<i64>> {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) mod serde {
-    pub(crate) mod segments {
+pub mod serde {
+    pub mod segments {
         use super::super::{BoundedOffsetTuples, Segments};
         use crate::serde::milliseconds_bound_tuples;
         use serde::{de, ser};
 
-        pub(crate) fn serialize<S>(value: &Segments, serializer: S) -> Result<S::Ok, S::Error>
+        pub fn serialize<S>(value: &Segments, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: ser::Serializer,
         {
@@ -112,7 +107,7 @@ pub(crate) mod serde {
             milliseconds_bound_tuples::serialize(&bounded_offset_tuples, serializer)
         }
 
-        pub(crate) fn deserialize<'de, D>(d: D) -> Result<Segments, D::Error>
+        pub fn deserialize<'de, D>(d: D) -> Result<Segments, D::Error>
         where
             D: de::Deserializer<'de>,
         {

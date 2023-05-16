@@ -23,11 +23,11 @@ use crate::{
 use context::AppContextBuilder;
 use message_handler::MessageHandler;
 
-pub(crate) const API_VERSION: &str = "v1";
+pub const API_VERSION: &str = "v1";
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) async fn run(
+pub async fn run(
     db: Db,
     ro_db: Option<Db>,
     redis_pool: Option<RedisConnectionPool>,
@@ -287,13 +287,13 @@ fn build_broker_client(config: &Config, token: &str) -> Arc<dyn BrokerClient> {
     )
 }
 
-pub(crate) mod broker_client;
-pub(crate) mod context;
-pub(crate) mod endpoint;
-pub(crate) mod error;
-pub(crate) mod http;
-pub(crate) mod message_handler;
-pub(crate) mod nats_consumer;
-pub(crate) mod operations;
-pub(crate) mod s3_client;
-pub(crate) mod service_utils;
+pub mod broker_client;
+pub mod context;
+pub mod endpoint;
+pub mod error;
+pub mod http;
+pub mod message_handler;
+pub mod nats_consumer;
+pub mod operations;
+pub mod s3_client;
+pub mod service_utils;

@@ -24,6 +24,133 @@
     },
     "query": "SELECT COUNT(1) as total FROM (\n                    SELECT DISTINCT ON(original_occurred_at, label)\n                        *,\n                        bool_or(removed) OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS removed_windowed\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) subq\n                WHERE removed_windowed = 'f' AND attribute = $5::TEXT\n                "
   },
+  "0f179fd7ee3b259a23d8673910b2040c26a515c373a969c859972d7e26221c1b": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "edition_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "kind!: ChangeType",
+          "ordinal": 2,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Enum": [
+                  "addition",
+                  "modification",
+                  "removal",
+                  "bulk_removal"
+                ]
+              },
+              "name": "change_type"
+            }
+          }
+        },
+        {
+          "name": "event_id",
+          "ordinal": 3,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "event_kind",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "event_set",
+          "ordinal": 5,
+          "type_info": "Text"
+        },
+        {
+          "name": "event_label",
+          "ordinal": 6,
+          "type_info": "Text"
+        },
+        {
+          "name": "event_data",
+          "ordinal": 7,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "event_occurred_at",
+          "ordinal": 8,
+          "type_info": "Int8"
+        },
+        {
+          "name": "event_created_by?: AgentId",
+          "ordinal": 9,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "created_at",
+          "ordinal": 10,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Text",
+          "Timestamp",
+          "Int8"
+        ]
+      }
+    },
+    "query": "\n            SELECT\n                id,\n                edition_id,\n                kind               AS \"kind!: ChangeType\",\n                event_id,\n                event_kind,\n                event_set,\n                event_label,\n                event_data,\n                event_occurred_at,\n                event_created_by   AS \"event_created_by?: AgentId\",\n                created_at\n            FROM change\n            WHERE edition_id = $1\n                AND ($2::text IS NULL OR event_kind = $2)\n                AND ($3::timestamp IS NULL OR created_at > $3)\n            ORDER BY created_at DESC LIMIT $4\n            "
+  },
   "15edabc8a95c9d857c0d2f8083753208a750ef1a705a906eeb3235590a3cec62": {
     "describe": {
       "columns": [
@@ -249,7 +376,8 @@
                 "Enum": [
                   "addition",
                   "modification",
-                  "removal"
+                  "removal",
+                  "bulk_removal"
                 ]
               },
               "name": "change_type"
@@ -390,7 +518,8 @@
                 "Enum": [
                   "addition",
                   "modification",
-                  "removal"
+                  "removal",
+                  "bulk_removal"
                 ]
               },
               "name": "change_type"
@@ -612,6 +741,87 @@
       }
     },
     "query": "\n            SELECT\n                agent.id,\n                agent_id AS \"agent_id!: AgentId\",\n                agent.room_id,\n                status AS \"status!: Status\",\n                agent.created_at,\n                (rban.created_at IS NOT NULL)::boolean AS banned,\n                rban.reason\n            FROM agent\n            LEFT OUTER JOIN room_ban rban\n            ON rban.room_id = agent.room_id AND rban.account_id = (agent.agent_id).account_id\n            WHERE agent.room_id = $1 AND agent.status = $2\n            ORDER BY created_at DESC\n            LIMIT $3\n            OFFSET $4\n            "
+  },
+  "321876e607d083d9b58536d8fea5fa785a98d14d2afb944f3d80b3ac722bf4ba": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "audience",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "source_room_id",
+          "ordinal": 2,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "time!: Time",
+          "ordinal": 3,
+          "type_info": "TstzRange"
+        },
+        {
+          "name": "tags",
+          "ordinal": 4,
+          "type_info": "Json"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 5,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "preserve_history",
+          "ordinal": 6,
+          "type_info": "Bool"
+        },
+        {
+          "name": "classroom_id",
+          "ordinal": 7,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "locked_types",
+          "ordinal": 8,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "validate_whiteboard_access",
+          "ordinal": 9,
+          "type_info": "Bool"
+        },
+        {
+          "name": "whiteboard_access",
+          "ordinal": 10,
+          "type_info": "Jsonb"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Uuid"
+        ]
+      }
+    },
+    "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time                        AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                validate_whiteboard_access,\n                whiteboard_access\n            FROM room\n            WHERE ($1::uuid IS NULL OR id = $1)\n                AND ($2::uuid IS NULL OR classroom_id = $2)\n            "
   },
   "3a6408cdf1165e682ed3b1fd96999a97441b7864c9aea918c4226682c3e1e74b": {
     "describe": {
@@ -1229,6 +1439,23 @@
       }
     },
     "query": "\n            SELECT\n                id,\n                room_id,\n                kind,\n                set,\n                label,\n                attribute,\n                data,\n                binary_data as \"binary_data: PostcardBin<CompactEvent>\",\n                occurred_at,\n                created_by as \"created_by!: AgentId\",\n                created_at,\n                deleted_at,\n                original_occurred_at,\n                original_created_by as \"original_created_by: AgentId\",\n                removed\n            FROM event\n            WHERE deleted_at IS NULL\n            AND   room_id = $1\n            AND   set = $2\n            AND   label = $3\n            ORDER BY occurred_at\n            LIMIT 1\n            "
+  },
+  "6b289be61bdad77b7f397e400a3eca919a16d906796097db8c510a627a8c3270": {
+    "describe": {
+      "columns": [],
+      "nullable": [],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Uuid",
+          "Uuid",
+          "Int8Array",
+          "Int8Array",
+          "Numeric"
+        ]
+      }
+    },
+    "query": "\n        WITH\n            gap_starts AS (\n                SELECT start, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($4::BIGINT[]) AS start\n            ),\n            gap_stops AS (\n                SELECT stop, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($5::BIGINT[]) AS stop\n            ),\n            gaps AS (\n                SELECT start, stop\n                FROM gap_starts, gap_stops\n                WHERE gap_stops.row_number = gap_starts.row_number\n            ),\n            removed_sets AS (\n                SELECT DISTINCT event_set\n                FROM change\n                WHERE change.edition_id = $3 AND change.kind = 'bulk_removal'\n            )\n        INSERT INTO event (id, room_id, kind, set, label, data, binary_data, occurred_at, created_by, created_at)\n        SELECT\n            id,\n            room_id,\n            kind,\n            set,\n            label,\n            data,\n            binary_data,\n            occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1 + $6,\n            created_by,\n            created_at\n        FROM (\n            SELECT\n                gen_random_uuid() AS id,\n                $2::UUID AS room_id,\n                (CASE change.kind\n                        WHEN 'addition' THEN change.event_kind\n                        WHEN 'modification' THEN COALESCE(change.event_kind, event.kind)\n                        ELSE event.kind\n                    END\n                ) AS kind,\n                (CASE change.kind\n                    WHEN 'addition' THEN COALESCE(change.event_set, change.event_kind)\n                    WHEN 'modification' THEN COALESCE(change.event_set, event.set, change.event_kind, event.kind)\n                    ELSE event.set\n                    END\n                ) AS set,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_label\n                    WHEN 'modification' THEN COALESCE(change.event_label, event.label)\n                    ELSE event.label\n                    END\n                ) AS label,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_data\n                    WHEN 'modification' THEN COALESCE(change.event_data, event.data)\n                    ELSE event.data\n                    END\n                ) AS data,\n                event.binary_data,\n                (\n                    (CASE change.kind\n                        WHEN 'addition' THEN change.event_occurred_at\n                        WHEN 'modification' THEN COALESCE(change.event_occurred_at, event.occurred_at)\n                        ELSE event.occurred_at\n                        END\n                    ) - (\n                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)\n                        FROM gaps\n                        WHERE start < occurred_at\n                    )\n                ) AS occurred_at,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_created_by\n                    ELSE event.created_by\n                    END\n                ) AS created_by,\n                COALESCE(event.created_at, NOW()) as created_at\n            FROM\n                (SELECT * FROM event \n                    WHERE   event.room_id = $1 \n                        AND deleted_at IS NULL \n                        AND event.set NOT IN (SELECT event_set FROM removed_sets)\n                ) AS event\n                FULL OUTER JOIN\n                (SELECT * FROM change WHERE change.edition_id = $3 AND change.kind <> 'bulk_removal')\n                AS change\n                ON change.event_id = event.id\n            WHERE\n                ((event.room_id = $1 AND deleted_at IS NULL) OR event.id IS NULL)\n                AND\n                ((change.edition_id = $3 AND change.kind <> 'removal') OR change.id IS NULL)\n        ) AS subquery\n        "
   },
   "7858c99fbb4b6ab8097c4a6a4863576b46b5921bd58c8489a63d46bc6f139623": {
     "describe": {
@@ -1866,6 +2093,180 @@
     },
     "query": "DELETE FROM edition WHERE id = $1"
   },
+  "a0e63e8b58f43c0bc2e617282e6fa5ba7c7fa4fb07b7207904c5cd8941454c44": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "room_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "kind",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "set",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "label",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "data?: Value",
+          "ordinal": 5,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "occurred_at",
+          "ordinal": 6,
+          "type_info": "Int8"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 7,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "deleted_at",
+          "ordinal": 8,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "created_by!: AgentId",
+          "ordinal": 9,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "original_created_by!: AgentId",
+          "ordinal": 10,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "original_occurred_at",
+          "ordinal": 11,
+          "type_info": "Int8"
+        },
+        {
+          "name": "removed",
+          "ordinal": 12,
+          "type_info": "Bool"
+        },
+        {
+          "name": "attribute",
+          "ordinal": 13,
+          "type_info": "Text"
+        },
+        {
+          "name": "binary_data?: PostcardBin<CompactEvent>",
+          "ordinal": 14,
+          "type_info": "Bytea"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Uuid",
+          "Text",
+          "TextArray",
+          "Int8",
+          "Text",
+          "Text"
+        ]
+      }
+    },
+    "query": "\n                    SELECT\n                        id,\n                        room_id,\n                        kind,\n                        set,\n                        label,\n                        data                AS \"data?: Value\",\n                        occurred_at,\n                        created_at,\n                        deleted_at,\n                        created_by          AS \"created_by!: AgentId\",\n                        original_created_by AS \"original_created_by!: AgentId\",\n                        original_occurred_at,\n                        removed,\n                        attribute,\n                        binary_data         AS \"binary_data?: PostcardBin<CompactEvent>\"\n                    FROM event\n                    WHERE deleted_at IS NULL\n                        AND ($2::uuid IS NULL OR room_id = $2)\n                        AND ($3::text IS NULL OR event.attribute = $3)\n                        AND (array_length($4::text[], 1) IS NULL OR kind = ANY($4))\n                        AND ($5::bigint IS NULL OR occurred_at > $5)\n                        AND ($6::text IS NULL OR set = $6)\n                        AND ($7::text IS NULL OR label = $7)\n                    ORDER BY occurred_at ASC, created_at ASC\n                    LIMIT $1\n                    "
+  },
   "ac9057b29aa15bfce1867dca3324e3c3b27a6bb4184588bc6cca99ccc9e6cfca": {
     "describe": {
       "columns": [
@@ -1888,7 +2289,8 @@
                 "Enum": [
                   "addition",
                   "modification",
-                  "removal"
+                  "removal",
+                  "bulk_removal"
                 ]
               },
               "name": "change_type"
@@ -2036,23 +2438,6 @@
       }
     },
     "query": "\n                SELECT\n                    c.id                 AS change_id,\n                    c.edition_id         AS change_edition_id,\n                    c.kind               AS \"change_kind!: ChangeType\",\n                    c.event_id           AS change_event_id,\n                    c.event_kind         AS change_event_kind,\n                    c.event_set          AS change_event_set,\n                    c.event_label        AS change_event_label,\n                    c.event_data         AS change_event_data,\n                    c.event_occurred_at  AS change_event_occurred_at,\n                    c.event_created_by   AS \"change_event_created_by?: AgentId\",\n                    c.created_at         AS change_created_at,\n                    r.id                 AS room_id,\n                    r.audience           AS room_audience,\n                    r.source_room_id     AS room_source_room_id,\n                    r.time               AS \"room_time!: RoomTime\",\n                    r.tags               AS room_tags,\n                    r.created_at         AS room_created_at,\n                    r.preserve_history   AS room_preserve_history,\n                    r.classroom_id       AS room_classroom_id\n                FROM change AS c\n                INNER JOIN edition AS e\n                ON e.id = c.edition_id\n                INNER JOIN room AS r\n                ON r.id = e.source_room_id\n                WHERE c.id = $1\n                "
-  },
-  "b0886a7c8f8578cc1150132512db878c10c584c724a307c170cc1ad27a523904": {
-    "describe": {
-      "columns": [],
-      "nullable": [],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "Uuid",
-          "Uuid",
-          "Int8Array",
-          "Int8Array",
-          "Numeric"
-        ]
-      }
-    },
-    "query": "\n        WITH\n            gap_starts AS (\n                SELECT start, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($4::BIGINT[]) AS start\n            ),\n            gap_stops AS (\n                SELECT stop, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($5::BIGINT[]) AS stop\n            ),\n            gaps AS (\n                SELECT start, stop\n                FROM gap_starts, gap_stops\n                WHERE gap_stops.row_number = gap_starts.row_number\n            )\n        INSERT INTO event (id, room_id, kind, set, label, data, binary_data, occurred_at, created_by, created_at)\n        SELECT\n            id,\n            room_id,\n            kind,\n            set,\n            label,\n            data,\n            binary_data,\n            occurred_at + ROW_NUMBER() OVER (partition by occurred_at order by created_at) - 1 + $6,\n            created_by,\n            created_at\n        FROM (\n            SELECT\n                gen_random_uuid() AS id,\n                $2::UUID AS room_id,\n                (CASE change.kind\n                        WHEN 'addition' THEN change.event_kind\n                        WHEN 'modification' THEN COALESCE(change.event_kind, event.kind)\n                        ELSE event.kind\n                    END\n                ) AS kind,\n                (CASE change.kind\n                    WHEN 'addition' THEN COALESCE(change.event_set, change.event_kind)\n                    WHEN 'modification' THEN COALESCE(change.event_set, event.set, change.event_kind, event.kind)\n                    ELSE event.set\n                    END\n                ) AS set,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_label\n                    WHEN 'modification' THEN COALESCE(change.event_label, event.label)\n                    ELSE event.label\n                    END\n                ) AS label,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_data\n                    WHEN 'modification' THEN COALESCE(change.event_data, event.data)\n                    ELSE event.data\n                    END\n                ) AS data,\n                event.binary_data,\n                (\n                    (CASE change.kind\n                        WHEN 'addition' THEN change.event_occurred_at\n                        WHEN 'modification' THEN COALESCE(change.event_occurred_at, event.occurred_at)\n                        ELSE event.occurred_at\n                        END\n                    ) - (\n                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)\n                        FROM gaps\n                        WHERE start < occurred_at\n                    )\n                ) AS occurred_at,\n                (CASE change.kind\n                    WHEN 'addition' THEN change.event_created_by\n                    ELSE event.created_by\n                    END\n                ) AS created_by,\n                COALESCE(event.created_at, NOW()) as created_at\n            FROM\n                (SELECT * FROM event WHERE event.room_id = $1 AND deleted_at IS NULL)\n                AS event\n                FULL OUTER JOIN\n                (SELECT * FROM change WHERE change.edition_id = $3)\n                AS change\n                ON change.event_id = event.id\n            WHERE\n                ((event.room_id = $1 AND deleted_at IS NULL) OR event.id IS NULL)\n                AND\n                ((change.edition_id = $3 AND change.kind <> 'removal') OR change.id IS NULL)\n        ) AS subquery\n        "
   },
   "b26d7e032b5b16d95f984534ee9d27353bb0037433d641fc11a44dd02855373f": {
     "describe": {
@@ -2403,6 +2788,180 @@
       }
     },
     "query": "\n            INSERT INTO room_ban (account_id, room_id, reason)\n            VALUES ($1, $2, $3) ON CONFLICT (account_id, room_id) DO UPDATE\n            SET created_at=room_ban.created_at\n            RETURNING\n                id,\n                account_id AS \"account_id!: AccountId\",\n                room_id,\n                reason,\n                created_at\n            "
+  },
+  "db34b9671c95f800fe2b6d30c697f6bb39eaac0677e62bd5956bc3b6339bebdf": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "room_id",
+          "ordinal": 1,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "kind",
+          "ordinal": 2,
+          "type_info": "Text"
+        },
+        {
+          "name": "set",
+          "ordinal": 3,
+          "type_info": "Text"
+        },
+        {
+          "name": "label",
+          "ordinal": 4,
+          "type_info": "Text"
+        },
+        {
+          "name": "data?: Value",
+          "ordinal": 5,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "occurred_at",
+          "ordinal": 6,
+          "type_info": "Int8"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 7,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "deleted_at",
+          "ordinal": 8,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "created_by!: AgentId",
+          "ordinal": 9,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "original_created_by!: AgentId",
+          "ordinal": 10,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "original_occurred_at",
+          "ordinal": 11,
+          "type_info": "Int8"
+        },
+        {
+          "name": "removed",
+          "ordinal": 12,
+          "type_info": "Bool"
+        },
+        {
+          "name": "attribute",
+          "ordinal": 13,
+          "type_info": "Text"
+        },
+        {
+          "name": "binary_data?: PostcardBin<CompactEvent>",
+          "ordinal": 14,
+          "type_info": "Bytea"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        true,
+        true,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        true,
+        true
+      ],
+      "parameters": {
+        "Left": [
+          "Int8",
+          "Uuid",
+          "Text",
+          "TextArray",
+          "Int8",
+          "Text",
+          "Text"
+        ]
+      }
+    },
+    "query": "\n                    SELECT\n                        id,\n                        room_id,\n                        kind,\n                        set,\n                        label,\n                        data                AS \"data?: Value\",\n                        occurred_at,\n                        created_at,\n                        deleted_at,\n                        created_by          AS \"created_by!: AgentId\",\n                        original_created_by AS \"original_created_by!: AgentId\",\n                        original_occurred_at,\n                        removed,\n                        attribute,\n                        binary_data         AS \"binary_data?: PostcardBin<CompactEvent>\"\n                    FROM event\n                    WHERE deleted_at IS NULL\n                        AND ($2::uuid IS NULL OR room_id = $2)\n                        AND ($3::text IS NULL OR attribute = $3)\n                        AND (array_length($4::text[], 1) IS NULL OR kind = ANY($4))\n                        AND ($5::bigint IS NULL OR occurred_at < $5)\n                        AND ($6::text IS NULL OR set = $6)\n                        AND ($7::text IS NULL OR label = $7)\n                    ORDER BY occurred_at DESC, created_at DESC\n                    LIMIT $1\n                    "
   },
   "e62d2c4fccc796c57f4c740474b3671897a69c0ec1089ebc726322629f9a87bb": {
     "describe": {

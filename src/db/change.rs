@@ -13,17 +13,19 @@ use crate::db::room::{Builder as RoomBuilder, Object as Room, Time as RoomTime};
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, sqlx::Type)]
 #[serde(rename_all = "snake_case")]
 #[sqlx(type_name = "change_type")]
-pub(crate) enum ChangeType {
+pub enum ChangeType {
     #[sqlx(rename = "addition")]
     Addition,
     #[sqlx(rename = "modification")]
     Modification,
     #[sqlx(rename = "removal")]
     Removal,
+    #[sqlx(rename = "bulk_removal")]
+    BulkRemoval,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, sqlx::FromRow)]
-pub(crate) struct Object {
+pub struct Object {
     id: Uuid,
     edition_id: Uuid,
     #[serde(rename = "type")]
@@ -46,17 +48,22 @@ pub(crate) struct Object {
 }
 
 impl Object {
-    pub(crate) fn id(&self) -> Uuid {
+    pub fn id(&self) -> Uuid {
         self.id
     }
 
-    pub(crate) fn edition_id(&self) -> Uuid {
+    pub fn edition_id(&self) -> Uuid {
         self.edition_id
     }
 
     #[cfg(test)]
-    pub(crate) fn kind(&self) -> ChangeType {
+    pub fn kind(&self) -> ChangeType {
         self.kind
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set(&self) -> Option<&String> {
+        self.event_set.as_ref()
     }
 
     #[cfg(test)]
@@ -64,11 +71,11 @@ impl Object {
         self.event_id
     }
 
-    pub(crate) fn event_data(&self) -> &Option<JsonValue> {
+    pub fn event_data(&self) -> &Option<JsonValue> {
         &self.event_data
     }
 
-    pub(crate) fn event_occurred_at(&self) -> Option<i64> {
+    pub fn event_occurred_at(&self) -> Option<i64> {
         self.event_occurred_at
     }
 }
@@ -76,19 +83,16 @@ impl Object {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct FindWithRoomQuery {
+pub struct FindWithRoomQuery {
     id: Uuid,
 }
 
 impl FindWithRoomQuery {
-    pub(crate) fn new(id: Uuid) -> Self {
+    pub fn new(id: Uuid) -> Self {
         Self { id }
     }
 
-    pub(crate) async fn execute(
-        self,
-        conn: &mut PgConnection,
-    ) -> sqlx::Result<Option<(Object, Room)>> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<(Object, Room)>> {
         let maybe_row = sqlx::query!(
             r#"
                 SELECT
@@ -161,7 +165,7 @@ impl FindWithRoomQuery {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct InsertQuery {
+pub struct InsertQuery {
     edition_id: Uuid,
     kind: ChangeType,
     event_id: Option<Uuid>,
@@ -174,7 +178,7 @@ pub(crate) struct InsertQuery {
 }
 
 impl InsertQuery {
-    pub(crate) fn new(edition_id: Uuid, kind: ChangeType) -> Self {
+    pub fn new(edition_id: Uuid, kind: ChangeType) -> Self {
         Self {
             event_id: None,
             event_kind: None,
@@ -188,56 +192,56 @@ impl InsertQuery {
         }
     }
 
-    pub(crate) fn event_id(self, event_id: Uuid) -> Self {
+    pub fn event_id(self, event_id: Uuid) -> Self {
         Self {
             event_id: Some(event_id),
             ..self
         }
     }
 
-    pub(crate) fn event_kind(self, kind: String) -> Self {
+    pub fn event_kind(self, kind: String) -> Self {
         Self {
             event_kind: Some(kind),
             ..self
         }
     }
 
-    pub(crate) fn event_set(self, set: Option<String>) -> Self {
+    pub fn event_set(self, set: Option<String>) -> Self {
         Self {
             event_set: set,
             ..self
         }
     }
 
-    pub(crate) fn event_label(self, label: Option<String>) -> Self {
+    pub fn event_label(self, label: Option<String>) -> Self {
         Self {
             event_label: label,
             ..self
         }
     }
 
-    pub(crate) fn event_data(self, data: JsonValue) -> Self {
+    pub fn event_data(self, data: JsonValue) -> Self {
         Self {
             event_data: Some(data),
             ..self
         }
     }
 
-    pub(crate) fn event_occurred_at(self, occurred_at: i64) -> Self {
+    pub fn event_occurred_at(self, occurred_at: i64) -> Self {
         Self {
             event_occurred_at: Some(occurred_at),
             ..self
         }
     }
 
-    pub(crate) fn event_created_by(self, created_by: AgentId) -> Self {
+    pub fn event_created_by(self, created_by: AgentId) -> Self {
         Self {
             event_created_by: Some(created_by),
             ..self
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         sqlx::query_as!(
             Object,
             r#"
@@ -282,9 +286,10 @@ impl InsertQuery {
 }
 
 ////////////////////////////////////////////////////////////////////////////////
+const DEFAULT_LIST_LIMIT: usize = 25;
 
 #[derive(Debug)]
-pub(crate) struct ListQuery {
+pub struct ListQuery {
     id: Uuid,
     last_created_at: Option<DateTime<Utc>>,
     kind: Option<String>,
@@ -292,79 +297,80 @@ pub(crate) struct ListQuery {
 }
 
 impl ListQuery {
-    pub(crate) fn new(id: Uuid) -> Self {
+    pub fn new(id: Uuid) -> Self {
         Self {
-            limit: 25,
+            limit: DEFAULT_LIST_LIMIT,
             last_created_at: None,
             id,
             kind: None,
         }
     }
 
-    pub(crate) fn limit(self, limit: usize) -> Self {
+    pub fn limit(self, limit: usize) -> Self {
         Self { limit, ..self }
     }
 
-    pub(crate) fn kind(self, kind: &str) -> Self {
+    pub fn kind(self, kind: &str) -> Self {
         Self {
             kind: Some(kind.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
+    pub fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
         Self {
             last_created_at: Some(last_created_at),
             ..self
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
-        use quaint::ast::{Comparable, Orderable, ParameterizedValue, Select};
-        use quaint::visitor::{Postgres, Visitor};
-
-        let mut q = Select::from_table("change").so_that("edition_id".equals(self.id));
-
-        if let Some(kind) = self.kind {
-            q = q.and_where("event_kind".equals(kind));
-        }
-
-        if let Some(last_created_at) = self.last_created_at {
-            q = q.and_where("created_at".greater_than(last_created_at));
-        }
-
-        q = q.order_by("created_at".descend()).limit(self.limit);
-
-        let (sql, bindings) = Postgres::build(q);
-        let mut query = sqlx::query_as(&sql);
-
-        for binding in bindings {
-            query = match binding {
-                ParameterizedValue::Uuid(value) => query.bind(value),
-                ParameterizedValue::Integer(value) => query.bind(value),
-                ParameterizedValue::Text(value) => query.bind(value.to_string()),
-                ParameterizedValue::DateTime(value) => query.bind(value),
-                _ => query,
-            }
-        }
-
-        query.fetch_all(conn).await
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+        let last_created_at: Option<chrono::NaiveDateTime> =
+            self.last_created_at.map(|x| x.naive_utc());
+        sqlx::query_as!(
+            Object,
+            r#"
+            SELECT
+                id,
+                edition_id,
+                kind               AS "kind!: ChangeType",
+                event_id,
+                event_kind,
+                event_set,
+                event_label,
+                event_data,
+                event_occurred_at,
+                event_created_by   AS "event_created_by?: AgentId",
+                created_at
+            FROM change
+            WHERE edition_id = $1
+                AND ($2::text IS NULL OR event_kind = $2)
+                AND ($3::timestamp IS NULL OR created_at > $3)
+            ORDER BY created_at DESC LIMIT $4
+            "#,
+            self.id,
+            self.kind,
+            last_created_at,
+            self.limit as i32,
+        )
+        .fetch_all(conn)
+        .await
     }
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct DeleteQuery {
+pub struct DeleteQuery {
     id: Uuid,
 }
 
 impl DeleteQuery {
-    pub(crate) fn new(id: Uuid) -> Self {
+    pub fn new(id: Uuid) -> Self {
         Self { id }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<()> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<()> {
         sqlx::query!("DELETE FROM change WHERE id = $1", self.id)
             .execute(conn)
             .await

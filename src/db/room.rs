@@ -13,7 +13,7 @@ use uuid::Uuid;
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct Object {
+pub struct Object {
     id: Uuid,
     audience: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -179,44 +179,44 @@ impl std::fmt::Display for JsonbConversionFail {
 impl std::error::Error for JsonbConversionFail {}
 
 impl Object {
-    pub(crate) fn id(&self) -> Uuid {
+    pub fn id(&self) -> Uuid {
         self.id
     }
 
-    pub(crate) fn audience(&self) -> &str {
+    pub fn audience(&self) -> &str {
         &self.audience
     }
 
-    pub(crate) fn source_room_id(&self) -> Option<Uuid> {
+    pub fn source_room_id(&self) -> Option<Uuid> {
         self.source_room_id
     }
 
-    pub(crate) fn time(&self) -> Result<RoomTime, String> {
+    pub fn time(&self) -> Result<RoomTime, String> {
         self.time.clone().try_into()
     }
 
-    pub(crate) fn tags(&self) -> Option<&JsonValue> {
+    pub fn tags(&self) -> Option<&JsonValue> {
         self.tags.as_ref()
     }
 
     #[cfg(test)]
-    pub(crate) fn preserve_history(&self) -> bool {
+    pub fn preserve_history(&self) -> bool {
         self.preserve_history
     }
 
-    pub(crate) fn classroom_id(&self) -> Uuid {
+    pub fn classroom_id(&self) -> Uuid {
         self.classroom_id
     }
 
-    pub(crate) fn locked_types(&self) -> &HashMap<String, bool> {
+    pub fn locked_types(&self) -> &HashMap<String, bool> {
         &self.locked_types
     }
 
-    pub(crate) fn validate_whiteboard_access(&self) -> bool {
+    pub fn validate_whiteboard_access(&self) -> bool {
         self.validate_whiteboard_access
     }
 
-    pub(crate) fn whiteboard_access(&self) -> &HashMap<AccountId, bool> {
+    pub fn whiteboard_access(&self) -> &HashMap<AccountId, bool> {
         &self.whiteboard_access
     }
 
@@ -242,7 +242,7 @@ impl Object {
                 && !self.account_has_whiteboard_access(account))
     }
 
-    pub(crate) fn is_closed(&self) -> bool {
+    pub fn is_closed(&self) -> bool {
         match self.time.0.end_bound() {
             Bound::Included(t) => *t < Utc::now(),
             Bound::Excluded(t) => *t <= Utc::now(),
@@ -250,7 +250,7 @@ impl Object {
         }
     }
 
-    pub(crate) fn is_open(&self) -> bool {
+    pub fn is_open(&self) -> bool {
         let now = Utc::now();
         let t = (self.time.0.start_bound(), self.time.0.end_bound());
         match t {
@@ -262,7 +262,7 @@ impl Object {
 }
 
 #[derive(Debug, Default)]
-pub(crate) struct Builder {
+pub struct Builder {
     id: Option<Uuid>,
     audience: Option<String>,
     source_room_id: Option<Uuid>,
@@ -274,64 +274,64 @@ pub(crate) struct Builder {
 }
 
 impl Builder {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self::default()
     }
 
-    pub(crate) fn id(self, id: Uuid) -> Self {
+    pub fn id(self, id: Uuid) -> Self {
         Self {
             id: Some(id),
             ..self
         }
     }
 
-    pub(crate) fn audience(self, audience: String) -> Self {
+    pub fn audience(self, audience: String) -> Self {
         Self {
             audience: Some(audience),
             ..self
         }
     }
 
-    pub(crate) fn source_room_id(self, source_room_id: Option<Uuid>) -> Self {
+    pub fn source_room_id(self, source_room_id: Option<Uuid>) -> Self {
         Self {
             source_room_id,
             ..self
         }
     }
 
-    pub(crate) fn time(self, time: Time) -> Self {
+    pub fn time(self, time: Time) -> Self {
         Self {
             time: Some(time),
             ..self
         }
     }
 
-    pub(crate) fn tags(self, tags: Option<JsonValue>) -> Self {
+    pub fn tags(self, tags: Option<JsonValue>) -> Self {
         Self { tags, ..self }
     }
 
-    pub(crate) fn created_at(self, created_at: DateTime<Utc>) -> Self {
+    pub fn created_at(self, created_at: DateTime<Utc>) -> Self {
         Self {
             created_at: Some(created_at),
             ..self
         }
     }
 
-    pub(crate) fn preserve_history(self, preserve_history: bool) -> Self {
+    pub fn preserve_history(self, preserve_history: bool) -> Self {
         Self {
             preserve_history: Some(preserve_history),
             ..self
         }
     }
 
-    pub(crate) fn classroom_id(self, classroom_id: Uuid) -> Self {
+    pub fn classroom_id(self, classroom_id: Uuid) -> Self {
         Self {
             classroom_id,
             ..self
         }
     }
 
-    pub(crate) fn build(self) -> anyhow::Result<Object> {
+    pub fn build(self) -> anyhow::Result<Object> {
         Ok(Object {
             id: self.id.ok_or_else(|| anyhow!("missing id"))?,
             audience: self.audience.ok_or_else(|| anyhow!("missing audience"))?,
@@ -355,63 +355,60 @@ impl Builder {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Default)]
-pub(crate) struct FindQuery {
+pub struct FindQuery {
     id: Option<Uuid>,
     classroom_id: Option<Uuid>,
 }
 
 impl FindQuery {
-    pub(crate) fn by_id(id: Uuid) -> Self {
+    pub fn by_id(id: Uuid) -> Self {
         Self {
             id: Some(id),
             ..Default::default()
         }
     }
 
-    pub(crate) fn by_classroom_id(classroom_id: Uuid) -> Self {
+    pub fn by_classroom_id(classroom_id: Uuid) -> Self {
         Self {
             classroom_id: Some(classroom_id),
             ..Default::default()
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
-        use quaint::ast::{Comparable, Select};
-        use quaint::visitor::{Postgres, Visitor};
-
-        let mut q = Select::from_table("room");
-
-        if self.id.is_some() {
-            q = q.and_where("id".equals("_placeholder_"));
-        }
-
-        if self.classroom_id.is_some() {
-            q = q.and_where("classroom_id".equals("_placeholder_"));
-        }
-
-        let (sql, _bindings) = Postgres::build(q);
-        let mut query = sqlx::query_as::<_, DbObject>(&sql);
-
-        if let Some(id) = self.id {
-            query = query.bind(id);
-        }
-
-        if let Some(classroom_id) = self.classroom_id {
-            query = query.bind(classroom_id);
-        }
-
-        query
-            .fetch_optional(conn)
-            .await?
-            .map(|v| v.try_into())
-            .transpose()
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+        sqlx::query_as!(
+            DbObject,
+            r#"
+            SELECT
+                id,
+                audience,
+                source_room_id,
+                time                        AS "time!: Time",
+                tags,
+                created_at,
+                preserve_history,
+                classroom_id,
+                locked_types,
+                validate_whiteboard_access,
+                whiteboard_access
+            FROM room
+            WHERE ($1::uuid IS NULL OR id = $1)
+                AND ($2::uuid IS NULL OR classroom_id = $2)
+            "#,
+            self.id,
+            self.classroom_id,
+        )
+        .fetch_optional(conn)
+        .await?
+        .map(|v| v.try_into())
+        .transpose()
     }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct InsertQuery {
+pub struct InsertQuery {
     audience: String,
     source_room_id: Option<Uuid>,
     time: Time,
@@ -424,7 +421,7 @@ pub(crate) struct InsertQuery {
 }
 
 impl InsertQuery {
-    pub(crate) fn new(audience: &str, time: Time, classroom_id: Uuid) -> Self {
+    pub fn new(audience: &str, time: Time, classroom_id: Uuid) -> Self {
         Self {
             audience: audience.to_owned(),
             source_room_id: None,
@@ -438,35 +435,35 @@ impl InsertQuery {
         }
     }
 
-    pub(crate) fn source_room_id(self, source_room_id: Uuid) -> Self {
+    pub fn source_room_id(self, source_room_id: Uuid) -> Self {
         Self {
             source_room_id: Some(source_room_id),
             ..self
         }
     }
 
-    pub(crate) fn tags(self, tags: JsonValue) -> Self {
+    pub fn tags(self, tags: JsonValue) -> Self {
         Self {
             tags: Some(tags),
             ..self
         }
     }
 
-    pub(crate) fn preserve_history(self, preserve_history: bool) -> Self {
+    pub fn preserve_history(self, preserve_history: bool) -> Self {
         Self {
             preserve_history,
             ..self
         }
     }
 
-    pub(crate) fn validate_whiteboard_access(self, flag: bool) -> Self {
+    pub fn validate_whiteboard_access(self, flag: bool) -> Self {
         Self {
             validate_whiteboard_access: Some(flag),
             ..self
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let time: PgRange<DateTime<Utc>> = self.time.into();
 
         let locked_types = serde_json::to_value(&self.locked_types).unwrap();
@@ -511,7 +508,7 @@ impl InsertQuery {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct UpdateQuery {
+pub struct UpdateQuery {
     id: Uuid,
     time: Option<Time>,
     tags: Option<JsonValue>,
@@ -521,7 +518,7 @@ pub(crate) struct UpdateQuery {
 }
 
 impl UpdateQuery {
-    pub(crate) fn new(id: Uuid) -> Self {
+    pub fn new(id: Uuid) -> Self {
         Self {
             id,
             time: None,
@@ -532,36 +529,36 @@ impl UpdateQuery {
         }
     }
 
-    pub(crate) fn time(self, time: Option<Time>) -> Self {
+    pub fn time(self, time: Option<Time>) -> Self {
         Self { time, ..self }
     }
 
-    pub(crate) fn tags(self, tags: Option<JsonValue>) -> Self {
+    pub fn tags(self, tags: Option<JsonValue>) -> Self {
         Self { tags, ..self }
     }
 
-    pub(crate) fn classroom_id(self, classroom_id: Option<Uuid>) -> Self {
+    pub fn classroom_id(self, classroom_id: Option<Uuid>) -> Self {
         Self {
             classroom_id,
             ..self
         }
     }
 
-    pub(crate) fn locked_types(self, locked_types: HashMap<String, bool>) -> Self {
+    pub fn locked_types(self, locked_types: HashMap<String, bool>) -> Self {
         Self {
             locked_types: Some(locked_types),
             ..self
         }
     }
 
-    pub(crate) fn whiteboard_access(self, whiteboard_access: HashMap<AccountId, bool>) -> Self {
+    pub fn whiteboard_access(self, whiteboard_access: HashMap<AccountId, bool>) -> Self {
         Self {
             whiteboard_access: Some(whiteboard_access),
             ..self
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let time: Option<PgRange<DateTime<Utc>>> = self.time.map(|t| t.into());
 
         // Delete false values from map not to accumulate them
@@ -619,7 +616,7 @@ use crate::db::room_time::RoomTime;
 #[sqlx(transparent)]
 #[serde(from = "RoomTime")]
 #[serde(into = "BoundedDateTimeTuple")]
-pub(crate) struct Time(PgRange<DateTime<Utc>>);
+pub struct Time(PgRange<DateTime<Utc>>);
 
 impl From<RoomTime> for Time {
     fn from(time: RoomTime) -> Self {
@@ -662,20 +659,20 @@ impl From<BoundedDateTimeTuple> for Time {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) mod serde {
-    pub(crate) mod time {
+pub mod serde {
+    pub mod time {
         use super::super::Time;
         use crate::serde::ts_seconds_bound_tuple;
         use serde::{de, ser};
 
-        pub(crate) fn serialize<S>(value: &Time, serializer: S) -> Result<S::Ok, S::Error>
+        pub fn serialize<S>(value: &Time, serializer: S) -> Result<S::Ok, S::Error>
         where
             S: ser::Serializer,
         {
             ts_seconds_bound_tuple::serialize(&value.to_owned().into(), serializer)
         }
 
-        pub(crate) fn deserialize<'de, D>(d: D) -> Result<Time, D::Error>
+        pub fn deserialize<'de, D>(d: D) -> Result<Time, D::Error>
         where
             D: de::Deserializer<'de>,
         {

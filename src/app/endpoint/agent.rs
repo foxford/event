@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::extract::{
-    Json, {Extension, Path, Query},
+    Json, {Path, Query, State},
 };
 use serde_derive::{Deserialize, Serialize};
 use serde_json::json;
@@ -11,7 +11,7 @@ use sqlx::Acquire;
 use svc_agent::mqtt::ResponseStatus;
 use svc_agent::{AccountId, Addressable};
 use svc_authn::Authenticable;
-use svc_utils::extractors::AuthnExtractor;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::{error, instrument};
 use uuid::Uuid;
 
@@ -39,8 +39,8 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Query(payload): Query<ListPayload>,
 ) -> RequestResult {
@@ -150,8 +150,8 @@ pub(crate) struct TenantBanNotification {
 }
 
 pub async fn update(
-    Extension(ctx): Extension<Arc<AppContext>>,
-    AuthnExtractor(agent_id): AuthnExtractor,
+    State(ctx): State<Arc<AppContext>>,
+    AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<UpdatePayload>,
 ) -> RequestResult {

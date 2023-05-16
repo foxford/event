@@ -11,14 +11,20 @@ use axum::{
 
 use futures::{future::BoxFuture, StreamExt};
 use futures_util::pin_mut;
-use http::{Request, Response};
+use http::{
+    header::{HeaderName, AUTHORIZATION, CONTENT_TYPE},
+    Method, Request, Response,
+};
 use hyper::Body;
 use svc_agent::mqtt::Agent;
-use tower::{layer::layer_fn, Service};
+use tower::{layer::layer_fn, Service, ServiceBuilder};
+use tower_http::cors::{Any, CorsLayer};
 use tracing::error;
 
-use crate::app::message_handler::MessageStream;
-use crate::app::{message_handler::publish_message, service_utils};
+use crate::app::{
+    message_handler::{publish_message, MessageStream},
+    service_utils,
+};
 
 use super::{
     context::{AppContext, GlobalContext},
@@ -31,6 +37,28 @@ pub fn build_router(
     agent: Agent,
     authn: svc_authn::jose::ConfigMap,
 ) -> Router {
+    let cors = CorsLayer::new()
+        .allow_methods([Method::GET, Method::POST, Method::PATCH, Method::DELETE])
+        .allow_headers([
+            AUTHORIZATION,
+            CONTENT_TYPE,
+            HeaderName::from_static("ulms-app-audience"),
+            HeaderName::from_static("ulms-scope"),
+            HeaderName::from_static("ulms-app-version"),
+            HeaderName::from_static("ulms-app-label"),
+            HeaderName::from_static("x-agent-label"),
+        ])
+        .max_age(std::time::Duration::from_secs(3600))
+        .allow_origin(Any);
+
+    let middleware = ServiceBuilder::new()
+        .layer(Extension(agent))
+        .layer(Extension(Arc::new(authn)))
+        .layer(Extension(context.clone()))
+        .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
+        .layer(layer_fn(|inner| MetricsMiddleware { inner }))
+        .layer(cors);
+
     let router = Router::new()
         .route("/rooms", post(endpoint::room::create))
         .route(
@@ -97,12 +125,8 @@ pub fn build_router(
             "/changes/:id",
             delete(endpoint::change::delete).options(endpoint::read_options),
         )
-        .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
-        .layer(layer_fn(|inner| MetricsMiddleware { inner }))
-        .layer(svc_utils::middleware::CorsLayer)
-        .layer(Extension(context))
-        .layer(Extension(agent))
-        .layer(Extension(Arc::new(authn)));
+        .layer(middleware)
+        .with_state(context);
 
     let routes = Router::new().nest("/api/v1", router);
 
