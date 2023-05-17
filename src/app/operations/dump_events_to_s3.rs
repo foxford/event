@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use rusoto_s3::PutObjectRequest;
 use serde_derive::Serialize;
 use sqlx::postgres::PgPool as Db;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::db::room::Object as Room;
 use crate::{
@@ -129,7 +129,7 @@ async fn upload_events(
         });
 
         if let Err(ref e) = result {
-            info!(
+            error!(
                 "Dump events to S3 task errored, room id = {}, classroom_id = {}, error = {:?}",
                 room.id(),
                 room.classroom_id(),
