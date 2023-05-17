@@ -36,7 +36,7 @@ struct S3Content {
 }
 
 pub async fn call(db: &Db, metrics: &Metrics, s3_client: S3Client, room: &Room) -> Result<String> {
-    info!("Dump events to S3 task started, room id = {}", room.id());
+    info!(room = ?room.id(), classroom_id = ?room.classroom_id(), "Dump events to S3 task started");
 
     let start_timestamp = Instant::now();
 
@@ -47,10 +47,10 @@ pub async fn call(db: &Db, metrics: &Metrics, s3_client: S3Client, room: &Room) 
     let s3_uri = upload_events(s3_client, room, events, destination).await?;
 
     info!(
-        "Dump events to S3 task successfully finished, room id = {}, classroom_id = {}, duration = {} ms",
-        room.id(),
-        room.classroom_id(),
-        start_timestamp.elapsed().as_millis()
+        room = ?room.id(),
+        classroom_id = ?room.classroom_id(),
+        duration = %start_timestamp.elapsed().as_millis(),
+        "Dump events to S3 task successfully finished"
     );
 
     Ok(s3_uri)
@@ -130,9 +130,9 @@ async fn upload_events(
 
         if let Err(ref e) = result {
             error!(
-                "Dump events to S3 task errored, room id = {}, classroom_id = {}, error = {:?}",
-                room.id(),
-                room.classroom_id(),
+                room = ?room.id(),
+                classroom_id = ?room.classroom_id(),
+                "Dump events to S3 task errored, error = {:?}",
                 result
             );
 
