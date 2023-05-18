@@ -182,7 +182,7 @@ impl From<ErrorKind> for ErrorKindProperties {
                 is_notify_sentry: true,
             },
             ErrorKind::S3UploadFailed => ErrorKindProperties {
-                status: ResponseStatus::UNPROCESSABLE_ENTITY,
+                status: ResponseStatus::INTERNAL_SERVER_ERROR,
                 kind: "s3_upload_failed",
                 title: "S3 upload failed",
                 is_notify_sentry: true,
