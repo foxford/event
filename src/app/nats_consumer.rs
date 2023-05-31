@@ -4,13 +4,14 @@ use crate::{
         error::{Error as AppError, ErrorKind, ErrorKindExt},
     },
     config, db,
+    metrics::QueryKey,
 };
 use anyhow::{Context, Result};
 use chrono::{DateTime, TimeZone, Utc};
 use futures_util::StreamExt;
 use serde_json::json;
 use std::{str::FromStr, sync::Arc, time::Duration};
-use svc_conference_events::{Event, EventV1};
+use svc_events::{ban::BanAcceptedV1, Event, EventV1, VideoGroupEventV1};
 use svc_nats_client::{
     AckKind as NatsAckKind, Client, Message, MessageStream, NatsClient, Subject, SubscribeError,
 };
@@ -219,14 +220,8 @@ async fn handle_message(
     message: &Message,
 ) -> Result<(), HandleMessageError> {
     let subject = Subject::from_str(&message.subject).context("parse nats subject")?;
-    let entity_type = subject.entity_type();
-
     let event =
         serde_json::from_slice::<Event>(message.payload.as_ref()).context("parse nats payload")?;
-
-    let (label, created_at) = match event {
-        Event::V1(EventV1::VideoGroup(e)) => (e.as_label().to_owned(), e.created_at()),
-    };
 
     let classroom_id = subject.classroom_id();
     let room = {
@@ -247,6 +242,31 @@ async fn handle_message(
 
     let headers = svc_nats_client::Headers::try_from(message.headers.clone().unwrap_or_default())
         .context("parse nats headers")?;
+
+    match event {
+        Event::V1(EventV1::VideoGroup(e)) => {
+            handle_video_group(ctx, e, &room, subject, &headers).await?;
+        }
+        Event::V1(EventV1::BanAccepted(e)) => {
+            handle_ban_accepted(ctx, e, &room).await?;
+        }
+        _ => {
+            // ignore
+        }
+    };
+
+    Ok(())
+}
+
+async fn handle_video_group(
+    ctx: &dyn GlobalContext,
+    e: VideoGroupEventV1,
+    room: &db::room::Object,
+    subject: Subject,
+    headers: &svc_nats_client::Headers,
+) -> Result<(), HandleMessageError> {
+    let (label, created_at) = (e.as_label().to_owned(), e.created_at());
+    let entity_type = subject.entity_type();
     let agent_id = headers.sender_id();
     let entity_event_id = headers.event_id().sequence_id();
 
@@ -295,6 +315,38 @@ async fn handle_message(
             "failed to create event from nats: {}",
             err
         )));
+    }
+
+    Ok(())
+}
+
+async fn handle_ban_accepted(
+    ctx: &dyn GlobalContext,
+    e: BanAcceptedV1,
+    room: &db::room::Object,
+) -> Result<(), HandleMessageError> {
+    let mut conn = ctx
+        .get_conn()
+        .await
+        .map_err(HandleMessageError::DbConnAcquisitionFailed)?;
+
+    if e.ban {
+        let mut query = db::room_ban::InsertQuery::new(e.user_account, room.id());
+        query.reason("ban event");
+
+        ctx.metrics()
+            .measure_query(QueryKey::BanInsertQuery, query.execute(&mut conn))
+            .await
+            .context("Failed to insert room ban")
+            .map_err(HandleMessageError::Other)?;
+    } else {
+        let query = db::room_ban::DeleteQuery::new(e.user_account, room.id());
+
+        ctx.metrics()
+            .measure_query(QueryKey::BanDeleteQuery, query.execute(&mut conn))
+            .await
+            .context("Failed to delete room ban")
+            .map_err(HandleMessageError::Other)?;
     }
 
     Ok(())
