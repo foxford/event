@@ -99,6 +99,23 @@ pub async fn run(
         None => context_builder,
     };
 
+    let nats_client = match &config.nats {
+        Some(cfg) => {
+            let nats_client = svc_nats_client::Client::new(cfg.clone())
+                .await
+                .context("nats client")?;
+            info!("Connected to nats");
+
+            Some(nats_client)
+        }
+        None => None,
+    };
+
+    let context_builder = match nats_client.clone() {
+        Some(nats_client) => context_builder.add_nats_client(nats_client),
+        None => context_builder,
+    };
+
     let context = context_builder.queue_counter(queue_counter).build(metrics);
 
     let metrics_task = config.metrics.as_ref().map(|metrics| {
@@ -119,18 +136,6 @@ pub async fn run(
                 shutdown_server_rx.changed().await.ok();
             }),
     );
-
-    let nats_client = match &config.nats {
-        Some(cfg) => {
-            let nats_client = svc_nats_client::Client::new(cfg.clone())
-                .await
-                .context("nats client")?;
-            info!("Connected to nats");
-
-            Some(nats_client)
-        }
-        None => None,
-    };
 
     let nats_consumer = match (nats_client, &config.nats_consumer) {
         (Some(nats_client), Some(cfg)) => {

@@ -49,6 +49,7 @@ pub enum ErrorKind {
     InternalNatsError,
     NatsMessageHandlingFailed,
     NatsPublishFailed,
+    NatsClientNotFound,
 }
 
 impl ErrorKind {
@@ -275,6 +276,12 @@ impl From<ErrorKind> for ErrorKindProperties {
                 kind: "nats_publish_failed",
                 title: "Nats publish failed",
                 is_notify_sentry: true
+            },
+            ErrorKind::NatsClientNotFound => ErrorKindProperties {
+                status: ResponseStatus::FAILED_DEPENDENCY,
+                kind: "nats_client_not_found",
+                title: "Nats client not found",
+                is_notify_sentry: true,
             },
         }
     }

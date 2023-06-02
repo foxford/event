@@ -2,13 +2,16 @@ use std::{convert::TryFrom, str::FromStr, sync::Arc};
 
 use anyhow::Context;
 use chrono::{DateTime, TimeZone, Utc};
-use svc_events::{ban::BanAcceptedV1, Event, EventV1, VideoGroupEventV1};
+use svc_events::{
+    ban::{BanAcceptedV1, BanCollaborationCompletedV1},
+    Event, EventV1, VideoGroupEventV1,
+};
 use svc_nats_client::{consumer::HandleMessageOutcome, Subject};
 
 use crate::{db, metrics::QueryKey};
 
 use super::{
-    error::{Error, ErrorKindExt},
+    error::{Error, ErrorExt, ErrorKind, ErrorKindExt},
     GlobalContext,
 };
 
@@ -94,7 +97,9 @@ async fn do_route_msg(
         Event::V1(EventV1::VideoGroup(e)) => {
             handle_video_group(ctx.as_ref(), e, &room, subject, &headers).await
         }
-        Event::V1(EventV1::BanAccepted(e)) => handle_ban_accepted(ctx.as_ref(), e, &room).await,
+        Event::V1(EventV1::BanAccepted(e)) => {
+            handle_ban_accepted(ctx.as_ref(), e, &room, subject, &headers).await
+        }
         _ => {
             // ignore
             Ok(())
@@ -131,13 +136,13 @@ async fn handle_video_group(
                 .num_nanoseconds()
                 .unwrap_or(i64::MAX)
         })
-        .map_err(|_| Error::from(super::error::ErrorKind::InvalidRoomTime))
+        .map_err(|_| Error::from(ErrorKind::InvalidRoomTime))
         .permanent()?;
 
     let mut conn = ctx
         .get_conn()
         .await
-        .map_err(|_| Error::from(super::error::ErrorKind::DbConnAcquisitionFailed))
+        .map_err(|_| Error::from(ErrorKind::DbConnAcquisitionFailed))
         .transient()?;
 
     let result = db::event::InsertQuery::new(
@@ -148,7 +153,7 @@ async fn handle_video_group(
         agent_id.to_owned(),
     )
     .context("invalid event data")
-    .map_err(|e| e.kind(super::error::ErrorKind::InvalidEvent))
+    .map_err(|e| e.kind(ErrorKind::InvalidEvent))
     .permanent()?
     .entity_type(entity_type.to_string())
     .entity_event_id(entity_event_id)
@@ -181,31 +186,55 @@ async fn handle_ban_accepted(
     ctx: &dyn GlobalContext,
     e: BanAcceptedV1,
     room: &db::room::Object,
+    subject: Subject,
+    headers: &svc_nats_client::Headers,
 ) -> Result<(), HandleMsgFailure<Error>> {
     let mut conn = ctx.get_conn().await.transient()?;
 
     if e.ban {
-        let mut query = db::room_ban::InsertQuery::new(e.user_account, room.id());
+        let mut query = db::room_ban::InsertQuery::new(e.user_account.clone(), room.id());
         query.reason("ban event");
 
         ctx.metrics()
             .measure_query(QueryKey::BanInsertQuery, query.execute(&mut conn))
             .await
             .context("Failed to insert room ban")
-            .map_err(|e| Error::new(super::error::ErrorKind::DbQueryFailed, e))
+            .map_err(|e| Error::new(ErrorKind::DbQueryFailed, e))
             .transient()?;
     } else {
-        let query = db::room_ban::DeleteQuery::new(e.user_account, room.id());
+        let query = db::room_ban::DeleteQuery::new(e.user_account.clone(), room.id());
 
         ctx.metrics()
             .measure_query(QueryKey::BanDeleteQuery, query.execute(&mut conn))
             .await
             .context("Failed to delete room ban")
-            .map_err(|e| Error::new(super::error::ErrorKind::DbQueryFailed, e))
+            .map_err(|e| Error::new(ErrorKind::DbQueryFailed, e))
             .transient()?;
     }
 
-    // TODO: publish event
+    let event_id = headers.event_id();
+    let event = BanCollaborationCompletedV1::new_from_accepted(e, event_id.clone());
+
+    let payload = serde_json::to_vec(&event)
+        .error(ErrorKind::InvalidPayload)
+        .permanent()?;
+
+    let event = svc_nats_client::event::Builder::new(
+        subject,
+        payload,
+        event_id.to_owned(),
+        ctx.agent_id().to_owned(),
+    )
+    .build();
+
+    ctx.nats_client()
+        .ok_or_else(|| anyhow!("nats client not found"))
+        .error(ErrorKind::NatsClientNotFound)
+        .transient()?
+        .publish(&event)
+        .await
+        .error(ErrorKind::NatsPublishFailed)
+        .transient()?;
 
     Ok(())
 }
