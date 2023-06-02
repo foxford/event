@@ -381,6 +381,22 @@ impl From<svc_authz::Error> for Error {
     }
 }
 
+impl From<Error> for anyhow::Error {
+    fn from(e: Error) -> Self {
+        anyhow::anyhow!(e.to_svc_error())
+    }
+}
+
+impl From<ErrorKind> for Error {
+    fn from(kind: ErrorKind) -> Self {
+        Self {
+            kind,
+            err: None,
+            tags: HashMap::new(),
+        }
+    }
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 
 pub trait ErrorExt<T> {

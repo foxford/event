@@ -1,0 +1,211 @@
+use std::{convert::TryFrom, str::FromStr, sync::Arc};
+
+use anyhow::Context;
+use chrono::{DateTime, TimeZone, Utc};
+use svc_events::{ban::BanAcceptedV1, Event, EventV1, VideoGroupEventV1};
+use svc_nats_client::{consumer::HandleMessageOutcome, Subject};
+
+use crate::{db, metrics::QueryKey};
+
+use super::{
+    error::{Error, ErrorKindExt},
+    GlobalContext,
+};
+
+// pub mod ban;
+
+pub async fn route_message(
+    ctx: Arc<dyn GlobalContext + Send>,
+    msg: Arc<svc_nats_client::Message>,
+) -> HandleMessageOutcome {
+    match do_route_msg(ctx, msg).await {
+        Ok(_) => HandleMessageOutcome::Processed,
+        Err(HandleMsgFailure::Transient(e)) => {
+            tracing::error!(%e, "transient failure, retrying");
+            HandleMessageOutcome::ProcessLater
+        }
+        Err(HandleMsgFailure::Permanent(e)) => {
+            tracing::error!(%e, "permanent failure, won't process");
+            HandleMessageOutcome::WontProcess
+        }
+    }
+}
+
+pub enum HandleMsgFailure<E> {
+    Transient(E),
+    Permanent(E),
+}
+
+trait FailureKind<T, E> {
+    /// This error can be fixed by retrying later.
+    fn transient(self) -> Result<T, HandleMsgFailure<E>>;
+    /// This error can't be fixed by retrying later (parse failure, unknown id, etc).
+    fn permanent(self) -> Result<T, HandleMsgFailure<E>>;
+}
+
+impl<T, E> FailureKind<T, E> for Result<T, E> {
+    fn transient(self) -> Result<T, HandleMsgFailure<E>> {
+        self.map_err(|e| HandleMsgFailure::Transient(e))
+    }
+
+    fn permanent(self) -> Result<T, HandleMsgFailure<E>> {
+        self.map_err(|e| HandleMsgFailure::Permanent(e))
+    }
+}
+
+async fn do_route_msg(
+    ctx: Arc<dyn GlobalContext>,
+    msg: Arc<svc_nats_client::Message>,
+) -> Result<(), HandleMsgFailure<anyhow::Error>> {
+    let subject = Subject::from_str(&msg.subject)
+        .context("parse nats subject")
+        .permanent()?;
+
+    let event = serde_json::from_slice::<Event>(msg.payload.as_ref())
+        .context("parse nats payload")
+        .permanent()?;
+
+    let classroom_id = subject.classroom_id();
+    let room = {
+        let mut conn = ctx
+            .get_conn()
+            .await
+            .map_err(anyhow::Error::from)
+            .transient()?;
+
+        db::room::FindQuery::by_classroom_id(classroom_id)
+            .execute(&mut conn)
+            .await
+            .context("find room by classroom_id")
+            .transient()?
+            .ok_or(anyhow!(
+                "failed to get room by classroom_id: {}",
+                classroom_id
+            ))
+            .permanent()?
+    };
+
+    let headers = svc_nats_client::Headers::try_from(msg.headers.clone().unwrap_or_default())
+        .context("parse nats headers")
+        .permanent()?;
+    let _agent_id = headers.sender_id();
+
+    let r = match event {
+        Event::V1(EventV1::VideoGroup(e)) => {
+            handle_video_group(ctx.as_ref(), e, &room, subject, &headers).await
+        }
+        Event::V1(EventV1::BanAccepted(e)) => handle_ban_accepted(ctx.as_ref(), e, &room).await,
+        _ => {
+            // ignore
+            Ok(())
+        }
+    };
+
+    match r {
+        Ok(_) => Ok(()),
+        Err(HandleMsgFailure::Transient(e)) => Err(HandleMsgFailure::Transient(anyhow!(e))),
+        Err(HandleMsgFailure::Permanent(e)) => {
+            e.notify_sentry();
+            Err(HandleMsgFailure::Permanent(anyhow!(e)))
+        }
+    }
+}
+
+async fn handle_video_group(
+    ctx: &dyn GlobalContext,
+    e: VideoGroupEventV1,
+    room: &db::room::Object,
+    subject: Subject,
+    headers: &svc_nats_client::Headers,
+) -> Result<(), HandleMsgFailure<Error>> {
+    let (label, created_at) = (e.as_label().to_owned(), e.created_at());
+    let entity_type = subject.entity_type();
+    let agent_id = headers.sender_id();
+    let entity_event_id = headers.event_id().sequence_id();
+
+    let created_at: DateTime<Utc> = Utc.timestamp_nanos(created_at);
+    let occurred_at = room
+        .time()
+        .map(|t| {
+            (created_at - t.start().to_owned())
+                .num_nanoseconds()
+                .unwrap_or(i64::MAX)
+        })
+        .map_err(|_| Error::from(super::error::ErrorKind::InvalidRoomTime))
+        .permanent()?;
+
+    let mut conn = ctx
+        .get_conn()
+        .await
+        .map_err(|_| Error::from(super::error::ErrorKind::DbConnAcquisitionFailed))
+        .transient()?;
+
+    let result = db::event::InsertQuery::new(
+        room.id(),
+        entity_type.to_string(),
+        serde_json::json!({ entity_type: label }),
+        occurred_at,
+        agent_id.to_owned(),
+    )
+    .context("invalid event data")
+    .map_err(|e| e.kind(super::error::ErrorKind::InvalidEvent))
+    .permanent()?
+    .entity_type(entity_type.to_string())
+    .entity_event_id(entity_event_id)
+    .execute(&mut conn)
+    .await;
+
+    if let Err(sqlx::Error::Database(ref err)) = result {
+        if let Some("uniq_entity_type_entity_event_id") = err.constraint() {
+            tracing::warn!(
+                "duplicate nats message, entity_type: {:?}, entity_event_id: {:?}",
+                entity_type.to_string(),
+                entity_event_id
+            );
+
+            return Ok(());
+        };
+    }
+
+    if let Err(err) = result {
+        return Err(HandleMsgFailure::Transient(Error::new(
+            super::error::ErrorKind::DbQueryFailed,
+            anyhow!("failed to create event from nats: {}", err),
+        )));
+    }
+
+    Ok(())
+}
+
+async fn handle_ban_accepted(
+    ctx: &dyn GlobalContext,
+    e: BanAcceptedV1,
+    room: &db::room::Object,
+) -> Result<(), HandleMsgFailure<Error>> {
+    let mut conn = ctx.get_conn().await.transient()?;
+
+    if e.ban {
+        let mut query = db::room_ban::InsertQuery::new(e.user_account, room.id());
+        query.reason("ban event");
+
+        ctx.metrics()
+            .measure_query(QueryKey::BanInsertQuery, query.execute(&mut conn))
+            .await
+            .context("Failed to insert room ban")
+            .map_err(|e| Error::new(super::error::ErrorKind::DbQueryFailed, e))
+            .transient()?;
+    } else {
+        let query = db::room_ban::DeleteQuery::new(e.user_account, room.id());
+
+        ctx.metrics()
+            .measure_query(QueryKey::BanDeleteQuery, query.execute(&mut conn))
+            .await
+            .context("Failed to delete room ban")
+            .map_err(|e| Error::new(super::error::ErrorKind::DbQueryFailed, e))
+            .transient()?;
+    }
+
+    // TODO: publish event
+
+    Ok(())
+}
