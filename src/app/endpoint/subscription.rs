@@ -59,7 +59,7 @@ impl EventHandler for DeleteEventHandler {
     type Payload = DeleteEventPayload;
 
     #[instrument(skip_all, fields(room_id))]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,

@@ -61,7 +61,7 @@ pub(crate) struct ListHandler;
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         Self::Payload { room_id, payload }: Self::Payload,
         reqp: RequestParams<'_>,
@@ -173,7 +173,7 @@ impl RequestHandler for UpdateHandler {
     type Payload = UpdateRequest;
 
     #[instrument(skip_all, fields(scope, room_id, classroom_id))]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         Self::Payload { room_id, payload }: Self::Payload,
         reqp: RequestParams<'_>,

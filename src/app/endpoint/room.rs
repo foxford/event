@@ -69,7 +69,7 @@ impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         payload: Self::Payload,
         reqp: RequestParams<'_>,
@@ -195,7 +195,7 @@ impl RequestHandler for ReadHandler {
             room_id = %payload.id, scope, classroom_id
         )
     )]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         payload: Self::Payload,
         reqp: RequestParams<'_>,
@@ -269,7 +269,7 @@ impl RequestHandler for UpdateHandler {
     type Payload = UpdateRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         Self::Payload { id, payload }: Self::Payload,
         reqp: RequestParams<'_>,
@@ -430,7 +430,7 @@ impl RequestHandler for EnterHandler {
             room_id = %payload.id, scope, classroom_id
         )
     )]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         payload: Self::Payload,
         reqp: RequestParams<'_>,
@@ -582,7 +582,7 @@ impl RequestHandler for LockedTypesHandler {
     type Payload = LockedTypesRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         Self::Payload { id, payload }: Self::Payload,
         reqp: RequestParams<'_>,
@@ -696,7 +696,7 @@ impl RequestHandler for WhiteboardAccessHandler {
     type Payload = WhiteboardAccessRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         Self::Payload { id, payload }: Self::Payload,
         reqp: RequestParams<'_>,
@@ -819,7 +819,7 @@ impl RequestHandler for AdjustHandler {
     type Payload = AdjustRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         Self::Payload { id, payload }: Self::Payload,
         reqp: RequestParams<'_>,

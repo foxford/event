@@ -223,7 +223,7 @@ pub(crate) fn publish_message(agent: &mut Agent, message: Message) -> Result<(),
 // We just need to specify the payload type and specific logic.
 
 pub(crate) trait RequestEnvelopeHandler<'async_trait> {
-    fn handle_envelope<C: Context>(
+    fn handle_envelope<C: Context + Sync>(
         context: &'async_trait mut C,
         request: &'async_trait IncomingRequest<String>,
     ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>>;
@@ -235,7 +235,7 @@ pub(crate) trait RequestEnvelopeHandler<'async_trait> {
 impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
     RequestEnvelopeHandler<'async_trait> for H
 {
-    fn handle_envelope<C: Context>(
+    fn handle_envelope<C: Context + Sync>(
         context: &'async_trait mut C,
         request: &'async_trait IncomingRequest<String>,
     ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>>
@@ -243,7 +243,7 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
         Self: Sync + 'async_trait,
     {
         // The actual implementation.
-        async fn handle_envelope<H: endpoint::RequestHandler, C: Context>(
+        async fn handle_envelope<H: endpoint::RequestHandler, C: Context + Sync>(
             context: &mut C,
             request: &IncomingRequest<String>,
         ) -> MessageStream {
@@ -333,7 +333,7 @@ impl<'async_trait, H: 'async_trait + endpoint::ResponseHandler>
 }
 
 pub(crate) trait EventEnvelopeHandler<'async_trait> {
-    fn handle_envelope<C: Context>(
+    fn handle_envelope<C: Context + Sync>(
         context: &'async_trait mut C,
         envelope: &'async_trait IncomingEvent<String>,
     ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>>;
@@ -343,12 +343,12 @@ pub(crate) trait EventEnvelopeHandler<'async_trait> {
 impl<'async_trait, H: 'async_trait + endpoint::EventHandler> EventEnvelopeHandler<'async_trait>
     for H
 {
-    fn handle_envelope<C: Context>(
+    fn handle_envelope<C: Context + Sync>(
         context: &'async_trait mut C,
         event: &'async_trait IncomingEvent<String>,
     ) -> Pin<Box<dyn Future<Output = MessageStream> + Send + 'async_trait>> {
         // The actual implementation.
-        async fn handle_envelope<H: endpoint::EventHandler, C: Context>(
+        async fn handle_envelope<H: endpoint::EventHandler, C: Context + Sync>(
             context: &mut C,
             event: &IncomingEvent<String>,
         ) -> MessageStream {

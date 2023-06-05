@@ -40,7 +40,7 @@ pub(crate) enum RoomTimeRequirement {
     Open,
 }
 
-pub(crate) async fn find_room<C: Context>(
+pub(crate) async fn find_room<C: Context + Sync>(
     context: &mut C,
     id: Uuid,
     opening_requirement: RoomTimeRequirement,

@@ -124,6 +124,8 @@ pub async fn run(
 
     let metrics = context.metrics();
 
+    // for nats consumer
+    let context_: Arc<dyn GlobalContext + Sync + Send> = Arc::new(context.clone());
     let ctx = Arc::new(context.clone());
     let (graceful_tx, graceful_rx) = tokio::sync::watch::channel(());
     let mut shutdown_server_rx = graceful_rx.clone();
@@ -140,7 +142,7 @@ pub async fn run(
     let nats_consumer = match (nats_client, &config.nats_consumer) {
         (Some(nats_client), Some(cfg)) => {
             svc_nats_client::consumer::run(nats_client, cfg.clone(), graceful_rx.clone(), {
-                let ctx_ = ctx.clone();
+                let ctx_ = context_.clone();
                 move |msg| crate::app::stage::route_message(ctx_.clone(), msg)
             })
         }

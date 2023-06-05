@@ -23,7 +23,7 @@ use super::broker_client::BrokerClient;
 pub trait Context: GlobalContext + MessageContext {}
 
 #[async_trait]
-pub trait GlobalContext: Sync + Send {
+pub trait GlobalContext {
     fn authz(&self) -> &Authz;
     fn config(&self) -> &Config;
     fn db(&self) -> &Db;
@@ -188,13 +188,13 @@ impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
     }
 }
 
-impl<'a, C: GlobalContext> MessageContext for AppMessageContext<'a, C> {
+impl<'a, C: GlobalContext + Sync> MessageContext for AppMessageContext<'a, C> {
     fn start_timestamp(&self) -> DateTime<Utc> {
         self.start_timestamp
     }
 }
 
-impl<'a, C: GlobalContext> Context for AppMessageContext<'a, C> {}
+impl<'a, C: GlobalContext + Sync> Context for AppMessageContext<'a, C> {}
 
 ///////////////////////////////////////////////////////////////////////////////
 

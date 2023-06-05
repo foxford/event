@@ -42,7 +42,7 @@ pub(crate) struct ListHandler;
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync>(
         context: &mut C,
         Self::Payload { room_id }: Self::Payload,
         reqp: RequestParams<'_>,

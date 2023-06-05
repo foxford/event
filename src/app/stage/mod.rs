@@ -16,7 +16,7 @@ use super::{
 };
 
 pub async fn route_message(
-    ctx: Arc<dyn GlobalContext + Send>,
+    ctx: Arc<dyn GlobalContext + Sync + Send>,
     msg: Arc<svc_nats_client::Message>,
 ) -> HandleMessageOutcome {
     match do_route_msg(ctx, msg).await {
@@ -55,7 +55,7 @@ impl<T, E> FailureKind<T, E> for Result<T, E> {
 }
 
 async fn do_route_msg(
-    ctx: Arc<dyn GlobalContext>,
+    ctx: Arc<dyn GlobalContext + Sync + Send>,
     msg: Arc<svc_nats_client::Message>,
 ) -> Result<(), HandleMsgFailure<anyhow::Error>> {
     let subject = Subject::from_str(&msg.subject)
@@ -115,7 +115,7 @@ async fn do_route_msg(
 }
 
 async fn handle_video_group(
-    ctx: &dyn GlobalContext,
+    ctx: &(dyn GlobalContext + Sync),
     e: VideoGroupEventV1,
     room: &db::room::Object,
     subject: Subject,
@@ -181,7 +181,7 @@ async fn handle_video_group(
 }
 
 async fn handle_ban_accepted(
-    ctx: &dyn GlobalContext,
+    ctx: &(dyn GlobalContext + Sync),
     e: BanAcceptedV1,
     room: &db::room::Object,
     subject: Subject,
