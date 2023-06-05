@@ -53,7 +53,7 @@ pub trait GlobalContext {
     }
 }
 
-pub trait MessageContext: Send {
+pub trait MessageContext {
     fn start_timestamp(&self) -> DateTime<Utc>;
 }
 

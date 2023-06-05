@@ -23,16 +23,16 @@ pub(crate) type MqttResult = StdResult<MessageStream, AppError>;
 pub(crate) trait RequestHandler {
     type Payload: Send + DeserializeOwned;
 
-    async fn handle<C: Context + Sync>(
-        context: &mut C,
+    async fn handle<'a, C: Context + Sync + Send>(
+        context: &'a mut C,
         payload: Self::Payload,
-        reqp: RequestParams<'_>,
+        reqp: RequestParams<'a>,
     ) -> RequestResult;
 }
 
 macro_rules! request_routes {
     ($($m: pat => $h: ty),*) => {
-        pub(crate) async fn route_request<C: Context + Sync>(
+        pub(crate) async fn route_request<C: Context + Sync + Send>(
             context: &mut C,
             request: &IncomingRequest<String>,
         ) -> Option<MessageStream> {
@@ -102,7 +102,7 @@ pub(crate) trait ResponseHandler {
 pub(crate) trait EventHandler {
     type Payload: Send + DeserializeOwned;
 
-    async fn handle<C: Context + Sync>(
+    async fn handle<C: Context + Sync + Send>(
         context: &mut C,
         payload: Self::Payload,
         evp: &IncomingEventProperties,
@@ -112,7 +112,7 @@ pub(crate) trait EventHandler {
 macro_rules! event_routes {
     ($($l: pat => $h: ty),*) => {
         #[allow(unused_variables)]
-        pub(crate) async fn route_event<C: Context + Sync>(
+        pub(crate) async fn route_event<C: Context + Sync + Send>(
             context: &mut C,
             event: &IncomingEvent<String>,
         ) -> Option<MessageStream> {

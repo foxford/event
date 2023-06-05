@@ -42,10 +42,10 @@ pub(crate) struct ListHandler;
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
-    async fn handle<C: Context + Sync>(
-        context: &mut C,
+    async fn handle<'a, C: Context + Sync + Send>(
+        context: &'a mut C,
         Self::Payload { room_id }: Self::Payload,
-        reqp: RequestParams<'_>,
+        reqp: RequestParams<'a>,
     ) -> RequestResult {
         let room = helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Open).await?;
 

@@ -18,10 +18,10 @@ pub(crate) struct VacuumHandler;
 impl RequestHandler for VacuumHandler {
     type Payload = VacuumRequest;
 
-    async fn handle<C: Context + Sync>(
-        context: &mut C,
+    async fn handle<'a, C: Context + Sync + Send>(
+        context: &'a mut C,
         _payload: Self::Payload,
-        reqp: RequestParams<'_>,
+        reqp: RequestParams<'a>,
     ) -> RequestResult {
         // Authz: only trusted subjects.
         let authz_time = context

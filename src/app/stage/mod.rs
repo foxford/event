@@ -19,7 +19,7 @@ pub async fn route_message(
     ctx: Arc<dyn GlobalContext + Sync + Send>,
     msg: Arc<svc_nats_client::Message>,
 ) -> HandleMessageOutcome {
-    match do_route_msg(ctx, msg).await {
+    match do_route_msg(ctx.as_ref(), msg).await {
         Ok(_) => HandleMessageOutcome::Processed,
         Err(HandleMsgFailure::Transient(e)) => {
             tracing::error!(%e, "transient failure, retrying");
@@ -55,7 +55,7 @@ impl<T, E> FailureKind<T, E> for Result<T, E> {
 }
 
 async fn do_route_msg(
-    ctx: Arc<dyn GlobalContext + Sync + Send>,
+    ctx: &(dyn GlobalContext + Sync + Send),
     msg: Arc<svc_nats_client::Message>,
 ) -> Result<(), HandleMsgFailure<anyhow::Error>> {
     let subject = Subject::from_str(&msg.subject)
@@ -93,10 +93,10 @@ async fn do_route_msg(
 
     let r = match event {
         Event::V1(EventV1::VideoGroup(e)) => {
-            handle_video_group(ctx.as_ref(), e, &room, subject, &headers).await
+            handle_video_group(ctx, e, &room, subject, &headers).await
         }
         Event::V1(EventV1::BanAccepted(e)) => {
-            handle_ban_accepted(ctx.as_ref(), e, &room, subject, &headers).await
+            handle_ban_accepted(ctx, e, &room, subject, &headers).await
         }
         _ => {
             // ignore

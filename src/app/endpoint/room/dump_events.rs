@@ -65,10 +65,10 @@ pub(crate) struct EventsDumpHandler;
 impl RequestHandler for EventsDumpHandler {
     type Payload = EventsDumpRequest;
 
-    async fn handle<C: Context + Sync>(
-        context: &mut C,
+    async fn handle<'a, C: Context + Sync + Send>(
+        context: &'a mut C,
         payload: Self::Payload,
-        reqp: RequestParams<'_>,
+        reqp: RequestParams<'a>,
     ) -> RequestResult {
         let room =
             helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Any).await?;

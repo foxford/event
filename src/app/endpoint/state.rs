@@ -62,10 +62,10 @@ impl RequestHandler for ReadHandler {
     type Payload = ReadRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<C: Context + Sync>(
-        context: &mut C,
+    async fn handle<'a, C: Context + Sync + Send>(
+        context: &'a mut C,
         Self::Payload { room_id, payload }: Self::Payload,
-        reqp: RequestParams<'_>,
+        reqp: RequestParams<'a>,
     ) -> RequestResult {
         Span::current().record("room_id", &display(room_id));
 
