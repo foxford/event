@@ -15,8 +15,6 @@ use super::{
     GlobalContext,
 };
 
-// pub mod ban;
-
 pub async fn route_message(
     ctx: Arc<dyn GlobalContext + Send>,
     msg: Arc<svc_nats_client::Message>,
@@ -192,7 +190,7 @@ async fn handle_ban_accepted(
     let mut conn = ctx.get_conn().await.transient()?;
 
     if e.ban {
-        let mut query = db::room_ban::InsertQuery::new(e.user_account.clone(), room.id());
+        let mut query = db::room_ban::InsertQuery::new(e.target_account.clone(), room.id());
         query.reason("ban event");
 
         ctx.metrics()
@@ -202,7 +200,7 @@ async fn handle_ban_accepted(
             .map_err(|e| Error::new(ErrorKind::DbQueryFailed, e))
             .transient()?;
     } else {
-        let query = db::room_ban::DeleteQuery::new(e.user_account.clone(), room.id());
+        let query = db::room_ban::DeleteQuery::new(e.target_account.clone(), room.id());
 
         ctx.metrics()
             .measure_query(QueryKey::BanDeleteQuery, query.execute(&mut conn))
