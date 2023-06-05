@@ -143,7 +143,7 @@ async fn handle_video_group(
         .map_err(|_| Error::from(ErrorKind::DbConnAcquisitionFailed))
         .transient()?;
 
-    let result = db::event::InsertQuery::new(
+    let query = db::event::InsertQuery::new(
         room.id(),
         entity_type.to_string(),
         serde_json::json!({ entity_type: label }),
@@ -154,9 +154,12 @@ async fn handle_video_group(
     .map_err(|e| e.kind(ErrorKind::InvalidEvent))
     .permanent()?
     .entity_type(entity_type.to_string())
-    .entity_event_id(entity_event_id)
-    .execute(&mut conn)
-    .await;
+    .entity_event_id(entity_event_id);
+
+    let result = ctx
+        .metrics()
+        .measure_query(QueryKey::EventInsertQuery, query.execute(&mut conn))
+        .await;
 
     if let Err(sqlx::Error::Database(ref err)) = result {
         if let Some("uniq_entity_type_entity_event_id") = err.constraint() {
