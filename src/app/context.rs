@@ -188,13 +188,13 @@ impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
     }
 }
 
-impl<'a, C: GlobalContext + Sync> MessageContext for AppMessageContext<'a, C> {
+impl<'a, C: GlobalContext> MessageContext for AppMessageContext<'a, C> {
     fn start_timestamp(&self) -> DateTime<Utc> {
         self.start_timestamp
     }
 }
 
-impl<'a, C: GlobalContext + Sync> Context for AppMessageContext<'a, C> {}
+impl<'a, C: GlobalContext> Context for AppMessageContext<'a, C> {}
 
 ///////////////////////////////////////////////////////////////////////////////
 
