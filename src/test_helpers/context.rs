@@ -8,7 +8,8 @@ use sqlx::postgres::PgPool as Db;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
 use svc_nats_client::{
-    Event, Message, MessageStream, NatsClient, PublishError, SubscribeError, TermMessageError,
+    AckPolicy, DeliverPolicy, Event, Message, MessageStream, Messages, NatsClient, PublishError,
+    Subject, SubscribeError, TermMessageError,
 };
 
 use crate::{
@@ -148,7 +149,16 @@ impl NatsClient for TestNatsClient {
         Ok(())
     }
 
-    async fn subscribe(&self) -> Result<MessageStream, SubscribeError> {
+    async fn subscribe_durable(&self) -> Result<MessageStream, SubscribeError> {
+        unimplemented!()
+    }
+
+    async fn subscribe_ephemeral(
+        &self,
+        _subject: Subject,
+        _deliver_policy: DeliverPolicy,
+        _ack_policy: AckPolicy,
+    ) -> Result<Messages, SubscribeError> {
         unimplemented!()
     }
 

@@ -6,7 +6,10 @@ use svc_events::{
     ban::{BanAcceptedV1, BanCollaborationCompletedV1},
     Event, EventV1, VideoGroupEventV1,
 };
-use svc_nats_client::{consumer::HandleMessageOutcome, Subject};
+use svc_nats_client::{
+    consumer::{FailureKind, FailureKindExt, HandleMessageFailure},
+    Subject,
+};
 
 use crate::{db, metrics::QueryKey};
 
@@ -18,46 +21,7 @@ use super::{
 pub async fn route_message(
     ctx: Arc<dyn GlobalContext + Sync + Send>,
     msg: Arc<svc_nats_client::Message>,
-) -> HandleMessageOutcome {
-    match do_route_msg(ctx.as_ref(), msg).await {
-        Ok(_) => HandleMessageOutcome::Processed,
-        Err(HandleMsgFailure::Transient(e)) => {
-            tracing::error!(%e, "transient failure, retrying");
-            HandleMessageOutcome::ProcessLater
-        }
-        Err(HandleMsgFailure::Permanent(e)) => {
-            tracing::error!(%e, "permanent failure, won't process");
-            HandleMessageOutcome::WontProcess
-        }
-    }
-}
-
-pub enum HandleMsgFailure<E> {
-    Transient(E),
-    Permanent(E),
-}
-
-trait FailureKind<T, E> {
-    /// This error can be fixed by retrying later.
-    fn transient(self) -> Result<T, HandleMsgFailure<E>>;
-    /// This error can't be fixed by retrying later (parse failure, unknown id, etc).
-    fn permanent(self) -> Result<T, HandleMsgFailure<E>>;
-}
-
-impl<T, E> FailureKind<T, E> for Result<T, E> {
-    fn transient(self) -> Result<T, HandleMsgFailure<E>> {
-        self.map_err(|e| HandleMsgFailure::Transient(e))
-    }
-
-    fn permanent(self) -> Result<T, HandleMsgFailure<E>> {
-        self.map_err(|e| HandleMsgFailure::Permanent(e))
-    }
-}
-
-async fn do_route_msg(
-    ctx: &(dyn GlobalContext + Sync + Send),
-    msg: Arc<svc_nats_client::Message>,
-) -> Result<(), HandleMsgFailure<anyhow::Error>> {
+) -> Result<(), HandleMessageFailure<anyhow::Error>> {
     let subject = Subject::from_str(&msg.subject)
         .context("parse nats subject")
         .permanent()?;
@@ -93,10 +57,10 @@ async fn do_route_msg(
 
     let r = match event {
         Event::V1(EventV1::VideoGroup(e)) => {
-            handle_video_group(ctx, e, &room, subject, &headers).await
+            handle_video_group(ctx.as_ref(), e, &room, subject, &headers).await
         }
         Event::V1(EventV1::BanAccepted(e)) => {
-            handle_ban_accepted(ctx, e, &room, subject, &headers).await
+            handle_ban_accepted(ctx.as_ref(), e, &room, subject, &headers).await
         }
         _ => {
             // ignore
@@ -104,14 +68,7 @@ async fn do_route_msg(
         }
     };
 
-    match r {
-        Ok(_) => Ok(()),
-        Err(HandleMsgFailure::Transient(e)) => Err(HandleMsgFailure::Transient(anyhow!(e))),
-        Err(HandleMsgFailure::Permanent(e)) => {
-            e.notify_sentry();
-            Err(HandleMsgFailure::Permanent(anyhow!(e)))
-        }
-    }
+    FailureKindExt::map_err(r, |e| anyhow!(e))
 }
 
 async fn handle_video_group(
@@ -120,7 +77,7 @@ async fn handle_video_group(
     room: &db::room::Object,
     subject: Subject,
     headers: &svc_nats_client::Headers,
-) -> Result<(), HandleMsgFailure<Error>> {
+) -> Result<(), HandleMessageFailure<Error>> {
     let (label, created_at) = (e.as_label().to_owned(), e.created_at());
     let entity_type = subject.entity_type();
     let agent_id = headers.sender_id();
@@ -174,7 +131,7 @@ async fn handle_video_group(
     }
 
     if let Err(err) = result {
-        return Err(HandleMsgFailure::Transient(Error::new(
+        return Err(HandleMessageFailure::Transient(Error::new(
             super::error::ErrorKind::DbQueryFailed,
             anyhow!("failed to create event from nats: {}", err),
         )));
@@ -189,7 +146,7 @@ async fn handle_ban_accepted(
     room: &db::room::Object,
     subject: Subject,
     headers: &svc_nats_client::Headers,
-) -> Result<(), HandleMsgFailure<Error>> {
+) -> Result<(), HandleMessageFailure<Error>> {
     let mut conn = ctx.get_conn().await.transient()?;
 
     if e.ban {

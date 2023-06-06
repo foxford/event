@@ -48,10 +48,10 @@ impl RequestHandler for DeleteHandler {
             scope, room_id, classroom_id, edition_id
         )
     )]
-    async fn handle<C: Context>(
-        context: &mut C,
+    async fn handle<'a, C: Context + Sync + Send>(
+        context: &'a mut C,
         payload: Self::Payload,
-        reqp: RequestParams<'_>,
+        reqp: RequestParams<'a>,
     ) -> RequestResult {
         let (change, room) = {
             let query = db::change::FindWithRoomQuery::new(payload.id);

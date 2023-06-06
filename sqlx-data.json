@@ -1185,6 +1185,138 @@
     },
     "query": "\n            INSERT INTO adjustment (room_id, started_at, segments, \"offset\")\n            VALUES ($1, $2, $3, $4)\n            RETURNING\n                room_id,\n                started_at,\n                segments AS \"segments!: Segments\",\n                \"offset\",\n                created_at\n            "
   },
+  "4655b9d7ff2c98f8ab757e13c267f9714428f2db508ffac956b642a05c8d7371": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "agent_id!: AgentId",
+          "ordinal": 1,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          }
+        },
+        {
+          "name": "room_id",
+          "ordinal": 2,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "status!: Status",
+          "ordinal": 3,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Enum": [
+                  "in_progress",
+                  "ready"
+                ]
+              },
+              "name": "agent_status"
+            }
+          }
+        },
+        {
+          "name": "created_at",
+          "ordinal": 4,
+          "type_info": "Timestamptz"
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          {
+            "Custom": {
+              "kind": {
+                "Composite": [
+                  [
+                    "account_id",
+                    {
+                      "Custom": {
+                        "kind": {
+                          "Composite": [
+                            [
+                              "label",
+                              "Text"
+                            ],
+                            [
+                              "audience",
+                              "Text"
+                            ]
+                          ]
+                        },
+                        "name": "account_id"
+                      }
+                    }
+                  ],
+                  [
+                    "label",
+                    "Text"
+                  ]
+                ]
+              },
+              "name": "agent_id"
+            }
+          },
+          "Uuid",
+          {
+            "Custom": {
+              "kind": {
+                "Enum": [
+                  "in_progress",
+                  "ready"
+                ]
+              },
+              "name": "agent_status"
+            }
+          },
+          "Int8",
+          "Int8"
+        ]
+      }
+    },
+    "query": "\n            SELECT\n                id,\n                agent_id            AS \"agent_id!: AgentId\",\n                room_id,\n                status              AS \"status!: Status\",\n                created_at\n            FROM agent\n            WHERE ($1::agent_id IS NULL OR agent_id = $1)\n                AND ($2::uuid IS NULL OR room_id = $2)\n                AND ($3::agent_status IS NULL OR status = $3)\n            ORDER BY created_at DESC LIMIT $4 OFFSET $5\n            "
+  },
   "6039c8fc3c3a35e4104b47ef5d3763a5dabb4e7e8a42ddc8f8f5fe787919b28e": {
     "describe": {
       "columns": [

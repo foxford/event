@@ -56,13 +56,13 @@ impl RequestHandler for CommitHandler {
     type Payload = CommitRequest;
 
     #[instrument(skip_all, fields(edition_id, offset, room_id, scope, classroom_id,))]
-    async fn handle<C: Context>(
-        context: &mut C,
+    async fn handle<'a, C: Context + Sync + Send>(
+        context: &'a mut C,
         CommitRequest {
             id,
             payload: CommitPayload { offset },
         }: Self::Payload,
-        reqp: RequestParams<'_>,
+        reqp: RequestParams<'a>,
     ) -> RequestResult {
         Span::current().record("edition_id", &display(id));
         Span::current().record("offset", &display(offset));

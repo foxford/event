@@ -50,10 +50,10 @@ impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<C: Context>(
-        context: &mut C,
+    async fn handle<'a, C: Context + Sync + Send>(
+        context: &'a mut C,
         Self::Payload { room_id, payload }: Self::Payload,
-        reqp: RequestParams<'_>,
+        reqp: RequestParams<'a>,
     ) -> RequestResult {
         let room = helpers::find_room(context, room_id, helpers::RoomTimeRequirement::Any).await?;
 
