@@ -39,8 +39,8 @@ svc-authn = { version = "0.8", features = ["jose", "sqlx"] }
 svc-authz = { version = "0.12" }
 svc-error = { version = "0.5", features = ["sqlx", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
 svc-utils = { version = "0.7", features = ["authn-extractor", "cors-middleware", "log-middleware"] }
-svc-nats-client = { git = "https://github.com/foxford/svc-nats-client/", branch = "ULMS-1896/add-transient-permanent-errors" }
-svc-events = "0.7"
+svc-nats-client = "0.5"
+svc-events = "0.9"
 tokio = { version = "1.28", features = ["full"] }
 tower = "0.4"
 tower-http = { version = "0.4", features = ["trace", "cors"] }
