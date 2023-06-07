@@ -50,10 +50,10 @@ impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
     #[instrument(skip_all, fields(edition_id, scope, room_id, classroom_id, change_id))]
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         Self::Payload { id, payload }: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult {
         Span::current().record("edition_id", &display(id));
         let (edition, room) = {

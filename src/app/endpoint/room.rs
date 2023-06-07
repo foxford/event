@@ -69,10 +69,10 @@ impl RequestHandler for CreateHandler {
     type Payload = CreateRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         payload: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult {
         // Validate opening time.
         match RoomTime::new(payload.time) {
@@ -195,10 +195,10 @@ impl RequestHandler for ReadHandler {
             room_id = %payload.id, scope, classroom_id
         )
     )]
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         payload: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult {
         let room =
             helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Any).await?;
@@ -269,10 +269,10 @@ impl RequestHandler for UpdateHandler {
     type Payload = UpdateRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         Self::Payload { id, payload }: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult {
         let time_requirement = if payload.time.is_some() {
             // Forbid changing time of a closed room.
@@ -430,10 +430,10 @@ impl RequestHandler for EnterHandler {
             room_id = %payload.id, scope, classroom_id
         )
     )]
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         payload: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult {
         let room =
             helpers::find_room(context, payload.id, helpers::RoomTimeRequirement::Open).await?;
@@ -582,10 +582,10 @@ impl RequestHandler for LockedTypesHandler {
     type Payload = LockedTypesRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         Self::Payload { id, payload }: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult {
         // Find realtime room.
         let room = helpers::find_room(context, id, helpers::RoomTimeRequirement::Any).await?;
@@ -696,10 +696,10 @@ impl RequestHandler for WhiteboardAccessHandler {
     type Payload = WhiteboardAccessRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         Self::Payload { id, payload }: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult {
         // Find realtime room.
         let room = helpers::find_room(context, id, helpers::RoomTimeRequirement::Any).await?;
@@ -819,10 +819,10 @@ impl RequestHandler for AdjustHandler {
     type Payload = AdjustRequest;
 
     #[instrument(skip_all, fields(room_id, scope, classroom_id))]
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         Self::Payload { id, payload }: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult {
         // Find realtime room.
         let room = helpers::find_room(context, id, helpers::RoomTimeRequirement::Any).await?;

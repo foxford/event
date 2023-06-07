@@ -46,10 +46,10 @@ impl RequestHandler for CreateHandler {
             scope, classroom_id, edition_id
         )
     )]
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         payload: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult {
         let room =
             helpers::find_room(context, payload.room_id, helpers::RoomTimeRequirement::Any).await?;

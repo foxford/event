@@ -48,10 +48,10 @@ impl RequestHandler for CreateHandler {
             scope, room_id, classroom_id, change_id
         )
     )]
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         payload: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult {
         let (_edition, room) = {
             let query = db::edition::FindWithRoomQuery::new(payload.edition_id);

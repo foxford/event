@@ -23,14 +23,10 @@ pub(crate) type MqttResult = StdResult<MessageStream, AppError>;
 pub(crate) trait RequestHandler {
     type Payload: Send + DeserializeOwned;
 
-    // this lifetime is not elided (e.g. RequestParams<'_')
-    // to avoid ICE with some rustc versions
-    // tested on 1.67 and 1.69
-    // maybe other versions have this ICE as well
-    async fn handle<'a, C: Context + Sync + Send>(
-        context: &'a mut C,
+    async fn handle<C: Context + Sync + Send>(
+        context: &mut C,
         payload: Self::Payload,
-        reqp: RequestParams<'a>,
+        reqp: RequestParams<'_>,
     ) -> RequestResult;
 }
 
