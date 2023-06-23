@@ -4,7 +4,7 @@ use anyhow::Context;
 use chrono::{DateTime, TimeZone, Utc};
 use svc_events::{
     ban::{BanAcceptedV1, BanCollaborationCompletedV1},
-    Event, EventV1, VideoGroupEventV1,
+    Event, EventId, EventV1, VideoGroupEventV1,
 };
 use svc_nats_client::{
     consumer::{FailureKind, FailureKindExt, HandleMessageFailure},
@@ -177,6 +177,12 @@ async fn handle_ban_accepted(
     let payload = serde_json::to_vec(&event)
         .error(ErrorKind::InvalidPayload)
         .permanent()?;
+
+    let event_id = EventId::from((
+        event_id.entity_type().to_owned(),
+        "collaboration_completed".to_owned(),
+        event_id.sequence_id(),
+    ));
 
     let event = svc_nats_client::event::Builder::new(
         subject,
