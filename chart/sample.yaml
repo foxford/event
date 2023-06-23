@@ -28,6 +28,8 @@ app:
   s3:
     secretName: "s3-credentials"
 ingress:
-  host: test.net
+  hosts:
+    - foo.bar
+    - bar.foo
 sentry:
   dsn: https://test@foo.bar/123
