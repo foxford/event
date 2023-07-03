@@ -34,6 +34,7 @@ pub enum ErrorKind {
     MessageHandlingFailed,
     MqttClientNotConnected,
     NoS3Client,
+    S3UploadFailed,
     StatsCollectionFailed,
     PublishFailed,
     RoomAdjustTaskFailed,
@@ -178,6 +179,12 @@ impl From<ErrorKind> for ErrorKindProperties {
                 status: ResponseStatus::NOT_IMPLEMENTED,
                 kind: "no_s3_client",
                 title: "No s3 configuration, nowhere to dump events to",
+                is_notify_sentry: true,
+            },
+            ErrorKind::S3UploadFailed => ErrorKindProperties {
+                status: ResponseStatus::INTERNAL_SERVER_ERROR,
+                kind: "s3_upload_failed",
+                title: "S3 upload failed",
                 is_notify_sentry: true,
             },
             ErrorKind::SerializationFailed => ErrorKindProperties {
