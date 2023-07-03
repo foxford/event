@@ -35,12 +35,18 @@ struct S3Content {
     events: Vec<Event>,
 }
 
-pub async fn call(db: &Db, metrics: &Metrics, s3_client: S3Client, room: &Room) -> Result<String> {
+pub async fn call(
+    db: &Db,
+    metrics: &Metrics,
+    s3_client: S3Client,
+    room: &Room,
+    events_dump_bucket_prefix: &str,
+) -> Result<String> {
     info!(room = ?room.id(), classroom_id = ?room.classroom_id(), "Dump events to S3 task started");
 
     let start_timestamp = Instant::now();
 
-    let destination = s3_destination(room);
+    let destination = s3_destination(room, events_dump_bucket_prefix);
 
     let events = load_room_events(db, metrics, room).await?;
 
@@ -146,9 +152,9 @@ async fn upload_events(
     Ok(s3_uri)
 }
 
-fn s3_destination(room: &Room) -> S3Destination {
+fn s3_destination(room: &Room, events_dump_bucket_prefix: &str) -> S3Destination {
     S3Destination {
-        bucket: format!("eventsdump.{}", room.audience()),
+        bucket: format!("{events_dump_bucket_prefix}.{}", room.audience()),
         key: format!("{}.json", room.id()),
     }
 }

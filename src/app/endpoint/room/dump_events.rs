@@ -97,8 +97,11 @@ impl RequestHandler for EventsDumpHandler {
             })
             .error(AppErrorKind::NoS3Client)?;
 
+        let events_dump_bucket_prefix = context.config().to_owned().s3.events_dump_bucket_prefix;
         let notification_future = tokio::task::spawn(async move {
-            let result = dump_events_to_s3(&db, &metrics, s3_client, &room).await;
+            let result =
+                dump_events_to_s3(&db, &metrics, s3_client, &room, &events_dump_bucket_prefix)
+                    .await;
 
             // Handle result.
             let result = match result {

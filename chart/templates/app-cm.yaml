@@ -16,6 +16,9 @@ data:
 
     [constraint]
     payload_size = {{ .Values.constraint.payload_size }}
+    
+    [s3]
+    events_dump_bucket_prefix = {{ .Values.app.s3.eventsDumpBucketPrefix | quote }}
 
     [http_broker_client]
     host = "http://mqtt-gateway-cluster:8081"

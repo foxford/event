@@ -30,6 +30,7 @@ pub struct Config {
     pub adjust: AdjustConfig,
     pub nats: Option<svc_nats_client::Config>,
     pub nats_consumer: Option<NatsConsumer>,
+    pub s3: S3Config,
 }
 
 impl Config {
@@ -111,4 +112,9 @@ pub struct NatsConsumer {
     pub suspend_sentry_interval: StdDuration,
     #[serde(with = "humantime_serde")]
     pub resubscribe_interval: StdDuration,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+pub struct S3Config {
+    pub events_dump_bucket_prefix: String,
 }

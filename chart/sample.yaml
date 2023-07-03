@@ -27,6 +27,7 @@ app:
           - dispatcher
   s3:
     secretName: "s3-credentials"
+    eventsDumpBucketPrefix: "eventsdump.webinar"
 ingress:
   host: test.net
 sentry:
