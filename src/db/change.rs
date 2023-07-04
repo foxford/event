@@ -6,7 +6,7 @@ use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
 use uuid::Uuid;
 
-use crate::db::room::{Builder as RoomBuilder, Object as Room, Time as RoomTime};
+use crate::db::room::{Builder as RoomBuilder, ClassType, Object as Room, Time as RoomTime};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -114,7 +114,8 @@ impl FindWithRoomQuery {
                     r.tags               AS room_tags,
                     r.created_at         AS room_created_at,
                     r.preserve_history   AS room_preserve_history,
-                    r.classroom_id       AS room_classroom_id
+                    r.classroom_id       AS room_classroom_id,
+                    r.kind               AS "room_kind?: ClassType"
                 FROM change AS c
                 INNER JOIN edition AS e
                 ON e.id = c.edition_id
@@ -153,6 +154,7 @@ impl FindWithRoomQuery {
                     .created_at(row.room_created_at)
                     .preserve_history(row.room_preserve_history)
                     .classroom_id(row.room_classroom_id)
+                    .kind(row.room_kind)
                     .build()
                     .map_err(|err| sqlx::Error::Decode(err.into()))?;
 

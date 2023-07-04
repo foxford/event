@@ -23,6 +23,7 @@ use crate::{
 
 const RETRIES: u8 = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(200);
+const EVENTS_DUMP_BUCKET: &str = "eventsdump";
 
 struct S3Destination {
     bucket: String,
@@ -147,8 +148,14 @@ async fn upload_events(
 }
 
 fn s3_destination(room: &Room) -> S3Destination {
+    let bucket = if let Some(kind) = room.kind() {
+        format!("{EVENTS_DUMP_BUCKET}.{kind}.{}", room.audience())
+    } else {
+        format!("{EVENTS_DUMP_BUCKET}.{}", room.audience())
+    };
+
     S3Destination {
-        bucket: format!("eventsdump.{}", room.audience()),
+        bucket,
         key: format!("{}.json", room.id()),
     }
 }

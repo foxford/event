@@ -28,7 +28,7 @@ use crate::app::{
 };
 use crate::db::adjustment::Segments;
 use crate::db::agent;
-use crate::db::room::{InsertQuery, UpdateQuery};
+use crate::db::room::{ClassType, InsertQuery, UpdateQuery};
 use crate::db::room_time::{BoundedDateTimeTuple, RoomTime};
 use crate::{
     app::operations::{adjust_room, AdjustOutput},
@@ -45,6 +45,7 @@ pub struct CreateRequest {
     classroom_id: Uuid,
     #[serde(default)]
     validate_whiteboard_access: Option<bool>,
+    kind: Option<ClassType>,
 }
 
 pub async fn create(
@@ -127,6 +128,10 @@ impl RequestHandler for CreateHandler {
 
             if let Some(flag) = payload.validate_whiteboard_access {
                 query = query.validate_whiteboard_access(flag);
+            }
+
+            if let Some(kind) = payload.kind {
+                query = query.kind(kind);
             }
 
             let mut conn = context.get_conn().await?;
@@ -993,6 +998,7 @@ mod tests {
                 preserve_history: Some(false),
                 classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
+                kind: Some(ClassType::Minigroup),
             };
 
             let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -1038,6 +1044,7 @@ mod tests {
                 preserve_history: Some(false),
                 classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
+                kind: None,
             };
 
             let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -1084,6 +1091,7 @@ mod tests {
                 preserve_history: Some(false),
                 classroom_id: cid,
                 validate_whiteboard_access: None,
+                kind: Some(ClassType::Webinar),
             };
 
             let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -1129,6 +1137,7 @@ mod tests {
                 preserve_history: None,
                 classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
+                kind: None,
             };
 
             let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -1155,6 +1164,7 @@ mod tests {
                 preserve_history: None,
                 classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
+                kind: None,
             };
 
             let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
