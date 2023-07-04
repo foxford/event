@@ -7,7 +7,7 @@ use svc_agent::AgentId;
 use svc_authn::Authenticable;
 use uuid::Uuid;
 
-use crate::db;
+use crate::db::{self, room::ClassType};
 
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -19,6 +19,7 @@ pub struct Room {
     preserve_history: Option<bool>,
     classroom_id: Uuid,
     validate_whiteboard_access: Option<bool>,
+    kind: Option<ClassType>,
 }
 
 impl Room {
@@ -64,6 +65,13 @@ impl Room {
         }
     }
 
+    pub fn kind(self, kind: ClassType) -> Self {
+        Self {
+            kind: Some(kind),
+            ..self
+        }
+    }
+
     pub async fn insert(self, conn: &mut PgConnection) -> db::room::Object {
         let audience = self.audience.expect("Audience not set");
         let time = self.time.expect("Time not set");
@@ -80,6 +88,10 @@ impl Room {
 
         if let Some(validate_whiteboard_access) = self.validate_whiteboard_access {
             query = query.validate_whiteboard_access(validate_whiteboard_access)
+        }
+
+        if let Some(kind) = self.kind {
+            query = query.kind(kind);
         }
 
         query.execute(conn).await.expect("Failed to insert room")

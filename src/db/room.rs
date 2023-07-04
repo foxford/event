@@ -49,6 +49,7 @@ pub enum ClassType {
 
 impl fmt::Display for ClassType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Used to generate S3 bucket names to dump events
         let kind = match self {
             ClassType::Webinar => "webinar",
             ClassType::P2P => "p2p",

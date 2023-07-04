@@ -257,18 +257,27 @@ mod tests {
         .expect("Failed to insert event");
     }
 
-    //     fn s3_destination(room: &Room) -> S3Destination {
-    //     let bucket = if let Some(kind) = room.kind() {
-    //         format!("{EVENTS_DUMP_BUCKET}.{kind}.{}", room.audience())
-    //     } else {
-    //         format!("{EVENTS_DUMP_BUCKET}.{}", room.audience())
-    //     };
-    //
-    //     S3Destination {
-    //         bucket,
-    //         key: format!("{}.json", room.id()),
-    //     }
-    // }
-    #[test]
-    fn s3_destination_test() {}
+    #[tokio::test]
+    async fn s3_destination_test() {
+        let db = TestDb::new().await;
+        let mut conn = db.get_conn().await;
+
+        // Create p2p room
+        let room = {
+            use crate::db::room::ClassType;
+            use chrono::{SubsecRound, Utc};
+            use uuid::Uuid;
+
+            let now = Utc::now().trunc_subsecs(0);
+            factory::Room::new(Uuid::new_v4())
+                .audience(USR_AUDIENCE)
+                .time((Bound::Included(now), Bound::Unbounded))
+                .kind(ClassType::P2P)
+                .insert(&mut conn)
+                .await
+        };
+
+        let S3Destination { bucket, .. } = s3_destination(&room);
+        assert_eq!(bucket, format!("eventsdump.p2p.{}", room.audience()))
+    }
 }
