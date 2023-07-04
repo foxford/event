@@ -3,7 +3,7 @@ use serde_derive::Deserialize;
 use svc_agent::mqtt::ResponseStatus;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct OutgoingEnvelope {
+pub struct OutgoingEnvelope {
     payload: String,
     properties: OutgoingEnvelopeProperties,
     #[serde(skip)]
@@ -11,15 +11,15 @@ pub(crate) struct OutgoingEnvelope {
 }
 
 impl OutgoingEnvelope {
-    pub(crate) fn payload<P: DeserializeOwned>(&self) -> P {
+    pub fn payload<P: DeserializeOwned>(&self) -> P {
         serde_json::from_str::<P>(&self.payload).expect("Failed to parse payload")
     }
 
-    pub(crate) fn properties(&self) -> &OutgoingEnvelopeProperties {
+    pub fn properties(&self) -> &OutgoingEnvelopeProperties {
         &self.properties
     }
 
-    pub(crate) fn topic(&self) -> &str {
+    pub fn topic(&self) -> &str {
         &self.topic
     }
 
@@ -31,38 +31,38 @@ impl OutgoingEnvelope {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "lowercase", tag = "type")]
-pub(crate) enum OutgoingEnvelopeProperties {
+pub enum OutgoingEnvelopeProperties {
     Event(OutgoingEventProperties),
     Response(OutgoingResponseProperties),
     Request(OutgoingRequestProperties),
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct OutgoingEventProperties {
+pub struct OutgoingEventProperties {
     label: String,
 }
 
 impl OutgoingEventProperties {
-    pub(crate) fn label(&self) -> &str {
+    pub fn label(&self) -> &str {
         &self.label
     }
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct OutgoingResponseProperties {
+pub struct OutgoingResponseProperties {
     status: String,
     #[allow(dead_code)]
     correlation_data: String,
 }
 
 impl OutgoingResponseProperties {
-    pub(crate) fn status(&self) -> ResponseStatus {
+    pub fn status(&self) -> ResponseStatus {
         ResponseStatus::from_bytes(self.status.as_bytes()).expect("Invalid status code")
     }
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct OutgoingRequestProperties {
+pub struct OutgoingRequestProperties {
     #[allow(dead_code)]
     method: String,
 }

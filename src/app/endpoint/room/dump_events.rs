@@ -15,7 +15,7 @@ use crate::app::message_handler::Message;
 use crate::app::operations::dump_events_to_s3;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct EventsDumpRequest {
+pub struct EventsDumpRequest {
     id: Uuid,
 }
 
@@ -59,7 +59,7 @@ pub async fn dump_events(
     .await
 }
 
-pub(crate) struct EventsDumpHandler;
+pub struct EventsDumpHandler;
 
 #[async_trait]
 impl RequestHandler for EventsDumpHandler {

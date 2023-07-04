@@ -12,7 +12,7 @@ use crate::db;
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Default)]
-pub(crate) struct Room {
+pub struct Room {
     audience: Option<String>,
     time: Option<db::room::Time>,
     tags: Option<JsonValue>,
@@ -22,49 +22,49 @@ pub(crate) struct Room {
 }
 
 impl Room {
-    pub(crate) fn new(classroom_id: Uuid) -> Self {
+    pub fn new(classroom_id: Uuid) -> Self {
         Self {
             classroom_id,
             ..Default::default()
         }
     }
 
-    pub(crate) fn audience(self, audience: &str) -> Self {
+    pub fn audience(self, audience: &str) -> Self {
         Self {
             audience: Some(audience.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn time(self, time: (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>)) -> Self {
+    pub fn time(self, time: (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>)) -> Self {
         Self {
             time: Some(time.into()),
             ..self
         }
     }
 
-    pub(crate) fn tags(self, tags: &JsonValue) -> Self {
+    pub fn tags(self, tags: &JsonValue) -> Self {
         Self {
             tags: Some(tags.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn preserve_history(self, preserve_history: bool) -> Self {
+    pub fn preserve_history(self, preserve_history: bool) -> Self {
         Self {
             preserve_history: Some(preserve_history),
             ..self
         }
     }
 
-    pub(crate) fn validate_whiteboard_access(self, validate_whiteboard_access: bool) -> Self {
+    pub fn validate_whiteboard_access(self, validate_whiteboard_access: bool) -> Self {
         Self {
             validate_whiteboard_access: Some(validate_whiteboard_access),
             ..self
         }
     }
 
-    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::room::Object {
+    pub async fn insert(self, conn: &mut PgConnection) -> db::room::Object {
         let audience = self.audience.expect("Audience not set");
         let time = self.time.expect("Time not set");
 
@@ -88,14 +88,14 @@ impl Room {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct Agent {
+pub struct Agent {
     agent_id: Option<AgentId>,
     room_id: Option<Uuid>,
     status: Option<db::agent::Status>,
 }
 
 impl Agent {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             agent_id: None,
             room_id: None,
@@ -103,28 +103,28 @@ impl Agent {
         }
     }
 
-    pub(crate) fn agent_id(self, agent_id: AgentId) -> Self {
+    pub fn agent_id(self, agent_id: AgentId) -> Self {
         Self {
             agent_id: Some(agent_id),
             ..self
         }
     }
 
-    pub(crate) fn room_id(self, room_id: Uuid) -> Self {
+    pub fn room_id(self, room_id: Uuid) -> Self {
         Self {
             room_id: Some(room_id),
             ..self
         }
     }
 
-    pub(crate) fn status(self, status: db::agent::Status) -> Self {
+    pub fn status(self, status: db::agent::Status) -> Self {
         Self {
             status: Some(status),
             ..self
         }
     }
 
-    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::agent::Object {
+    pub async fn insert(self, conn: &mut PgConnection) -> db::agent::Object {
         let agent_id = self.agent_id.expect("Agent ID not set");
         let room_id = self.room_id.expect("Room ID not set");
 
@@ -141,7 +141,7 @@ impl Agent {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Default, Clone)]
-pub(crate) struct Event {
+pub struct Event {
     room_id: Option<Uuid>,
     kind: Option<String>,
     set: Option<String>,
@@ -155,78 +155,78 @@ pub(crate) struct Event {
 }
 
 impl Event {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Default::default()
     }
 
-    pub(crate) fn room_id(self, room_id: Uuid) -> Self {
+    pub fn room_id(self, room_id: Uuid) -> Self {
         Self {
             room_id: Some(room_id),
             ..self
         }
     }
 
-    pub(crate) fn kind(self, kind: &str) -> Self {
+    pub fn kind(self, kind: &str) -> Self {
         Self {
             kind: Some(kind.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn set(self, set: &str) -> Self {
+    pub fn set(self, set: &str) -> Self {
         Self {
             set: Some(set.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn label(self, label: &str) -> Self {
+    pub fn label(self, label: &str) -> Self {
         Self {
             label: Some(label.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn attribute(self, attribute: &str) -> Self {
+    pub fn attribute(self, attribute: &str) -> Self {
         Self {
             attribute: Some(attribute.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn data(self, data: &JsonValue) -> Self {
+    pub fn data(self, data: &JsonValue) -> Self {
         Self {
             data: Some(data.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn occurred_at(self, occurred_at: i64) -> Self {
+    pub fn occurred_at(self, occurred_at: i64) -> Self {
         Self {
             occurred_at: Some(occurred_at),
             ..self
         }
     }
 
-    pub(crate) fn created_by(self, created_by: &AgentId) -> Self {
+    pub fn created_by(self, created_by: &AgentId) -> Self {
         Self {
             created_by: Some(created_by.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn created_at(self, created_at: DateTime<Utc>) -> Self {
+    pub fn created_at(self, created_at: DateTime<Utc>) -> Self {
         Self {
             created_at: Some(created_at),
             ..self
         }
     }
 
-    pub(crate) fn removed(self, removed: bool) -> Self {
+    pub fn removed(self, removed: bool) -> Self {
         Self { removed, ..self }
     }
 
-    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::event::Object {
+    pub async fn insert(self, conn: &mut PgConnection) -> db::event::Object {
         let room_id = self.room_id.expect("Room ID not set");
         let kind = self.kind.expect("Kind not set");
         let data = self.data.expect("Data not set");
@@ -257,26 +257,26 @@ impl Event {
     }
 }
 
-pub(crate) struct Edition {
+pub struct Edition {
     source_room_id: Uuid,
     created_by: AgentId,
 }
 
 impl Edition {
-    pub(crate) fn new(source_room_id: Uuid, created_by: &AgentId) -> Self {
+    pub fn new(source_room_id: Uuid, created_by: &AgentId) -> Self {
         Self {
             source_room_id,
             created_by: created_by.to_owned(),
         }
     }
 
-    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::edition::Object {
+    pub async fn insert(self, conn: &mut PgConnection) -> db::edition::Object {
         let query = db::edition::InsertQuery::new(self.source_room_id, &self.created_by);
         query.execute(conn).await.expect("Failed to insert edition")
     }
 }
 
-pub(crate) struct Change {
+pub struct Change {
     edition_id: Uuid,
     kind: crate::db::change::ChangeType,
     event_id: Option<Uuid>,
@@ -289,7 +289,7 @@ pub(crate) struct Change {
 }
 
 impl Change {
-    pub(crate) fn new(edition_id: Uuid, kind: crate::db::change::ChangeType) -> Self {
+    pub fn new(edition_id: Uuid, kind: crate::db::change::ChangeType) -> Self {
         Self {
             event_data: None,
             event_id: None,
@@ -303,56 +303,56 @@ impl Change {
         }
     }
 
-    pub(crate) fn event_id(self, event_id: Uuid) -> Self {
+    pub fn event_id(self, event_id: Uuid) -> Self {
         Self {
             event_id: Some(event_id),
             ..self
         }
     }
 
-    pub(crate) fn event_data(self, data: JsonValue) -> Self {
+    pub fn event_data(self, data: JsonValue) -> Self {
         Self {
             event_data: Some(data),
             ..self
         }
     }
 
-    pub(crate) fn event_kind(self, kind: &str) -> Self {
+    pub fn event_kind(self, kind: &str) -> Self {
         Self {
             event_kind: Some(kind.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn event_set(self, set: &str) -> Self {
+    pub fn event_set(self, set: &str) -> Self {
         Self {
             event_set: Some(set.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn event_label(self, label: &str) -> Self {
+    pub fn event_label(self, label: &str) -> Self {
         Self {
             event_label: Some(label.to_owned()),
             ..self
         }
     }
 
-    pub(crate) fn event_occurred_at(self, occurred_at: i64) -> Self {
+    pub fn event_occurred_at(self, occurred_at: i64) -> Self {
         Self {
             event_occurred_at: Some(occurred_at),
             ..self
         }
     }
 
-    pub(crate) fn event_created_by(self, created_by: &AgentId) -> Self {
+    pub fn event_created_by(self, created_by: &AgentId) -> Self {
         Self {
             event_created_by: Some(created_by.to_owned()),
             ..self
         }
     }
 
-    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::change::Object {
+    pub async fn insert(self, conn: &mut PgConnection) -> db::change::Object {
         let query = db::change::InsertQuery::new(self.edition_id, self.kind);
 
         let query = if let Some(event_id) = self.event_id {
@@ -395,14 +395,14 @@ impl Change {
 ////////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct RoomBan<'a, T: Authenticable> {
+pub struct RoomBan<'a, T: Authenticable> {
     as_account_id: &'a T,
     room_id: Uuid,
     reason: Option<String>,
 }
 
 impl<'a, T: Authenticable> RoomBan<'a, T> {
-    pub(crate) fn new(as_account_id: &'a T, room_id: Uuid) -> Self {
+    pub fn new(as_account_id: &'a T, room_id: Uuid) -> Self {
         Self {
             as_account_id,
             room_id,
@@ -411,14 +411,14 @@ impl<'a, T: Authenticable> RoomBan<'a, T> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn reason(self, reason: &str) -> Self {
+    pub fn reason(self, reason: &str) -> Self {
         Self {
             reason: Some(reason.to_owned()),
             ..self
         }
     }
 
-    pub(crate) async fn insert(self, conn: &mut PgConnection) -> db::room_ban::Object {
+    pub async fn insert(self, conn: &mut PgConnection) -> db::room_ban::Object {
         let mut query = db::room_ban::InsertQuery::new(
             self.as_account_id.as_account_id().to_owned(),
             self.room_id,

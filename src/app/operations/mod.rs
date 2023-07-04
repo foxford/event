@@ -1,9 +1,9 @@
-pub(crate) use adjust_room::call as adjust_room;
-pub(crate) use adjust_room::AdjustOutput;
+pub use adjust_room::call as adjust_room;
+pub use adjust_room::AdjustOutput;
 
-pub(crate) use commit_edition::call as commit_edition;
-pub(crate) use dump_events_to_s3::call as dump_events_to_s3;
-pub(crate) use vacuum::call as vacuum;
+pub use commit_edition::call as commit_edition;
+pub use dump_events_to_s3::call as dump_events_to_s3;
+pub use vacuum::call as vacuum;
 
 mod adjust_room;
 mod commit_edition;

@@ -6,7 +6,7 @@ use crate::{
     metrics::{Metrics, QueryKey},
 };
 
-pub(crate) async fn call(db: &Db, metrics: &Metrics, config: &VacuumConfig) -> Result<()> {
+pub async fn call(db: &Db, metrics: &Metrics, config: &VacuumConfig) -> Result<()> {
     let mut conn = db
         .acquire()
         .await

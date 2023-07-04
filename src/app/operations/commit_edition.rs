@@ -29,7 +29,7 @@ use crate::{db::adjustment::Segments, metrics::QueryKey};
         offset = ?offset,
     )
 )]
-pub(crate) async fn call(
+pub async fn call(
     db: &Db,
     metrics: &Metrics,
     edition: &Edition,

@@ -62,12 +62,12 @@ impl Object {
     }
 
     #[cfg(test)]
-    pub(crate) fn set(&self) -> Option<&String> {
+    pub fn set(&self) -> Option<&String> {
         self.event_set.as_ref()
     }
 
     #[cfg(test)]
-    pub(crate) fn event_id(&self) -> Option<Uuid> {
+    pub fn event_id(&self) -> Option<Uuid> {
         self.event_id
     }
 

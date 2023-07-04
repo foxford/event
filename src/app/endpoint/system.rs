@@ -10,9 +10,9 @@ use crate::app::endpoint::prelude::*;
 use crate::app::operations::vacuum;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct VacuumRequest {}
+pub struct VacuumRequest {}
 
-pub(crate) struct VacuumHandler;
+pub struct VacuumHandler;
 
 #[async_trait]
 impl RequestHandler for VacuumHandler {

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use sqlx::postgres::{PgPool, PgPoolOptions};
 
-pub(crate) async fn create_pool(
+pub async fn create_pool(
     url: &str,
     size: u32,
     idle_size: Option<u32>,
@@ -19,11 +19,11 @@ pub(crate) async fn create_pool(
         .expect("Failed to create sqlx database pool")
 }
 
-pub(crate) mod adjustment;
-pub(crate) mod agent;
-pub(crate) mod change;
-pub(crate) mod edition;
-pub(crate) mod event;
-pub(crate) mod room;
-pub(crate) mod room_ban;
-pub(crate) mod room_time;
+pub mod adjustment;
+pub mod agent;
+pub mod change;
+pub mod edition;
+pub mod event;
+pub mod room;
+pub mod room_ban;
+pub mod room_time;

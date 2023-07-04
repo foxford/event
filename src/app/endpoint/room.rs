@@ -63,7 +63,7 @@ pub async fn create(
     .await
 }
 
-pub(crate) struct CreateHandler;
+pub struct CreateHandler;
 
 #[async_trait]
 impl RequestHandler for CreateHandler {
@@ -168,7 +168,7 @@ impl RequestHandler for CreateHandler {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ReadRequest {
+pub struct ReadRequest {
     id: Uuid,
 }
 
@@ -188,7 +188,7 @@ pub async fn read(
     .await
 }
 
-pub(crate) struct ReadHandler;
+pub struct ReadHandler;
 
 #[async_trait]
 impl RequestHandler for ReadHandler {
@@ -241,7 +241,7 @@ pub struct UpdatePayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct UpdateRequest {
+pub struct UpdateRequest {
     id: Uuid,
     #[serde(flatten)]
     payload: UpdatePayload,
@@ -267,7 +267,7 @@ pub async fn update(
     .await
 }
 
-pub(crate) struct UpdateHandler;
+pub struct UpdateHandler;
 
 #[async_trait]
 impl RequestHandler for UpdateHandler {
@@ -393,14 +393,14 @@ pub struct EnterRequest {
 }
 
 #[derive(Deserialize, Serialize)]
-pub(crate) struct RoomEnterEvent {
+pub struct RoomEnterEvent {
     id: Uuid,
     agent_id: AgentId,
     banned: bool,
     agent: crate::db::agent::AgentWithBan,
 }
 
-pub(crate) struct EnterHandler;
+pub struct EnterHandler;
 
 pub async fn enter(
     State(ctx): State<Arc<AppContext>>,
@@ -580,7 +580,7 @@ pub async fn locked_types(
     .await
 }
 
-pub(crate) struct LockedTypesHandler;
+pub struct LockedTypesHandler;
 
 #[async_trait]
 impl RequestHandler for LockedTypesHandler {
@@ -694,7 +694,7 @@ pub async fn whiteboard_access(
     .await
 }
 
-pub(crate) struct WhiteboardAccessHandler;
+pub struct WhiteboardAccessHandler;
 
 #[async_trait]
 impl RequestHandler for WhiteboardAccessHandler {
@@ -817,7 +817,7 @@ pub async fn adjust(
     .await
 }
 
-pub(crate) struct AdjustHandler;
+pub struct AdjustHandler;
 
 #[async_trait]
 impl RequestHandler for AdjustHandler {
@@ -956,7 +956,7 @@ impl RoomAdjustResult {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) use dump_events::EventsDumpHandler;
+pub use dump_events::EventsDumpHandler;
 
 ///////////////////////////////////////////////////////////////////////////////
 

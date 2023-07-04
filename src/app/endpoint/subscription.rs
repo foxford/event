@@ -24,14 +24,14 @@ use crate::{app::endpoint::prelude::*, db::room};
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Serialize, Deserialize)]
-pub(crate) struct CorrelationDataPayload {
+pub struct CorrelationDataPayload {
     reqp: IncomingRequestProperties,
     subject: AgentId,
     object: Vec<String>,
 }
 
 #[derive(Deserialize, Serialize)]
-pub(crate) struct RoomEnterEvent {
+pub struct RoomEnterEvent {
     id: Uuid,
     agent_id: AgentId,
     banned: bool,
@@ -39,7 +39,7 @@ pub(crate) struct RoomEnterEvent {
 }
 
 #[derive(Deserialize, Serialize)]
-pub(crate) struct RoomLeaveEvent {
+pub struct RoomLeaveEvent {
     id: Uuid,
     agent_id: AgentId,
 }
@@ -47,12 +47,12 @@ pub(crate) struct RoomLeaveEvent {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct DeleteEventPayload {
+pub struct DeleteEventPayload {
     subject: AgentId,
     object: Vec<String>,
 }
 
-pub(crate) struct DeleteEventHandler;
+pub struct DeleteEventHandler;
 
 #[async_trait]
 impl EventHandler for DeleteEventHandler {
@@ -129,7 +129,7 @@ impl EventHandler for DeleteEventHandler {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct BroadcastDeleteEventHandler;
+pub struct BroadcastDeleteEventHandler;
 
 #[async_trait]
 impl EventHandler for BroadcastDeleteEventHandler {

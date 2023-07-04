@@ -256,4 +256,19 @@ mod tests {
         .await
         .expect("Failed to insert event");
     }
+
+    //     fn s3_destination(room: &Room) -> S3Destination {
+    //     let bucket = if let Some(kind) = room.kind() {
+    //         format!("{EVENTS_DUMP_BUCKET}.{kind}.{}", room.audience())
+    //     } else {
+    //         format!("{EVENTS_DUMP_BUCKET}.{}", room.audience())
+    //     };
+    //
+    //     S3Destination {
+    //         bucket,
+    //         key: format!("{}.json", room.id()),
+    //     }
+    // }
+    #[test]
+    fn s3_destination_test() {}
 }
