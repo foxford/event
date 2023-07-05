@@ -176,6 +176,7 @@ impl ListQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::room::ClassType;
     use crate::test_helpers::prelude::*;
     use std::ops::Bound;
 
@@ -187,12 +188,12 @@ mod tests {
         let banned_agent = TestAgent::new("web", "user123", USR_AUDIENCE);
         let classroom_id = Uuid::new_v4();
 
-        factory::Room::new(classroom_id)
+        factory::Room::new(classroom_id, ClassType::Webinar)
             .audience(USR_AUDIENCE)
             .time((Bound::Included(Utc::now()), Bound::Unbounded))
             .insert(&mut conn)
             .await;
-        let room = factory::Room::new(classroom_id)
+        let room = factory::Room::new(classroom_id, ClassType::Webinar)
             .audience(USR_AUDIENCE)
             .time((Bound::Included(Utc::now()), Bound::Unbounded))
             .insert(&mut conn)

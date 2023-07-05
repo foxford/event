@@ -45,7 +45,7 @@ pub struct CreateRequest {
     classroom_id: Uuid,
     #[serde(default)]
     validate_whiteboard_access: Option<bool>,
-    kind: Option<ClassType>,
+    kind: ClassType,
 }
 
 pub async fn create(
@@ -115,8 +115,12 @@ impl RequestHandler for CreateHandler {
 
         // Insert room.
         let room = {
-            let mut query =
-                InsertQuery::new(&payload.audience, payload.time.into(), payload.classroom_id);
+            let mut query = InsertQuery::new(
+                &payload.audience,
+                payload.time.into(),
+                payload.classroom_id,
+                payload.kind,
+            );
 
             if let Some(tags) = payload.tags {
                 query = query.tags(tags);
@@ -128,10 +132,6 @@ impl RequestHandler for CreateHandler {
 
             if let Some(flag) = payload.validate_whiteboard_access {
                 query = query.validate_whiteboard_access(flag);
-            }
-
-            if let Some(kind) = payload.kind {
-                query = query.kind(kind);
             }
 
             let mut conn = context.get_conn().await?;
@@ -998,7 +998,7 @@ mod tests {
                 preserve_history: Some(false),
                 classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
-                kind: Some(ClassType::Minigroup),
+                kind: ClassType::Minigroup,
             };
 
             let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -1044,7 +1044,7 @@ mod tests {
                 preserve_history: Some(false),
                 classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
-                kind: None,
+                kind: ClassType::P2P,
             };
 
             let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -1091,7 +1091,7 @@ mod tests {
                 preserve_history: Some(false),
                 classroom_id: cid,
                 validate_whiteboard_access: None,
-                kind: Some(ClassType::Webinar),
+                kind: ClassType::Webinar,
             };
 
             let messages = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -1137,7 +1137,7 @@ mod tests {
                 preserve_history: None,
                 classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
-                kind: None,
+                kind: ClassType::Minigroup,
             };
 
             let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -1164,7 +1164,7 @@ mod tests {
                 preserve_history: None,
                 classroom_id: Uuid::new_v4(),
                 validate_whiteboard_access: None,
-                kind: None,
+                kind: ClassType::Webinar,
             };
 
             let err = handle_request::<CreateHandler>(&mut context, &agent, payload)
@@ -1275,7 +1275,7 @@ mod tests {
                 let mut conn = db.get_conn().await;
 
                 // Create room.
-                factory::Room::new(uuid::Uuid::new_v4())
+                factory::Room::new(uuid::Uuid::new_v4(), ClassType::Webinar)
                     .audience(USR_AUDIENCE)
                     .time((
                         Bound::Included(now + Duration::hours(1)),
@@ -1337,7 +1337,7 @@ mod tests {
                 let mut conn = db.get_conn().await;
 
                 // Create room.
-                factory::Room::new(Uuid::new_v4())
+                factory::Room::new(Uuid::new_v4(), ClassType::Webinar)
                     .audience(USR_AUDIENCE)
                     .time((
                         Bound::Included(now - Duration::hours(1)),
@@ -1400,7 +1400,7 @@ mod tests {
                 let mut conn = db.get_conn().await;
 
                 // Create room.
-                factory::Room::new(Uuid::new_v4())
+                factory::Room::new(Uuid::new_v4(), ClassType::Webinar)
                     .audience(USR_AUDIENCE)
                     .time((
                         Bound::Included(now - Duration::hours(2)),
@@ -1481,7 +1481,7 @@ mod tests {
                 let mut conn = db.get_conn().await;
 
                 // Create room.
-                factory::Room::new(Uuid::new_v4())
+                factory::Room::new(Uuid::new_v4(), ClassType::Webinar)
                     .audience(USR_AUDIENCE)
                     .time((
                         Bound::Included(now + Duration::hours(1)),

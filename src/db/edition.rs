@@ -56,7 +56,7 @@ impl FindWithRoomQuery {
                 r.created_at       AS room_created_at,
                 r.preserve_history AS room_preserve_history,
                 r.classroom_id     AS room_classroom_id,
-                r.kind             AS "room_kind?: ClassType"
+                r.kind             AS "room_kind!: ClassType"
             FROM edition AS e
             INNER JOIN room AS r
             ON r.id = e.source_room_id

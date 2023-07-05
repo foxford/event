@@ -148,14 +148,8 @@ async fn upload_events(
 }
 
 fn s3_destination(room: &Room) -> S3Destination {
-    let bucket = if let Some(kind) = room.kind() {
-        format!("{EVENTS_DUMP_BUCKET}.{kind}.{}", room.audience())
-    } else {
-        format!("{EVENTS_DUMP_BUCKET}.{}", room.audience())
-    };
-
     S3Destination {
-        bucket,
+        bucket: format!("{EVENTS_DUMP_BUCKET}.{}.{}", room.kind(), room.audience()),
         key: format!("{}.json", room.id()),
     }
 }
@@ -225,7 +219,12 @@ mod tests {
         .expect("No failure");
         assert_eq!(
             s3_uri,
-            format!("s3://eventsdump.{}/{}.json", room.audience(), room.id())
+            format!(
+                "s3://eventsdump.{}.{}/{}.json",
+                room.kind(),
+                room.audience(),
+                room.id()
+            )
         );
     }
 
@@ -269,10 +268,9 @@ mod tests {
             use uuid::Uuid;
 
             let now = Utc::now().trunc_subsecs(0);
-            factory::Room::new(Uuid::new_v4())
+            factory::Room::new(Uuid::new_v4(), ClassType::P2P)
                 .audience(USR_AUDIENCE)
                 .time((Bound::Included(now), Bound::Unbounded))
-                .kind(ClassType::P2P)
                 .insert(&mut conn)
                 .await
         };

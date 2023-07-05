@@ -130,7 +130,12 @@ async fn clone_room(conn: &mut PgConnection, metrics: &Metrics, source: &Room) -
         Ok(t) => t.into(),
         Err(_e) => bail!("invalid time for room = '{}'", source.id()),
     };
-    let mut query = RoomInsertQuery::new(source.audience(), time, source.classroom_id());
+    let mut query = RoomInsertQuery::new(
+        source.audience(),
+        time,
+        source.classroom_id(),
+        source.kind(),
+    );
     query = query.source_room_id(source.id());
 
     if let Some(tags) = source.tags() {
@@ -384,7 +389,7 @@ mod tests {
     use crate::app::operations::commit_edition::collect_gaps;
     use crate::config::AdjustConfig;
     use crate::db::event::{ListQuery as EventListQuery, Object as Event};
-    use crate::db::room::Object as Room;
+    use crate::db::room::{ClassType, Object as Room};
     use crate::test_helpers::db::TestDb;
     use crate::test_helpers::prelude::*;
     use crate::{db::change::ChangeType, metrics::Metrics};
@@ -549,7 +554,7 @@ mod tests {
         let classroom_id = uuid::Uuid::new_v4();
         let mut conn = db.get_conn().await;
         let now = Utc::now().trunc_subsecs(0);
-        let room = factory::Room::new(classroom_id)
+        let room = factory::Room::new(classroom_id, ClassType::Webinar)
             .audience(USR_AUDIENCE)
             .time((
                 Bound::Included(now),
@@ -818,7 +823,7 @@ mod tests {
             Utc.with_ymd_and_hms(2022, 12, 29, 11, 39, 22).unwrap() + Duration::milliseconds(888);
         let room_duration = t2.signed_duration_since(t1);
 
-        let room = factory::Room::new(classroom_id)
+        let room = factory::Room::new(classroom_id, ClassType::Webinar)
             .audience(USR_AUDIENCE)
             .time((Bound::Included(t1), Bound::Excluded(t2)))
             .tags(&json!({ "webinar_id": "123" }))
