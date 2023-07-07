@@ -406,6 +406,10 @@ async fn create_room(
         query = query.tags(tags.to_owned());
     }
 
+    if let Some(kind) = source_room.kind() {
+        query = query.kind(kind);
+    }
+
     metrics
         .measure_query(QueryKey::RoomInsertQuery, query.execute(conn))
         .await
