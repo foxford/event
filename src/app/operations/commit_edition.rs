@@ -137,6 +137,10 @@ async fn clone_room(conn: &mut PgConnection, metrics: &Metrics, source: &Room) -
         query = query.tags(tags.to_owned());
     }
 
+    if let Some(kind) = source.kind() {
+        query = query.kind(kind);
+    }
+
     metrics
         .measure_query(QueryKey::RoomInsertQuery, query.execute(conn))
         .await
