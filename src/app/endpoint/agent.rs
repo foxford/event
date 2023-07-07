@@ -55,7 +55,7 @@ pub async fn list(
     .await
 }
 
-pub(crate) struct ListHandler;
+pub struct ListHandler;
 
 #[async_trait]
 impl RequestHandler for ListHandler {
@@ -131,7 +131,7 @@ pub struct UpdateRequest {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct BanNotification {
+pub struct BanNotification {
     account_id: AccountId,
     banned: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -139,7 +139,7 @@ pub(crate) struct BanNotification {
 }
 
 #[derive(Serialize, Deserialize)]
-pub(crate) struct TenantBanNotification {
+pub struct TenantBanNotification {
     room_id: Uuid,
     account_id: AccountId,
     banned_by: AccountId,
@@ -166,7 +166,7 @@ pub async fn update(
     .await
 }
 
-pub(crate) struct UpdateHandler;
+pub struct UpdateHandler;
 
 #[async_trait]
 impl RequestHandler for UpdateHandler {

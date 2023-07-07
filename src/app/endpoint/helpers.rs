@@ -15,7 +15,7 @@ use crate::{app::context::Context, metrics::QueryKey};
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) fn build_response(
+pub fn build_response(
     status: ResponseStatus,
     payload: impl Serialize + Send + Sync + 'static,
     reqp: &IncomingRequestProperties,
@@ -34,13 +34,13 @@ pub(crate) fn build_response(
 
 ////////////////////////////////////////////////////////////////////////////////
 
-pub(crate) enum RoomTimeRequirement {
+pub enum RoomTimeRequirement {
     Any,
     NotClosed,
     Open,
 }
 
-pub(crate) async fn find_room<C: Context>(
+pub async fn find_room<C: Context>(
     context: &mut C,
     id: Uuid,
     opening_requirement: RoomTimeRequirement,
@@ -84,7 +84,7 @@ pub(crate) async fn find_room<C: Context>(
     }
 }
 
-pub(crate) fn add_room_logger_tags(room: &db::room::Object) {
+pub fn add_room_logger_tags(room: &db::room::Object) {
     let span = tracing::Span::current();
     span.record("room_id", &display(room.id()));
     span.record("classroom_id", &display(room.classroom_id()));

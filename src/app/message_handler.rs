@@ -31,14 +31,14 @@ pub trait MessageStreamTrait: Stream<Item = Message> + Send + Sync + Unpin + 'st
 impl<T> MessageStreamTrait for T where T: Stream<Item = Message> + Send + Sync + Unpin + 'static {}
 pub type MessageStream = Box<dyn MessageStreamTrait>;
 
-pub(crate) struct MessageHandler<C: GlobalContext> {
+pub struct MessageHandler<C: GlobalContext> {
     agent: Agent,
     global_context: C,
     dispatcher: Arc<Dispatcher>,
 }
 
 impl<C: GlobalContext + Sync> MessageHandler<C> {
-    pub(crate) fn new(agent: Agent, global_context: C, dispatcher: Arc<Dispatcher>) -> Self {
+    pub fn new(agent: Agent, global_context: C, dispatcher: Arc<Dispatcher>) -> Self {
         Self {
             agent,
             global_context,
@@ -46,15 +46,15 @@ impl<C: GlobalContext + Sync> MessageHandler<C> {
         }
     }
 
-    pub(crate) fn agent(&self) -> &Agent {
+    pub fn agent(&self) -> &Agent {
         &self.agent
     }
 
-    pub(crate) fn global_context(&self) -> &C {
+    pub fn global_context(&self) -> &C {
         &self.global_context
     }
 
-    pub(crate) async fn handle(&self, message: &Result<IncomingMessage<String>, String>) {
+    pub async fn handle(&self, message: &Result<IncomingMessage<String>, String>) {
         let mut msg_context = AppMessageContext::new(&self.global_context, Utc::now());
 
         match message {
@@ -208,7 +208,7 @@ fn error_response(
     Box::new(stream::once(future::ready(Box::new(resp) as Message)))
 }
 
-pub(crate) fn publish_message(agent: &mut Agent, message: Message) -> Result<(), AppError> {
+pub fn publish_message(agent: &mut Agent, message: Message) -> Result<(), AppError> {
     agent
         .publish_publishable(message)
         .context("Failed to publish message")
@@ -222,7 +222,7 @@ pub(crate) fn publish_message(agent: &mut Agent, message: Message) -> Result<(),
 // So we don't implement these generic things in each handler.
 // We just need to specify the payload type and specific logic.
 
-pub(crate) trait RequestEnvelopeHandler<'async_trait> {
+pub trait RequestEnvelopeHandler<'async_trait> {
     fn handle_envelope<C: Context>(
         context: &'async_trait mut C,
         request: &'async_trait IncomingRequest<String>,
@@ -281,7 +281,7 @@ impl<'async_trait, H: 'async_trait + Sync + endpoint::RequestHandler>
 }
 
 // This is the same as with the above.
-pub(crate) trait ResponseEnvelopeHandler<'async_trait, CD> {
+pub trait ResponseEnvelopeHandler<'async_trait, CD> {
     fn handle_envelope<C: Context>(
         context: &'async_trait mut C,
         envelope: &'async_trait IncomingResponse<String>,
@@ -332,7 +332,7 @@ impl<'async_trait, H: 'async_trait + endpoint::ResponseHandler>
     }
 }
 
-pub(crate) trait EventEnvelopeHandler<'async_trait> {
+pub trait EventEnvelopeHandler<'async_trait> {
     fn handle_envelope<C: Context>(
         context: &'async_trait mut C,
         envelope: &'async_trait IncomingEvent<String>,

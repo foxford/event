@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 
 type BoundedDatetimeTuple = (Bound<DateTime<Utc>>, Bound<DateTime<Utc>>);
 
-pub(crate) mod ts_seconds_bound_tuple {
+pub mod ts_seconds_bound_tuple {
     use std::fmt;
     use std::ops::Bound;
 
@@ -12,7 +12,7 @@ pub(crate) mod ts_seconds_bound_tuple {
     use chrono::{DateTime, NaiveDateTime, Utc};
     use serde::{de, ser};
 
-    pub(crate) fn serialize<S>(
+    pub fn serialize<S>(
         value: &(Bound<DateTime<Utc>>, Bound<DateTime<Utc>>),
         serializer: S,
     ) -> Result<S::Ok, S::Error>
@@ -111,13 +111,13 @@ pub(crate) mod ts_seconds_bound_tuple {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) mod milliseconds_bound_tuples {
+pub mod milliseconds_bound_tuples {
     use std::fmt;
     use std::ops::Bound;
 
     use serde::{de, ser};
 
-    pub(crate) fn serialize<S>(
+    pub fn serialize<S>(
         value: &[(Bound<i64>, Bound<i64>)],
         serializer: S,
     ) -> Result<S::Ok, S::Error>
@@ -146,7 +146,7 @@ pub(crate) mod milliseconds_bound_tuples {
     }
 
     type BoundedI64Tuple = (Bound<i64>, Bound<i64>);
-    pub(crate) fn deserialize<'de, D>(deserializer: D) -> Result<Vec<BoundedI64Tuple>, D::Error>
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<BoundedI64Tuple>, D::Error>
     where
         D: de::Deserializer<'de>,
     {
@@ -186,7 +186,7 @@ pub(crate) mod milliseconds_bound_tuples {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) mod ts_seconds_option_bound_tuple {
+pub mod ts_seconds_option_bound_tuple {
     use serde::de;
     use std::fmt;
 
@@ -237,7 +237,7 @@ pub(crate) mod ts_seconds_option_bound_tuple {
 
 //////////////////////////////////////////////////////////////////////////////
 
-pub(crate) mod duration_seconds {
+pub mod duration_seconds {
     use std::fmt;
 
     use chrono::Duration;

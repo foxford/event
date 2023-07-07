@@ -298,7 +298,7 @@ pub struct Error {
 }
 
 impl Error {
-    pub(crate) fn new(kind: ErrorKind, err: anyhow::Error) -> Self {
+    pub fn new(kind: ErrorKind, err: anyhow::Error) -> Self {
         Self {
             kind,
             err: Some(Arc::new(err)),

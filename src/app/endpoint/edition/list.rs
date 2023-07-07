@@ -13,7 +13,7 @@ use crate::app::context::Context;
 use crate::app::endpoint::prelude::*;
 use crate::db;
 
-pub(crate) struct ListHandler;
+pub struct ListHandler;
 
 #[derive(Debug, Deserialize)]
 pub struct ListPayload {

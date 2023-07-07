@@ -71,10 +71,10 @@ pub async fn create(
     .await
 }
 
-pub(crate) struct CreateHandler;
+pub struct CreateHandler;
 
 #[derive(Serialize)]
-pub(crate) struct TenantClaimNotification {
+pub struct TenantClaimNotification {
     #[serde(flatten)]
     event: Event,
     classroom_id: Uuid,
@@ -348,7 +348,7 @@ pub async fn list(
     .await
 }
 
-pub(crate) struct ListHandler;
+pub struct ListHandler;
 
 #[async_trait]
 impl RequestHandler for ListHandler {

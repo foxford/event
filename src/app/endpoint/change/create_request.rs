@@ -23,7 +23,7 @@ pub enum Changeset {
 }
 
 impl Changeset {
-    pub(crate) fn as_changetype(&self) -> ChangeType {
+    pub fn as_changetype(&self) -> ChangeType {
         match self {
             Changeset::Addition(_) => ChangeType::Addition,
             Changeset::Modification(_) => ChangeType::Modification,

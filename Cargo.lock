@@ -798,7 +798,7 @@ dependencies = [
 
 [[package]]
 name = "event"
-version = "0.2.76"
+version = "0.2.77"
 dependencies = [
  "anyhow",
  "async-trait",

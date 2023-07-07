@@ -32,7 +32,7 @@ impl AuthzObject {
         }
     }
 
-    pub(crate) fn room(room: &Room) -> Self {
+    pub fn room(room: &Room) -> Self {
         Self {
             object: room.authz_object(),
             ban_key: None,
