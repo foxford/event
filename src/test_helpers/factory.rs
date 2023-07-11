@@ -11,7 +11,7 @@ use crate::db::{self, room::ClassType};
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Room {
     audience: Option<String>,
     time: Option<db::room::Time>,
@@ -19,14 +19,19 @@ pub struct Room {
     preserve_history: Option<bool>,
     classroom_id: Uuid,
     validate_whiteboard_access: Option<bool>,
-    kind: Option<ClassType>,
+    kind: ClassType,
 }
 
 impl Room {
-    pub fn new(classroom_id: Uuid) -> Self {
+    pub fn new(classroom_id: Uuid, kind: ClassType) -> Self {
         Self {
+            audience: None,
+            time: None,
+            tags: None,
+            preserve_history: None,
             classroom_id,
-            ..Default::default()
+            validate_whiteboard_access: None,
+            kind,
         }
     }
 
@@ -65,18 +70,11 @@ impl Room {
         }
     }
 
-    pub fn kind(self, kind: ClassType) -> Self {
-        Self {
-            kind: Some(kind),
-            ..self
-        }
-    }
-
     pub async fn insert(self, conn: &mut PgConnection) -> db::room::Object {
         let audience = self.audience.expect("Audience not set");
         let time = self.time.expect("Time not set");
 
-        let mut query = db::room::InsertQuery::new(&audience, time, self.classroom_id);
+        let mut query = db::room::InsertQuery::new(&audience, time, self.classroom_id, self.kind);
 
         if let Some(tags) = self.tags {
             query = query.tags(tags)
@@ -88,10 +86,6 @@ impl Room {
 
         if let Some(validate_whiteboard_access) = self.validate_whiteboard_access {
             query = query.validate_whiteboard_access(validate_whiteboard_access)
-        }
-
-        if let Some(kind) = self.kind {
-            query = query.kind(kind);
         }
 
         query.execute(conn).await.expect("Failed to insert room")

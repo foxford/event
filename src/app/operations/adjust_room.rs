@@ -399,15 +399,12 @@ async fn create_room(
         source_room.audience(),
         time.into(),
         source_room.classroom_id(),
+        source_room.kind(),
     );
     query = query.source_room_id(source_room.id());
 
     if let Some(tags) = source_room.tags() {
         query = query.tags(tags.to_owned());
-    }
-
-    if let Some(kind) = source_room.kind() {
-        query = query.kind(kind);
     }
 
     metrics
@@ -625,7 +622,9 @@ mod tests {
     use crate::db::event::{
         InsertQuery as EventInsertQuery, ListQuery as EventListQuery, Object as Event,
     };
-    use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room, Time as RoomTime};
+    use crate::db::room::{
+        ClassType, InsertQuery as RoomInsertQuery, Object as Room, Time as RoomTime,
+    };
     use crate::db::room_time::RoomTimeBound;
     use crate::metrics::Metrics;
     use crate::test_helpers::db::TestDb;
@@ -758,10 +757,11 @@ mod tests {
             );
             let time = RoomTime::from((Bound::Included(opened_at), Bound::Unbounded));
 
-            let room = RoomInsertQuery::new(AUDIENCE, time, uuid::Uuid::new_v4())
-                .execute(&mut conn)
-                .await
-                .expect("Failed to insert room");
+            let room =
+                RoomInsertQuery::new(AUDIENCE, time, uuid::Uuid::new_v4(), ClassType::Minigroup)
+                    .execute(&mut conn)
+                    .await
+                    .expect("Failed to insert room");
 
             let ctx = Self {
                 db,

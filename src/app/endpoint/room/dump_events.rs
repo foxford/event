@@ -246,7 +246,8 @@ mod tests {
                 .and_then(|v| v.get("s3_uri"))
                 .and_then(|v| v.as_str()),
             Some(format!(
-                "s3://eventsdump.{}/{}.json",
+                "s3://eventsdump.{}.{}/{}.json",
+                room.kind(),
                 room.audience(),
                 room.id()
             ))
