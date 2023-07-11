@@ -61,7 +61,7 @@ impl RequestHandler for ListHandler {
                 room.audience().into(),
                 reqp.as_account_id().to_owned(),
                 object,
-                "update".into(),
+                "read".into(),
             )
             .await?;
 
