@@ -51,7 +51,7 @@ pub fn build_router(
     let middleware = ServiceBuilder::new()
         .layer(Extension(agent))
         .layer(Extension(Arc::new(authn)))
-        .layer(Extension(context.clone()))
+        .layer(Extension(context))
         .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
         .layer(cors);
 
