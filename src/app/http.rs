@@ -27,11 +27,7 @@ use crate::app::{
     service_utils,
 };
 
-use super::{
-    context::AppContext,
-    endpoint,
-    error::Error as AppError,
-};
+use super::{context::AppContext, endpoint, error::Error as AppError};
 
 pub fn build_router(
     context: Arc<AppContext>,
