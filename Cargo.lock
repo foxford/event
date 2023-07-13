@@ -3197,6 +3197,7 @@ dependencies = [
  "futures",
  "http",
  "hyper",
+ "once_cell",
  "prometheus",
  "svc-agent",
  "svc-authn",
