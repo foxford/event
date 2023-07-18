@@ -1,18 +1,26 @@
 use async_trait::async_trait;
+use axum::extract::{Path, State};
 use chrono::Utc;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
+use std::sync::Arc;
 use svc_agent::mqtt::{
     OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties,
 };
+use svc_authn::Authenticable;
 use svc_error::Error as SvcError;
+use svc_utils::extractors::AgentIdExtractor;
 use tracing::error;
 use uuid::Uuid;
 
-use super::*;
-use crate::app::context::Context;
+use crate::app::context::{AppContext, Context};
+use crate::app::endpoint::authz::AuthzObject;
+use crate::app::endpoint::prelude::{AppError, AppErrorKind, AppResponse};
+use crate::app::endpoint::{helpers, RequestHandler, RequestResult};
+use crate::app::error::ErrorExt;
 use crate::app::message_handler::Message;
 use crate::app::operations::dump_events_to_s3;
+use crate::app::service_utils::RequestParams;
 
 #[derive(Debug, Deserialize)]
 pub struct EventsDumpRequest {
