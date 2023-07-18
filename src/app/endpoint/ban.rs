@@ -132,7 +132,7 @@ mod tests {
         authz.allow(
             agent.account_id(),
             vec!["classrooms", &room.classroom_id().to_string()],
-            "update",
+            "read",
         );
 
         let mut context = TestContext::new(db, authz);
@@ -162,15 +162,7 @@ mod tests {
             shared_helpers::insert_room(&mut conn).await
         };
 
-        let mut authz = TestAuthz::new();
-        let classroom_id = room.classroom_id().to_string();
-        authz.allow(
-            agent.account_id(),
-            vec!["classrooms", &classroom_id],
-            "read",
-        );
-
-        let mut context = TestContext::new(db, authz);
+        let mut context = TestContext::new(db, TestAuthz::new());
 
         let payload = ListRequest { room_id: room.id() };
 
