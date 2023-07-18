@@ -4,10 +4,16 @@ use anyhow::{Context, Result};
 use rusoto_s3::PutObjectRequest;
 use serde_derive::Serialize;
 use sqlx::postgres::PgPool as Db;
-use tracing::info;
+use tracing::{error, info};
 
 use crate::db::room::Object as Room;
-use crate::{app::s3_client::S3Client, metrics::Metrics};
+use crate::{
+    app::{
+        error::{Error, ErrorKind},
+        s3_client::S3Client,
+    },
+    metrics::Metrics,
+};
 use crate::{
     db::event::{ListQuery as EventListQuery, Object as Event},
     metrics::QueryKey,
@@ -17,6 +23,7 @@ use crate::{
 
 const RETRIES: u8 = 3;
 const RETRY_DELAY: Duration = Duration::from_millis(200);
+const EVENTS_DUMP_BUCKET: &str = "eventsdump";
 
 struct S3Destination {
     bucket: String,
@@ -29,13 +36,8 @@ struct S3Content {
     events: Vec<Event>,
 }
 
-pub(crate) async fn call(
-    db: &Db,
-    metrics: &Metrics,
-    s3_client: S3Client,
-    room: &Room,
-) -> Result<String> {
-    info!("Dump events to S3 task started, room id = {}", room.id());
+pub async fn call(db: &Db, metrics: &Metrics, s3_client: S3Client, room: &Room) -> Result<String> {
+    info!(room = ?room.id(), classroom_id = ?room.classroom_id(), "Dump events to S3 task started");
 
     let start_timestamp = Instant::now();
 
@@ -46,9 +48,10 @@ pub(crate) async fn call(
     let s3_uri = upload_events(s3_client, room, events, destination).await?;
 
     info!(
-        "Dump events to S3 task successfully finished, room id = {}, duration = {} ms",
-        room.id(),
-        start_timestamp.elapsed().as_millis()
+        room = ?room.id(),
+        classroom_id = ?room.classroom_id(),
+        duration = %start_timestamp.elapsed().as_millis(),
+        "Dump events to S3 task successfully finished"
     );
 
     Ok(s3_uri)
@@ -61,7 +64,13 @@ async fn load_room_events(db: &Db, metrics: &Metrics, room: &Room) -> Result<Vec
     let events = metrics
         .measure_query(QueryKey::EventDumpQuery, query.execute(&mut conn))
         .await
-        .with_context(|| format!("failed to fetch events for room_id = '{}'", room.id()))?;
+        .with_context(|| {
+            format!(
+                "failed to fetch events for room_id = '{}', classroom_id = {}",
+                room.id(),
+                room.classroom_id()
+            )
+        })?;
 
     Ok(events)
 }
@@ -80,12 +89,24 @@ async fn upload_events(
         events,
     };
 
+    let classroom_id = room.classroom_id();
     let body = tokio::task::spawn_blocking(move || {
-        serde_json::to_vec(&body)
-            .map_err(|e| anyhow!("Failed to serialize events, reason = {:?}", e))
+        serde_json::to_vec(&body).map_err(|e| {
+            anyhow!(
+                "Failed to serialize events, reason = {:?}, classroom_id = {}",
+                e,
+                classroom_id
+            )
+        })
     })
     .await
-    .map_err(|e| anyhow!("Failed to join events serialization task, reason = {:?}", e))??;
+    .map_err(|e| {
+        anyhow!(
+            "Failed to join events serialization task, reason = {:?}, classroom_id = {}",
+            e,
+            room.classroom_id()
+        )
+    })??;
 
     let mut result;
     for _ in 0..RETRIES {
@@ -97,20 +118,29 @@ async fn upload_events(
             ..Default::default()
         };
 
-        result = s3_client
-            .put_object(request)
-            .await
-            .map_err(|e| anyhow!("Failed to upload events to s3, reason = {:?}", e));
+        result = s3_client.put_object(request).await.map_err(|e| {
+            Error::new(
+                ErrorKind::S3UploadFailed,
+                anyhow!(
+                    "Failed to upload events to s3, reason = {:?}, classroom_id = {}",
+                    e,
+                    room.classroom_id()
+                ),
+            )
+        });
 
-        if result.is_ok() {
-            break;
-        } else {
-            info!(
-                "Dump events to S3 task errored, room id = {}, error = {:?}",
-                room.id(),
+        if let Err(ref e) = result {
+            error!(
+                room = ?room.id(),
+                classroom_id = ?room.classroom_id(),
+                "Dump events to S3 task errored, error = {:?}",
                 result
             );
+
+            e.notify_sentry();
             tokio::time::sleep(RETRY_DELAY).await;
+        } else {
+            break;
         }
     }
 
@@ -119,7 +149,7 @@ async fn upload_events(
 
 fn s3_destination(room: &Room) -> S3Destination {
     S3Destination {
-        bucket: format!("eventsdump.{}", room.audience()),
+        bucket: format!("{EVENTS_DUMP_BUCKET}.{}.{}", room.kind(), room.audience()),
         key: format!("{}.json", room.id()),
     }
 }
@@ -189,7 +219,12 @@ mod tests {
         .expect("No failure");
         assert_eq!(
             s3_uri,
-            format!("s3://eventsdump.{}/{}.json", room.audience(), room.id())
+            format!(
+                "s3://eventsdump.{}.{}/{}.json",
+                room.kind(),
+                room.audience(),
+                room.id()
+            )
         );
     }
 
@@ -219,5 +254,28 @@ mod tests {
         .execute(conn)
         .await
         .expect("Failed to insert event");
+    }
+
+    #[tokio::test]
+    async fn s3_destination_test() {
+        let db = TestDb::new().await;
+        let mut conn = db.get_conn().await;
+
+        // Create p2p room
+        let room = {
+            use crate::db::room::ClassType;
+            use chrono::{SubsecRound, Utc};
+            use uuid::Uuid;
+
+            let now = Utc::now().trunc_subsecs(0);
+            factory::Room::new(Uuid::new_v4(), ClassType::P2P)
+                .audience(USR_AUDIENCE)
+                .time((Bound::Included(now), Bound::Unbounded))
+                .insert(&mut conn)
+                .await
+        };
+
+        let S3Destination { bucket, .. } = s3_destination(&room);
+        assert_eq!(bucket, format!("eventsdump.p2p.{}", room.audience()))
     }
 }

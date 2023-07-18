@@ -6,10 +6,6 @@ replicaCount: 2
 
 minReadySeconds: 5
 preStopSleepSeconds: 5
-networkTester:
-  image:
-    repository: cr.yandex/crp1of6bddata8ain3q5/k8s-network-tester
-    tag: latest
 
 app:
   image:
@@ -17,7 +13,7 @@ app:
 
   resources:
     requests:
-      cpu: 0.1
+      cpu: 0.02
       memory: 100Mi
     limits:
       memory: 200Mi
@@ -27,12 +23,11 @@ migrations:
     repository: cr.yandex/crp1of6bddata8ain3q5/event-migration
 
   resources:
-    limits:
-      cpu: 0.1
-      memory: 100Mi
     requests:
-      cpu: 0.1
+      cpu: 0.02
       memory: 100Mi
+    limits:
+      memory: 200Mi
 
 env:
   RUST_LOG: warn,event=info,svc_utils=info,svc_utils::metrics=warn

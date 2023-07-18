@@ -134,7 +134,7 @@ pub struct AppMessageContext<'a, C: GlobalContext> {
 }
 
 impl<'a, C: GlobalContext> AppMessageContext<'a, C> {
-    pub(crate) fn new(global_context: &'a C, start_timestamp: DateTime<Utc>) -> Self {
+    pub fn new(global_context: &'a C, start_timestamp: DateTime<Utc>) -> Self {
         Self {
             global_context,
             start_timestamp,
@@ -198,7 +198,7 @@ impl<'a, C: GlobalContext> Context for AppMessageContext<'a, C> {}
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct AppContextBuilder {
+pub struct AppContextBuilder {
     config: Config,
     authz: Authz,
     db: Db,
@@ -211,12 +211,7 @@ pub(crate) struct AppContextBuilder {
 }
 
 impl AppContextBuilder {
-    pub(crate) fn new(
-        config: Config,
-        authz: Authz,
-        db: Db,
-        broker_client: Arc<dyn BrokerClient>,
-    ) -> Self {
+    pub fn new(config: Config, authz: Authz, db: Db, broker_client: Arc<dyn BrokerClient>) -> Self {
         let agent_id = AgentId::new(&config.agent_label, config.id.to_owned());
 
         Self {
@@ -232,21 +227,21 @@ impl AppContextBuilder {
         }
     }
 
-    pub(crate) fn ro_db(self, ro_db: Db) -> Self {
+    pub fn ro_db(self, ro_db: Db) -> Self {
         Self {
             ro_db: Some(ro_db),
             ..self
         }
     }
 
-    pub(crate) fn queue_counter(self, qc: QueueCounterHandle) -> Self {
+    pub fn queue_counter(self, qc: QueueCounterHandle) -> Self {
         Self {
             queue_counter: Some(qc),
             ..self
         }
     }
 
-    pub(crate) fn redis_pool(self, pool: RedisConnectionPool) -> Self {
+    pub fn redis_pool(self, pool: RedisConnectionPool) -> Self {
         Self {
             redis_pool: Some(pool),
             ..self
@@ -260,7 +255,7 @@ impl AppContextBuilder {
         }
     }
 
-    pub(crate) fn build(self, metrics: Arc<Metrics>) -> AppContext {
+    pub fn build(self, metrics: Arc<Metrics>) -> AppContext {
         AppContext {
             config: Arc::new(self.config),
             authz: self.authz,

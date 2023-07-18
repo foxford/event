@@ -36,7 +36,7 @@ pub async fn list(
     .await
 }
 
-pub(crate) struct ListHandler;
+pub struct ListHandler;
 
 #[async_trait]
 impl RequestHandler for ListHandler {

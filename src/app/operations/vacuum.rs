@@ -6,7 +6,7 @@ use crate::{
     metrics::{Metrics, QueryKey},
 };
 
-pub(crate) async fn call(db: &Db, metrics: &Metrics, config: &VacuumConfig) -> Result<()> {
+pub async fn call(db: &Db, metrics: &Metrics, config: &VacuumConfig) -> Result<()> {
     let mut conn = db
         .acquire()
         .await
@@ -40,7 +40,7 @@ mod tests {
 
     use crate::config::VacuumConfig;
     use crate::db::event::{ListQuery as EventListQuery, Object as Event};
-    use crate::db::room::Object as Room;
+    use crate::db::room::{ClassType, Object as Room};
     use crate::metrics::Metrics;
     use crate::test_helpers::prelude::*;
 
@@ -176,7 +176,7 @@ mod tests {
             Bound::Excluded(now + Duration::hours(1)),
         );
 
-        factory::Room::new(Uuid::new_v4())
+        factory::Room::new(Uuid::new_v4(), ClassType::Webinar)
             .audience(USR_AUDIENCE)
             .time(time)
             .preserve_history(preserve_history)

@@ -32,7 +32,7 @@ impl AuthzObject {
         }
     }
 
-    pub(crate) fn room(room: &Room) -> Self {
+    pub fn room(room: &Room) -> Self {
         Self {
             object: room.authz_object(),
             ban_key: None,
@@ -112,6 +112,7 @@ pub fn db_ban_callback(db: Db) -> svc_authz::BanCallback {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::room::ClassType;
     use crate::test_helpers::prelude::*;
     use std::ops::Bound;
 
@@ -199,7 +200,7 @@ mod tests {
             // Create room with classroom id and ban agent in the room
             let mut conn = db.get_conn().await;
 
-            let room = factory::Room::new(classroom_id)
+            let room = factory::Room::new(classroom_id, ClassType::Webinar)
                 .audience("foo.bar")
                 .time((Bound::Unbounded, Bound::Unbounded))
                 .insert(&mut conn)

@@ -1,7 +1,10 @@
-use std::collections::HashMap;
-use std::convert::{TryFrom, TryInto};
-use std::ops::{Bound, RangeBounds};
-use std::str::FromStr;
+use std::{
+    collections::HashMap,
+    convert::{TryFrom, TryInto},
+    fmt,
+    ops::{Bound, RangeBounds},
+    str::FromStr,
+};
 
 use chrono::{serde::ts_seconds, DateTime, Utc};
 use serde_derive::{Deserialize, Serialize};
@@ -32,6 +35,27 @@ pub struct Object {
     validate_whiteboard_access: bool,
     #[serde(default)]
     whiteboard_access: HashMap<AccountId, bool>,
+    kind: ClassType,
+}
+
+#[derive(Clone, Copy, Debug, sqlx::Type, PartialEq, Eq, Deserialize, Serialize)]
+#[sqlx(type_name = "class_type", rename_all = "lowercase")]
+pub enum ClassType {
+    Webinar,
+    P2P,
+    Minigroup,
+}
+
+impl fmt::Display for ClassType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Used to generate S3 bucket names to dump events
+        let kind = match self {
+            ClassType::Webinar => "webinar",
+            ClassType::P2P => "p2p",
+            ClassType::Minigroup => "minigroup",
+        };
+        write!(f, "{kind}")
+    }
 }
 
 #[derive(Clone, Debug, sqlx::FromRow)]
@@ -47,6 +71,7 @@ struct DbObject {
     locked_types: JsonValue,
     validate_whiteboard_access: bool,
     whiteboard_access: JsonValue,
+    kind: ClassType,
 }
 
 impl TryFrom<DbObject> for Object {
@@ -65,6 +90,7 @@ impl TryFrom<DbObject> for Object {
             locked_types,
             validate_whiteboard_access,
             whiteboard_access,
+            kind,
         } = v;
 
         let locked_types = locked_types
@@ -109,6 +135,7 @@ impl TryFrom<DbObject> for Object {
             locked_types,
             validate_whiteboard_access,
             whiteboard_access,
+            kind,
         })
     }
 }
@@ -127,6 +154,7 @@ impl From<Object> for DbObject {
             locked_types,
             validate_whiteboard_access,
             whiteboard_access,
+            kind,
         } = v;
 
         let locked_types = serde_json::to_value(locked_types).unwrap();
@@ -144,6 +172,7 @@ impl From<Object> for DbObject {
             locked_types,
             validate_whiteboard_access,
             whiteboard_access,
+            kind,
         }
     }
 }
@@ -166,8 +195,8 @@ impl JsonbConversionFail {
     }
 }
 
-impl std::fmt::Display for JsonbConversionFail {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for JsonbConversionFail {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "Failed to convert {:?} jsonb to map, room id = {}",
@@ -202,6 +231,10 @@ impl Object {
     #[cfg(test)]
     pub fn preserve_history(&self) -> bool {
         self.preserve_history
+    }
+
+    pub fn kind(&self) -> ClassType {
+        self.kind
     }
 
     pub fn classroom_id(&self) -> Uuid {
@@ -271,6 +304,7 @@ pub struct Builder {
     created_at: Option<DateTime<Utc>>,
     preserve_history: Option<bool>,
     classroom_id: Uuid,
+    kind: Option<ClassType>,
 }
 
 impl Builder {
@@ -331,6 +365,13 @@ impl Builder {
         }
     }
 
+    pub fn kind(self, kind: ClassType) -> Self {
+        Self {
+            kind: Some(kind),
+            ..self
+        }
+    }
+
     pub fn build(self) -> anyhow::Result<Object> {
         Ok(Object {
             id: self.id.ok_or_else(|| anyhow!("missing id"))?,
@@ -348,6 +389,7 @@ impl Builder {
             locked_types: Default::default(),
             validate_whiteboard_access: Default::default(),
             whiteboard_access: Default::default(),
+            kind: self.kind.ok_or_else(|| anyhow!("missing kind"))?,
         })
     }
 }
@@ -383,14 +425,15 @@ impl FindQuery {
                 id,
                 audience,
                 source_room_id,
-                time                        AS "time!: Time",
+                time AS "time!: Time",
                 tags,
                 created_at,
                 preserve_history,
                 classroom_id,
                 locked_types,
                 validate_whiteboard_access,
-                whiteboard_access
+                whiteboard_access,
+                kind AS "kind!: ClassType"
             FROM room
             WHERE ($1::uuid IS NULL OR id = $1)
                 AND ($2::uuid IS NULL OR classroom_id = $2)
@@ -418,10 +461,11 @@ pub struct InsertQuery {
     locked_types: HashMap<String, bool>,
     validate_whiteboard_access: Option<bool>,
     whiteboard_access: HashMap<AccountId, bool>,
+    kind: ClassType,
 }
 
 impl InsertQuery {
-    pub fn new(audience: &str, time: Time, classroom_id: Uuid) -> Self {
+    pub fn new(audience: &str, time: Time, classroom_id: Uuid, kind: ClassType) -> Self {
         Self {
             audience: audience.to_owned(),
             source_room_id: None,
@@ -432,6 +476,7 @@ impl InsertQuery {
             locked_types: Default::default(),
             validate_whiteboard_access: Default::default(),
             whiteboard_access: Default::default(),
+            kind,
         }
     }
 
@@ -474,8 +519,8 @@ impl InsertQuery {
             r#"
             INSERT INTO room (
                 audience, source_room_id, time, tags, preserve_history, classroom_id,
-                    locked_types, validate_whiteboard_access, whiteboard_access)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    locked_types, validate_whiteboard_access, whiteboard_access, kind)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             RETURNING
                 id,
                 audience,
@@ -487,7 +532,8 @@ impl InsertQuery {
                 classroom_id,
                 locked_types,
                 validate_whiteboard_access,
-                whiteboard_access
+                whiteboard_access,
+                kind AS "kind!: ClassType"
             "#,
             self.audience,
             self.source_room_id,
@@ -498,6 +544,7 @@ impl InsertQuery {
             locked_types,
             self.validate_whiteboard_access.unwrap_or(false),
             whiteboard_access,
+            self.kind as ClassType,
         )
         .fetch_one(conn)
         .await?
@@ -592,7 +639,8 @@ impl UpdateQuery {
                 classroom_id,
                 locked_types,
                 validate_whiteboard_access,
-                whiteboard_access
+                whiteboard_access,
+                kind AS "kind!: ClassType"
             "#,
             self.id,
             time,

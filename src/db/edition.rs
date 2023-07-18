@@ -5,12 +5,12 @@ use sqlx::postgres::PgConnection;
 use svc_agent::AgentId;
 use uuid::Uuid;
 
-use crate::db::room::{Builder as RoomBuilder, Object as Room, Time as RoomTime};
+use crate::db::room::{Builder as RoomBuilder, ClassType, Object as Room, Time as RoomTime};
 
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
-pub(crate) struct Object {
+pub struct Object {
     id: Uuid,
     source_room_id: Uuid,
     created_by: AgentId,
@@ -19,11 +19,11 @@ pub(crate) struct Object {
 }
 
 impl Object {
-    pub(crate) fn id(&self) -> Uuid {
+    pub fn id(&self) -> Uuid {
         self.id
     }
 
-    pub(crate) fn source_room_id(&self) -> Uuid {
+    pub fn source_room_id(&self) -> Uuid {
         self.source_room_id
     }
 }
@@ -31,19 +31,16 @@ impl Object {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct FindWithRoomQuery {
+pub struct FindWithRoomQuery {
     id: Uuid,
 }
 
 impl FindWithRoomQuery {
-    pub(crate) fn new(id: Uuid) -> Self {
+    pub fn new(id: Uuid) -> Self {
         Self { id }
     }
 
-    pub(crate) async fn execute(
-        self,
-        conn: &mut PgConnection,
-    ) -> sqlx::Result<Option<(Object, Room)>> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<(Object, Room)>> {
         let maybe_row = sqlx::query!(
             r#"
             SELECT
@@ -58,7 +55,8 @@ impl FindWithRoomQuery {
                 r.tags             AS room_tags,
                 r.created_at       AS room_created_at,
                 r.preserve_history AS room_preserve_history,
-                r.classroom_id     AS room_classroom_id
+                r.classroom_id     AS room_classroom_id,
+                r.kind             AS "room_kind!: ClassType"
             FROM edition AS e
             INNER JOIN room AS r
             ON r.id = e.source_room_id
@@ -88,6 +86,7 @@ impl FindWithRoomQuery {
                     .created_at(row.room_created_at)
                     .preserve_history(row.room_preserve_history)
                     .classroom_id(row.room_classroom_id)
+                    .kind(row.room_kind)
                     .build()
                     .map_err(|err| sqlx::Error::Decode(err.into()))?;
 
@@ -100,20 +99,20 @@ impl FindWithRoomQuery {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct InsertQuery<'a> {
+pub struct InsertQuery<'a> {
     source_room_id: Uuid,
     created_by: &'a AgentId,
 }
 
 impl<'a> InsertQuery<'a> {
-    pub(crate) fn new(source_room_id: Uuid, created_by: &'a AgentId) -> Self {
+    pub fn new(source_room_id: Uuid, created_by: &'a AgentId) -> Self {
         Self {
             source_room_id,
             created_by,
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         sqlx::query_as!(
             Object,
             r#"
@@ -132,14 +131,14 @@ impl<'a> InsertQuery<'a> {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct ListQuery {
+pub struct ListQuery {
     source_room_id: Uuid,
     last_created_at: Option<DateTime<Utc>>,
     limit: i64,
 }
 
 impl ListQuery {
-    pub(crate) fn new(source_room_id: Uuid) -> Self {
+    pub fn new(source_room_id: Uuid) -> Self {
         Self {
             limit: 25,
             last_created_at: None,
@@ -147,18 +146,18 @@ impl ListQuery {
         }
     }
 
-    pub(crate) fn limit(self, limit: i64) -> Self {
+    pub fn limit(self, limit: i64) -> Self {
         Self { limit, ..self }
     }
 
-    pub(crate) fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
+    pub fn last_created_at(self, last_created_at: DateTime<Utc>) -> Self {
         Self {
             last_created_at: Some(last_created_at),
             ..self
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
         sqlx::query_as!(
             Object,
             r#"
@@ -181,16 +180,16 @@ impl ListQuery {
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug)]
-pub(crate) struct DeleteQuery {
+pub struct DeleteQuery {
     id: Uuid,
 }
 
 impl DeleteQuery {
-    pub(crate) fn new(id: Uuid) -> Self {
+    pub fn new(id: Uuid) -> Self {
         Self { id }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<usize> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<usize> {
         sqlx::query!("DELETE FROM edition WHERE id = $1", self.id)
             .execute(conn)
             .await

@@ -65,7 +65,7 @@ fn build_config(payload_size: Option<usize>) -> Config {
 
 ///////////////////////////////////////////////////////////////////////////////
 
-pub(crate) struct TestContext {
+pub struct TestContext {
     config: Config,
     authz: Authz,
     db: TestDb,
@@ -78,7 +78,7 @@ pub(crate) struct TestContext {
 }
 
 impl TestContext {
-    pub(crate) fn new(db: TestDb, authz: TestAuthz) -> Self {
+    pub fn new(db: TestDb, authz: TestAuthz) -> Self {
         let config = build_config(None);
         let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 
@@ -96,7 +96,7 @@ impl TestContext {
         }
     }
 
-    pub(crate) fn new_with_payload_size(db: TestDb, authz: TestAuthz, payload_size: usize) -> Self {
+    pub fn new_with_payload_size(db: TestDb, authz: TestAuthz, payload_size: usize) -> Self {
         let config = build_config(Some(payload_size));
         let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 
@@ -114,7 +114,7 @@ impl TestContext {
         }
     }
 
-    pub(crate) fn new_with_ban(db: TestDb, authz: DbBanTestAuthz) -> Self {
+    pub fn new_with_ban(db: TestDb, authz: DbBanTestAuthz) -> Self {
         let config = build_config(None);
         let agent_id = AgentId::new(&config.agent_label, config.id.clone());
 

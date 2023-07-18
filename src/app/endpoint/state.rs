@@ -20,7 +20,7 @@ const MAX_SETS: usize = 10;
 const MAX_LIMIT_PER_SET: i64 = 100;
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ReadPayload {
+pub struct ReadPayload {
     sets: Vec<String>,
     attribute: Option<String>,
     occurred_at: Option<i64>,
@@ -29,7 +29,7 @@ pub(crate) struct ReadPayload {
 }
 
 #[derive(Debug, Deserialize)]
-pub(crate) struct ReadRequest {
+pub struct ReadRequest {
     room_id: Uuid,
     #[serde(flatten)]
     payload: ReadPayload,
@@ -55,7 +55,7 @@ pub async fn read(
     .await
 }
 
-pub(crate) struct ReadHandler;
+pub struct ReadHandler;
 
 #[async_trait]
 impl RequestHandler for ReadHandler {

@@ -17,7 +17,7 @@ pub struct Query<'a> {
 }
 
 impl<'a> Query<'a> {
-    pub(crate) fn new(room_id: Uuid, set: String, original_occurred_at: i64, limit: i64) -> Self {
+    pub fn new(room_id: Uuid, set: String, original_occurred_at: i64, limit: i64) -> Self {
         Self {
             room_id,
             set,
@@ -28,21 +28,21 @@ impl<'a> Query<'a> {
         }
     }
 
-    pub(crate) fn occurred_at(self, occurred_at: i64) -> Self {
+    pub fn occurred_at(self, occurred_at: i64) -> Self {
         Self {
             occurred_at: Some(occurred_at),
             ..self
         }
     }
 
-    pub(crate) fn attribute(self, attribute: &'a str) -> Self {
+    pub fn attribute(self, attribute: &'a str) -> Self {
         Self {
             attribute: Some(attribute),
             ..self
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
         let raw_objects = if let Some(attribute) = self.attribute {
             sqlx::query_as!(
                 RawObject,
@@ -144,7 +144,7 @@ impl<'a> Query<'a> {
         Ok(objects)
     }
 
-    pub(crate) async fn total_count(&self, conn: &mut PgConnection) -> sqlx::Result<i64> {
+    pub async fn total_count(&self, conn: &mut PgConnection) -> sqlx::Result<i64> {
         if let Some(attribute) = self.attribute {
             sqlx::query!(
                 "SELECT COUNT(1) as total FROM (

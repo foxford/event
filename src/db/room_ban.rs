@@ -7,7 +7,7 @@ use uuid::Uuid;
 ////////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, sqlx::FromRow, Serialize)]
-pub(crate) struct Object {
+pub struct Object {
     #[serde(skip_serializing)]
     #[allow(dead_code)]
     id: Uuid,
@@ -37,14 +37,14 @@ impl Object {
 }
 
 #[derive(Debug)]
-pub(crate) struct InsertQuery {
+pub struct InsertQuery {
     account_id: AccountId,
     room_id: Uuid,
     reason: Option<String>,
 }
 
 impl InsertQuery {
-    pub(crate) fn new(account_id: AccountId, room_id: Uuid) -> Self {
+    pub fn new(account_id: AccountId, room_id: Uuid) -> Self {
         Self {
             account_id,
             room_id,
@@ -52,11 +52,11 @@ impl InsertQuery {
         }
     }
 
-    pub(crate) fn reason(&mut self, reason: &str) {
+    pub fn reason(&mut self, reason: &str) {
         self.reason = Some(reason.to_owned());
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         sqlx::query_as!(
             Object,
             r#"
@@ -80,20 +80,20 @@ impl InsertQuery {
 }
 
 #[derive(Debug)]
-pub(crate) struct ClassroomFindQuery {
+pub struct ClassroomFindQuery {
     account_id: AccountId,
     classroom_id: Uuid,
 }
 
 impl ClassroomFindQuery {
-    pub(crate) fn new(account_id: AccountId, classroom_id: Uuid) -> Self {
+    pub fn new(account_id: AccountId, classroom_id: Uuid) -> Self {
         Self {
             account_id,
             classroom_id,
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Option<Object>> {
         sqlx::query_as!(
             Object,
             r#"
@@ -116,20 +116,20 @@ impl ClassroomFindQuery {
 }
 
 #[derive(Debug)]
-pub(crate) struct DeleteQuery {
+pub struct DeleteQuery {
     account_id: AccountId,
     room_id: Uuid,
 }
 
 impl DeleteQuery {
-    pub(crate) fn new(account_id: AccountId, room_id: Uuid) -> Self {
+    pub fn new(account_id: AccountId, room_id: Uuid) -> Self {
         Self {
             account_id,
             room_id,
         }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<usize> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<usize> {
         sqlx::query_as!(
             Object,
             r#"
@@ -147,16 +147,16 @@ impl DeleteQuery {
 }
 
 #[derive(Debug)]
-pub(crate) struct ListQuery {
+pub struct ListQuery {
     room_id: Uuid,
 }
 
 impl ListQuery {
-    pub(crate) fn new(room_id: Uuid) -> Self {
+    pub fn new(room_id: Uuid) -> Self {
         Self { room_id }
     }
 
-    pub(crate) async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
+    pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Vec<Object>> {
         sqlx::query_as!(
             Object,
             r#"
@@ -176,6 +176,7 @@ impl ListQuery {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::room::ClassType;
     use crate::test_helpers::prelude::*;
     use std::ops::Bound;
 
@@ -187,12 +188,12 @@ mod tests {
         let banned_agent = TestAgent::new("web", "user123", USR_AUDIENCE);
         let classroom_id = Uuid::new_v4();
 
-        factory::Room::new(classroom_id)
+        factory::Room::new(classroom_id, ClassType::Webinar)
             .audience(USR_AUDIENCE)
             .time((Bound::Included(Utc::now()), Bound::Unbounded))
             .insert(&mut conn)
             .await;
-        let room = factory::Room::new(classroom_id)
+        let room = factory::Room::new(classroom_id, ClassType::Webinar)
             .audience(USR_AUDIENCE)
             .time((Bound::Included(Utc::now()), Bound::Unbounded))
             .insert(&mut conn)

@@ -17,10 +17,10 @@ use super::service_utils::{RequestParams, Response as AppResponse};
 ///////////////////////////////////////////////////////////////////////////////
 
 pub type RequestResult = StdResult<AppResponse, AppError>;
-pub(crate) type MqttResult = StdResult<MessageStream, AppError>;
+pub type MqttResult = StdResult<MessageStream, AppError>;
 
 #[async_trait]
-pub(crate) trait RequestHandler {
+pub trait RequestHandler {
     type Payload: Send + DeserializeOwned;
 
     async fn handle<C: Context + Sync + Send>(
@@ -32,7 +32,7 @@ pub(crate) trait RequestHandler {
 
 macro_rules! request_routes {
     ($($m: pat => $h: ty),*) => {
-        pub(crate) async fn route_request<C: Context + Sync + Send>(
+        pub async fn route_request<C: Context + Sync + Send>(
             context: &mut C,
             request: &IncomingRequest<String>,
         ) -> Option<MessageStream> {
@@ -78,13 +78,13 @@ request_routes!(
 ///////////////////////////////////////////////////////////////////////////////
 
 #[derive(Debug, Deserialize, Serialize)]
-pub(crate) enum CorrelationData {
+pub enum CorrelationData {
     SubscriptionCreate(subscription::CorrelationDataPayload),
     BroadcastSubscriptionCreate(subscription::CorrelationDataPayload),
 }
 
 #[async_trait]
-pub(crate) trait ResponseHandler {
+pub trait ResponseHandler {
     type Payload: Send + DeserializeOwned;
     type CorrelationData: Sync;
 
@@ -99,7 +99,7 @@ pub(crate) trait ResponseHandler {
 ///////////////////////////////////////////////////////////////////////////////
 
 #[async_trait]
-pub(crate) trait EventHandler {
+pub trait EventHandler {
     type Payload: Send + DeserializeOwned;
 
     async fn handle<C: Context + Sync + Send>(
@@ -112,7 +112,7 @@ pub(crate) trait EventHandler {
 macro_rules! event_routes {
     ($($l: pat => $h: ty),*) => {
         #[allow(unused_variables)]
-        pub(crate) async fn route_event<C: Context + Sync + Send>(
+        pub async fn route_event<C: Context + Sync + Send>(
             context: &mut C,
             event: &IncomingEvent<String>,
         ) -> Option<MessageStream> {
@@ -138,7 +138,7 @@ event_routes!(
 ///////////////////////////////////////////////////////////////////////////////
 
 pub mod agent;
-pub(crate) mod authz;
+pub mod authz;
 pub mod ban;
 pub mod change;
 pub mod edition;

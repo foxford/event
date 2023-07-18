@@ -34,6 +34,7 @@ pub enum ErrorKind {
     MessageHandlingFailed,
     MqttClientNotConnected,
     NoS3Client,
+    S3UploadFailed,
     StatsCollectionFailed,
     PublishFailed,
     RoomAdjustTaskFailed,
@@ -181,6 +182,12 @@ impl From<ErrorKind> for ErrorKindProperties {
                 title: "No s3 configuration, nowhere to dump events to",
                 is_notify_sentry: true,
             },
+            ErrorKind::S3UploadFailed => ErrorKindProperties {
+                status: ResponseStatus::INTERNAL_SERVER_ERROR,
+                kind: "s3_upload_failed",
+                title: "S3 upload failed",
+                is_notify_sentry: true,
+            },
             ErrorKind::SerializationFailed => ErrorKindProperties {
                 status: ResponseStatus::UNPROCESSABLE_ENTITY,
                 kind: "serialization_failed",
@@ -298,7 +305,7 @@ pub struct Error {
 }
 
 impl Error {
-    pub(crate) fn new(kind: ErrorKind, err: anyhow::Error) -> Self {
+    pub fn new(kind: ErrorKind, err: anyhow::Error) -> Self {
         Self {
             kind,
             err: Some(Arc::new(err)),

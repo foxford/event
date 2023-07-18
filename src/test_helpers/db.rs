@@ -9,12 +9,12 @@ use svc_authz::{BanCallback, IntentObject};
 use uuid::Uuid;
 
 #[derive(Clone)]
-pub(crate) struct TestDb {
+pub struct TestDb {
     pool: PgPool,
 }
 
 impl TestDb {
-    pub(crate) async fn new() -> Self {
+    pub async fn new() -> Self {
         #[cfg(feature = "dotenv")]
         dotenv::dotenv().ok();
 
@@ -30,11 +30,11 @@ impl TestDb {
         }
     }
 
-    pub(crate) fn connection_pool(&self) -> &PgPool {
+    pub fn connection_pool(&self) -> &PgPool {
         &self.pool
     }
 
-    pub(crate) async fn get_conn(&self) -> PoolConnection<Postgres> {
+    pub async fn get_conn(&self) -> PoolConnection<Postgres> {
         self.pool
             .acquire()
             .await
@@ -42,7 +42,7 @@ impl TestDb {
     }
 }
 
-pub(crate) fn test_db_ban_callback(db: TestDb) -> BanCallback {
+pub fn test_db_ban_callback(db: TestDb) -> BanCallback {
     Arc::new(
         move |account_id: AccountId, intent: Box<dyn IntentObject>| {
             let db_ = db.clone();
