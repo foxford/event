@@ -17,7 +17,7 @@ use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 use crate::app::endpoint::prelude::*;
-use crate::app::operations::{adjust_room, AdjustOutput};
+use crate::app::operations::adjust_room::v1::{call as adjust_room, AdjustOutput};
 use crate::app::{
     context::{AppContext, Context},
     message_handler::Message,

@@ -67,7 +67,10 @@ pub fn build_router(
                 .patch(endpoint::room::update)
                 .options(endpoint::read_options),
         )
-        .route("/rooms/:id/adjust", post(endpoint::room::adjust))
+        .route(
+            "/rooms/:id/adjust",
+            post(endpoint::room::adjust::v1::adjust),
+        )
         .route(
             "/rooms/:id/enter",
             post(endpoint::room::enter).options(endpoint::read_options),

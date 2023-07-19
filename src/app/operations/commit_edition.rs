@@ -14,7 +14,7 @@ use crate::db::event::{
 use crate::db::room::{InsertQuery as RoomInsertQuery, Object as Room};
 use crate::db::room_time::RoomTimeBound;
 use crate::{
-    app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND},
+    app::operations::adjust_room::{segments::invert_segments, NANOSECONDS_IN_MILLISECOND},
     metrics::Metrics,
 };
 use crate::{db::adjustment::Segments, metrics::QueryKey};
@@ -381,7 +381,9 @@ mod tests {
     use svc_agent::{AccountId, AgentId};
     use svc_authn::Authenticable;
 
-    use crate::app::operations::adjust_room::{invert_segments, NANOSECONDS_IN_MILLISECOND};
+    use crate::app::operations::adjust_room::{
+        segments::invert_segments, NANOSECONDS_IN_MILLISECOND,
+    };
     use crate::app::operations::commit_edition::collect_gaps;
     use crate::config::AdjustConfig;
     use crate::db::event::{ListQuery as EventListQuery, Object as Event};
