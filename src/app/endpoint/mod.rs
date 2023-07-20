@@ -65,6 +65,7 @@ request_routes!(
     "event.create" => event::CreateHandler,
     "event.list" => event::ListHandler,
     "room.adjust" => room::adjust::v1::AdjustHandler,
+    "room.adjust.v2" => room::adjust::v2::AdjustHandler,
     "room.create" => room::CreateHandler,
     "room.dump_events" => room::EventsDumpHandler,
     "room.enter" => room::EnterHandler,

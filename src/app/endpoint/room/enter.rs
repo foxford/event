@@ -188,7 +188,7 @@ impl RequestHandler for EnterHandler {
 #[cfg(test)]
 mod tests {
     use crate::app::broker_client::CreateDeleteResponse;
-    use sqlx::types::JsonValue;
+    use serde_json::Value as JsonValue;
 
     use crate::test_helpers::prelude::*;
 

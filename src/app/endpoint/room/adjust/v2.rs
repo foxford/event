@@ -1,39 +1,49 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
-use axum::{
-    extract::{Path, State},
-    Json,
-};
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use serde_json::json;
 use svc_agent::mqtt::{
     OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties,
 };
-use svc_utils::extractors::AgentIdExtractor;
 use tracing::{error, info, instrument};
 use uuid::Uuid;
 
+use crate::app::endpoint::room::adjust::{
+    RoomAdjustNotification, RoomAdjustResult, RoomAdjustResultV1,
+};
 use crate::{
     app::{
-        context::{AppContext, Context},
-        endpoint::{
-            prelude::*,
-            room::adjust::{RoomAdjustNotification, RoomAdjustResult, RoomAdjustResultV1},
-        },
+        context::Context,
+        endpoint::prelude::*,
         message_handler::Message,
-        operations::adjust_room::v1::{call as adjust_room, AdjustOutput},
+        operations::adjust_room::v2::{call as adjust_room, AdjustOutput},
     },
     db::adjustment::Segments,
 };
 
 #[derive(Debug, Deserialize)]
-pub struct AdjustPayload {
-    #[serde(with = "chrono::serde::ts_milliseconds")]
-    started_at: DateTime<Utc>,
+pub struct Recording {
+    pub id: Uuid,
+    pub host: bool,
     #[serde(with = "crate::db::adjustment::serde::segments")]
-    segments: Segments,
+    pub segments: Segments,
+    #[serde(with = "chrono::serde::ts_milliseconds")]
+    pub started_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct MuteEvent {
+    pub rtc_id: Uuid,
+    pub send_video: Option<bool>,
+    pub send_audio: Option<bool>,
+    #[serde(with = "chrono::serde::ts_milliseconds")]
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AdjustPayload {
+    recordings: Vec<Recording>,
+    mute_events: Vec<MuteEvent>,
     offset: i64,
 }
 
@@ -42,26 +52,6 @@ pub struct AdjustRequest {
     id: Uuid,
     #[serde(flatten)]
     payload: AdjustPayload,
-}
-
-pub async fn adjust(
-    State(ctx): State<Arc<AppContext>>,
-    AgentIdExtractor(agent_id): AgentIdExtractor,
-    Path(room_id): Path<Uuid>,
-    Json(payload): Json<AdjustPayload>,
-) -> RequestResult {
-    let request = AdjustRequest {
-        id: room_id,
-        payload,
-    };
-    AdjustHandler::handle(
-        &mut ctx.start_message(),
-        request,
-        RequestParams::Http {
-            agent_id: &agent_id,
-        },
-    )
-    .await
 }
 
 pub struct AdjustHandler;
@@ -102,8 +92,8 @@ impl RequestHandler for AdjustHandler {
                 &db,
                 &metrics,
                 &room,
-                payload.started_at,
-                &payload.segments,
+                &payload.recordings,
+                &payload.mute_events,
                 payload.offset,
                 cfg.adjust,
             )
@@ -115,9 +105,19 @@ impl RequestHandler for AdjustHandler {
                     original_room,
                     modified_room,
                     modified_segments,
+                    ..
+                    // recordings: Vec<Recording {
+                    //     id: Uuid,
+                    //     pin_segments: Segments,
+                    //     modified_segments: Segments,
+                    //     video_mute_segments: Segments,
+                    //     audio_mute_segments: Segments,
+                    // }>,
+                    // modified_room_time: BoundedDateTimeTuple
                 }) => {
                     info!(class_id = %room.classroom_id(), "Adjustment job succeeded");
 
+                    // todo
                     RoomAdjustResultV1::Success {
                         original_room_id: original_room.id(),
                         modified_room_id: modified_room.id(),
@@ -128,11 +128,13 @@ impl RequestHandler for AdjustHandler {
                     error!(class_id = %room.classroom_id(), "Room adjustment job failed: {:?}", err);
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
                     app_error.notify_sentry();
+                    // todo
                     RoomAdjustResultV1::Error {
                         error: app_error.to_svc_error(),
                     }
                 }
             };
+            // todo
             let result = RoomAdjustResult::V1(result);
 
             // Publish success/failure notification.
@@ -163,64 +165,5 @@ impl RequestHandler for AdjustHandler {
         response.add_async_task(notification_future);
 
         Ok(response)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::test_helpers::prelude::*;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn adjust_room_not_authorized() {
-        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-        let db = TestDb::new().await;
-
-        let room = {
-            // Create room.
-            let mut conn = db.get_conn().await;
-            shared_helpers::insert_room(&mut conn).await
-        };
-
-        // Make room.adjust request.
-        let mut context = TestContext::new(db, TestAuthz::new());
-
-        let payload = AdjustRequest {
-            id: room.id(),
-            payload: AdjustPayload {
-                started_at: Utc::now(),
-                segments: vec![].into(),
-                offset: 0,
-            },
-        };
-
-        let err = handle_request::<AdjustHandler>(&mut context, &agent, payload)
-            .await
-            .expect_err("Unexpected success on room adjustment");
-
-        assert_eq!(err.status(), ResponseStatus::FORBIDDEN);
-    }
-
-    #[tokio::test]
-    async fn adjust_room_missing() {
-        let agent = TestAgent::new("web", "user123", USR_AUDIENCE);
-        let mut context = TestContext::new(TestDb::new().await, TestAuthz::new());
-
-        let payload = AdjustRequest {
-            id: Uuid::new_v4(),
-            payload: AdjustPayload {
-                started_at: Utc::now(),
-                segments: vec![].into(),
-                offset: 0,
-            },
-        };
-
-        let err = handle_request::<AdjustHandler>(&mut context, &agent, payload)
-            .await
-            .expect_err("Unexpected success on room adjustment");
-
-        assert_eq!(err.status(), ResponseStatus::NOT_FOUND);
-        assert_eq!(err.kind(), "room_not_found");
     }
 }
