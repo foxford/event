@@ -1,16 +1,12 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use prometheus::Registry;
 use serde_json::json;
 use sqlx::postgres::PgPool as Db;
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
-use svc_nats_client::{
-    AckPolicy, DeliverPolicy, Event, Message, MessageStream, Messages, NatsClient, PublishError,
-    Subject, SubscribeError, TermMessageError,
-};
+use svc_nats_client::{test_helpers::TestNatsClient, NatsClient};
 
 use crate::{
     app::{
@@ -74,7 +70,7 @@ pub struct TestContext {
     start_timestamp: DateTime<Utc>,
     s3_client: Option<S3Client>,
     broker_client: Arc<MockBrokerClient>,
-    nats_client: Option<Arc<dyn NatsClient>>,
+    nats_client: Arc<TestNatsClient>,
 }
 
 impl TestContext {
@@ -92,7 +88,7 @@ impl TestContext {
             start_timestamp: Utc::now(),
             s3_client: None,
             broker_client: Arc::new(MockBrokerClient::new()),
-            nats_client: Some(Arc::new(TestNatsClient {}) as Arc<dyn NatsClient>),
+            nats_client: Arc::new(TestNatsClient::new()),
         }
     }
 
@@ -110,7 +106,7 @@ impl TestContext {
             start_timestamp: Utc::now(),
             s3_client: None,
             broker_client: Arc::new(MockBrokerClient::new()),
-            nats_client: Some(Arc::new(TestNatsClient {}) as Arc<dyn NatsClient>),
+            nats_client: Arc::new(TestNatsClient::new()),
         }
     }
 
@@ -128,7 +124,7 @@ impl TestContext {
             start_timestamp: Utc::now(),
             s3_client: None,
             broker_client: Arc::new(MockBrokerClient::new()),
-            nats_client: Some(Arc::new(TestNatsClient {}) as Arc<dyn NatsClient>),
+            nats_client: Arc::new(TestNatsClient::new()),
         }
     }
 
@@ -139,31 +135,9 @@ impl TestContext {
     pub fn broker_client_mock(&mut self) -> &mut MockBrokerClient {
         Arc::get_mut(&mut self.broker_client).expect("Failed to get broker client mock")
     }
-}
 
-struct TestNatsClient;
-
-#[async_trait]
-impl NatsClient for TestNatsClient {
-    async fn publish(&self, _event: &Event) -> Result<(), PublishError> {
-        Ok(())
-    }
-
-    async fn subscribe_durable(&self) -> Result<MessageStream, SubscribeError> {
-        unimplemented!()
-    }
-
-    async fn subscribe_ephemeral(
-        &self,
-        _subject: Subject,
-        _deliver_policy: DeliverPolicy,
-        _ack_policy: AckPolicy,
-    ) -> Result<Messages, SubscribeError> {
-        unimplemented!()
-    }
-
-    async fn terminate(&self, _message: &Message) -> Result<(), TermMessageError> {
-        unimplemented!()
+    pub fn inspect_nats_client(&self) -> &TestNatsClient {
+        &self.nats_client
     }
 }
 
@@ -208,8 +182,8 @@ impl GlobalContext for TestContext {
         self.broker_client.as_ref()
     }
 
-    fn nats_client(&self) -> Option<&dyn NatsClient> {
-        self.nats_client.as_deref()
+    fn nats_client(&self) -> Option<Arc<dyn NatsClient>> {
+        Some(self.nats_client.clone() as Arc<dyn NatsClient>)
     }
 }
 

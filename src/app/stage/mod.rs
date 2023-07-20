@@ -205,3 +205,94 @@ async fn handle_ban_accepted(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    use crate::test_helpers::prelude::*;
+
+    #[tokio::test]
+    async fn ban_accepted_handler_enables_disables_ban() {
+        let db = TestDb::new().await;
+        let agent = TestAgent::new("web", "user", USR_AUDIENCE);
+
+        let mut conn = db.get_conn().await;
+        let room = shared_helpers::insert_room(&mut conn).await;
+
+        let subject = Subject::new("test".to_string(), room.classroom_id(), "ban".to_string());
+        let event_id: EventId = ("ban".to_string(), "accepted".to_string(), 0).into();
+        let headers =
+            svc_nats_client::test_helpers::HeadersBuilder::new(event_id, agent.agent_id().clone())
+                .build();
+        let e = BanAcceptedV1 {
+            ban: true,
+            classroom_id: room.classroom_id(),
+            target_account: agent.account_id().clone(),
+            operation_id: 0,
+        };
+
+        let ctx = TestContext::new(db, TestAuthz::new());
+
+        handle_ban_accepted(&ctx, e, &room, subject, &headers)
+            .await
+            .expect("handler failed");
+
+        // to drop pub_reqs after all checks
+        {
+            let pub_reqs = ctx.inspect_nats_client().get_publish_requests();
+            assert_eq!(pub_reqs.len(), 1);
+
+            let payload = serde_json::from_slice::<Event>(&pub_reqs[0].payload)
+                .expect("failed to parse event");
+            assert!(matches!(
+                payload,
+                Event::V1(EventV1::BanCollaborationCompleted(
+                    BanCollaborationCompletedV1 { ban: true, .. }
+                ))
+            ));
+        }
+
+        let room_bans = db::room_ban::ListQuery::new(room.id())
+            .execute(&mut conn)
+            .await
+            .expect("failed to list room bans");
+
+        assert_eq!(room_bans.len(), 1);
+        assert_eq!(room_bans[0].account_id(), agent.account_id());
+
+        let subject = Subject::new("test".to_string(), room.classroom_id(), "ban".to_string());
+        let e: BanAcceptedV1 = BanAcceptedV1 {
+            ban: false,
+            classroom_id: room.classroom_id(),
+            target_account: agent.account_id().clone(),
+            operation_id: 0,
+        };
+
+        handle_ban_accepted(&ctx, e, &room, subject, &headers)
+            .await
+            .expect("handler failed");
+
+        // to drop pub_reqs after all checks
+        {
+            let pub_reqs = ctx.inspect_nats_client().get_publish_requests();
+            assert_eq!(pub_reqs.len(), 2);
+
+            let payload = serde_json::from_slice::<Event>(&pub_reqs[1].payload)
+                .expect("failed to parse event");
+            assert!(matches!(
+                payload,
+                Event::V1(EventV1::BanCollaborationCompleted(
+                    BanCollaborationCompletedV1 { ban: false, .. }
+                ))
+            ));
+        }
+
+        let room_bans = db::room_ban::ListQuery::new(room.id())
+            .execute(&mut conn)
+            .await
+            .expect("failed to list room bans");
+
+        assert_eq!(room_bans.len(), 0);
+    }
+}

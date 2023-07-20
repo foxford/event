@@ -34,7 +34,7 @@ pub trait GlobalContext {
     fn metrics(&self) -> Arc<Metrics>;
     fn s3_client(&self) -> Option<S3Client>;
     fn broker_client(&self) -> &dyn BrokerClient;
-    fn nats_client(&self) -> Option<&dyn NatsClient>;
+    fn nats_client(&self) -> Option<Arc<dyn NatsClient>>;
 
     async fn get_conn(&self) -> Result<PoolConnection<Postgres>, AppError> {
         self.db()
@@ -121,8 +121,8 @@ impl GlobalContext for AppContext {
         self.broker_client.as_ref()
     }
 
-    fn nats_client(&self) -> Option<&dyn NatsClient> {
-        self.nats_client.as_deref()
+    fn nats_client(&self) -> Option<Arc<dyn NatsClient>> {
+        self.nats_client.clone()
     }
 }
 
@@ -183,7 +183,7 @@ impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
         self.global_context.broker_client()
     }
 
-    fn nats_client(&self) -> Option<&dyn NatsClient> {
+    fn nats_client(&self) -> Option<Arc<dyn NatsClient>> {
         self.global_context.nats_client()
     }
 }
