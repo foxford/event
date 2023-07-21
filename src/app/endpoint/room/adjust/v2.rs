@@ -5,11 +5,12 @@ use serde_json::json;
 use svc_agent::mqtt::{
     OutgoingEvent, OutgoingEventProperties, ResponseStatus, ShortTermTimingProperties,
 };
+use svc_agent::AgentId;
 use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 use crate::app::endpoint::room::adjust::{
-    RoomAdjustNotification, RoomAdjustResult, RoomAdjustResultV1,
+    RoomAdjustNotification, RoomAdjustResult, RoomAdjustResultV2,
 };
 use crate::{
     app::{
@@ -24,11 +25,13 @@ use crate::{
 #[derive(Debug, Deserialize)]
 pub struct Recording {
     pub id: Uuid,
+    pub rtc_id: Uuid,
     pub host: bool,
     #[serde(with = "crate::db::adjustment::serde::segments")]
     pub segments: Segments,
     #[serde(with = "chrono::serde::ts_milliseconds")]
     pub started_at: DateTime<Utc>,
+    pub created_by: AgentId,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,38 +107,28 @@ impl RequestHandler for AdjustHandler {
                 Ok(AdjustOutput {
                     original_room,
                     modified_room,
-                    modified_segments,
-                    ..
-                    // recordings: Vec<Recording {
-                    //     id: Uuid,
-                    //     pin_segments: Segments,
-                    //     modified_segments: Segments,
-                    //     video_mute_segments: Segments,
-                    //     audio_mute_segments: Segments,
-                    // }>,
-                    // modified_room_time: BoundedDateTimeTuple
+                    recordings,
+                    modified_room_time,
                 }) => {
                     info!(class_id = %room.classroom_id(), "Adjustment job succeeded");
 
-                    // todo
-                    RoomAdjustResultV1::Success {
+                    RoomAdjustResultV2::Success {
                         original_room_id: original_room.id(),
                         modified_room_id: modified_room.id(),
-                        modified_segments,
+                        recordings,
+                        modified_room_time,
                     }
                 }
                 Err(err) => {
                     error!(class_id = %room.classroom_id(), "Room adjustment job failed: {:?}", err);
                     let app_error = AppError::new(AppErrorKind::RoomAdjustTaskFailed, err);
                     app_error.notify_sentry();
-                    // todo
-                    RoomAdjustResultV1::Error {
+                    RoomAdjustResultV2::Error {
                         error: app_error.to_svc_error(),
                     }
                 }
             };
-            // todo
-            let result = RoomAdjustResult::V1(result);
+            let result = RoomAdjustResult::V2(result);
 
             // Publish success/failure notification.
             let notification = RoomAdjustNotification {

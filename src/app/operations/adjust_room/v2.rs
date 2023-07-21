@@ -1,28 +1,28 @@
-use std::cmp;
 use std::ops::Bound;
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Duration, Utc};
+use chrono::{Duration, Utc};
 use serde_json::json;
-use sqlx::{
-    postgres::{PgConnection, PgPool as Db},
-    Acquire,
-};
+use sqlx::{postgres::PgPool as Db, Acquire};
 use tracing::{info, instrument};
 
+use crate::app::endpoint::room::adjust::RecordingSegments;
+use crate::db::event::Direction::Forward;
+use crate::db::room_time::BoundedDateTimeTuple;
 use crate::{
     app::{
         endpoint::room::adjust::v2::{MuteEvent, Recording},
         operations::adjust_room::{intersect, segments, NANOSECONDS_IN_MILLISECOND},
     },
     config::AdjustConfig,
+    db,
     db::{
         adjustment::{InsertQuery as AdjustmentInsertQuery, Segments},
         event::{
             DeleteQuery as EventDeleteQuery, InsertQuery as EventInsertQuery,
-            ListQuery as EventListQuery,
+            ListQuery as EventListQuery, Object as Event,
         },
-        room::{InsertQuery as RoomInsertQuery, Object as Room},
+        room::Object as Room,
         room_time::RoomTimeBound,
     },
     metrics::{Metrics, QueryKey},
@@ -30,15 +30,15 @@ use crate::{
 
 ////////////////////////////////////////////////////////////////////////////////
 
+const PIN_EVENT_TYPE: &str = "pin";
+
 pub struct AdjustOutput {
     // Original room - with events shifted into video segments
     pub original_room: Room,
     // Modified room - same as original but has cut-start & cut-stop events applied
     pub modified_room: Room,
-    // Modified segments with applied cut-starts and cut-stops - used for webinars
-    pub modified_segments: Segments,
-    // Initial video segments but with applied cut-starts and cut-stops - used for minigroups
-    pub cut_original_segments: Segments,
+    pub recordings: Vec<RecordingSegments>,
+    pub modified_room_time: BoundedDateTimeTuple,
 }
 
 #[instrument(
@@ -63,12 +63,15 @@ pub async fn call(
     let start_timestamp = Utc::now();
 
     // Get host segments and started_at
-    let (started_at, segments) = match recordings.iter().find(|r| r.host) {
+    let recording = match recordings.iter().find(|r| r.host) {
         None => {
             bail!("Host segments not found: {:?}", recordings);
         }
-        Some(r) => (r.started_at, &r.segments),
+        Some(r) => r,
     };
+
+    let started_at = recording.started_at;
+    let segments = &recording.segments;
 
     // Parse segments.
     let bounded_offset_tuples: Vec<(Bound<i64>, Bound<i64>)> = segments.to_owned().into();
@@ -255,7 +258,7 @@ pub async fn call(
     let total_segments_duration = Duration::milliseconds(total_segments_millis);
 
     // Create original room with events shifted according to segments.
-    let original_room = create_room(
+    let original_room = super::create_room(
         &mut conn,
         metrics,
         real_time_room,
@@ -333,7 +336,7 @@ pub async fn call(
     };
 
     // Create modified room with events shifted again according to cut events this time.
-    let modified_room = create_room(
+    let modified_room = super::create_room(
         &mut conn,
         metrics,
         &original_room,
@@ -365,19 +368,42 @@ pub async fn call(
 
     ///////////////////////////////////////////////////////////////////////////
 
-    // Calculate modified segments by inverting cut gaps limited by total initial segments duration.
-    let modified_segments =
-        segments::invert_segments(&cut_gaps, total_segments_duration, min_segment_length)?
-            .into_iter()
-            .map(|(start, stop)| {
-                (
-                    Bound::Included(cmp::max(start / NANOSECONDS_IN_MILLISECOND, 0)),
-                    Bound::Excluded(stop / NANOSECONDS_IN_MILLISECOND),
-                )
-            })
-            .collect::<Vec<(Bound<i64>, Bound<i64>)>>();
+    let modified_room_time = modified_room
+        .time()
+        .map_err(|e| anyhow!(e))
+        .context("Invalid room time")?;
 
-    ///////////////////////////////////////////////////////////////////////////
+    // Fetch pin events for building pin segments
+    let query = db::event::ListQuery::new()
+        .room_id(modified_room.id())
+        .kind(PIN_EVENT_TYPE.to_string())
+        .direction(Forward);
+
+    let pin_events = metrics
+        .measure_query(QueryKey::EventListQuery, query.execute(&mut conn))
+        .await
+        .with_context(|| {
+            format!(
+                "failed to get pin events from room_id = '{}'",
+                modified_room.id()
+            )
+        })?;
+
+    let recordings = recordings
+        .iter()
+        .map(|recording| {
+            let event_room_offset =
+                recording.started_at - (started_at - Duration::milliseconds(offset));
+
+            build_stream(
+                recording,
+                &cut_original_segments,
+                &pin_events,
+                event_room_offset,
+                mute_events,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     // Done.
     info!(
@@ -388,39 +414,96 @@ pub async fn call(
     Ok(AdjustOutput {
         original_room,
         modified_room,
-        modified_segments: Segments::from(modified_segments),
-        cut_original_segments: Segments::from(cut_original_segments),
+        recordings,
+        modified_room_time: modified_room_time.into(),
     })
 }
 
-/// Creates a derived room from the source room.
-async fn create_room(
-    conn: &mut PgConnection,
-    metrics: &Metrics,
-    source_room: &Room,
-    started_at: DateTime<Utc>,
-    room_duration: Duration,
-) -> Result<Room> {
-    let time = (
-        Bound::Included(started_at),
-        Bound::Excluded(started_at + room_duration),
-    );
-    let mut query = RoomInsertQuery::new(
-        source_room.audience(),
-        time.into(),
-        source_room.classroom_id(),
-        source_room.kind(),
-    );
-    query = query.source_room_id(source_room.id());
+fn build_stream(
+    recording: &Recording,
+    cut_original_segments: &[(Bound<i64>, Bound<i64>)],
+    pin_events: &[Event],
+    event_room_offset: Duration,
+    configs_changes: &[MuteEvent],
+) -> Result<RecordingSegments> {
+    let recording_end = match recording
+        .segments
+        .last()
+        .map(|range| range.end)
+        .ok_or_else(|| anyhow!("Recording segments have no end?"))?
+    {
+        Bound::Included(t) | Bound::Excluded(t) => t,
+        Bound::Unbounded => bail!("Unbounded recording end"),
+    };
 
-    if let Some(tags) = source_room.tags() {
-        query = query.tags(tags.to_owned());
+    let pin_segments = segments::collect_pin_segments(
+        pin_events,
+        event_room_offset,
+        &recording.created_by,
+        recording_end,
+    );
+
+    // We need only changes for the recording that fall into recording span
+    let changes = configs_changes.iter().filter(|snapshot| {
+        let m = (snapshot.created_at - recording.started_at).num_milliseconds();
+        m > 0 && m < recording_end && snapshot.rtc_id == recording.rtc_id
+    });
+    let mut video_mute_start = None;
+    let mut audio_mute_start = None;
+    let mut video_mute_segments = vec![];
+    let mut audio_mute_segments = vec![];
+
+    for change in changes {
+        if change.send_video == Some(false) && video_mute_start.is_none() {
+            video_mute_start = Some(change);
+        }
+
+        if change.send_video == Some(true) && video_mute_start.is_some() {
+            let start = video_mute_start.take().unwrap();
+            let muted_at = (start.created_at - recording.started_at).num_milliseconds();
+            let unmuted_at = (change.created_at - recording.started_at).num_milliseconds();
+            video_mute_segments.push((Bound::Included(muted_at), Bound::Excluded(unmuted_at)));
+        }
+
+        if change.send_audio == Some(false) && audio_mute_start.is_none() {
+            audio_mute_start = Some(change);
+        }
+
+        if change.send_audio == Some(true) && audio_mute_start.is_some() {
+            let start = audio_mute_start.take().unwrap();
+            let muted_at = (start.created_at - recording.started_at).num_milliseconds();
+            let unmuted_at = (change.created_at - recording.started_at).num_milliseconds();
+            audio_mute_segments.push((Bound::Included(muted_at), Bound::Excluded(unmuted_at)));
+        }
     }
 
-    metrics
-        .measure_query(QueryKey::RoomInsertQuery, query.execute(conn))
-        .await
-        .context("failed to insert room")
+    // If last mute segment was left open, close it with recording end
+    if let Some(start) = video_mute_start {
+        let muted_at = (start.created_at - recording.started_at).num_milliseconds();
+        video_mute_segments.push((Bound::Included(muted_at), Bound::Excluded(recording_end)));
+    }
+
+    if let Some(start) = audio_mute_start {
+        let muted_at = (start.created_at - recording.started_at).num_milliseconds();
+        audio_mute_segments.push((Bound::Included(muted_at), Bound::Excluded(recording_end)));
+    }
+
+    let modified_segments = if recording.host {
+        Segments::from(cut_original_segments.to_owned())
+    } else {
+        // todo use real segments for non-host recordings
+        Segments::from(vec![])
+    };
+
+    let result = RecordingSegments {
+        id: recording.id,
+        pin_segments: pin_segments.into(),
+        modified_segments,
+        video_mute_segments: video_mute_segments.into(),
+        audio_mute_segments: audio_mute_segments.into(),
+    };
+
+    Ok(result)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -433,7 +516,9 @@ mod tests {
     use super::{call, AdjustOutput};
 
     use crate::app::endpoint::room::adjust::v2::{MuteEvent, Recording};
+    use crate::app::endpoint::room::adjust::RecordingSegments;
     use crate::config::AdjustConfig;
+    use crate::db;
     use chrono::{DateTime, Duration, NaiveDateTime, Utc};
     use humantime::parse_duration as pd;
     use prometheus::Registry;
@@ -448,7 +533,7 @@ mod tests {
     use crate::db::room::{
         ClassType, InsertQuery as RoomInsertQuery, Object as Room, Time as RoomTime,
     };
-    use crate::db::room_time::RoomTimeBound;
+    use crate::db::room_time::{BoundedDateTimeTuple, RoomTimeBound};
     use crate::metrics::Metrics;
     use crate::test_helpers::db::TestDb;
 
@@ -468,11 +553,8 @@ mod tests {
             offset: Duration,
             original_room: Room,
             modified_room: Room,
-            modified_segments: Segments,
-            cut_original_segments: Segments,
-            recordings: Vec<Recording>,
-            #[allow(dead_code)]
-            mute_events: Vec<MuteEvent>,
+            recordings: Vec<RecordingSegments>,
+            modified_room_time: BoundedDateTimeTuple,
         },
     }
 
@@ -627,9 +709,11 @@ mod tests {
                 duration,
                 recordings: vec![Recording {
                     id: Default::default(),
+                    rtc_id: Default::default(),
                     host: true,
                     segments: segments.into(),
                     started_at: rtc_started_at,
+                    created_by: AgentId::new("test", AccountId::new("test", AUDIENCE)),
                 }],
                 offset,
                 mute_events: vec![],
@@ -640,27 +724,35 @@ mod tests {
             &mut self,
             original_room: Room,
             modified_room: Room,
-            modified_segments: Segments,
-            cut_original_segments: Segments,
+            recordings: Vec<RecordingSegments>,
+            modified_room_time: BoundedDateTimeTuple,
         ) {
             match &mut self.state {
                 TestCtxState::SegmentsSet {
                     duration,
                     recordings,
                     offset,
-                    mute_events,
+                    ..
                 } => {
                     let new_recordings = std::mem::replace(recordings, vec![].into());
-                    let new_mute_events = std::mem::replace(mute_events, vec![].into());
+                    let recordings = new_recordings
+                        .into_iter()
+                        .map(|r| RecordingSegments {
+                            id: r.id,
+                            pin_segments: Segments::from(vec![]),
+                            modified_segments: r.segments,
+                            video_mute_segments: Segments::from(vec![]),
+                            audio_mute_segments: Segments::from(vec![]),
+                        })
+                        .collect::<Vec<_>>();
+
                     self.state = TestCtxState::Ran {
                         duration: *duration,
-                        recordings: new_recordings,
+                        recordings,
                         offset: *offset,
                         original_room,
                         modified_room,
-                        modified_segments,
-                        cut_original_segments,
-                        mute_events: new_mute_events,
+                        modified_room_time,
                     }
                 }
                 _ => panic!("Wrong state"),
@@ -676,19 +768,9 @@ mod tests {
 
         fn modified_segments(&self) -> &Segments {
             match &self.state {
-                TestCtxState::Ran {
-                    modified_segments, ..
-                } => modified_segments,
-                _ => panic!("Wrong state"),
-            }
-        }
-
-        fn cut_original_segments(&self) -> &Segments {
-            match &self.state {
-                TestCtxState::Ran {
-                    cut_original_segments,
-                    ..
-                } => cut_original_segments,
+                TestCtxState::Ran { recordings, .. } => {
+                    &recordings.first().unwrap().modified_segments
+                }
                 _ => panic!("Wrong state"),
             }
         }
@@ -707,8 +789,8 @@ mod tests {
             let AdjustOutput {
                 original_room,
                 modified_room,
-                modified_segments,
-                cut_original_segments,
+                recordings,
+                modified_room_time,
             } = call(
                 &self.db.connection_pool(),
                 &self.metrics,
@@ -726,37 +808,43 @@ mod tests {
                 original_room.id(),
                 modified_room.id()
             );
-            self.set_ran(
-                original_room,
-                modified_room,
-                modified_segments,
-                cut_original_segments,
-            );
+            self.set_ran(original_room, modified_room, recordings, modified_room_time);
 
             self.room_asserts();
         }
 
         fn room_asserts(&self) {
-            let (original_room, modified_room, recordings, duration) = match &self.state {
-                TestCtxState::Ran {
-                    original_room,
-                    modified_room,
-                    recordings,
-                    duration,
-                    ..
-                } => (original_room, modified_room, recordings, *duration),
-                _ => panic!("Wrong state"),
-            };
+            let (original_room, modified_room, recordings, duration, modified_room_time) =
+                match &self.state {
+                    TestCtxState::Ran {
+                        original_room,
+                        modified_room,
+                        recordings,
+                        duration,
+                        modified_room_time,
+                        ..
+                    } => (
+                        original_room,
+                        modified_room,
+                        recordings,
+                        *duration,
+                        modified_room_time,
+                    ),
+                    _ => panic!("Wrong state"),
+                };
             let room = &self.room;
-            let started_at = recordings.first().unwrap().started_at;
+            // let started_at = recordings.first().unwrap();
+            let room_time =
+                db::room_time::RoomTime::try_from(modified_room_time.to_owned()).unwrap();
+            let started_at = room_time.start();
 
             // Assert original room.
             assert_eq!(original_room.source_room_id(), Some(room.id()));
             assert_eq!(original_room.audience(), room.audience());
-            assert_eq!(original_room.time().map(|t| *t.start()), Ok(started_at));
+            assert_eq!(original_room.time().map(|t| *t.start()), Ok(*started_at));
             assert_eq!(
                 original_room.time().map(|t| t.end().to_owned()),
-                Ok(RoomTimeBound::Excluded(started_at + duration))
+                Ok(RoomTimeBound::Excluded(*started_at + duration))
             );
             assert_eq!(original_room.tags(), room.tags());
             assert_eq!(original_room.classroom_id(), room.classroom_id());
@@ -802,9 +890,9 @@ mod tests {
             assert_eq!(segments.as_slice(), segments_assert)
         }
 
-        fn assert_cut_original_segments(&self, segments_assert: &[(i64, i64)]) {
+        fn assert_modified_segments(&self, segments_assert: &[(i64, i64)]) {
             let segments: Vec<(Bound<i64>, Bound<i64>)> =
-                self.cut_original_segments().to_owned().into();
+                self.modified_segments().to_owned().into();
 
             let segments_assert = segments_assert
                 .into_iter()
@@ -1306,7 +1394,7 @@ mod tests {
         )
         .await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000), (13000, 20000)])
+        ctx.assert_modified_segments(&[(0, 10000), (13000, 20000)])
     }
 
     #[tokio::test]
@@ -1326,7 +1414,7 @@ mod tests {
         ctx.run().await;
         ctx.events_asserts(&[], &[(0, 10000), (11000, 17000)]).await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000), (14000, 20000)])
+        ctx.assert_modified_segments(&[(0, 10000), (14000, 20000)])
     }
 
     #[tokio::test]
@@ -1357,7 +1445,7 @@ mod tests {
         )
         .await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000)]);
+        ctx.assert_modified_segments(&[(0, 10000)]);
 
         {
             let mut conn = ctx.get_conn().await;
@@ -1396,7 +1484,7 @@ mod tests {
         )
         .await;
 
-        ctx.assert_cut_original_segments(&[(0, 10000)]);
+        ctx.assert_modified_segments(&[(0, 10000)]);
 
         {
             let mut conn = ctx.get_conn().await;
@@ -1441,7 +1529,7 @@ mod tests {
             ]
         );
 
-        ctx.assert_cut_original_segments(&[(3000, 10000), (13000, 20000)])
+        ctx.assert_modified_segments(&[(3000, 10000), (13000, 20000)])
     }
 
     #[tokio::test]
@@ -1475,7 +1563,7 @@ mod tests {
             ]
         );
 
-        ctx.assert_cut_original_segments(&[(0, 11000), (13000, 20000)])
+        ctx.assert_modified_segments(&[(0, 11000), (13000, 20000)])
     }
 
     #[tokio::test]
@@ -1517,6 +1605,6 @@ mod tests {
             ]
         );
 
-        ctx.assert_cut_original_segments(&[(3000, 7000), (13000, 20000)])
+        ctx.assert_modified_segments(&[(3000, 7000), (13000, 20000)])
     }
 }

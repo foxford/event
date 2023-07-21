@@ -1,5 +1,5 @@
 use crate::db::adjustment::Segments;
-use crate::db::room::Time;
+use crate::db::room_time::BoundedDateTimeTuple;
 use serde_derive::Serialize;
 use serde_json::Value as JsonValue;
 use svc_error::Error as SvcError;
@@ -22,7 +22,7 @@ struct RoomAdjustNotification {
 #[serde(untagged)]
 enum RoomAdjustResult {
     V1(RoomAdjustResultV1),
-    _V2(RoomAdjustResultV2),
+    V2(RoomAdjustResultV2),
 }
 
 #[derive(Serialize)]
@@ -42,38 +42,38 @@ enum RoomAdjustResultV1 {
 #[derive(Serialize)]
 #[serde(untagged)]
 enum RoomAdjustResultV2 {
-    _Success {
+    Success {
         original_room_id: Uuid,
         modified_room_id: Uuid,
         recordings: Vec<RecordingSegments>,
-        #[serde(with = "crate::db::room::serde::time")]
-        modified_room_time: Time,
+        #[serde(with = "crate::serde::ts_seconds_bound_tuple")]
+        modified_room_time: BoundedDateTimeTuple,
     },
-    _Error {
+    Error {
         error: SvcError,
     },
 }
 
 #[derive(Serialize)]
-struct RecordingSegments {
-    id: Uuid,
+pub struct RecordingSegments {
+    pub id: Uuid,
     #[serde(with = "crate::db::adjustment::serde::segments")]
-    pin_segments: Segments,
+    pub pin_segments: Segments,
     #[serde(with = "crate::db::adjustment::serde::segments")]
-    modified_segments: Segments,
+    pub modified_segments: Segments,
     #[serde(with = "crate::db::adjustment::serde::segments")]
-    video_mute_segments: Segments,
+    pub video_mute_segments: Segments,
     #[serde(with = "crate::db::adjustment::serde::segments")]
-    audio_mute_segments: Segments,
+    pub audio_mute_segments: Segments,
 }
 
 impl RoomAdjustResult {
     fn status(&self) -> &'static str {
         match self {
             RoomAdjustResult::V1(RoomAdjustResultV1::Success { .. })
-            | RoomAdjustResult::_V2(RoomAdjustResultV2::_Success { .. }) => "success",
+            | RoomAdjustResult::V2(RoomAdjustResultV2::Success { .. }) => "success",
             RoomAdjustResult::V1(RoomAdjustResultV1::Error { .. })
-            | RoomAdjustResult::_V2(RoomAdjustResultV2::_Error { .. }) => "error",
+            | RoomAdjustResult::V2(RoomAdjustResultV2::Error { .. }) => "error",
         }
     }
 }

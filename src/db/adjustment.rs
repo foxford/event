@@ -73,6 +73,12 @@ type BoundedOffsetTuples = Vec<(Bound<i64>, Bound<i64>)>;
 #[serde(into = "BoundedOffsetTuples")]
 pub struct Segments(Vec<PgRange<i64>>);
 
+impl Segments {
+    pub fn last(&self) -> Option<&PgRange<i64>> {
+        self.0.last()
+    }
+}
+
 impl From<BoundedOffsetTuples> for Segments {
     fn from(segments: BoundedOffsetTuples) -> Self {
         Self(segments.into_iter().map(PgRange::from).collect())

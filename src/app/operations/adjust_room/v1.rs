@@ -2,7 +2,7 @@ use std::{cmp, ops::Bound};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Duration, Utc};
-use sqlx::postgres::{PgConnection, PgPool as Db};
+use sqlx::postgres::PgPool as Db;
 use tracing::{info, instrument};
 
 use crate::{
@@ -11,7 +11,7 @@ use crate::{
     db::{
         adjustment::{InsertQuery as AdjustmentInsertQuery, Segments},
         event::{DeleteQuery as EventDeleteQuery, ListQuery as EventListQuery},
-        room::{InsertQuery as RoomInsertQuery, Object as Room},
+        room::Object as Room,
         room_time::RoomTimeBound,
     },
     metrics::{Metrics, QueryKey},
@@ -151,7 +151,7 @@ pub async fn call(
     let total_segments_duration = Duration::milliseconds(total_segments_millis);
 
     // Create original room with events shifted according to segments.
-    let original_room = create_room(
+    let original_room = super::create_room(
         &mut conn,
         metrics,
         real_time_room,
@@ -182,7 +182,7 @@ pub async fn call(
     let cut_gaps = super::cut_events_to_gaps(&cut_events)?;
 
     // Create modified room with events shifted again according to cut events this time.
-    let modified_room = create_room(
+    let modified_room = super::create_room(
         &mut conn,
         metrics,
         &original_room,
@@ -239,36 +239,6 @@ pub async fn call(
         modified_room,
         modified_segments: Segments::from(modified_segments),
     })
-}
-
-/// Creates a derived room from the source room.
-async fn create_room(
-    conn: &mut PgConnection,
-    metrics: &Metrics,
-    source_room: &Room,
-    started_at: DateTime<Utc>,
-    room_duration: Duration,
-) -> Result<Room> {
-    let time = (
-        Bound::Included(started_at),
-        Bound::Excluded(started_at + room_duration),
-    );
-    let mut query = RoomInsertQuery::new(
-        source_room.audience(),
-        time.into(),
-        source_room.classroom_id(),
-        source_room.kind(),
-    );
-    query = query.source_room_id(source_room.id());
-
-    if let Some(tags) = source_room.tags() {
-        query = query.tags(tags.to_owned());
-    }
-
-    metrics
-        .measure_query(QueryKey::RoomInsertQuery, query.execute(conn))
-        .await
-        .context("failed to insert room")
 }
 
 ///////////////////////////////////////////////////////////////////////////////

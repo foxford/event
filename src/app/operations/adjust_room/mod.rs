@@ -1,9 +1,14 @@
 use crate::{
-    db::{event::Object as Event, room::Object as Room},
+    db::{
+        event::Object as Event,
+        room::{InsertQuery as RoomInsertQuery, Object as Room},
+    },
     metrics::{Metrics, QueryKey},
 };
 use anyhow::{Context, Result};
+use chrono::{DateTime, Duration, Utc};
 use sqlx::postgres::PgConnection;
+use std::ops::Bound;
 
 mod intersect;
 
@@ -156,4 +161,34 @@ pub fn cut_events_to_gaps(cut_events: &[Event]) -> anyhow::Result<Vec<(i64, i64)
         }
     }
     Ok(gaps)
+}
+
+/// Creates a derived room from the source room.
+async fn create_room(
+    conn: &mut PgConnection,
+    metrics: &Metrics,
+    source_room: &Room,
+    started_at: DateTime<Utc>,
+    room_duration: Duration,
+) -> Result<Room> {
+    let time = (
+        Bound::Included(started_at),
+        Bound::Excluded(started_at + room_duration),
+    );
+    let mut query = RoomInsertQuery::new(
+        source_room.audience(),
+        time.into(),
+        source_room.classroom_id(),
+        source_room.kind(),
+    );
+    query = query.source_room_id(source_room.id());
+
+    if let Some(tags) = source_room.tags() {
+        query = query.tags(tags.to_owned());
+    }
+
+    metrics
+        .measure_query(QueryKey::RoomInsertQuery, query.execute(conn))
+        .await
+        .context("failed to insert room")
 }
