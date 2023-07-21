@@ -729,23 +729,8 @@ mod tests {
         ) {
             match &mut self.state {
                 TestCtxState::SegmentsSet {
-                    duration,
-                    recordings,
-                    offset,
-                    ..
+                    duration, offset, ..
                 } => {
-                    let new_recordings = std::mem::replace(recordings, vec![].into());
-                    let recordings = new_recordings
-                        .into_iter()
-                        .map(|r| RecordingSegments {
-                            id: r.id,
-                            pin_segments: Segments::from(vec![]),
-                            modified_segments: r.segments,
-                            video_mute_segments: Segments::from(vec![]),
-                            audio_mute_segments: Segments::from(vec![]),
-                        })
-                        .collect::<Vec<_>>();
-
                     self.state = TestCtxState::Ran {
                         duration: *duration,
                         recordings,
@@ -814,26 +799,17 @@ mod tests {
         }
 
         fn room_asserts(&self) {
-            let (original_room, modified_room, recordings, duration, modified_room_time) =
-                match &self.state {
-                    TestCtxState::Ran {
-                        original_room,
-                        modified_room,
-                        recordings,
-                        duration,
-                        modified_room_time,
-                        ..
-                    } => (
-                        original_room,
-                        modified_room,
-                        recordings,
-                        *duration,
-                        modified_room_time,
-                    ),
-                    _ => panic!("Wrong state"),
-                };
+            let (original_room, modified_room, duration, modified_room_time) = match &self.state {
+                TestCtxState::Ran {
+                    original_room,
+                    modified_room,
+                    duration,
+                    modified_room_time,
+                    ..
+                } => (original_room, modified_room, *duration, modified_room_time),
+                _ => panic!("Wrong state"),
+            };
             let room = &self.room;
-            // let started_at = recordings.first().unwrap();
             let room_time =
                 db::room_time::RoomTime::try_from(modified_room_time.to_owned()).unwrap();
             let started_at = room_time.start();
@@ -1062,7 +1038,7 @@ mod tests {
                 (22_000_000_000, "message", json!({"message": "m5"})),
                 (28_000_000_000, "message", json!({"message": "m6"})),
             ],
-            &[(0, 28000)],
+            &[(0, 20000), (26000, 34000)],
         )
         .await;
     }
@@ -1096,7 +1072,7 @@ mod tests {
                 (25_000_000_000, "message", json!({"message": "m5"})),
                 (31_000_000_000, "message", json!({"message": "m6"})),
             ],
-            &[(0, 28000)],
+            &[(0, 20000), (26000, 34000)],
         )
         .await;
     }
@@ -1305,7 +1281,7 @@ mod tests {
                 (18_000_000_002, "message", json!({"message": "m4"})),
                 (20_000_000_000, "message", json!({"message": "m5"})),
             ],
-            &[(0, 18000), (23000, 26000)],
+            &[(0, 18000), (31000, 34000)],
         )
         .await;
     }
@@ -1335,7 +1311,7 @@ mod tests {
                 (21_000_000_002, "message", json!({"message": "m4"})),
                 (23_000_000_000, "message", json!({"message": "m5"})),
             ],
-            &[(0, 18000), (23000, 26000)],
+            &[(0, 18000), (31000, 34000)],
         )
         .await;
     }
@@ -1390,7 +1366,7 @@ mod tests {
                 (10_000_000_000, "message", json!({"message": "m2"})),
                 (12_000_000_000, "message", json!({"message": "m3"})),
             ],
-            &[(0, 10000), (10000, 17000)],
+            &[(0, 10000), (13000, 20000)],
         )
         .await;
 
@@ -1412,7 +1388,7 @@ mod tests {
         );
 
         ctx.run().await;
-        ctx.events_asserts(&[], &[(0, 10000), (11000, 17000)]).await;
+        ctx.events_asserts(&[], &[(0, 10000), (14000, 20000)]).await;
 
         ctx.assert_modified_segments(&[(0, 10000), (14000, 20000)])
     }
@@ -1525,7 +1501,7 @@ mod tests {
             mod_segments.as_slice(),
             &[
                 (Bound::Included(3000), Bound::Excluded(10000)),
-                (Bound::Included(10000), Bound::Excluded(17000))
+                (Bound::Included(13000), Bound::Excluded(20000))
             ]
         );
 
