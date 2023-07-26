@@ -64,7 +64,7 @@ pub async fn insert_validating_whiteboard_access_room(conn: &mut PgConnection) -
             Bound::Excluded(now + Duration::hours(1)),
         ))
         .tags(&json!({ "webinar_id": "123" }))
-        .validate_whiteboard_access(true)
+        .validate_whiteboard_access()
         .insert(conn)
         .await
 }

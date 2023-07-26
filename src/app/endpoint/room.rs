@@ -43,8 +43,6 @@ pub struct CreateRequest {
     tags: Option<JsonValue>,
     preserve_history: Option<bool>,
     classroom_id: Uuid,
-    #[serde(default)]
-    validate_whiteboard_access: Option<bool>,
     kind: ClassType,
 }
 
@@ -128,10 +126,6 @@ impl RequestHandler for CreateHandler {
 
             if let Some(preserve_history) = payload.preserve_history {
                 query = query.preserve_history(preserve_history);
-            }
-
-            if let Some(flag) = payload.validate_whiteboard_access {
-                query = query.validate_whiteboard_access(flag);
             }
 
             let mut conn = context.get_conn().await?;
@@ -997,7 +991,6 @@ mod tests {
                 tags: Some(tags.clone()),
                 preserve_history: Some(false),
                 classroom_id: Uuid::new_v4(),
-                validate_whiteboard_access: None,
                 kind: ClassType::Minigroup,
             };
 
@@ -1043,7 +1036,6 @@ mod tests {
                 tags: Some(tags.clone()),
                 preserve_history: Some(false),
                 classroom_id: Uuid::new_v4(),
-                validate_whiteboard_access: None,
                 kind: ClassType::P2P,
             };
 
@@ -1090,7 +1082,6 @@ mod tests {
                 tags: Some(tags.clone()),
                 preserve_history: Some(false),
                 classroom_id: cid,
-                validate_whiteboard_access: None,
                 kind: ClassType::Webinar,
             };
 
@@ -1136,7 +1127,6 @@ mod tests {
                 tags: None,
                 preserve_history: None,
                 classroom_id: Uuid::new_v4(),
-                validate_whiteboard_access: None,
                 kind: ClassType::Minigroup,
             };
 
@@ -1163,7 +1153,6 @@ mod tests {
                 tags: None,
                 preserve_history: None,
                 classroom_id: Uuid::new_v4(),
-                validate_whiteboard_access: None,
                 kind: ClassType::Webinar,
             };
 
