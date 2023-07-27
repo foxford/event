@@ -18,7 +18,6 @@ pub struct Room {
     tags: Option<JsonValue>,
     preserve_history: Option<bool>,
     classroom_id: Uuid,
-    validate_whiteboard_access: Option<bool>,
     kind: ClassType,
 }
 
@@ -30,7 +29,6 @@ impl Room {
             tags: None,
             preserve_history: None,
             classroom_id,
-            validate_whiteboard_access: None,
             kind,
         }
     }
@@ -63,9 +61,9 @@ impl Room {
         }
     }
 
-    pub fn validate_whiteboard_access(self, validate_whiteboard_access: bool) -> Self {
+    pub fn validate_whiteboard_access(self) -> Self {
         Self {
-            validate_whiteboard_access: Some(validate_whiteboard_access),
+            kind: ClassType::Minigroup,
             ..self
         }
     }
@@ -82,10 +80,6 @@ impl Room {
 
         if let Some(preserve_history) = self.preserve_history {
             query = query.preserve_history(preserve_history)
-        }
-
-        if let Some(validate_whiteboard_access) = self.validate_whiteboard_access {
-            query = query.validate_whiteboard_access(validate_whiteboard_access)
         }
 
         query.execute(conn).await.expect("Failed to insert room")

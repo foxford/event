@@ -32,8 +32,6 @@ pub struct Object {
     #[serde(default)]
     locked_types: HashMap<String, bool>,
     #[serde(default)]
-    validate_whiteboard_access: bool,
-    #[serde(default)]
     whiteboard_access: HashMap<AccountId, bool>,
     kind: ClassType,
 }
@@ -69,7 +67,6 @@ struct DbObject {
     preserve_history: bool,
     classroom_id: Uuid,
     locked_types: JsonValue,
-    validate_whiteboard_access: bool,
     whiteboard_access: JsonValue,
     kind: ClassType,
 }
@@ -88,7 +85,6 @@ impl TryFrom<DbObject> for Object {
             preserve_history,
             classroom_id,
             locked_types,
-            validate_whiteboard_access,
             whiteboard_access,
             kind,
         } = v;
@@ -133,7 +129,6 @@ impl TryFrom<DbObject> for Object {
             preserve_history,
             classroom_id,
             locked_types,
-            validate_whiteboard_access,
             whiteboard_access,
             kind,
         })
@@ -152,7 +147,6 @@ impl From<Object> for DbObject {
             preserve_history,
             classroom_id,
             locked_types,
-            validate_whiteboard_access,
             whiteboard_access,
             kind,
         } = v;
@@ -170,7 +164,6 @@ impl From<Object> for DbObject {
             preserve_history,
             classroom_id,
             locked_types,
-            validate_whiteboard_access,
             whiteboard_access,
             kind,
         }
@@ -246,7 +239,7 @@ impl Object {
     }
 
     pub fn validate_whiteboard_access(&self) -> bool {
-        self.validate_whiteboard_access
+        self.kind == ClassType::Minigroup
     }
 
     pub fn whiteboard_access(&self) -> &HashMap<AccountId, bool> {
@@ -258,7 +251,7 @@ impl Object {
     }
 
     fn account_has_whiteboard_access(&self, account: &AccountId) -> bool {
-        if self.validate_whiteboard_access {
+        if self.validate_whiteboard_access() {
             self.whiteboard_access.get(account) == Some(&true)
         } else {
             true
@@ -387,7 +380,6 @@ impl Builder {
                 .ok_or_else(|| anyhow!("missing preserve_history"))?,
             classroom_id: self.classroom_id,
             locked_types: Default::default(),
-            validate_whiteboard_access: Default::default(),
             whiteboard_access: Default::default(),
             kind: self.kind.ok_or_else(|| anyhow!("missing kind"))?,
         })
@@ -431,7 +423,6 @@ impl FindQuery {
                 preserve_history,
                 classroom_id,
                 locked_types,
-                validate_whiteboard_access,
                 whiteboard_access,
                 kind AS "kind!: ClassType"
             FROM room
@@ -459,7 +450,6 @@ pub struct InsertQuery {
     preserve_history: bool,
     classroom_id: Uuid,
     locked_types: HashMap<String, bool>,
-    validate_whiteboard_access: Option<bool>,
     whiteboard_access: HashMap<AccountId, bool>,
     kind: ClassType,
 }
@@ -474,7 +464,6 @@ impl InsertQuery {
             preserve_history: true,
             classroom_id,
             locked_types: Default::default(),
-            validate_whiteboard_access: Default::default(),
             whiteboard_access: Default::default(),
             kind,
         }
@@ -501,13 +490,6 @@ impl InsertQuery {
         }
     }
 
-    pub fn validate_whiteboard_access(self, flag: bool) -> Self {
-        Self {
-            validate_whiteboard_access: Some(flag),
-            ..self
-        }
-    }
-
     pub async fn execute(self, conn: &mut PgConnection) -> sqlx::Result<Object> {
         let time: PgRange<DateTime<Utc>> = self.time.into();
 
@@ -519,8 +501,8 @@ impl InsertQuery {
             r#"
             INSERT INTO room (
                 audience, source_room_id, time, tags, preserve_history, classroom_id,
-                    locked_types, validate_whiteboard_access, whiteboard_access, kind)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                    locked_types, whiteboard_access, kind)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING
                 id,
                 audience,
@@ -531,7 +513,6 @@ impl InsertQuery {
                 preserve_history,
                 classroom_id,
                 locked_types,
-                validate_whiteboard_access,
                 whiteboard_access,
                 kind AS "kind!: ClassType"
             "#,
@@ -542,7 +523,6 @@ impl InsertQuery {
             self.preserve_history,
             self.classroom_id,
             locked_types,
-            self.validate_whiteboard_access.unwrap_or(false),
             whiteboard_access,
             self.kind as ClassType,
         )
@@ -638,7 +618,6 @@ impl UpdateQuery {
                 preserve_history,
                 classroom_id,
                 locked_types,
-                validate_whiteboard_access,
                 whiteboard_access,
                 kind AS "kind!: ClassType"
             "#,
