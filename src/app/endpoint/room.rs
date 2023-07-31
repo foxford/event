@@ -5,7 +5,7 @@ use std::sync::Arc;
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
-    extract::{Path, State},
+    extract::{self, Path},
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -47,7 +47,7 @@ pub struct CreateRequest {
 }
 
 pub async fn create(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Json(request): Json<CreateRequest>,
 ) -> RequestResult {
@@ -167,7 +167,7 @@ pub struct ReadRequest {
 }
 
 pub async fn read(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {
@@ -242,7 +242,7 @@ pub struct UpdateRequest {
 }
 
 pub async fn update(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<UpdatePayload>,
@@ -397,7 +397,7 @@ pub struct RoomEnterEvent {
 pub struct EnterHandler;
 
 pub async fn enter(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<EnterPayload>,
@@ -555,7 +555,7 @@ pub struct LockedTypesRequest {
 }
 
 pub async fn locked_types(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<LockedTypesPayload>,
@@ -669,7 +669,7 @@ pub struct WhiteboardAccessRequest {
 }
 
 pub async fn whiteboard_access(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<WhiteboardAccessPayload>,
@@ -792,7 +792,7 @@ pub struct AdjustRequest {
 }
 
 pub async fn adjust(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<AdjustPayload>,
