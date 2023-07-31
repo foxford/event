@@ -810,7 +810,7 @@ dependencies = [
  "signal-hook",
  "signal-hook-tokio",
  "sqlx",
- "svc-agent",
+ "svc-agent 0.20.0",
  "svc-authn",
  "svc-authz",
  "svc-conference-events",
@@ -3083,6 +3083,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "svc-agent"
+version = "0.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bef9c610b65f24bab61b52f5a7264983d0e014858e8496282aec7d688baf7869"
+dependencies = [
+ "async-channel",
+ "base64 0.21.2",
+ "chrono",
+ "http",
+ "log",
+ "rumqttc",
+ "serde",
+ "serde_json",
+ "svc-authn",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "svc-authn"
 version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3144,7 +3163,7 @@ dependencies = [
  "serde",
  "serde_derive",
  "sqlx",
- "svc-agent",
+ "svc-agent 0.20.0",
  "svc-authn",
  "svc-authz",
 ]
@@ -3162,7 +3181,7 @@ dependencies = [
  "humantime-serde",
  "reqwest",
  "serde",
- "svc-agent",
+ "svc-agent 0.20.0",
  "svc-error",
  "thiserror",
  "tracing",
@@ -3171,9 +3190,9 @@ dependencies = [
 
 [[package]]
 name = "svc-utils"
-version = "0.7.4"
+version = "0.8.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb63daf177825295faa99773d6fb6de26be0d3e9fbe427e3cac794358c000e99"
+checksum = "b8443737f4d2444dc9e6a140a83d720685290d1ad763e75b59421958fa4a1a96"
 dependencies = [
  "axum",
  "futures",
@@ -3181,7 +3200,7 @@ dependencies = [
  "hyper",
  "once_cell",
  "prometheus",
- "svc-agent",
+ "svc-agent 0.21.0",
  "svc-authn",
  "svc-error",
  "tokio",
