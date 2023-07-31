@@ -38,7 +38,7 @@ svc-agent = { version = "0.20", features = ["sqlx", "queue-counter"] }
 svc-authn = { version = "0.8", features = ["jose", "sqlx"] }
 svc-authz = { version = "0.12" }
 svc-error = { version = "0.5", features = ["sqlx", "svc-agent", "svc-authn", "svc-authz", "sentry-extension"] }
-svc-utils = { version = "0.7", features = ["authn-extractor", "cors-middleware", "log-middleware", "metrics-middleware"] }
+svc-utils = { version = "0.8", features = ["authn-extractor", "cors-middleware", "log-middleware", "metrics-middleware"] }
 svc-nats-client = { version = "0.2" }
 svc-conference-events = { version = "0.2" }
 tokio = { version = "1.28", features = ["full"] }
