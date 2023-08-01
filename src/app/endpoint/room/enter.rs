@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
-    extract::{Path, State},
+    extract::{self, Path},
     Json,
 };
 use serde_derive::{Deserialize, Serialize};
@@ -42,7 +42,7 @@ pub struct RoomEnterEvent {
 pub struct EnterHandler;
 
 pub async fn enter(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<EnterPayload>,

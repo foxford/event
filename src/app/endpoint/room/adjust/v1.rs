@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use axum::{
-    extract::{Path, State},
+    extract::{self, Path},
     Json,
 };
 use chrono::{DateTime, Utc};
@@ -45,7 +45,7 @@ pub struct AdjustRequest {
 }
 
 pub async fn adjust(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<AdjustPayload>,

@@ -2,7 +2,10 @@ use std::sync::Arc;
 
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::{extract::State, Json};
+use axum::{
+    extract::{self},
+    Json,
+};
 use serde_derive::Deserialize;
 use serde_json::Value as JsonValue;
 use svc_agent::mqtt::ResponseStatus;
@@ -23,13 +26,11 @@ pub struct CreateRequest {
     tags: Option<JsonValue>,
     preserve_history: Option<bool>,
     classroom_id: Uuid,
-    #[serde(default)]
-    validate_whiteboard_access: Option<bool>,
     kind: ClassType,
 }
 
 pub async fn create(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Json(request): Json<CreateRequest>,
 ) -> RequestResult {
@@ -110,10 +111,6 @@ impl RequestHandler for CreateHandler {
                 query = query.preserve_history(preserve_history);
             }
 
-            if let Some(flag) = payload.validate_whiteboard_access {
-                query = query.validate_whiteboard_access(flag);
-            }
-
             let mut conn = context.get_conn().await?;
 
             context
@@ -182,7 +179,6 @@ mod tests {
             tags: Some(tags.clone()),
             preserve_history: Some(false),
             classroom_id: Uuid::new_v4(),
-            validate_whiteboard_access: None,
             kind: ClassType::Minigroup,
         };
 
@@ -228,7 +224,6 @@ mod tests {
             tags: Some(tags.clone()),
             preserve_history: Some(false),
             classroom_id: Uuid::new_v4(),
-            validate_whiteboard_access: None,
             kind: ClassType::P2P,
         };
 
@@ -275,7 +270,6 @@ mod tests {
             tags: Some(tags.clone()),
             preserve_history: Some(false),
             classroom_id: cid,
-            validate_whiteboard_access: None,
             kind: ClassType::Webinar,
         };
 
@@ -321,7 +315,6 @@ mod tests {
             tags: None,
             preserve_history: None,
             classroom_id: Uuid::new_v4(),
-            validate_whiteboard_access: None,
             kind: ClassType::Minigroup,
         };
 
@@ -348,7 +341,6 @@ mod tests {
             tags: None,
             preserve_history: None,
             classroom_id: Uuid::new_v4(),
-            validate_whiteboard_access: None,
             kind: ClassType::Webinar,
         };
 

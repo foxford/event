@@ -6,7 +6,7 @@ Create a [room](../room.md#room).
 
 The tenant authorizes the current _agent_ for `create` action on `["classrooms"]` object.
 
-## Multicast request
+## Request
 
 Name                        | Type       | Default    | Description
 ----------------            | ---------- | ---------- | --------------------------------------------------------------
@@ -15,15 +15,15 @@ time                        | [int, int] | _required_ | A [lt, rt) range of unix
 tags                        | json       | _optional_ | Tenant-specific JSON object associated with the room.
 preserve_history            | bool       | true       | Disables automatic cleanup of non-state events for each label.
 classroom_id                | uuid       | _required_ | Id of the classroom this room belongs to
-validate_whiteboard_access  | bool       | false      | Whether the room should check whiteboard access setting when creating `draw` events.
+kind                        | string     | _required_ | One of 'p2p', 'webinar', 'minigroup'
 
-## Unicast response
+## Response
 
 **Status:** 201.
 
 **Payload:** [room](../room.md#room) object.
 
-## Broadcast event
+## Event
 
 A notification is being sent to the _audience_ topic.
 

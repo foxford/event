@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use axum::extract::{Path, State};
+use axum::extract::{self, Path};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::ResponseStatus;
 
@@ -18,7 +18,7 @@ pub struct ReadRequest {
 }
 
 pub async fn read(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {

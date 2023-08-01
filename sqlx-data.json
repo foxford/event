@@ -530,6 +530,98 @@
     },
     "query": "\n            INSERT INTO change (\n                event_id,\n                event_kind,\n                event_set,\n                event_label,\n                event_data,\n                event_occurred_at,\n                event_created_by,\n                edition_id,\n                kind\n            )\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            RETURNING\n                id,\n                edition_id,\n                kind               AS \"kind!: ChangeType\",\n                event_id,\n                event_kind,\n                event_set,\n                event_label,\n                event_data,\n                event_occurred_at,\n                event_created_by   AS \"event_created_by?: AgentId\",\n                created_at\n            "
   },
+  "21bdf95725f8092609a60a08b6a1632c638c12a13cae77f18c3c7374432f2220": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "audience",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "source_room_id",
+          "ordinal": 2,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "time!: Time",
+          "ordinal": 3,
+          "type_info": "TstzRange"
+        },
+        {
+          "name": "tags",
+          "ordinal": 4,
+          "type_info": "Json"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 5,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "preserve_history",
+          "ordinal": 6,
+          "type_info": "Bool"
+        },
+        {
+          "name": "classroom_id",
+          "ordinal": 7,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "locked_types",
+          "ordinal": 8,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "whiteboard_access",
+          "ordinal": 9,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "kind!: ClassType",
+          "ordinal": 10,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Enum": [
+                  "webinar",
+                  "p2p",
+                  "minigroup"
+                ]
+              },
+              "name": "class_type"
+            }
+          }
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "Uuid"
+        ]
+      }
+    },
+    "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                whiteboard_access,\n                kind AS \"kind!: ClassType\"\n            FROM room\n            WHERE ($1::uuid IS NULL OR id = $1)\n                AND ($2::uuid IS NULL OR classroom_id = $2)\n            "
+  },
   "2440978e0eca9fb8327012704e93cf9957d7c9e19280769bd8826d55e15b7a14": {
     "describe": {
       "columns": [],
@@ -1336,6 +1428,102 @@
       }
     },
     "query": "\n            SELECT\n                id,\n                agent_id            AS \"agent_id!: AgentId\",\n                room_id,\n                status              AS \"status!: Status\",\n                created_at\n            FROM agent\n            WHERE ($1::agent_id IS NULL OR agent_id = $1)\n                AND ($2::uuid IS NULL OR room_id = $2)\n                AND ($3::agent_status IS NULL OR status = $3)\n            ORDER BY created_at DESC LIMIT $4 OFFSET $5\n            "
+  },
+  "65095d104f2a5ecc10d52f96f1a740be6a7612c1995012603d8995613067eabc": {
+    "describe": {
+      "columns": [
+        {
+          "name": "id",
+          "ordinal": 0,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "audience",
+          "ordinal": 1,
+          "type_info": "Text"
+        },
+        {
+          "name": "source_room_id",
+          "ordinal": 2,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "time!: Time",
+          "ordinal": 3,
+          "type_info": "TstzRange"
+        },
+        {
+          "name": "tags",
+          "ordinal": 4,
+          "type_info": "Json"
+        },
+        {
+          "name": "created_at",
+          "ordinal": 5,
+          "type_info": "Timestamptz"
+        },
+        {
+          "name": "preserve_history",
+          "ordinal": 6,
+          "type_info": "Bool"
+        },
+        {
+          "name": "classroom_id",
+          "ordinal": 7,
+          "type_info": "Uuid"
+        },
+        {
+          "name": "locked_types",
+          "ordinal": 8,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "whiteboard_access",
+          "ordinal": 9,
+          "type_info": "Jsonb"
+        },
+        {
+          "name": "kind!: ClassType",
+          "ordinal": 10,
+          "type_info": {
+            "Custom": {
+              "kind": {
+                "Enum": [
+                  "webinar",
+                  "p2p",
+                  "minigroup"
+                ]
+              },
+              "name": "class_type"
+            }
+          }
+        }
+      ],
+      "nullable": [
+        false,
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        false,
+        false,
+        false,
+        false
+      ],
+      "parameters": {
+        "Left": [
+          "Uuid",
+          "TstzRange",
+          "Json",
+          "Uuid",
+          "Jsonb",
+          "Jsonb"
+        ]
+      }
+    },
+    "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags),\n                classroom_id = COALESCE($4, classroom_id),\n                locked_types = COALESCE($5, locked_types),\n                whiteboard_access = COALESCE($6, whiteboard_access)\n            WHERE id = $1\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                whiteboard_access,\n                kind AS \"kind!: ClassType\"\n            "
   },
   "68c823e1918e06b0b6607c02f59fd4fd33ff885c4bb72f84beae8db06078576b": {
     "describe": {
@@ -2216,7 +2404,7 @@
     },
     "query": "\n                    SELECT\n                        id,\n                        room_id,\n                        kind,\n                        set,\n                        label,\n                        data                AS \"data?: Value\",\n                        occurred_at,\n                        created_at,\n                        deleted_at,\n                        created_by          AS \"created_by!: AgentId\",\n                        original_created_by AS \"original_created_by!: AgentId\",\n                        original_occurred_at,\n                        removed,\n                        attribute,\n                        binary_data         AS \"binary_data?: PostcardBin<CompactEvent>\"\n                    FROM event\n                    WHERE deleted_at IS NULL\n                        AND ($2::uuid IS NULL OR room_id = $2)\n                        AND ($3::text IS NULL OR event.attribute = $3)\n                        AND (array_length($4::text[], 1) IS NULL OR kind = ANY($4))\n                        AND ($5::bigint IS NULL OR occurred_at > $5)\n                        AND ($6::text IS NULL OR set = $6)\n                        AND ($7::text IS NULL OR label = $7)\n                    ORDER BY occurred_at ASC, created_at ASC\n                    LIMIT $1\n                    "
   },
-  "ab9c5c54cd2fad9f9501ad792bedcffab6899141d3e2d0a7f01e0833c55f3be4": {
+  "a2fd5a5b706fd18e707886c4941f078e5b7a3a8f264ffbf3e27dec8c5e72899d": {
     "describe": {
       "columns": [
         {
@@ -2265,18 +2453,13 @@
           "type_info": "Jsonb"
         },
         {
-          "name": "validate_whiteboard_access",
-          "ordinal": 9,
-          "type_info": "Bool"
-        },
-        {
           "name": "whiteboard_access",
-          "ordinal": 10,
+          "ordinal": 9,
           "type_info": "Jsonb"
         },
         {
           "name": "kind!: ClassType",
-          "ordinal": 11,
+          "ordinal": 10,
           "type_info": {
             "Custom": {
               "kind": {
@@ -2302,17 +2485,34 @@
         false,
         false,
         false,
-        false,
         false
       ],
       "parameters": {
         "Left": [
+          "Text",
           "Uuid",
-          "Uuid"
+          "TstzRange",
+          "Json",
+          "Bool",
+          "Uuid",
+          "Jsonb",
+          "Jsonb",
+          {
+            "Custom": {
+              "kind": {
+                "Enum": [
+                  "webinar",
+                  "p2p",
+                  "minigroup"
+                ]
+              },
+              "name": "class_type"
+            }
+          }
         ]
       }
     },
-    "query": "\n            SELECT\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                validate_whiteboard_access,\n                whiteboard_access,\n                kind AS \"kind!: ClassType\"\n            FROM room\n            WHERE ($1::uuid IS NULL OR id = $1)\n                AND ($2::uuid IS NULL OR classroom_id = $2)\n            "
+    "query": "\n            INSERT INTO room (\n                audience, source_room_id, time, tags, preserve_history, classroom_id,\n                    locked_types, whiteboard_access, kind)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                whiteboard_access,\n                kind AS \"kind!: ClassType\"\n            "
   },
   "b26d7e032b5b16d95f984534ee9d27353bb0037433d641fc11a44dd02855373f": {
     "describe": {
@@ -2390,123 +2590,6 @@
     },
     "query": "\n        WITH\n            gap_starts AS (\n                SELECT start, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($1::BIGINT[]) AS start\n            ),\n            gap_stops AS (\n                SELECT stop, ROW_NUMBER() OVER () AS row_number\n                FROM UNNEST($2::BIGINT[]) AS stop\n            ),\n            gaps AS (\n                SELECT start, stop\n                FROM gap_starts, gap_stops\n                WHERE gap_stops.row_number = gap_starts.row_number\n            )\n        INSERT INTO event (id, room_id, kind, set, label, data, binary_data, attribute, removed, occurred_at, created_by, created_at)\n        SELECT\n            id,\n            room_id,\n            kind,\n            set,\n            label,\n            data,\n            binary_data,\n            attribute,\n            removed,\n            -- Monotonization\n            -- cutstarts and cutstops are left as is to avoid skew\n            (\n                CASE kind\n                WHEN 'stream' THEN occurred_at\n                ELSE occurred_at + ROW_NUMBER() OVER (PARTITION BY occurred_at, kind = 'stream' ORDER BY created_at) - 1\n                END\n            ),\n            created_by,\n            created_at\n        FROM (\n            SELECT\n                gen_random_uuid() AS id,\n                $3::UUID AS room_id,\n                kind,\n                set,\n                label,\n                data,\n                binary_data,\n                attribute,\n                removed,\n                (\n                    CASE occurred_at <= (SELECT stop FROM gaps WHERE start = 0)\n                    WHEN TRUE THEN 0\n                    ELSE occurred_at - (\n                        SELECT COALESCE(SUM(LEAST(stop, occurred_at) - start), 0)\n                        FROM gaps\n                        WHERE start < occurred_at\n                        AND   start >= 0\n                    )\n                    END\n                ) + $4 AS occurred_at,\n                created_by,\n                created_at\n            FROM event\n            WHERE room_id = $5\n            AND   deleted_at IS NULL\n        ) AS sub\n        "
   },
-  "bd62ee30d3d150a9c7b3cf504ed4a3fa652dc115fa15bab9b800056a3036d9dd": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "audience",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "source_room_id",
-          "ordinal": 2,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "time!: Time",
-          "ordinal": 3,
-          "type_info": "TstzRange"
-        },
-        {
-          "name": "tags",
-          "ordinal": 4,
-          "type_info": "Json"
-        },
-        {
-          "name": "created_at",
-          "ordinal": 5,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "preserve_history",
-          "ordinal": 6,
-          "type_info": "Bool"
-        },
-        {
-          "name": "classroom_id",
-          "ordinal": 7,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "locked_types",
-          "ordinal": 8,
-          "type_info": "Jsonb"
-        },
-        {
-          "name": "validate_whiteboard_access",
-          "ordinal": 9,
-          "type_info": "Bool"
-        },
-        {
-          "name": "whiteboard_access",
-          "ordinal": 10,
-          "type_info": "Jsonb"
-        },
-        {
-          "name": "kind!: ClassType",
-          "ordinal": 11,
-          "type_info": {
-            "Custom": {
-              "kind": {
-                "Enum": [
-                  "webinar",
-                  "p2p",
-                  "minigroup"
-                ]
-              },
-              "name": "class_type"
-            }
-          }
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        true,
-        false,
-        true,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Text",
-          "Uuid",
-          "TstzRange",
-          "Json",
-          "Bool",
-          "Uuid",
-          "Jsonb",
-          "Bool",
-          "Jsonb",
-          {
-            "Custom": {
-              "kind": {
-                "Enum": [
-                  "webinar",
-                  "p2p",
-                  "minigroup"
-                ]
-              },
-              "name": "class_type"
-            }
-          }
-        ]
-      }
-    },
-    "query": "\n            INSERT INTO room (\n                audience, source_room_id, time, tags, preserve_history, classroom_id,\n                    locked_types, validate_whiteboard_access, whiteboard_access, kind)\n            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                validate_whiteboard_access,\n                whiteboard_access,\n                kind AS \"kind!: ClassType\"\n            "
-  },
   "c28ed4947111a2db3a47e016f7eca674ee55fe13cfb5ec0d9258e398be21fff5": {
     "describe": {
       "columns": [
@@ -2529,108 +2612,6 @@
       }
     },
     "query": "SELECT COUNT(1) as total FROM (\n                    SELECT DISTINCT ON(original_occurred_at, label)\n                        *,\n                        bool_or(removed) OVER (\n                            PARTITION BY room_id, set, label\n                            ORDER BY occurred_at DESC\n                        ) AS removed_windowed\n                    FROM event\n                    WHERE deleted_at IS NULL\n                    AND   room_id = $1\n                    AND   set = $2\n                    AND   original_occurred_at < $3\n                    AND   occurred_at < COALESCE($4, 9223372036854775807)\n                    ORDER BY original_occurred_at DESC, label ASC, occurred_at DESC\n                ) subq\n                WHERE removed_windowed = 'f'\n                "
-  },
-  "c5bae956da2f6f2362217db4ee0e1dccd80a2b5611f5f87c15ef2d85982cae6d": {
-    "describe": {
-      "columns": [
-        {
-          "name": "id",
-          "ordinal": 0,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "audience",
-          "ordinal": 1,
-          "type_info": "Text"
-        },
-        {
-          "name": "source_room_id",
-          "ordinal": 2,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "time!: Time",
-          "ordinal": 3,
-          "type_info": "TstzRange"
-        },
-        {
-          "name": "tags",
-          "ordinal": 4,
-          "type_info": "Json"
-        },
-        {
-          "name": "created_at",
-          "ordinal": 5,
-          "type_info": "Timestamptz"
-        },
-        {
-          "name": "preserve_history",
-          "ordinal": 6,
-          "type_info": "Bool"
-        },
-        {
-          "name": "classroom_id",
-          "ordinal": 7,
-          "type_info": "Uuid"
-        },
-        {
-          "name": "locked_types",
-          "ordinal": 8,
-          "type_info": "Jsonb"
-        },
-        {
-          "name": "validate_whiteboard_access",
-          "ordinal": 9,
-          "type_info": "Bool"
-        },
-        {
-          "name": "whiteboard_access",
-          "ordinal": 10,
-          "type_info": "Jsonb"
-        },
-        {
-          "name": "kind!: ClassType",
-          "ordinal": 11,
-          "type_info": {
-            "Custom": {
-              "kind": {
-                "Enum": [
-                  "webinar",
-                  "p2p",
-                  "minigroup"
-                ]
-              },
-              "name": "class_type"
-            }
-          }
-        }
-      ],
-      "nullable": [
-        false,
-        false,
-        true,
-        false,
-        true,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false,
-        false
-      ],
-      "parameters": {
-        "Left": [
-          "Uuid",
-          "TstzRange",
-          "Json",
-          "Uuid",
-          "Jsonb",
-          "Jsonb"
-        ]
-      }
-    },
-    "query": "\n            UPDATE room\n            SET time = COALESCE($2, time),\n                tags = COALESCE($3::JSON, tags),\n                classroom_id = COALESCE($4, classroom_id),\n                locked_types = COALESCE($5, locked_types),\n                whiteboard_access = COALESCE($6, whiteboard_access)\n            WHERE id = $1\n            RETURNING\n                id,\n                audience,\n                source_room_id,\n                time AS \"time!: Time\",\n                tags,\n                created_at,\n                preserve_history,\n                classroom_id,\n                locked_types,\n                validate_whiteboard_access,\n                whiteboard_access,\n                kind AS \"kind!: ClassType\"\n            "
   },
   "d5627598d3da1032cb1e21ea6235eea133cf69fa53234fcbbe62ad9b1e801eb5": {
     "describe": {

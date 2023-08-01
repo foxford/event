@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use axum::extract::{Path, State};
+use axum::extract::{self, Path};
 use chrono::Utc;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -52,7 +52,7 @@ impl EventsDumpResult {
 }
 
 pub async fn dump_events(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
 ) -> RequestResult {

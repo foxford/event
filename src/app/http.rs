@@ -17,6 +17,7 @@ use http::{
 };
 use hyper::Body;
 use svc_agent::mqtt::Agent;
+use svc_utils::middleware::MeteredRoute;
 use tower::{layer::layer_fn, Service, ServiceBuilder};
 use tower_http::cors::{Any, CorsLayer};
 use tracing::error;
@@ -26,11 +27,7 @@ use crate::app::{
     service_utils,
 };
 
-use super::{
-    context::{AppContext, GlobalContext},
-    endpoint,
-    error::{Error as AppError, ErrorKind},
-};
+use super::{context::AppContext, endpoint, error::Error as AppError};
 
 pub fn build_router(
     context: Arc<AppContext>,
@@ -54,20 +51,19 @@ pub fn build_router(
     let middleware = ServiceBuilder::new()
         .layer(Extension(agent))
         .layer(Extension(Arc::new(authn)))
-        .layer(Extension(context.clone()))
+        .layer(Extension(context))
         .layer(layer_fn(|inner| NotificationsMiddleware { inner }))
-        .layer(layer_fn(|inner| MetricsMiddleware { inner }))
         .layer(cors);
 
     let router = Router::new()
-        .route("/rooms", post(endpoint::room::create))
-        .route(
+        .metered_route("/rooms", post(endpoint::room::create))
+        .metered_route(
             "/rooms/:id",
             get(endpoint::room::read)
                 .patch(endpoint::room::update)
                 .options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/rooms/:id/adjust",
             post(endpoint::room::adjust::v1::adjust),
         )
@@ -75,61 +71,60 @@ pub fn build_router(
             "/rooms/:id/enter",
             post(endpoint::room::enter).options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/rooms/:id/locked_types",
             post(endpoint::room::locked_types).options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/rooms/:id/whiteboard_access",
             post(endpoint::room::whiteboard_access).options(endpoint::read_options),
         )
-        .route("/rooms/:id/dump_events", post(endpoint::room::dump_events))
-        .route(
+        .metered_route("/rooms/:id/dump_events", post(endpoint::room::dump_events))
+        .metered_route(
             "/rooms/:id/events",
             get(endpoint::event::list)
                 .post(endpoint::event::create)
                 .options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/rooms/:id/state",
             get(endpoint::state::read).options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/rooms/:id/agents",
             get(endpoint::agent::list)
                 .patch(endpoint::agent::update)
                 .options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/rooms/:id/editions",
             get(endpoint::edition::list)
                 .post(endpoint::edition::create)
                 .options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/rooms/:id/bans",
             get(endpoint::ban::list).options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/editions/:id",
             delete(endpoint::edition::delete).options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/editions/:id/commit",
             post(endpoint::edition::commit).options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/editions/:id/changes",
             get(endpoint::change::list)
                 .post(endpoint::change::create)
                 .options(endpoint::read_options),
         )
-        .route(
+        .metered_route(
             "/changes/:id",
             delete(endpoint::change::delete).options(endpoint::read_options),
         )
-        .layer(middleware)
-        .with_state(context);
+        .layer(middleware);
 
     let routes = Router::new().nest("/api/v1", router);
 
@@ -206,47 +201,6 @@ where
                         }
                     }
                 });
-            }
-
-            Ok(res)
-        })
-    }
-}
-
-#[derive(Clone)]
-struct MetricsMiddleware<S> {
-    inner: S,
-}
-
-impl<S, ReqBody, ResBody> Service<Request<ReqBody>> for MetricsMiddleware<S>
-where
-    S: Service<Request<ReqBody>, Response = Response<ResBody>> + Clone + Send + 'static,
-    S::Future: Send + 'static,
-    ReqBody: Send + 'static,
-    ResBody: Send + 'static,
-{
-    type Response = S::Response;
-    type Error = S::Error;
-    type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
-
-    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx)
-    }
-
-    fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
-        // best practice is to clone the inner service like this
-        // see https://github.com/tower-rs/tower/issues/547 for details
-        let clone = self.inner.clone();
-        let mut inner = std::mem::replace(&mut self.inner, clone);
-
-        Box::pin(async move {
-            let ctx = req.extensions().get::<Arc<AppContext>>().cloned().unwrap();
-            let res: Response<ResBody> = inner.call(req).await?;
-
-            if res.status().is_success() {
-                ctx.metrics().observe_app_ok();
-            } else if let Some(error_kind) = res.extensions().get::<ErrorKind>() {
-                ctx.metrics().observe_app_error(error_kind);
             }
 
             Ok(res)

@@ -1,6 +1,6 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::extract::{Json, Path, State};
+use axum::extract::{self, Json, Path};
 use chrono::Utc;
 use serde_derive::{Deserialize, Serialize};
 use serde_json::{json, Value as JsonValue};
@@ -35,7 +35,7 @@ pub struct CommitRequest {
 }
 
 pub async fn commit(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(id): Path<Uuid>,
     Json(payload): Json<CommitPayload>,
