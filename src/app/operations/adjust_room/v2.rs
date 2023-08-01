@@ -491,8 +491,7 @@ fn build_stream(
     let modified_segments = if recording.host {
         Segments::from(cut_original_segments.to_owned())
     } else {
-        // todo use real segments for non-host recordings
-        Segments::from(vec![])
+        Segments::from(recording.segments.clone())
     };
 
     let result = RecordingSegments {
