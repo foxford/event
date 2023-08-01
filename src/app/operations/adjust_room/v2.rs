@@ -491,7 +491,7 @@ fn build_stream(
     let modified_segments = if recording.host {
         Segments::from(cut_original_segments.to_owned())
     } else {
-        Segments::from(recording.segments.clone())
+        recording.segments.clone()
     };
 
     let result = RecordingSegments {
