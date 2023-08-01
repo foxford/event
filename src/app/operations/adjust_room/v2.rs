@@ -30,7 +30,7 @@ use crate::{
 
 ////////////////////////////////////////////////////////////////////////////////
 
-const PIN_EVENT_TYPE: &str = "pin";
+pub const PIN_EVENT_TYPE: &str = "pin";
 
 pub struct AdjustOutput {
     // Original room - with events shifted into video segments

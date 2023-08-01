@@ -101,3 +101,141 @@ pub fn collect_pin_segments(
 
     pin_segments
 }
+
+#[cfg(test)]
+mod tests {
+    mod collect_pinned_events {
+        use chrono::{DateTime, Duration};
+        use std::ops::Bound;
+        use std::str::FromStr;
+        use svc_agent::AgentId;
+        use uuid::Uuid;
+
+        use crate::app::operations::adjust_room::v2::PIN_EVENT_TYPE;
+        use crate::db::event::Builder as EventBuilder;
+
+        use super::super::*;
+
+        #[derive(Clone, Debug, serde::Serialize)]
+        pub struct PinEventData {
+            agent_id: Option<AgentId>,
+        }
+
+        impl PinEventData {
+            pub fn new(agent_id: AgentId) -> Self {
+                Self {
+                    agent_id: Some(agent_id),
+                }
+            }
+
+            pub fn null() -> Self {
+                Self { agent_id: None }
+            }
+
+            fn to_json(self) -> serde_json::Value {
+                serde_json::to_value(self).unwrap()
+            }
+        }
+
+        #[test]
+        fn test_collect_pinned_events_cons_pin() {
+            let agent_id = AgentId::from_str("web.agent.usr.foobar").unwrap();
+            let event_room_id = Uuid::new_v4();
+
+            // This should produce single pin segment between earliest pin and (latest) unpin
+            // "Repin" of the same agent should be skipped
+            let xs = vec![
+                EventBuilder::new()
+                    .room_id(event_room_id)
+                    .set(PIN_EVENT_TYPE)
+                    .data(&PinEventData::new(agent_id.to_owned()).to_json())
+                    .occurred_at(2_041_237_463_815)
+                    .build()
+                    .unwrap(),
+                EventBuilder::new()
+                    .room_id(event_room_id)
+                    .set(PIN_EVENT_TYPE)
+                    .data(&PinEventData::new(agent_id.to_owned()).to_json())
+                    .occurred_at(2_041_238_581_600)
+                    .build()
+                    .unwrap(),
+                EventBuilder::new()
+                    .room_id(event_room_id)
+                    .set(PIN_EVENT_TYPE)
+                    .data(&PinEventData::null().to_json())
+                    .occurred_at(2_093_817_792_770)
+                    .build()
+                    .unwrap(),
+            ];
+
+            let pin_segments =
+                collect_pin_segments(&xs, Duration::seconds(0), &agent_id, 2 * 2093817792770);
+
+            assert_eq!(pin_segments.len(), 1);
+            let seg = pin_segments[0];
+
+            if let Bound::Included(s) = seg.0 {
+                if let Bound::Excluded(e) = seg.1 {
+                    assert_eq!(s, 2041237);
+                    assert_eq!(e, 2093817);
+                    return;
+                }
+            }
+
+            unreachable!("Patterns above were expected to match");
+        }
+
+        #[test]
+        fn test_collect_pinned_events_fast_pin_unpin() {
+            let agent_id = AgentId::from_str("web.agent.usr.foobar").unwrap();
+            let event_room_id = Uuid::new_v4();
+
+            // This should produce no pins since unpin happened just after pin
+            let xs = vec![
+                EventBuilder::new()
+                    .room_id(event_room_id)
+                    .set(PIN_EVENT_TYPE)
+                    .data(&PinEventData::new(agent_id.to_owned()).to_json())
+                    .occurred_at(3312020_000_001)
+                    .build()
+                    .unwrap(),
+                EventBuilder::new()
+                    .room_id(event_room_id)
+                    .set(PIN_EVENT_TYPE)
+                    .data(&PinEventData::null().to_json())
+                    .occurred_at(3312020_000_003)
+                    .build()
+                    .unwrap(),
+            ];
+
+            let pin_segments =
+                collect_pin_segments(&xs, Duration::seconds(0), &agent_id, 2 * 2093817792770);
+
+            assert_eq!(dbg!(pin_segments).len(), 0);
+        }
+
+        #[test]
+        fn test_invalid_pin_segment_after_video() {
+            let agent_id = AgentId::from_str("web.agent.usr.foobar").unwrap();
+            let event_room_id = Uuid::new_v4();
+
+            let xs = vec![EventBuilder::new()
+                .room_id(event_room_id)
+                .set(PIN_EVENT_TYPE)
+                .data(&PinEventData::new(agent_id.to_owned()).to_json())
+                // after segment
+                .occurred_at(3670995397747)
+                .build()
+                .unwrap()];
+
+            let event_room_offset = DateTime::parse_from_rfc3339("2022-09-05T09:52:44.162+03:00")
+                .unwrap()
+                - (DateTime::parse_from_rfc3339("2022-09-05T10:00:28.802+03:00").unwrap()
+                    - Duration::milliseconds(4018));
+
+            let pin_segments = collect_pin_segments(&xs, event_room_offset, &agent_id, 2943194);
+            // no pin segments
+            assert_eq!(pin_segments.len(), 0);
+        }
+    }
+}
