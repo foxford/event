@@ -65,31 +65,33 @@ pub fn collect_pin_segments(
     };
 
     for event in pin_events {
-        if let Some(agent_id) = event
+        let agent_id = event
             .data()
             .get("agent_id")
             .and_then(|v| v.as_str())
-            .and_then(|v| AgentId::from_str(v).ok())
-        {
-            // Shift from the event room's dimension to the recording's dimension.
-            let occurred_at = event.occurred_at() / NS_IN_MS - event_room_offset.num_milliseconds();
+            .and_then(|v| AgentId::from_str(v).ok());
 
-            if agent_id == *recording_created_by {
-                // Stream was pinned.
-                // Its possible that teacher pins someone twice in a row
-                // Do nothing in that case
-                if pin_start.is_none() {
-                    pin_start = Some(occurred_at);
-                }
-            } else if let Some(pinned_at) = pin_start {
-                // stream was unpinned
-                // its possible that pinned_at equals unpin's occurred_at after adjust
-                // we skip segments like that
-                if occurred_at > pinned_at {
-                    add_segment(pinned_at, occurred_at);
-                }
-                pin_start = None;
+        // Shift from the event room's dimension to the recording's dimension.
+        let occurred_at = event.occurred_at() / NS_IN_MS - event_room_offset.num_milliseconds();
+
+        if agent_id
+            .map(|aid| aid == *recording_created_by)
+            .unwrap_or(false)
+        {
+            // Stream was pinned.
+            // Its possible that teacher pins someone twice in a row
+            // Do nothing in that case
+            if pin_start.is_none() {
+                pin_start = Some(occurred_at);
             }
+        } else if let Some(pinned_at) = pin_start {
+            // stream was unpinned
+            // its possible that pinned_at equals unpin's occurred_at after adjust
+            // we skip segments like that
+            if occurred_at > pinned_at {
+                add_segment(pinned_at, occurred_at);
+            }
+            pin_start = None;
         }
     }
 
@@ -200,7 +202,7 @@ mod tests {
                     .created_by(&agent_id)
                     .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::new(agent_id.to_owned()).to_json())
-                    .occurred_at(3312020_000_001)
+                    .occurred_at(3_312_020_000_001)
                     .build()
                     .unwrap(),
                 EventBuilder::new()
@@ -208,7 +210,7 @@ mod tests {
                     .created_by(&agent_id)
                     .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::null().to_json())
-                    .occurred_at(3312020_000_003)
+                    .occurred_at(3_312_020_000_003)
                     .build()
                     .unwrap(),
             ];
@@ -230,7 +232,7 @@ mod tests {
                 .kind(PIN_EVENT_TYPE)
                 .data(&PinEventData::new(agent_id.to_owned()).to_json())
                 // after segment
-                .occurred_at(3670995397747)
+                .occurred_at(3_670_995_397_747)
                 .build()
                 .unwrap()];
 
