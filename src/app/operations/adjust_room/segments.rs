@@ -147,21 +147,21 @@ mod tests {
             let xs = vec![
                 EventBuilder::new()
                     .room_id(event_room_id)
-                    .set(PIN_EVENT_TYPE)
+                    .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::new(agent_id.to_owned()).to_json())
                     .occurred_at(2_041_237_463_815)
                     .build()
                     .unwrap(),
                 EventBuilder::new()
                     .room_id(event_room_id)
-                    .set(PIN_EVENT_TYPE)
+                    .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::new(agent_id.to_owned()).to_json())
                     .occurred_at(2_041_238_581_600)
                     .build()
                     .unwrap(),
                 EventBuilder::new()
                     .room_id(event_room_id)
-                    .set(PIN_EVENT_TYPE)
+                    .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::null().to_json())
                     .occurred_at(2_093_817_792_770)
                     .build()
@@ -194,14 +194,14 @@ mod tests {
             let xs = vec![
                 EventBuilder::new()
                     .room_id(event_room_id)
-                    .set(PIN_EVENT_TYPE)
+                    .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::new(agent_id.to_owned()).to_json())
                     .occurred_at(3312020_000_001)
                     .build()
                     .unwrap(),
                 EventBuilder::new()
                     .room_id(event_room_id)
-                    .set(PIN_EVENT_TYPE)
+                    .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::null().to_json())
                     .occurred_at(3312020_000_003)
                     .build()
@@ -221,7 +221,7 @@ mod tests {
 
             let xs = vec![EventBuilder::new()
                 .room_id(event_room_id)
-                .set(PIN_EVENT_TYPE)
+                .kind(PIN_EVENT_TYPE)
                 .data(&PinEventData::new(agent_id.to_owned()).to_json())
                 // after segment
                 .occurred_at(3670995397747)
