@@ -147,6 +147,7 @@ mod tests {
             let xs = vec![
                 EventBuilder::new()
                     .room_id(event_room_id)
+                    .created_by(&agent_id)
                     .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::new(agent_id.to_owned()).to_json())
                     .occurred_at(2_041_237_463_815)
@@ -154,6 +155,7 @@ mod tests {
                     .unwrap(),
                 EventBuilder::new()
                     .room_id(event_room_id)
+                    .created_by(&agent_id)
                     .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::new(agent_id.to_owned()).to_json())
                     .occurred_at(2_041_238_581_600)
@@ -161,6 +163,7 @@ mod tests {
                     .unwrap(),
                 EventBuilder::new()
                     .room_id(event_room_id)
+                    .created_by(&agent_id)
                     .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::null().to_json())
                     .occurred_at(2_093_817_792_770)
@@ -194,6 +197,7 @@ mod tests {
             let xs = vec![
                 EventBuilder::new()
                     .room_id(event_room_id)
+                    .created_by(&agent_id)
                     .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::new(agent_id.to_owned()).to_json())
                     .occurred_at(3312020_000_001)
@@ -201,6 +205,7 @@ mod tests {
                     .unwrap(),
                 EventBuilder::new()
                     .room_id(event_room_id)
+                    .created_by(&agent_id)
                     .kind(PIN_EVENT_TYPE)
                     .data(&PinEventData::null().to_json())
                     .occurred_at(3312020_000_003)
@@ -221,6 +226,7 @@ mod tests {
 
             let xs = vec![EventBuilder::new()
                 .room_id(event_room_id)
+                .created_by(&agent_id)
                 .kind(PIN_EVENT_TYPE)
                 .data(&PinEventData::new(agent_id.to_owned()).to_json())
                 // after segment
