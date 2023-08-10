@@ -42,7 +42,7 @@ pub struct ListHandler;
 impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync + Send>(
         context: &mut C,
         Self::Payload { room_id }: Self::Payload,
         reqp: RequestParams<'_>,
@@ -61,7 +61,7 @@ impl RequestHandler for ListHandler {
                 room.audience().into(),
                 reqp.as_account_id().to_owned(),
                 object,
-                "update".into(),
+                "read".into(),
             )
             .await?;
 
@@ -132,7 +132,7 @@ mod tests {
         authz.allow(
             agent.account_id(),
             vec!["classrooms", &room.classroom_id().to_string()],
-            "update",
+            "read",
         );
 
         let mut context = TestContext::new(db, authz);
@@ -162,15 +162,7 @@ mod tests {
             shared_helpers::insert_room(&mut conn).await
         };
 
-        let mut authz = TestAuthz::new();
-        let classroom_id = room.classroom_id().to_string();
-        authz.allow(
-            agent.account_id(),
-            vec!["classrooms", &classroom_id],
-            "read",
-        );
-
-        let mut context = TestContext::new(db, authz);
+        let mut context = TestContext::new(db, TestAuthz::new());
 
         let payload = ListRequest { room_id: room.id() };
 

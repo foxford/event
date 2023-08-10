@@ -46,7 +46,7 @@ impl RequestHandler for CreateHandler {
             scope, classroom_id, edition_id
         )
     )]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync + Send>(
         context: &mut C,
         payload: Self::Payload,
         reqp: RequestParams<'_>,

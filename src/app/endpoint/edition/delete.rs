@@ -46,7 +46,7 @@ impl RequestHandler for DeleteHandler {
             room_id, scope, classroom_id
         )
     )]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync + Send>(
         context: &mut C,
         payload: Self::Payload,
         reqp: RequestParams<'_>,

@@ -65,7 +65,7 @@ pub struct EventsDumpHandler;
 impl RequestHandler for EventsDumpHandler {
     type Payload = EventsDumpRequest;
 
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync + Send>(
         context: &mut C,
         payload: Self::Payload,
         reqp: RequestParams<'_>,

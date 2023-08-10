@@ -50,7 +50,7 @@ impl RequestHandler for ListHandler {
     type Payload = ListRequest;
 
     #[instrument(skip_all, fields(edition_id, scope, room_id, classroom_id, change_id))]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync + Send>(
         context: &mut C,
         Self::Payload { id, payload }: Self::Payload,
         reqp: RequestParams<'_>,

@@ -99,6 +99,23 @@ pub async fn run(
         None => context_builder,
     };
 
+    let nats_client = match &config.nats {
+        Some(cfg) => {
+            let nats_client = svc_nats_client::Client::new(cfg.clone())
+                .await
+                .context("nats client")?;
+            info!("Connected to nats");
+
+            Some(nats_client)
+        }
+        None => None,
+    };
+
+    let context_builder = match nats_client.clone() {
+        Some(nats_client) => context_builder.add_nats_client(nats_client),
+        None => context_builder,
+    };
+
     let context = context_builder.queue_counter(queue_counter).build(metrics);
 
     let metrics_task = config.metrics.as_ref().map(|metrics| {
@@ -107,6 +124,8 @@ pub async fn run(
 
     let metrics = context.metrics();
 
+    // for nats consumer
+    let context_: Arc<dyn GlobalContext + Sync + Send> = Arc::new(context.clone());
     let ctx = Arc::new(context.clone());
     let (graceful_tx, graceful_rx) = tokio::sync::watch::channel(());
     let mut shutdown_server_rx = graceful_rx.clone();
@@ -120,26 +139,14 @@ pub async fn run(
             }),
     );
 
-    let nats_consumer = match config.nats.zip(config.nats_consumer) {
-        Some((nats_cfg, nats_consumer_cfg)) => {
-            let nats_client = svc_nats_client::Client::new(nats_cfg)
-                .await
-                .context("nats client")?;
-            info!("Connected to nats");
-
-            let nats_consumer = nats_consumer::run(
-                ctx.clone(),
-                nats_client,
-                nats_consumer_cfg,
-                graceful_rx.clone(),
-            )
-            .await
-            .context("nats consumer")?;
-            info!("Nats consumer started");
-
-            Some(nats_consumer)
+    let nats_consumer = match (nats_client, &config.nats_consumer) {
+        (Some(nats_client), Some(cfg)) => {
+            svc_nats_client::consumer::run(nats_client, cfg.clone(), graceful_rx.clone(), {
+                let ctx_ = context_.clone();
+                move |msg| crate::app::stage::route_message(ctx_.clone(), msg)
+            })
         }
-        None => None,
+        _ => tokio::spawn(std::future::ready(Ok(()))),
     };
 
     // Message handler
@@ -155,10 +162,8 @@ pub async fn run(
 
     let _ = graceful_tx.send(());
 
-    if let Some(consumer) = nats_consumer {
-        if let Err(err) = consumer.await {
-            error!(%err, "failed to await nats consumer completion");
-        }
+    if let Err(err) = nats_consumer.await {
+        tracing::error!(%err, "nats consumer failed");
     }
 
     if let Some(metrics_task) = metrics_task {
@@ -293,7 +298,7 @@ pub mod endpoint;
 pub mod error;
 pub mod http;
 pub mod message_handler;
-pub mod nats_consumer;
 pub mod operations;
 pub mod s3_client;
 pub mod service_utils;
+pub mod stage;

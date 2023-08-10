@@ -56,7 +56,7 @@ impl RequestHandler for CommitHandler {
     type Payload = CommitRequest;
 
     #[instrument(skip_all, fields(edition_id, offset, room_id, scope, classroom_id,))]
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync + Send>(
         context: &mut C,
         CommitRequest {
             id,

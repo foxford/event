@@ -7,6 +7,7 @@ use sqlx::pool::PoolConnection;
 use sqlx::postgres::{PgPool as Db, Postgres};
 use svc_agent::{queue_counter::QueueCounterHandle, AgentId};
 use svc_authz::cache::ConnectionPool as RedisConnectionPool;
+use svc_nats_client::NatsClient;
 
 use crate::config::Config;
 use crate::{
@@ -22,7 +23,7 @@ use super::broker_client::BrokerClient;
 pub trait Context: GlobalContext + MessageContext {}
 
 #[async_trait]
-pub trait GlobalContext: Sync {
+pub trait GlobalContext {
     fn authz(&self) -> &Authz;
     fn config(&self) -> &Config;
     fn db(&self) -> &Db;
@@ -33,6 +34,7 @@ pub trait GlobalContext: Sync {
     fn metrics(&self) -> Arc<Metrics>;
     fn s3_client(&self) -> Option<S3Client>;
     fn broker_client(&self) -> &dyn BrokerClient;
+    fn nats_client(&self) -> Option<Arc<dyn NatsClient>>;
 
     async fn get_conn(&self) -> Result<PoolConnection<Postgres>, AppError> {
         self.db()
@@ -51,7 +53,7 @@ pub trait GlobalContext: Sync {
     }
 }
 
-pub trait MessageContext: Send {
+pub trait MessageContext {
     fn start_timestamp(&self) -> DateTime<Utc>;
 }
 
@@ -69,6 +71,7 @@ pub struct AppContext {
     metrics: Arc<Metrics>,
     s3_client: Option<S3Client>,
     broker_client: Arc<dyn BrokerClient>,
+    nats_client: Option<Arc<dyn NatsClient>>,
 }
 
 impl AppContext {
@@ -116,6 +119,10 @@ impl GlobalContext for AppContext {
 
     fn broker_client(&self) -> &dyn BrokerClient {
         self.broker_client.as_ref()
+    }
+
+    fn nats_client(&self) -> Option<Arc<dyn NatsClient>> {
+        self.nats_client.clone()
     }
 }
 
@@ -175,6 +182,10 @@ impl<'a, C: GlobalContext> GlobalContext for AppMessageContext<'a, C> {
     fn broker_client(&self) -> &dyn BrokerClient {
         self.global_context.broker_client()
     }
+
+    fn nats_client(&self) -> Option<Arc<dyn NatsClient>> {
+        self.global_context.nats_client()
+    }
 }
 
 impl<'a, C: GlobalContext> MessageContext for AppMessageContext<'a, C> {
@@ -196,6 +207,7 @@ pub struct AppContextBuilder {
     agent_id: AgentId,
     queue_counter: Option<QueueCounterHandle>,
     redis_pool: Option<RedisConnectionPool>,
+    nats_client: Option<Arc<dyn NatsClient>>,
 }
 
 impl AppContextBuilder {
@@ -211,6 +223,7 @@ impl AppContextBuilder {
             agent_id,
             queue_counter: None,
             redis_pool: None,
+            nats_client: None,
         }
     }
 
@@ -235,6 +248,13 @@ impl AppContextBuilder {
         }
     }
 
+    pub fn add_nats_client(self, nats_client: impl NatsClient + 'static) -> Self {
+        Self {
+            nats_client: Some(Arc::new(nats_client)),
+            ..self
+        }
+    }
+
     pub fn build(self, metrics: Arc<Metrics>) -> AppContext {
         AppContext {
             config: Arc::new(self.config),
@@ -247,6 +267,7 @@ impl AppContextBuilder {
             redis_pool: self.redis_pool,
             metrics,
             s3_client: S3Client::new(),
+            nats_client: self.nats_client,
         }
     }
 }

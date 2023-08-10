@@ -50,6 +50,7 @@ pub enum ErrorKind {
     InternalNatsError,
     NatsMessageHandlingFailed,
     NatsPublishFailed,
+    NatsClientNotFound,
 }
 
 impl ErrorKind {
@@ -283,6 +284,12 @@ impl From<ErrorKind> for ErrorKindProperties {
                 title: "Nats publish failed",
                 is_notify_sentry: true
             },
+            ErrorKind::NatsClientNotFound => ErrorKindProperties {
+                status: ResponseStatus::FAILED_DEPENDENCY,
+                kind: "nats_client_not_found",
+                title: "Nats client not found",
+                is_notify_sentry: true,
+            },
         }
     }
 }
@@ -383,6 +390,22 @@ impl From<svc_authz::Error> for Error {
         Self {
             kind,
             err: Some(Arc::new(source.into())),
+            tags: HashMap::new(),
+        }
+    }
+}
+
+impl From<Error> for anyhow::Error {
+    fn from(e: Error) -> Self {
+        anyhow::anyhow!(e.to_svc_error())
+    }
+}
+
+impl From<ErrorKind> for Error {
+    fn from(kind: ErrorKind) -> Self {
+        Self {
+            kind,
+            err: None,
             tags: HashMap::new(),
         }
     }

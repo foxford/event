@@ -18,7 +18,7 @@ pub struct VacuumHandler;
 impl RequestHandler for VacuumHandler {
     type Payload = VacuumRequest;
 
-    async fn handle<C: Context>(
+    async fn handle<C: Context + Sync + Send>(
         context: &mut C,
         _payload: Self::Payload,
         reqp: RequestParams<'_>,

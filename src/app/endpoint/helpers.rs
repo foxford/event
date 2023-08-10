@@ -40,7 +40,7 @@ pub enum RoomTimeRequirement {
     Open,
 }
 
-pub async fn find_room<C: Context>(
+pub async fn find_room<C: Context + Sync>(
     context: &mut C,
     id: Uuid,
     opening_requirement: RoomTimeRequirement,
