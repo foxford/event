@@ -1,6 +1,6 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::extract::{Path, State};
+use axum::extract::{self, Path};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::ResponseStatus;
 use svc_authn::Authenticable;
@@ -20,7 +20,7 @@ pub struct DeleteRequest {
 }
 
 pub async fn delete(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(id): Path<Uuid>,
 ) -> RequestResult {

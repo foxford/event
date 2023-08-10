@@ -1,7 +1,7 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::{
-    extract::{Path, State},
+    extract::{self, Path},
     Json,
 };
 use svc_agent::mqtt::ResponseStatus;
@@ -18,7 +18,7 @@ use crate::db;
 pub struct CreateHandler;
 
 pub async fn create(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(edition_id): Path<Uuid>,
     Json(changeset): Json<Changeset>,

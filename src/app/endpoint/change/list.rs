@@ -1,6 +1,6 @@
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
-use axum::extract::{Path, Query, State};
+use axum::extract::{self, Path, Query};
 use chrono::{DateTime, Utc};
 use serde_derive::Deserialize;
 use svc_agent::mqtt::ResponseStatus;
@@ -29,7 +29,7 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(id): Path<Uuid>,
     Query(payload): Query<ListPayload>,

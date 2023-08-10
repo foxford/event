@@ -3,7 +3,7 @@ use std::sync::Arc;
 use anyhow::Context as AnyhowContext;
 use async_trait::async_trait;
 use axum::extract::{
-    Json, {Path, Query, State},
+    self, Json, {Path, Query},
 };
 use serde_derive::{Deserialize, Serialize};
 use serde_json::json;
@@ -39,7 +39,7 @@ pub struct ListRequest {
 }
 
 pub async fn list(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Query(payload): Query<ListPayload>,
@@ -150,7 +150,7 @@ pub struct TenantBanNotification {
 }
 
 pub async fn update(
-    State(ctx): State<Arc<AppContext>>,
+    ctx: extract::Extension<Arc<AppContext>>,
     AgentIdExtractor(agent_id): AgentIdExtractor,
     Path(room_id): Path<Uuid>,
     Json(payload): Json<UpdatePayload>,
